@@ -14,6 +14,7 @@ class DashboardViewModel: ObservableObject {
     @Published var restingHeartRateData: [HealthDataPoint] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var hrvData: [HealthDataPoint] = []
     
     private let healthKitManager = HealthKitManager.shared
     
@@ -26,10 +27,15 @@ class DashboardViewModel: ObservableObject {
         let startDate = Calendar.current.date(byAdding: .day, value: -7, to: endDate) ?? endDate
         
         do {
-            let data = try await healthKitManager.fetchRestingHeartRate(startDate: startDate, endDate: endDate)
-            self.restingHeartRateData = data
+            // Fetch all data concurrently
+            async let restingHR = healthKitManager.fetchRestingHeartRate(startDate: startDate, endDate: endDate)
+            async let hrv = healthKitManager.fetchHeartRateVariability(startDate: startDate, endDate: endDate)
+            
+            self.restingHeartRateData = try await restingHR
+            self.hrvData = try await hrv
+            
         } catch {
-            self.errorMessage = "Failed to load heart rate data: \(error.localizedDescription)"
+            self.errorMessage = "Failed to load health data: \(error.localizedDescription)"
         }
         
         isLoading = false

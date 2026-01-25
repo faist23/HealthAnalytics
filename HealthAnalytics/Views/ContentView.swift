@@ -24,7 +24,20 @@ struct ContentView: View {
                     } else if viewModel.restingHeartRateData.isEmpty {
                         EmptyStateView()
                     } else {
-                        RestingHeartRateCard(data: viewModel.restingHeartRateData)
+                        // Resting Heart Rate
+                        if !viewModel.restingHeartRateData.isEmpty {
+                            RestingHeartRateCard(data: viewModel.restingHeartRateData)
+                        }
+                        
+                        // HRV
+                        if !viewModel.hrvData.isEmpty {
+                            HRVCard(data: viewModel.hrvData)
+                        }
+                        
+                        // Show empty state only if ALL data is empty
+                        if viewModel.restingHeartRateData.isEmpty && viewModel.hrvData.isEmpty {
+                            EmptyStateView()
+                        }
                     }
                     
                     Spacer()
@@ -153,6 +166,68 @@ struct ErrorView: View {
                 .padding(.horizontal)
         }
         .padding()
+    }
+}
+
+struct HRVCard: View {
+    let data: [HealthDataPoint]
+    
+    var averageHRV: Double {
+        guard !data.isEmpty else { return 0 }
+        return data.map { $0.value }.reduce(0, +) / Double(data.count)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("Heart Rate Variability")
+                        .font(.headline)
+                    Text("Last 7 Days")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing) {
+                    Text("\(Int(averageHRV))")
+                        .font(.title)
+                        .fontWeight(.bold)
+                    Text("avg ms")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            // Chart
+            Chart(data) { point in
+                LineMark(
+                    x: .value("Date", point.date),
+                    y: .value("HRV", point.value)
+                )
+                .foregroundStyle(.green.gradient)
+                .interpolationMethod(.catmullRom)
+                
+                AreaMark(
+                    x: .value("Date", point.date),
+                    y: .value("HRV", point.value)
+                )
+                .foregroundStyle(.green.gradient.opacity(0.1))
+                .interpolationMethod(.catmullRom)
+                
+                PointMark(
+                    x: .value("Date", point.date),
+                    y: .value("HRV", point.value)
+                )
+                .foregroundStyle(.green)
+            }
+            .frame(height: 200)
+            .chartYScale(domain: .automatic(includesZero: false))
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
     }
 }
 

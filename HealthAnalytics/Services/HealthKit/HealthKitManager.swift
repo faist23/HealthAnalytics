@@ -105,6 +105,41 @@ class HealthKitManager: ObservableObject {
             healthStore.execute(query)
         }
     }
+    
+    /// Fetch heart rate variability (HRV) data for the specified date range
+    func fetchHeartRateVariability(startDate: Date, endDate: Date) async throws -> [HealthDataPoint] {
+        guard let hrvType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else {
+            throw HealthKitError.dataTypeNotAvailable
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(sampleType: hrvType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { _, samples, error in
+                
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                guard let samples = samples as? [HKQuantitySample] else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                
+                let dataPoints = samples.map { sample in
+                    HealthDataPoint(
+                        date: sample.startDate,
+                        value: sample.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
+                    )
+                }
+                
+                continuation.resume(returning: dataPoints)
+            }
+            
+            healthStore.execute(query)
+        }
+    }
 }
 
 enum HealthKitError: Error {
