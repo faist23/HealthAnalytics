@@ -68,4 +68,47 @@ class HealthKitManager: ObservableObject {
         }
         return healthStore.authorizationStatus(for: heartRateType)
     }
+    
+    // MARK: - Data Fetching
+    
+    /// Fetch resting heart rate data for the specified date range
+    func fetchRestingHeartRate(startDate: Date, endDate: Date) async throws -> [HealthDataPoint] {
+        guard let restingHRType = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) else {
+            throw HealthKitError.dataTypeNotAvailable
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(sampleType: restingHRType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { _, samples, error in
+                
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                guard let samples = samples as? [HKQuantitySample] else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                
+                let dataPoints = samples.map { sample in
+                    HealthDataPoint(
+                        date: sample.startDate,
+                        value: sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+                    )
+                }
+                
+                continuation.resume(returning: dataPoints)
+            }
+            
+            healthStore.execute(query)
+        }
+    }
+}
+
+enum HealthKitError: Error {
+    case dataTypeNotAvailable
+    case authorizationDenied
+    case noData
 }
