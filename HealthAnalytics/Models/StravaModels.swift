@@ -77,13 +77,25 @@ struct StravaActivity: Codable, Identifiable {
         case sufferScore = "suffer_score"
     }
     
-    var startDateFormatted: Date? {
-        let formatter = ISO8601DateFormatter()
-        return formatter.date(from: startDate)
-    }
-    
     var distanceInMiles: Double {
         distance / 1609.34
+    }
+    
+    var paceFormatted: String? {
+        guard averageSpeed ?? 0 > 0 else { return nil }
+        let speed = averageSpeed ?? 0
+        let paceInSeconds = 1609.34 / speed // seconds per mile
+        let minutes = Int(paceInSeconds) / 60
+        let seconds = Int(paceInSeconds) % 60
+        return "\(minutes):\(String(format: "%02d", seconds))/mi"
+    }
+    
+    var distanceMiles: Double {
+        distance / 1609.34
+    }
+    
+    var distanceKm: Double {
+        distance / 1000.0
     }
     
     var durationFormatted: String {
@@ -97,12 +109,8 @@ struct StravaActivity: Codable, Identifiable {
         }
     }
     
-    var paceFormatted: String? {
-        guard averageSpeed ?? 0 > 0 else { return nil }
-        let speed = averageSpeed ?? 0
-        let paceInSeconds = 1609.34 / speed // seconds per mile
-        let minutes = Int(paceInSeconds) / 60
-        let seconds = Int(paceInSeconds) % 60
-        return "\(minutes):\(String(format: "%02d", seconds))/mi"
+    var startDateFormatted: Date? {
+        let formatter = ISO8601DateFormatter()
+        return formatter.date(from: startDate)
     }
 }

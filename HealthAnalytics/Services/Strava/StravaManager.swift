@@ -98,10 +98,11 @@ class StravaManager: ObservableObject {
         saveTokensToKeychain()
     }
     
-    // MARK: - Fetch Activities
-    
-    func fetchActivities(page: Int = 1, perPage: Int = 30) async throws {
-        guard let token = accessToken else {
+    /// Fetch activities from Strava
+    func fetchActivities(page: Int = 1, perPage: Int = 30) async throws -> [StravaActivity] {
+        await refreshTokenIfNeededAsync()
+        
+        guard let accessToken = accessToken else {
             throw StravaError.notAuthenticated
         }
         
@@ -116,7 +117,7 @@ class StravaManager: ObservableObject {
         }
         
         var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
@@ -126,9 +127,9 @@ class StravaManager: ObservableObject {
         
         let fetchedActivities = try JSONDecoder().decode([StravaActivity].self, from: data)
         
-        await MainActor.run {
-            self.activities = fetchedActivities
-        }
+        print("📊 Fetched \(fetchedActivities.count) activities from Strava")
+        
+        return fetchedActivities
     }
     
     // MARK: - Sign Out
@@ -167,6 +168,11 @@ class StravaManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "strava_access_token")
         UserDefaults.standard.removeObject(forKey: "strava_refresh_token")
         UserDefaults.standard.removeObject(forKey: "strava_token_expires_at")
+    }
+    
+    private func refreshTokenIfNeededAsync() async {
+        // For now, just a placeholder - we can implement token refresh later if needed
+        // The tokens should be valid for 6 hours after authentication
     }
 }
 

@@ -48,38 +48,18 @@ struct StravaConnectionView: View {
             Divider()
                 .padding(.vertical)
             
-            // Activities summary
-            VStack(alignment: .leading, spacing: 15) {
-                Text("Recent Activities")
-                    .font(.headline)
-                
-                if stravaManager.activities.isEmpty {
-                    Button("Load Activities") {
-                        Task {
-                            do {
-                                try await stravaManager.fetchActivities()
-                            } catch {
-                                errorMessage = error.localizedDescription
-                            }
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                } else {
-                    Text("\(stravaManager.activities.count) activities loaded")
+            // Navigate to activities
+            NavigationLink {
+                StravaActivitiesView()
+            } label: {
+                HStack {
+                    Label("View Activities", systemImage: "list.bullet")
+                    Spacer()
+                    Image(systemName: "chevron.right")
                         .foregroundStyle(.secondary)
-                    
-                    Button("Refresh Activities") {
-                        Task {
-                            do {
-                                try await stravaManager.fetchActivities()
-                            } catch {
-                                errorMessage = error.localizedDescription
-                            }
-                        }
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
+            .buttonStyle(.bordered)
             .frame(maxWidth: .infinity, alignment: .leading)
             
             Spacer()
