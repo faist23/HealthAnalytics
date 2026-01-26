@@ -17,7 +17,15 @@ class InsightsViewModel: ObservableObject {
     @Published var activityTypeInsights: [CorrelationEngine.ActivityTypeInsight] = []
     @Published var dataSummary: [(activityType: String, goodSleep: Int, poorSleep: Int)] = []
     @Published var simpleInsights: [CorrelationEngine.SimpleInsight] = []
+    @Published var hrvPerformanceInsights: [CorrelationEngine.HRVPerformanceInsight] = []
+    @Published var recoveryInsights: [CorrelationEngine.RecoveryInsight] = []
+    @Published var trainingLoadSummary: TrainingLoadCalculator.TrainingLoadSummary?
+    @Published var metricTrends: [TrendDetector.MetricTrend] = []
+    @Published var recommendations: [ActionableRecommendations.Recommendation] = []
 
+    private let recommendationEngine = ActionableRecommendations()
+    private let trainingLoadCalculator = TrainingLoadCalculator()
+    private let trendDetector = TrendDetector()
     private let healthKitManager = HealthKitManager.shared
     private let stravaManager = StravaManager.shared
     private let correlationEngine = CorrelationEngine()
@@ -64,6 +72,40 @@ class InsightsViewModel: ObservableObject {
                 hrvData: hrvData
             )
 
+            // HRV vs Performance analysis
+            self.hrvPerformanceInsights = correlationEngine.analyzeHRVVsPerformance(
+                hrvData: hrvData,
+                healthKitWorkouts: hkWorkouts,
+                stravaActivities: recentActivities
+            )
+            
+            // Recovery status analysis
+            self.recoveryInsights = correlationEngine.analyzeRecoveryStatus(
+                restingHRData: rhrData,
+                hrvData: hrvData
+            )
+
+            // Training load analysis
+            self.trainingLoadSummary = trainingLoadCalculator.calculateTrainingLoad(
+                healthKitWorkouts: hkWorkouts,
+                stravaActivities: recentActivities,
+                stepData: try await healthKitManager.fetchStepCount(startDate: startDate, endDate: endDate)
+            )
+            
+            // Trend detection (use longer period for trends)
+            let trendStartDate = Calendar.current.date(byAdding: .day, value: -60, to: endDate) ?? startDate
+            async let trendRHR = healthKitManager.fetchRestingHeartRate(startDate: trendStartDate, endDate: endDate)
+            async let trendHRV = healthKitManager.fetchHeartRateVariability(startDate: trendStartDate, endDate: endDate)
+            async let trendSleep = healthKitManager.fetchSleepDuration(startDate: trendStartDate, endDate: endDate)
+            async let trendSteps = healthKitManager.fetchStepCount(startDate: trendStartDate, endDate: endDate)
+            
+            self.metricTrends = trendDetector.detectTrends(
+                restingHRData: try await trendRHR,
+                hrvData: try await trendHRV,
+                sleepData: try await trendSleep,
+                stepData: try await trendSteps
+            )
+
             // Run activity-specific analysis (better than combined)
             self.activityTypeInsights = correlationEngine.analyzeSleepVsPerformanceByActivityType(
                 sleepData: sleep,
@@ -78,6 +120,13 @@ class InsightsViewModel: ObservableObject {
                 stravaActivities: recentActivities
             )
 
+            // Generate actionable recommendations
+            self.recommendations = recommendationEngine.generateRecommendations(
+                trainingLoad: trainingLoadSummary,
+                recoveryInsights: recoveryInsights,
+                trends: metricTrends
+            )
+            
             print("📊 Analysis complete:")
             print("   Sleep data points: \(sleep.count)")
             print("   HealthKit workouts: \(hkWorkouts.count)")

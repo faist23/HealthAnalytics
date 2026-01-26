@@ -21,6 +21,16 @@ struct InsightsView: View {
                 } else if let error = viewModel.errorMessage {
                     ErrorView(message: error)
                 } else {
+                    // Recommendations (high priority items at top)
+                    if !viewModel.recommendations.isEmpty {
+                        ForEach(viewModel.recommendations, id: \.title) { recommendation in
+                            RecommendationCard(recommendation: recommendation)
+                        }
+                        
+                        Divider()
+                            .padding(.vertical)
+                    }
+                    
                     // Simple insights (always available)
                     if !viewModel.simpleInsights.isEmpty {
                         Text("Your Health Trends")
@@ -36,9 +46,70 @@ struct InsightsView: View {
                             .padding(.vertical)
                     }
                     
+                    // Recovery Status
+                    if !viewModel.recoveryInsights.isEmpty {
+                        Divider()
+                            .padding(.vertical)
+                        
+                        Text("Recovery Status")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        ForEach(viewModel.recoveryInsights, id: \.metric) { insight in
+                            RecoveryInsightCard(insight: insight)
+                        }
+                    }
+                    
+                    // Training Load
+                    if let trainingLoad = viewModel.trainingLoadSummary {
+                        Divider()
+                            .padding(.vertical)
+                        
+                        Text("Training Load")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        TrainingLoadCard(summary: trainingLoad)
+                    }
+                    
+                    // Metric Trends
+                    if !viewModel.metricTrends.isEmpty {
+                        Divider()
+                            .padding(.vertical)
+                        
+                        Text("Trends")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        ForEach(viewModel.metricTrends, id: \.metric) { trend in
+                            TrendCard(trend: trend)
+                        }
+                    }
+                    
+                    // HRV vs Performance
+                    if !viewModel.hrvPerformanceInsights.isEmpty {
+                        Divider()
+                            .padding(.vertical)
+                        
+                        Text("HRV & Performance")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        ForEach(viewModel.hrvPerformanceInsights, id: \.activityType) { insight in
+                            HRVInsightCard(insight: insight)
+                        }
+                    }
+                    
                     // Activity-specific insights (when enough data)
                     if !viewModel.activityTypeInsights.isEmpty {
-                        Text("Performance Correlations")
+                        Divider()
+                            .padding(.vertical)
+                        
+                        Text("Sleep & Performance")
                             .font(.title2)
                             .fontWeight(.bold)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -316,6 +387,240 @@ struct SimpleInsightCard: View {
     }
 }
 
+struct RecoveryInsightCard: View {
+    let insight: CorrelationEngine.RecoveryInsight
+    
+    var trendColor: Color {
+        switch insight.trend {
+        case .recovered: return .green
+        case .recovering: return .orange
+        case .fatigued: return .red
+        case .stable: return .blue
+        }
+    }
+    
+    var body: some View {
+        HStack(spacing: 15) {
+            Text(insight.trend.emoji)
+                .font(.system(size: 40))
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text(insight.metric)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                
+                HStack(spacing: 8) {
+                    Text(String(format: "%.0f", insight.currentValue))
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(trendColor)
+                    
+                    Text("(baseline: \(String(format: "%.0f", insight.baselineValue)))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Text(insight.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct HRVInsightCard: View {
+    let insight: CorrelationEngine.HRVPerformanceInsight
+    
+    var activityIcon: String {
+        switch insight.activityType {
+        case "Run": return "figure.run"
+        case "Ride", "VirtualRide": return "bicycle"
+        default: return "figure.mixed.cardio"
+        }
+    }
+    
+    var body: some View {
+        InsightCard(
+            title: "\(insight.activityType) & HRV",
+            icon: activityIcon,
+            iconColor: .green,
+            insight: insight.insightText,
+            details: [
+                ("High HRV", String(format: "%.1f avg", insight.highHRVAvg)),
+                ("Low HRV", String(format: "%.1f avg", insight.lowHRVAvg)),
+                ("Sample size", "\(insight.sampleSize) workouts")
+            ]
+        )
+    }
+}
+
+struct TrainingLoadCard: View {
+    let summary: TrainingLoadCalculator.TrainingLoadSummary
+    
+    var statusColor: Color {
+        switch summary.status.color {
+        case "blue": return .blue
+        case "green": return .green
+        case "orange": return .orange
+        case "red": return .red
+        default: return .gray
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack {
+                Text(summary.status.emoji)
+                    .font(.system(size: 40))
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Acute:Chronic Ratio")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(String(format: "%.2f", summary.acuteChronicRatio))
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundStyle(statusColor)
+                }
+                
+                Spacer()
+            }
+            
+            Divider()
+            
+            HStack(spacing: 30) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Acute Load")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(String(format: "%.0f", summary.acuteLoad))
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                    Text("7-day avg")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Chronic Load")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(String(format: "%.0f", summary.chronicLoad))
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                    Text("28-day avg")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            
+            Divider()
+            
+            Text(summary.recommendation)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct TrendCard: View {
+    let trend: TrendDetector.MetricTrend
+    
+    var trendColor: Color {
+        switch trend.direction.color {
+        case "green": return .green
+        case "orange": return .orange
+        case "blue": return .blue
+        default: return .gray
+        }
+    }
+    
+    var body: some View {
+        HStack(spacing: 15) {
+            Text(trend.direction.emoji)
+                .font(.system(size: 32))
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(trend.metric)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Text(trend.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Text("Over \(trend.period)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            
+            Spacer()
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct RecommendationCard: View {
+    let recommendation: ActionableRecommendations.Recommendation
+    
+    var priorityColor: Color {
+        switch recommendation.priority {
+        case .high: return .red
+        case .medium: return .orange
+        case .low: return .green
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(recommendation.priority.emoji)
+                    .font(.title2)
+                
+                Text(recommendation.title)
+                    .font(.headline)
+                    .foregroundStyle(priorityColor)
+                
+                Spacer()
+            }
+            
+            Text(recommendation.message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(recommendation.actionItems, id: \.self) { action in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("•")
+                            .foregroundStyle(priorityColor)
+                        Text(action)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(priorityColor.opacity(0.1))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(priorityColor.opacity(0.3), lineWidth: 1)
+        )
+    }
+}
 
 #Preview {
     NavigationStack {

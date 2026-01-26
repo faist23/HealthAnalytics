@@ -412,95 +412,362 @@ class CorrelationEngine {
     }
     
     // MARK: - Simple Insights (No Comparison Needed)
+    
+    struct SimpleInsight {
+        let title: String
+        let value: String
+        let description: String
+        let icon: String
+        let iconColor: String
+    }
+    
+    /// Generate simple insights from available data
+    func generateSimpleInsights(
+        sleepData: [HealthDataPoint],
+        healthKitWorkouts: [WorkoutData],
+        stravaActivities: [StravaActivity],
+        restingHRData: [HealthDataPoint],
+        hrvData: [HealthDataPoint]
+    ) -> [SimpleInsight] {
         
-        struct SimpleInsight {
-            let title: String
-            let value: String
-            let description: String
-            let icon: String
-            let iconColor: String
+        var insights: [SimpleInsight] = []
+        
+        // Sleep consistency
+        if sleepData.count >= 7 {
+            let avgSleep = sleepData.map { $0.value }.reduce(0, +) / Double(sleepData.count)
+            let sleepValues = sleepData.map { $0.value }
+            let variance = sleepValues.map { pow($0 - avgSleep, 2) }.reduce(0, +) / Double(sleepValues.count)
+            let stdDev = sqrt(variance)
+            
+            let consistency = stdDev < 1.0 ? "very consistent" : stdDev < 1.5 ? "fairly consistent" : "variable"
+            
+            insights.append(SimpleInsight(
+                title: "Sleep Consistency",
+                value: String(format: "%.1f hrs avg", avgSleep),
+                description: "Your sleep is \(consistency) (±\(String(format: "%.1f", stdDev)) hrs)",
+                icon: "bed.double.fill",
+                iconColor: "blue"
+            ))
         }
         
-        /// Generate simple insights from available data
-        func generateSimpleInsights(
-            sleepData: [HealthDataPoint],
-            healthKitWorkouts: [WorkoutData],
-            stravaActivities: [StravaActivity],
-            restingHRData: [HealthDataPoint],
-            hrvData: [HealthDataPoint]
-        ) -> [SimpleInsight] {
+        // Workout frequency
+        let totalWorkouts = healthKitWorkouts.count + stravaActivities.count
+        if totalWorkouts > 0 {
+            let days = 30
+            let workoutsPerWeek = Double(totalWorkouts) / Double(days) * 7.0
             
-            var insights: [SimpleInsight] = []
+            insights.append(SimpleInsight(
+                title: "Training Frequency",
+                value: String(format: "%.1f/week", workoutsPerWeek),
+                description: "\(totalWorkouts) workouts in the last 30 days",
+                icon: "figure.run",
+                iconColor: "orange"
+            ))
+        }
+        
+        // Resting HR trend
+        if restingHRData.count >= 7 {
+            let recent = Array(restingHRData.suffix(7))
+            let older = Array(restingHRData.prefix(min(7, restingHRData.count - 7)))
             
-            // Sleep consistency
-            if sleepData.count >= 7 {
-                let avgSleep = sleepData.map { $0.value }.reduce(0, +) / Double(sleepData.count)
-                let sleepValues = sleepData.map { $0.value }
-                let variance = sleepValues.map { pow($0 - avgSleep, 2) }.reduce(0, +) / Double(sleepValues.count)
-                let stdDev = sqrt(variance)
+            if !older.isEmpty {
+                let recentAvg = recent.map { $0.value }.reduce(0, +) / Double(recent.count)
+                let olderAvg = older.map { $0.value }.reduce(0, +) / Double(older.count)
+                let change = recentAvg - olderAvg
                 
-                let consistency = stdDev < 1.0 ? "very consistent" : stdDev < 1.5 ? "fairly consistent" : "variable"
-                
-                insights.append(SimpleInsight(
-                    title: "Sleep Consistency",
-                    value: String(format: "%.1f hrs avg", avgSleep),
-                    description: "Your sleep is \(consistency) (±\(String(format: "%.1f", stdDev)) hrs)",
-                    icon: "bed.double.fill",
-                    iconColor: "blue"
-                ))
-            }
-            
-            // Workout frequency
-            let totalWorkouts = healthKitWorkouts.count + stravaActivities.count
-            if totalWorkouts > 0 {
-                let days = 30
-                let workoutsPerWeek = Double(totalWorkouts) / Double(days) * 7.0
+                let trend = abs(change) < 2 ? "stable" : change < 0 ? "improving" : "elevated"
                 
                 insights.append(SimpleInsight(
-                    title: "Training Frequency",
-                    value: String(format: "%.1f/week", workoutsPerWeek),
-                    description: "\(totalWorkouts) workouts in the last 30 days",
-                    icon: "figure.run",
-                    iconColor: "orange"
+                    title: "Resting Heart Rate",
+                    value: String(format: "%.0f bpm", recentAvg),
+                    description: "Trend is \(trend) (\(change > 0 ? "+" : "")\(String(format: "%.1f", change)) bpm vs. earlier)",
+                    icon: "heart.fill",
+                    iconColor: "red"
                 ))
             }
+        }
+        
+        // HRV trend
+        if hrvData.count >= 7 {
+            let recent = Array(hrvData.suffix(7))
+            let avgHRV = recent.map { $0.value }.reduce(0, +) / Double(recent.count)
             
-            // Resting HR trend
-            if restingHRData.count >= 7 {
-                let recent = Array(restingHRData.suffix(7))
-                let older = Array(restingHRData.prefix(min(7, restingHRData.count - 7)))
+            insights.append(SimpleInsight(
+                title: "Recovery Status",
+                value: String(format: "%.0f ms", avgHRV),
+                description: "Your average HRV over the last week",
+                icon: "waveform.path.ecg",
+                iconColor: "green"
+            ))
+        }
+        
+        return insights
+    }
+    
+    // MARK: - HRV vs Performance Analysis
+    
+    struct HRVPerformanceInsight {
+        let activityType: String
+        let highHRVAvg: Double      // HRV > personal average
+        let lowHRVAvg: Double       // HRV < personal average
+        let percentDifference: Double
+        let sampleSize: Int
+        let confidence: SleepPerformanceInsight.ConfidenceLevel
+        
+        var insightText: String {
+            if confidence == .insufficient {
+                return "Not enough data yet. Keep tracking!"
+            }
+            
+            if abs(percentDifference) < 5.0 {
+                return "HRV doesn't show a strong correlation with \(activityType.lowercased()) performance yet"
+            }
+            
+            let direction = percentDifference > 0 ? "better" : "worse"
+            let percent = abs(percentDifference)
+            
+            return "Your \(activityType.lowercased()) performance is \(String(format: "%.1f", percent))% \(direction) when HRV is above your baseline"
+        }
+    }
+    
+    /// Analyzes correlation between HRV and workout performance by activity type
+    func analyzeHRVVsPerformance(
+        hrvData: [HealthDataPoint],
+        healthKitWorkouts: [WorkoutData],
+        stravaActivities: [StravaActivity]
+    ) -> [HRVPerformanceInsight] {
+        
+        // Calculate average HRV as baseline
+        guard !hrvData.isEmpty else { return [] }
+        let avgHRV = hrvData.map { $0.value }.reduce(0, +) / Double(hrvData.count)
+        
+        print("📊 HRV Baseline: \(String(format: "%.1f", avgHRV)) ms")
+        
+        // Create HRV lookup by date
+        var hrvByDate: [Date: Double] = [:]
+        let calendar = Calendar.current
+        
+        for hrv in hrvData {
+            let dayStart = calendar.startOfDay(for: hrv.date)
+            hrvByDate[dayStart] = hrv.value
+        }
+        
+        // Deduplicate workouts
+        let (hkOnly, stravaOnly, matched) = WorkoutMatcher.deduplicateWorkouts(
+            healthKitWorkouts: healthKitWorkouts,
+            stravaActivities: stravaActivities
+        )
+        
+        // Group performance by activity type and HRV status
+        var performanceByType: [String: (high: [Double], low: [Double])] = [:]
+        
+        // Process Strava activities
+        for activity in stravaOnly + matched.map({ $0.1 }) {
+            guard let workoutDate = activity.startDateFormatted else { continue }
+            guard activity.type == "Run" || activity.type == "Ride" else { continue }
+            guard let avgSpeed = activity.averageSpeed, avgSpeed > 0 else { continue }
+            
+            // Get HRV from same day
+            let workoutDay = calendar.startOfDay(for: workoutDate)
+            guard let dayHRV = hrvByDate[workoutDay] else { continue }
+            
+            // Calculate performance metric
+            let performanceMetric: Double
+            if activity.type == "Run" {
+                performanceMetric = avgSpeed * 2.23694 // m/s to mph
+            } else {
+                performanceMetric = activity.averageWatts ?? (avgSpeed * 2.23694)
+            }
+            
+            let type = activity.type
+            if performanceByType[type] == nil {
+                performanceByType[type] = (high: [], low: [])
+            }
+            
+            // Categorize by HRV relative to baseline
+            if dayHRV >= avgHRV {
+                performanceByType[type]?.high.append(performanceMetric)
+            } else {
+                performanceByType[type]?.low.append(performanceMetric)
+            }
+        }
+        
+        // Process HealthKit workouts
+        for workout in hkOnly {
+            guard let metric = processHealthKitWorkout(workout, sleepByDate: [:], calendar: calendar) else { continue }
+            
+            let workoutDay = calendar.startOfDay(for: workout.startDate)
+            guard let dayHRV = hrvByDate[workoutDay] else { continue }
+            
+            let type = workout.workoutType.name
+            if performanceByType[type] == nil {
+                performanceByType[type] = (high: [], low: [])
+            }
+            
+            if dayHRV >= avgHRV {
+                performanceByType[type]?.high.append(metric.performance)
+            } else {
+                performanceByType[type]?.low.append(metric.performance)
+            }
+        }
+        
+        // Calculate insights
+        var insights: [HRVPerformanceInsight] = []
+        
+        for (type, data) in performanceByType {
+            let totalSamples = data.high.count + data.low.count
+            guard totalSamples >= 5, data.high.count >= 2, data.low.count >= 2 else { continue }
+            
+            let avgHigh = data.high.reduce(0, +) / Double(data.high.count)
+            let avgLow = data.low.reduce(0, +) / Double(data.low.count)
+            
+            let baseline = max(avgHigh, avgLow)
+            let percentDiff = baseline > 0 ? ((avgHigh - avgLow) / baseline) * 100 : 0
+            
+            let confidence: SleepPerformanceInsight.ConfidenceLevel
+            if totalSamples >= 20 {
+                confidence = .high
+            } else if totalSamples >= 10 {
+                confidence = .medium
+            } else {
+                confidence = .low
+            }
+            
+            if abs(percentDiff) >= 5.0 {
+                insights.append(HRVPerformanceInsight(
+                    activityType: type,
+                    highHRVAvg: avgHigh,
+                    lowHRVAvg: avgLow,
+                    percentDifference: percentDiff,
+                    sampleSize: totalSamples,
+                    confidence: confidence
+                ))
                 
-                if !older.isEmpty {
-                    let recentAvg = recent.map { $0.value }.reduce(0, +) / Double(recent.count)
-                    let olderAvg = older.map { $0.value }.reduce(0, +) / Double(older.count)
-                    let change = recentAvg - olderAvg
-                    
-                    let trend = abs(change) < 2 ? "stable" : change < 0 ? "improving" : "elevated"
-                    
-                    insights.append(SimpleInsight(
-                        title: "Resting Heart Rate",
-                        value: String(format: "%.0f bpm", recentAvg),
-                        description: "Trend is \(trend) (\(change > 0 ? "+" : "")\(String(format: "%.1f", change)) bpm vs. earlier)",
-                        icon: "heart.fill",
-                        iconColor: "red"
-                    ))
+                print("📊 \(type) HRV Analysis:")
+                print("   High HRV: \(data.high.count) workouts, avg \(String(format: "%.1f", avgHigh))")
+                print("   Low HRV: \(data.low.count) workouts, avg \(String(format: "%.1f", avgLow))")
+                print("   Difference: \(String(format: "%.1f", percentDiff))%")
+            }
+        }
+        
+        return insights.sorted { abs($0.percentDifference) > abs($1.percentDifference) }
+    }
+    
+    
+    // MARK: - Resting HR Recovery Analysis
+    
+    struct RecoveryInsight {
+        let metric: String
+        let currentValue: Double
+        let baselineValue: Double
+        let trend: RecoveryTrend
+        let message: String
+        
+        enum RecoveryTrend {
+            case recovered      // Better than baseline
+            case recovering     // Slightly elevated
+            case fatigued       // Significantly elevated
+            case stable         // Within normal range
+            
+            var emoji: String {
+                switch self {
+                case .recovered: return "✅"
+                case .recovering: return "🔄"
+                case .fatigued: return "⚠️"
+                case .stable: return "➡️"
                 }
             }
+        }
+    }
+    
+    /// Analyzes current recovery status based on resting HR
+    func analyzeRecoveryStatus(
+        restingHRData: [HealthDataPoint],
+        hrvData: [HealthDataPoint]
+    ) -> [RecoveryInsight] {
+        
+        var insights: [RecoveryInsight] = []
+        
+        // Resting HR Analysis
+        if restingHRData.count >= 7 {
+            let recent = Array(restingHRData.suffix(3)) // Last 3 days
+            let baseline = Array(restingHRData.prefix(restingHRData.count - 3)) // Earlier data
             
-            // HRV trend
-            if hrvData.count >= 7 {
-                let recent = Array(hrvData.suffix(7))
-                let avgHRV = recent.map { $0.value }.reduce(0, +) / Double(recent.count)
-                
-                insights.append(SimpleInsight(
-                    title: "Recovery Status",
-                    value: String(format: "%.0f ms", avgHRV),
-                    description: "Your average HRV over the last week",
-                    icon: "waveform.path.ecg",
-                    iconColor: "green"
-                ))
+            guard !recent.isEmpty, !baseline.isEmpty else { return insights }
+            
+            let recentAvg = recent.map { $0.value }.reduce(0, +) / Double(recent.count)
+            let baselineAvg = baseline.map { $0.value }.reduce(0, +) / Double(baseline.count)
+            let difference = recentAvg - baselineAvg
+            
+            let trend: RecoveryInsight.RecoveryTrend
+            let message: String
+            
+            if difference <= -3 {
+                trend = .recovered
+                message = "Your resting heart rate is \(String(format: "%.0f", abs(difference))) bpm below baseline - excellent recovery!"
+            } else if difference <= -1 {
+                trend = .recovered
+                message = "Resting heart rate slightly below baseline - good recovery"
+            } else if difference <= 2 {
+                trend = .stable
+                message = "Resting heart rate is stable at baseline"
+            } else if difference <= 5 {
+                trend = .recovering
+                message = "Resting heart rate is \(String(format: "%.0f", difference)) bpm above baseline - consider easy training"
+            } else {
+                trend = .fatigued
+                message = "Resting heart rate is \(String(format: "%.0f", difference)) bpm elevated - prioritize recovery"
             }
             
-            return insights
+            insights.append(RecoveryInsight(
+                metric: "Resting Heart Rate",
+                currentValue: recentAvg,
+                baselineValue: baselineAvg,
+                trend: trend,
+                message: message
+            ))
         }
+        
+        // HRV Analysis
+        if hrvData.count >= 7 {
+            let recent = Array(hrvData.suffix(3))
+            let baseline = Array(hrvData.prefix(hrvData.count - 3))
+            
+            guard !recent.isEmpty, !baseline.isEmpty else { return insights }
+            
+            let recentAvg = recent.map { $0.value }.reduce(0, +) / Double(recent.count)
+            let baselineAvg = baseline.map { $0.value }.reduce(0, +) / Double(baseline.count)
+            let percentDiff = ((recentAvg - baselineAvg) / baselineAvg) * 100
+            
+            let trend: RecoveryInsight.RecoveryTrend
+            let message: String
+            
+            if percentDiff >= 10 {
+                trend = .recovered
+                message = "HRV is \(String(format: "%.0f", percentDiff))% above baseline - well recovered!"
+            } else if percentDiff >= 5 {
+                trend = .recovered
+                message = "HRV slightly elevated - good recovery status"
+            } else if percentDiff >= -5 {
+                trend = .stable
+                message = "HRV is stable at baseline"
+            } else if percentDiff >= -15 {
+                trend = .recovering
+                message = "HRV is \(String(format: "%.0f", abs(percentDiff)))% below baseline - monitor recovery"
+            } else {
+                trend = .fatigued
+                message = "HRV significantly suppressed - prioritize rest and recovery"
+            }
+            
+            insights.append(RecoveryInsight(
+                metric: "Heart Rate Variability",
+                currentValue: recentAvg,
+                baselineValue: baselineAvg,
+                trend: trend,
+                message: message
+            ))
+        }
+        
+        return insights
+    }
 }

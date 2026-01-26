@@ -221,7 +221,7 @@ struct ErrorView: View {
 struct HRVCard: View {
     let data: [HealthDataPoint]
     let period: TimePeriod
-
+    
     var averageHRV: Double {
         guard !data.isEmpty else { return 0 }
         return data.map { $0.value }.reduce(0, +) / Double(data.count)
@@ -274,6 +274,11 @@ struct HRVCard: View {
             }
             .frame(height: 200)
             .chartYScale(domain: .automatic(includesZero: false))
+            .chartXAxis {
+                AxisMarks(values: .automatic) { _ in
+                    AxisValueLabel(format: period == .week ? .dateTime.month().day() : .dateTime.month())
+                }
+            }
         }
         .padding()
         .background(Color(.systemGray6))
@@ -284,7 +289,7 @@ struct HRVCard: View {
 struct SleepCard: View {
     let data: [HealthDataPoint]
     let period: TimePeriod
-
+    
     var averageSleep: Double {
         guard !data.isEmpty else { return 0 }
         return data.map { $0.value }.reduce(0, +) / Double(data.count)
@@ -333,10 +338,10 @@ struct SleepCard: View {
             .frame(height: 200)
             .chartYScale(domain: 0...10)
             .chartXAxis {
-                AxisMarks(values: .stride(by: .day)) { value in
+                AxisMarks(values: .stride(by: period == .week ? .day : .day, count: period == .week ? 1 : period == .month ? 5 : 15)) { value in
                     if let date = value.as(Date.self) {
                         AxisValueLabel {
-                            Text(date, format: .dateTime.month(.abbreviated).day())
+                            Text(date, format: period == .week ? .dateTime.month(.abbreviated).day() : .dateTime.month(.abbreviated))
                                 .font(.caption)
                         }
                     }
@@ -352,7 +357,7 @@ struct SleepCard: View {
 struct StepCountCard: View {
     let data: [HealthDataPoint]
     let period: TimePeriod
-
+    
     var totalSteps: Double {
         data.map { $0.value }.reduce(0, +)
     }
@@ -403,12 +408,12 @@ struct StepCountCard: View {
                     }
             }
             .frame(height: 200)
-            .chartYScale(domain: 0...15000)
+            .chartYScale(domain: 0...20000)
             .chartXAxis {
-                AxisMarks(values: .stride(by: .day)) { value in
+                AxisMarks(values: .stride(by: period == .week ? .day : .day, count: period == .week ? 1 : period == .month ? 5 : 15)) { value in
                     if let date = value.as(Date.self) {
                         AxisValueLabel {
-                            Text(date, format: .dateTime.month(.abbreviated).day())
+                            Text(date, format: period == .week ? .dateTime.month(.abbreviated).day() : .dateTime.month(.abbreviated))
                                 .font(.caption)
                         }
                     }
@@ -424,7 +429,7 @@ struct StepCountCard: View {
 struct WorkoutSummaryCard: View {
     let workouts: [WorkoutData]
     let period: TimePeriod
-
+    
     var totalWorkouts: Int {
         workouts.count
     }
@@ -451,13 +456,18 @@ struct WorkoutSummaryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
-                Text(period.displayName)
-                    .font(.headline)
+                VStack(alignment: .leading) {
+                    Text("Workouts")
+                        .font(.headline)
+                    Text(period.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 
                 Spacer()
                 
                 Text("\(totalWorkouts) workouts")
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             
