@@ -44,11 +44,17 @@ struct ContentView: View {
                             StepCountCard(data: viewModel.stepCountData)
                         }
                         
+                        // Workouts
+                        if !viewModel.workouts.isEmpty {
+                            WorkoutSummaryCard(workouts: viewModel.workouts)
+                        }
+                        
                         // Show empty state only if ALL data is empty
                         if viewModel.restingHeartRateData.isEmpty &&
                             viewModel.hrvData.isEmpty &&
                             viewModel.sleepData.isEmpty &&
-                            viewModel.stepCountData.isEmpty {
+                            viewModel.stepCountData.isEmpty &&
+                            viewModel.workouts.isEmpty {
                             EmptyStateView()
                         }
                     }
@@ -382,6 +388,143 @@ struct StepCountCard: View {
     }
 }
 
+struct WorkoutSummaryCard: View {
+    let workouts: [WorkoutData]
+    
+    var totalWorkouts: Int {
+        workouts.count
+    }
+    
+    var totalDuration: TimeInterval {
+        workouts.map { $0.duration }.reduce(0, +)
+    }
+    
+    var totalCalories: Double {
+        workouts.compactMap { $0.totalEnergyBurned }.reduce(0, +)
+    }
+    
+    var formattedTotalDuration: String {
+        let hours = Int(totalDuration) / 3600
+        let minutes = Int(totalDuration) / 60 % 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack {
+                Text("Recent Workouts")
+                    .font(.headline)
+                
+                Spacer()
+                
+                Text("\(totalWorkouts) workouts")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            // Summary stats
+            HStack(spacing: 20) {
+                StatBox(icon: "clock.fill", value: formattedTotalDuration, label: "Total Time")
+                StatBox(icon: "flame.fill", value: "\(Int(totalCalories))", label: "Calories")
+            }
+            
+            Divider()
+            
+            // Workout list
+            VStack(spacing: 12) {
+                ForEach(workouts.prefix(5)) { workout in
+                    WorkoutRow(workout: workout)
+                }
+            }
+            
+            if workouts.count > 5 {
+                Text("+ \(workouts.count - 5) more workouts")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 5)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct StatBox: View {
+    let icon: String
+    let value: String
+    let label: String
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(.orange)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.headline)
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct WorkoutRow: View {
+    let workout: WorkoutData
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Icon
+            Image(systemName: workout.iconName)
+                .font(.title3)
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(
+                    Circle()
+                        .fill(.orange.gradient)
+                )
+            
+            // Workout info
+            VStack(alignment: .leading, spacing: 3) {
+                Text(workout.workoutName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Text(workout.formattedDate)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            // Stats
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(workout.formattedDuration)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                if let distance = workout.formattedDistance {
+                    Text(distance)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(workout.formattedCalories)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
 
 #Preview {
     ContentView()

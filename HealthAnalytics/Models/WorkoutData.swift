@@ -1,3 +1,11 @@
+//
+//  WorkoutData.swift
+//  HealthAnalytics
+//
+//  Created by Craig Faist on 1/25/26.
+//
+
+
 import Foundation
 import HealthKit
 
@@ -86,7 +94,7 @@ struct WorkoutData: Identifiable {
         return "\(Int(calories)) cal"
     }
     
-    var formattedDistance: String {
+    var formattedDistance: String? {
         guard let distance = totalDistance else { return nil }
         let miles = distance / 1609.34
         return String(format: "%.2f mi", miles)

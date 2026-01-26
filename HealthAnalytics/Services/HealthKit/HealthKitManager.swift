@@ -243,6 +243,54 @@ class HealthKitManager: ObservableObject {
         }
     }
     
+    /// Fetch workouts for the specified date range
+    func fetchWorkouts(startDate: Date, endDate: Date) async throws -> [WorkoutData] {
+        let workoutType = HKObjectType.workoutType()
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(sampleType: workoutType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)]) { _, samples, error in
+                
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                guard let workouts = samples as? [HKWorkout] else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                
+                let workoutData = workouts.map { workout in
+                    // Handle energy burned for iOS 18+
+                    var energyBurned: Double?
+                    if #available(iOS 18.0, *) {
+                        if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
+                           let statistics = workout.statistics(for: energyType),
+                           let sum = statistics.sumQuantity() {
+                            energyBurned = sum.doubleValue(for: .kilocalorie())
+                        }
+                    } else {
+                        energyBurned = workout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
+                    }
+                    
+                    return WorkoutData(
+                        workoutType: workout.workoutActivityType,
+                        startDate: workout.startDate,
+                        endDate: workout.endDate,
+                        duration: workout.duration,
+                        totalEnergyBurned: energyBurned,
+                        totalDistance: workout.totalDistance?.doubleValue(for: .meter())
+                    )
+                }
+                
+                continuation.resume(returning: workoutData)
+            }
+            
+            healthStore.execute(query)
+        }
+    }
+    
 }
 
 enum HealthKitError: Error {

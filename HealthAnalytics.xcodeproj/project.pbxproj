@@ -29,9 +29,22 @@
 		7E7F4A3B2F26BD2800623779 /* HealthAnalyticsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HealthAnalyticsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		7E45DCB22F26DEA200DFCA61 /* Exceptions for "HealthAnalytics" folder in "HealthAnalytics" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7E7F4A212F26BD2700623779 /* HealthAnalytics */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7E7F4A242F26BD2700623779 /* HealthAnalytics */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7E45DCB22F26DEA200DFCA61 /* Exceptions for "HealthAnalytics" folder in "HealthAnalytics" target */,
+			);
 			path = HealthAnalytics;
 			sourceTree = "<group>";
 		};
@@ -401,6 +414,7 @@
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HealthAnalytics/Info.plist;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "HealthAnalytics needs access to your health data to provide performance insights and correlations.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "HealthAnalytics needs permission to save workout and health data.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -436,6 +450,7 @@
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HealthAnalytics/Info.plist;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "HealthAnalytics needs access to your health data to provide performance insights and correlations.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "HealthAnalytics needs permission to save workout and health data.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

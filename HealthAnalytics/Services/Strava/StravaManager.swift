@@ -33,7 +33,8 @@ class StravaManager: ObservableObject {
             URLQueryItem(name: "client_id", value: StravaConfig.clientID),
             URLQueryItem(name: "redirect_uri", value: StravaConfig.redirectURI),
             URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: StravaConfig.scope)
+            URLQueryItem(name: "scope", value: StravaConfig.scope),
+            URLQueryItem(name: "state", value: "healthanalytics") // This identifies the app
         ]
         return components?.url
     }
@@ -61,11 +62,25 @@ class StravaManager: ObservableObject {
             "grant_type": "authorization_code"
         ]
         
+        print("🔑 Token Exchange Request:")
+        print("   URL: \(url)")
+        print("   Client ID: \(StravaConfig.clientID)")
+        print("   Code: \(code)")
+        
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
+        if let httpResponse = response as? HTTPURLResponse {
+            print("📡 Token Response Status: \(httpResponse.statusCode)")
+        }
+        
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("📡 Token Response Body: \(responseString)")
+        }
+        
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            print("❌ Token exchange failed with status: \((response as? HTTPURLResponse)?.statusCode ?? 0)")
             throw StravaError.authenticationFailed
         }
         
@@ -77,6 +92,7 @@ class StravaManager: ObservableObject {
             self.tokenExpiresAt = Date(timeIntervalSince1970: TimeInterval(tokenResponse.expiresAt))
             self.athlete = tokenResponse.athlete
             self.isAuthenticated = true
+            print("✅ Successfully authenticated as \(tokenResponse.athlete.fullName)")
         }
         
         saveTokensToKeychain()

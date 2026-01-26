@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-   StravaConfig.plist
-   HealthAnalytics
-
-   Created by Craig Faist on 1/25/26.
-   Copyright (c) 2026 ___ORGANIZATIONNAME___. All rights reserved.
--->
 <plist version="1.0">
-<dict/>
+<dict>
+	<key>RedirectURI</key>
+	<string>https://faist23.github.io/rideweatherpro-redirect/strava-redirect.html</string>
+	<key>StravaClientID</key>
+	<string>81681</string>
+	<key>StravaClientSecret</key>
+	<string>39dfd62e8c173a5c7a40328dcc6972788fe35efc</string>
+</dict>
 </plist>

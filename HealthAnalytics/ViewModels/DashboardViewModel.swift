@@ -17,6 +17,7 @@ class DashboardViewModel: ObservableObject {
     @Published var hrvData: [HealthDataPoint] = []
     @Published var sleepData: [HealthDataPoint] = []
     @Published var stepCountData: [HealthDataPoint] = []
+    @Published var workouts: [WorkoutData] = []
     
     private let healthKitManager = HealthKitManager.shared
     
@@ -34,11 +35,13 @@ class DashboardViewModel: ObservableObject {
             async let hrv = healthKitManager.fetchHeartRateVariability(startDate: startDate, endDate: endDate)
             async let sleep = healthKitManager.fetchSleepDuration(startDate: startDate, endDate: endDate)
             async let steps = healthKitManager.fetchStepCount(startDate: startDate, endDate: endDate)
+            async let workoutsData = healthKitManager.fetchWorkouts(startDate: startDate, endDate: endDate)
             
             self.restingHeartRateData = try await restingHR
             self.hrvData = try await hrv
             self.sleepData = try await sleep
             self.stepCountData = try await steps
+            self.workouts = try await workoutsData
             
         } catch {
             self.errorMessage = "Failed to load health data: \(error.localizedDescription)"
