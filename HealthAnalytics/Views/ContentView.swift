@@ -13,55 +13,84 @@ struct ContentView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    
-                    if viewModel.isLoading {
-                        ProgressView("Loading health data...")
-                            .padding()
-                    } else if let error = viewModel.errorMessage {
-                        ErrorView(message: error)
-                    } else if viewModel.restingHeartRateData.isEmpty {
-                        EmptyStateView()
-                    } else {
-                        // Resting Heart Rate
-                        if !viewModel.restingHeartRateData.isEmpty {
-                            RestingHeartRateCard(data: viewModel.restingHeartRateData)
-                        }
-                        
-                        // HRV
-                        if !viewModel.hrvData.isEmpty {
-                            HRVCard(data: viewModel.hrvData)
-                        }
-                        
-                        // Sleep
-                        if !viewModel.sleepData.isEmpty {
-                            SleepCard(data: viewModel.sleepData)
-                        }
-                        
-                        // Steps
-                        if !viewModel.stepCountData.isEmpty {
-                            StepCountCard(data: viewModel.stepCountData)
-                        }
-                        
-                        // Workouts
-                        if !viewModel.workouts.isEmpty {
-                            WorkoutSummaryCard(workouts: viewModel.workouts)
-                        }
-                        
-                        // Show empty state only if ALL data is empty
-                        if viewModel.restingHeartRateData.isEmpty &&
-                            viewModel.hrvData.isEmpty &&
-                            viewModel.sleepData.isEmpty &&
-                            viewModel.stepCountData.isEmpty &&
-                            viewModel.workouts.isEmpty {
-                            EmptyStateView()
-                        }
+            VStack(spacing: 0) {
+                // Time period picker
+                Picker("Time Period", selection: $viewModel.selectedPeriod) {
+                    ForEach(TimePeriod.allCases) { period in
+                        Text(period.displayName).tag(period)
                     }
-                    
-                    Spacer()
                 }
+                .pickerStyle(.segmented)
                 .padding()
+                .onChange(of: viewModel.selectedPeriod) { oldValue, newValue in
+                    Task {
+                        await viewModel.loadData()
+                    }
+                }
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        
+                        if viewModel.isLoading {
+                            ProgressView("Loading health data...")
+                                .padding()
+                        } else if let error = viewModel.errorMessage {
+                            ErrorView(message: error)
+                        } else {
+                            // Resting Heart Rate
+                            if !viewModel.restingHeartRateData.isEmpty {
+                                RestingHeartRateCard(
+                                    data: viewModel.restingHeartRateData,
+                                    period: viewModel.selectedPeriod
+                                )
+                            }
+                            
+                            // HRV
+                            if !viewModel.hrvData.isEmpty {
+                                HRVCard(
+                                    data: viewModel.hrvData,
+                                    period: viewModel.selectedPeriod
+                                )
+                            }
+                            
+                            // Sleep
+                            if !viewModel.sleepData.isEmpty {
+                                SleepCard(
+                                    data: viewModel.sleepData,
+                                    period: viewModel.selectedPeriod
+                                )
+                            }
+                            
+                            // Steps
+                            if !viewModel.stepCountData.isEmpty {
+                                StepCountCard(
+                                    data: viewModel.stepCountData,
+                                    period: viewModel.selectedPeriod
+                                )
+                            }
+                            
+                            // Workouts
+                            if !viewModel.workouts.isEmpty {
+                                WorkoutSummaryCard(
+                                    workouts: viewModel.workouts,
+                                    period: viewModel.selectedPeriod
+                                )
+                            }
+                            
+                            // Show empty state only if ALL data is empty
+                            if viewModel.restingHeartRateData.isEmpty &&
+                               viewModel.hrvData.isEmpty &&
+                               viewModel.sleepData.isEmpty &&
+                               viewModel.stepCountData.isEmpty &&
+                               viewModel.workouts.isEmpty {
+                                EmptyStateView()
+                            }
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding()
+                }
             }
             .navigationTitle("Dashboard")
             .toolbar {
@@ -84,7 +113,8 @@ struct ContentView: View {
 
 struct RestingHeartRateCard: View {
     let data: [HealthDataPoint]
-    
+    let period: TimePeriod
+
     var averageHR: Double {
         guard !data.isEmpty else { return 0 }
         return data.map { $0.value }.reduce(0, +) / Double(data.count)
@@ -96,7 +126,7 @@ struct RestingHeartRateCard: View {
                 VStack(alignment: .leading) {
                     Text("Resting Heart Rate")
                         .font(.headline)
-                    Text("Last 7 Days")
+                    Text(period.displayName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -190,7 +220,8 @@ struct ErrorView: View {
 
 struct HRVCard: View {
     let data: [HealthDataPoint]
-    
+    let period: TimePeriod
+
     var averageHRV: Double {
         guard !data.isEmpty else { return 0 }
         return data.map { $0.value }.reduce(0, +) / Double(data.count)
@@ -202,7 +233,7 @@ struct HRVCard: View {
                 VStack(alignment: .leading) {
                     Text("Heart Rate Variability")
                         .font(.headline)
-                    Text("Last 7 Days")
+                    Text(period.displayName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -252,7 +283,8 @@ struct HRVCard: View {
 
 struct SleepCard: View {
     let data: [HealthDataPoint]
-    
+    let period: TimePeriod
+
     var averageSleep: Double {
         guard !data.isEmpty else { return 0 }
         return data.map { $0.value }.reduce(0, +) / Double(data.count)
@@ -264,7 +296,7 @@ struct SleepCard: View {
                 VStack(alignment: .leading) {
                     Text("Sleep Duration")
                         .font(.headline)
-                    Text("Last 7 Days")
+                    Text(period.displayName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -319,7 +351,8 @@ struct SleepCard: View {
 
 struct StepCountCard: View {
     let data: [HealthDataPoint]
-    
+    let period: TimePeriod
+
     var totalSteps: Double {
         data.map { $0.value }.reduce(0, +)
     }
@@ -335,7 +368,7 @@ struct StepCountCard: View {
                 VStack(alignment: .leading) {
                     Text("Step Count")
                         .font(.headline)
-                    Text("Last 7 Days")
+                    Text(period.displayName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -390,7 +423,8 @@ struct StepCountCard: View {
 
 struct WorkoutSummaryCard: View {
     let workouts: [WorkoutData]
-    
+    let period: TimePeriod
+
     var totalWorkouts: Int {
         workouts.count
     }
@@ -417,7 +451,7 @@ struct WorkoutSummaryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
-                Text("Recent Workouts")
+                Text(period.displayName)
                     .font(.headline)
                 
                 Spacer()

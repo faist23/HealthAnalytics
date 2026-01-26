@@ -12,12 +12,13 @@ import Combine
 @MainActor
 class DashboardViewModel: ObservableObject {
     @Published var restingHeartRateData: [HealthDataPoint] = []
-    @Published var isLoading = false
-    @Published var errorMessage: String?
     @Published var hrvData: [HealthDataPoint] = []
     @Published var sleepData: [HealthDataPoint] = []
     @Published var stepCountData: [HealthDataPoint] = []
     @Published var workouts: [WorkoutData] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var selectedPeriod: TimePeriod = .month 
     
     private let healthKitManager = HealthKitManager.shared
     
@@ -25,9 +26,12 @@ class DashboardViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        // Get last 7 days
         let endDate = Date()
-        let startDate = Calendar.current.date(byAdding: .day, value: -7, to: endDate) ?? endDate
+        let startDate = selectedPeriod.startDate(from: endDate)
+        
+        print("📅 Loading data for period: \(selectedPeriod.displayName)")
+        print("   From: \(startDate.formatted(date: .abbreviated, time: .omitted))")
+        print("   To: \(endDate.formatted(date: .abbreviated, time: .omitted))")
         
         do {
             // Fetch all data concurrently

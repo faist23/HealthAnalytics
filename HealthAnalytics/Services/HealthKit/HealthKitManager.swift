@@ -141,7 +141,7 @@ class HealthKitManager: ObservableObject {
         }
     }
     
-    /// Fetch sleep duration data for the specified date range
+    /// Fetch sleep duration data for the specified date range with smart source prioritization
     func fetchSleepDuration(startDate: Date, endDate: Date) async throws -> [HealthDataPoint] {
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
             throw HealthKitError.dataTypeNotAvailable
@@ -162,36 +162,127 @@ class HealthKitManager: ObservableObject {
                     return
                 }
                 
-                // Group sleep samples by day and calculate total duration
-                var sleepByDay: [Date: TimeInterval] = [:]
                 let calendar = Calendar.current
                 
-                for sample in samples {
-                    // Only count "asleep" states (not awake or in bed)
-                    if sample.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
-                        sample.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
-                        sample.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
-                        sample.value == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue {
+                // Group samples by "sleep night" (shift -6 hours so 11PM-7AM is same night)
+                let samplesByNight = Dictionary(grouping: samples) { sample in
+                    let adjustedDate = sample.startDate.addingTimeInterval(-6 * 3600)
+                    return calendar.startOfDay(for: adjustedDate)
+                }
+                
+                var dataPoints: [HealthDataPoint] = []
+                
+                for (night, nightSamples) in samplesByNight {
+                    let duration = self.calculateEffectiveSleepDuration(samples: nightSamples)
+                    
+                    if duration > 0 {
+                        let hours = duration / 3600.0
                         
-                        let dayStart = calendar.startOfDay(for: sample.startDate)
-                        let duration = sample.endDate.timeIntervalSince(sample.startDate)
-                        sleepByDay[dayStart, default: 0] += duration
+                        // Use the next day (wake-up day) as the date
+                        let wakeUpDay = calendar.date(byAdding: .day, value: 1, to: night) ?? night
+                        
+                        dataPoints.append(HealthDataPoint(
+                            date: wakeUpDay,
+                            value: hours
+                        ))
+                        
+                        print("📊 Sleep for night of \(night.formatted(date: .abbreviated, time: .omitted)): \(String(format: "%.1f", hours))h")
                     }
                 }
                 
-                // Convert to data points (hours)
-                let dataPoints = sleepByDay.map { date, duration in
-                    HealthDataPoint(
-                        date: date,
-                        value: duration / 3600.0 // Convert seconds to hours
-                    )
-                }.sorted { $0.date < $1.date }
+                let sortedDataPoints = dataPoints.sorted { $0.date < $1.date }
                 
-                continuation.resume(returning: dataPoints)
+                continuation.resume(returning: sortedDataPoints)
             }
             
             healthStore.execute(query)
         }
+    }
+    
+    // MARK: - Smart Sleep Calculation
+    
+    /// Calculates effective sleep duration with source prioritization
+    /// Prioritizes AutoSleep when it has valid data, falls back to Apple Watch otherwise
+    private func calculateEffectiveSleepDuration(samples: [HKCategorySample]) -> TimeInterval {
+        // 1. Identify AutoSleep samples
+        let autoSleepSamples = samples.filter {
+            $0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep")
+        }
+        
+        let hasAutoSleep = !autoSleepSamples.isEmpty
+        
+        var targetSamples: [HKCategorySample] = []
+        
+        if hasAutoSleep {
+            // Check if AutoSleep has actual "asleep" data (not just "in bed")
+            let hasValidSleepData = autoSleepSamples.contains { sample in
+                let val = sample.value
+                return val == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
+                val == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+                val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
+                val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+            }
+            
+            if hasValidSleepData {
+                // AutoSleep has good data - use it exclusively
+                targetSamples = autoSleepSamples
+            } else {
+                // AutoSleep exists but has no sleep data - fall back to Apple Watch
+                print("   ⚠️ AutoSleep detected but empty. Falling back to Apple Watch.")
+                targetSamples = samples.filter {
+                    !$0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep")
+                }
+            }
+        } else {
+            // No AutoSleep - use all available data (typically Apple Watch)
+            targetSamples = samples
+        }
+        
+        // 2. Filter for valid sleep stages (exclude "in bed" and "awake")
+        let validSamples = targetSamples.filter { sample in
+            let val = sample.value
+            return val == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
+            val == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+            val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
+            val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+        }
+        
+        // 3. Merge overlapping intervals to prevent double-counting
+        return calculateUniqueDuration(validSamples)
+    }
+    
+    /// Merges overlapping sleep intervals to prevent double-counting
+    private func calculateUniqueDuration(_ samples: [HKCategorySample]) -> TimeInterval {
+        guard !samples.isEmpty else { return 0 }
+        
+        // Sort by start time
+        let sorted = samples.sorted { $0.startDate < $1.startDate }
+        
+        var totalDuration: TimeInterval = 0
+        var currentStart = sorted[0].startDate
+        var currentEnd = sorted[0].endDate
+        
+        // Merge overlapping intervals
+        for i in 1..<sorted.count {
+            let next = sorted[i]
+            
+            if next.startDate < currentEnd {
+                // Overlapping - extend current interval if needed
+                if next.endDate > currentEnd {
+                    currentEnd = next.endDate
+                }
+            } else {
+                // Not overlapping - add current interval to total and start new one
+                totalDuration += currentEnd.timeIntervalSince(currentStart)
+                currentStart = next.startDate
+                currentEnd = next.endDate
+            }
+        }
+        
+        // Add the last interval
+        totalDuration += currentEnd.timeIntervalSince(currentStart)
+        
+        return totalDuration
     }
     
     /// Fetch step count data for the specified date range

@@ -19,6 +19,13 @@ struct MainTabView: View {
             }
             
             NavigationStack {
+                InsightsView()
+            }
+            .tabItem {
+                Label("Insights", systemImage: "lightbulb.fill")
+            }
+            
+            NavigationStack {
                 StravaConnectionView()
             }
             .tabItem {
