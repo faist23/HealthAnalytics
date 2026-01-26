@@ -79,10 +79,10 @@ struct ContentView: View {
                             
                             // Show empty state only if ALL data is empty
                             if viewModel.restingHeartRateData.isEmpty &&
-                               viewModel.hrvData.isEmpty &&
-                               viewModel.sleepData.isEmpty &&
-                               viewModel.stepCountData.isEmpty &&
-                               viewModel.workouts.isEmpty {
+                                viewModel.hrvData.isEmpty &&
+                                viewModel.sleepData.isEmpty &&
+                                viewModel.stepCountData.isEmpty &&
+                                viewModel.workouts.isEmpty {
                                 EmptyStateView()
                             }
                         }
@@ -114,7 +114,7 @@ struct ContentView: View {
 struct RestingHeartRateCard: View {
     let data: [HealthDataPoint]
     let period: TimePeriod
-
+    
     var averageHR: Double {
         guard !data.isEmpty else { return 0 }
         return data.map { $0.value }.reduce(0, +) / Double(data.count)

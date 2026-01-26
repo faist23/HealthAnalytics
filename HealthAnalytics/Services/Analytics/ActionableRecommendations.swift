@@ -38,14 +38,56 @@ struct ActionableRecommendations {
         }
     }
     
-    /// Generates actionable recommendations based on all available insights
     func generateRecommendations(
         trainingLoad: TrainingLoadCalculator.TrainingLoadSummary?,
         recoveryInsights: [CorrelationEngine.RecoveryInsight],
-        trends: [TrendDetector.MetricTrend]
+        trends: [TrendDetector.MetricTrend],
+        injuryRisk: InjuryRiskCalculator.InjuryRiskAssessment?
     ) -> [Recommendation] {
         
         var recommendations: [Recommendation] = []
+        
+        // 0. Injury Risk (Highest Priority)
+        if let risk = injuryRisk {
+            // Only show if moderate or higher to avoid noise
+            if risk.riskLevel != .low {
+                let priority: Recommendation.Priority
+                switch risk.riskLevel {
+                case .veryHigh:
+                    priority = .high
+                case .high:
+                    priority = .high
+                case .moderate:
+                    priority = .medium
+                case .low:
+                    priority = .low
+                }
+                
+                // Format contributing factors properly
+                var actionItems: [String] = [
+                    "Risk Factors:"
+                ]
+                
+                for factor in risk.contributingFactors {
+                    actionItems.append("  • \(factor.description)")
+                }
+                
+                actionItems.append("")
+                actionItems.append("Recommended Actions:")
+                actionItems.append("  • Monitor for pain, soreness, or unusual fatigue")
+                actionItems.append("  • Reduce training intensity if symptoms appear")
+                actionItems.append("  • Ensure adequate recovery between hard sessions")
+                actionItems.append("  • Focus on sleep, nutrition, and stress management")
+                
+                recommendations.append(Recommendation(
+                    priority: priority,
+                    category: .recovery,
+                    title: "\(risk.riskLevel.emoji) \(risk.riskLevel.label)",
+                    message: risk.recommendation,
+                    actionItems: actionItems
+                ))
+            }
+        }
         
         // 1. Check for overtraining/fatigue
         if let load = trainingLoad {
@@ -171,11 +213,11 @@ struct ActionableRecommendations {
 
 // Make Priority hashable for sorting
 extension ActionableRecommendations.Recommendation.Priority: Hashable {
-    var hashValue: Int {
+    func hash(into hasher: inout Hasher) {
         switch self {
-        case .high: return 0
-        case .medium: return 1
-        case .low: return 2
+        case .high: hasher.combine(0)
+        case .medium: hasher.combine(1)
+        case .low: hasher.combine(2)
         }
     }
 }

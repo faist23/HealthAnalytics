@@ -22,7 +22,9 @@ class InsightsViewModel: ObservableObject {
     @Published var trainingLoadSummary: TrainingLoadCalculator.TrainingLoadSummary?
     @Published var metricTrends: [TrendDetector.MetricTrend] = []
     @Published var recommendations: [ActionableRecommendations.Recommendation] = []
-
+    @Published var injuryRisk: InjuryRiskCalculator.InjuryRiskAssessment?
+    
+    private let injuryRiskCalculator = InjuryRiskCalculator()
     private let recommendationEngine = ActionableRecommendations()
     private let trainingLoadCalculator = TrainingLoadCalculator()
     private let trendDetector = TrendDetector()
@@ -71,7 +73,7 @@ class InsightsViewModel: ObservableObject {
                 restingHRData: rhrData,
                 hrvData: hrvData
             )
-
+            
             // HRV vs Performance analysis
             self.hrvPerformanceInsights = correlationEngine.analyzeHRVVsPerformance(
                 hrvData: hrvData,
@@ -84,7 +86,7 @@ class InsightsViewModel: ObservableObject {
                 restingHRData: rhrData,
                 hrvData: hrvData
             )
-
+            
             // Training load analysis
             self.trainingLoadSummary = trainingLoadCalculator.calculateTrainingLoad(
                 healthKitWorkouts: hkWorkouts,
@@ -105,7 +107,7 @@ class InsightsViewModel: ObservableObject {
                 sleepData: try await trendSleep,
                 stepData: try await trendSteps
             )
-
+            
             // Run activity-specific analysis (better than combined)
             self.activityTypeInsights = correlationEngine.analyzeSleepVsPerformanceByActivityType(
                 sleepData: sleep,
@@ -119,12 +121,22 @@ class InsightsViewModel: ObservableObject {
                 healthKitWorkouts: hkWorkouts,
                 stravaActivities: recentActivities
             )
-
-            // Generate actionable recommendations
+            
+            // Injury risk assessment
+            self.injuryRisk = injuryRiskCalculator.calculateInjuryRisk(
+                trainingLoad: trainingLoadSummary,
+                recoveryInsights: recoveryInsights,
+                trends: metricTrends,
+                recentWorkouts: hkWorkouts,
+                stravaActivities: recentActivities
+            )
+            
+            // Generate actionable recommendations (now includes injury risk)
             self.recommendations = recommendationEngine.generateRecommendations(
                 trainingLoad: trainingLoadSummary,
                 recoveryInsights: recoveryInsights,
-                trends: metricTrends
+                trends: metricTrends,
+                injuryRisk: injuryRisk
             )
             
             print("📊 Analysis complete:")

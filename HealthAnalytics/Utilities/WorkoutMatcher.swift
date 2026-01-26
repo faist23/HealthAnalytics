@@ -104,7 +104,7 @@ struct WorkoutMatcher {
         default:
             // For other types, do a string comparison
             return hkType.name.lowercased().contains(stravaType.lowercased()) ||
-                   stravaType.lowercased().contains(hkType.name.lowercased())
+            stravaType.lowercased().contains(hkType.name.lowercased())
         }
     }
 }

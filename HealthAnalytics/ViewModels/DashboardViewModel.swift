@@ -18,7 +18,7 @@ class DashboardViewModel: ObservableObject {
     @Published var workouts: [WorkoutData] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
-    @Published var selectedPeriod: TimePeriod = .month 
+    @Published var selectedPeriod: TimePeriod = .month
     
     private let healthKitManager = HealthKitManager.shared
     

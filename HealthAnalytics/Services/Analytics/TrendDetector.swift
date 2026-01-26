@@ -109,7 +109,7 @@ struct TrendDetector {
     ) -> MetricTrend? {
         
         guard data.count >= 14 else { return nil } // Need at least 2 weeks
-
+        
         // Cap analysis period to 90 days for more relevant trends
         let cappedData = data.count > 90 ? Array(data.suffix(90)) : data
         let dataToAnalyze = cappedData

@@ -39,12 +39,12 @@ struct OnboardingView: View {
             
             // Features list
             VStack(alignment: .leading, spacing: 20) {
-                FeatureRow(icon: "chart.line.uptrend.xyaxis", 
-                          text: "Track performance trends over time")
-                FeatureRow(icon: "brain.head.profile", 
-                          text: "Discover correlations in your data")
-                FeatureRow(icon: "figure.run", 
-                          text: "Optimize training and recovery")
+                FeatureRow(icon: "chart.line.uptrend.xyaxis",
+                           text: "Track performance trends over time")
+                FeatureRow(icon: "brain.head.profile",
+                           text: "Discover correlations in your data")
+                FeatureRow(icon: "figure.run",
+                           text: "Optimize training and recovery")
             }
             .padding()
             

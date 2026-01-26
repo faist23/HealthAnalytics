@@ -600,14 +600,31 @@ struct RecommendationCard: View {
             
             Divider()
             
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 ForEach(recommendation.actionItems, id: \.self) { action in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("•")
-                            .foregroundStyle(priorityColor)
-                        Text(action)
+                    if action.isEmpty {
+                        // Empty line for spacing
+                        Spacer()
+                            .frame(height: 4)
+                    } else if !action.trimmingCharacters(in: .whitespaces).starts(with: "•") {
+                        // Section headers (no bullet)
+                        Text(action.trimmingCharacters(in: .whitespaces))
                             .font(.caption)
+                            .fontWeight(.semibold)
                             .foregroundStyle(.primary)
+                    } else {
+                        // Bullet points
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("•")
+                                .font(.caption)
+                                .foregroundStyle(priorityColor)
+                                .frame(width: 10, alignment: .leading)
+                            
+                            Text(action.trimmingCharacters(in: .whitespaces).dropFirst(2)) // Remove bullet and space
+                                .font(.caption)
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
             }
