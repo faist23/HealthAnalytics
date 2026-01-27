@@ -182,23 +182,29 @@ struct MacroChartCard: View {
             
             Chart {
                 ForEach(recentData) { day in
+                    // Protein line
                     LineMark(
                         x: .value("Date", day.date),
-                        y: .value("Protein", day.totalProtein)
+                        y: .value("Grams", day.totalProtein),
+                        series: .value("Macro", "Protein")
                     )
                     .foregroundStyle(.red)
                     .symbol(.circle)
                     
+                    // Carbs line
                     LineMark(
                         x: .value("Date", day.date),
-                        y: .value("Carbs", day.totalCarbs)
+                        y: .value("Grams", day.totalCarbs),
+                        series: .value("Macro", "Carbs")
                     )
                     .foregroundStyle(.green)
                     .symbol(.square)
                     
+                    // Fat line
                     LineMark(
                         x: .value("Date", day.date),
-                        y: .value("Fat", day.totalFat)
+                        y: .value("Grams", day.totalFat),
+                        series: .value("Macro", "Fat")
                     )
                     .foregroundStyle(.orange)
                     .symbol(.triangle)
