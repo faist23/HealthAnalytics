@@ -9,6 +9,9 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @StateObject private var healthKitManager = HealthKitManager.shared
+    @State private var isRequestingAuth = false
+    
     var body: some View {
         List {
             Section("App") {
@@ -21,17 +24,34 @@ struct SettingsView: View {
             }
             
             Section("Data Sources") {
-                NavigationLink {
-                    Text("HealthKit settings coming soon")
+                Button {
+                    isRequestingAuth = true
+                    Task {
+                        _ = await healthKitManager.requestAuthorization()
+                        isRequestingAuth = false
+                    }
                 } label: {
-                    Label("HealthKit", systemImage: "heart.fill")
+                    HStack {
+                        Label("Re-authorize HealthKit", systemImage: "heart.fill")
+                        Spacer()
+                        if isRequestingAuth {
+                            ProgressView()
+                        }
+                    }
                 }
+                .disabled(isRequestingAuth)
                 
                 NavigationLink {
                     StravaConnectionView()
                 } label: {
                     Label("Strava", systemImage: "bicycle")
                 }
+            }
+            
+            Section("Permissions") {
+                Text("Tap 'Re-authorize HealthKit' to grant access to nutrition data")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Settings")

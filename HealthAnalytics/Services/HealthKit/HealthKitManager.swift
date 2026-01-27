@@ -29,7 +29,16 @@ class HealthKitManager: ObservableObject {
         HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
         HKObjectType.quantityType(forIdentifier: .vo2Max)!,
         HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
-        HKObjectType.workoutType()
+        HKObjectType.workoutType(),
+        
+        // Nutrition types
+        HKObjectType.quantityType(forIdentifier: .dietaryEnergyConsumed)!,
+        HKObjectType.quantityType(forIdentifier: .dietaryProtein)!,
+        HKObjectType.quantityType(forIdentifier: .dietaryCarbohydrates)!,
+        HKObjectType.quantityType(forIdentifier: .dietaryFatTotal)!,
+        HKObjectType.quantityType(forIdentifier: .dietaryFiber)!,
+        HKObjectType.quantityType(forIdentifier: .dietarySugar)!,
+        HKObjectType.quantityType(forIdentifier: .dietaryWater)!
     ]
     
     private init() {
@@ -380,6 +389,129 @@ class HealthKitManager: ObservableObject {
             
             healthStore.execute(query)
         }
+    }
+    
+    // MARK: - Nutrition Data Fetching
+    
+    /// Fetches complete nutrition data for a specific date
+    func fetchDailyNutrition(for date: Date) async -> DailyNutrition {
+        let calendar = Calendar.current
+        let startDate = calendar.startOfDay(for: date)
+        guard let endDate = calendar.date(byAdding: .day, value: 1, to: startDate) else {
+            return DailyNutrition(
+                date: startDate,
+                totalCalories: 0,
+                totalProtein: 0,
+                totalCarbs: 0,
+                totalFat: 0,
+                totalFiber: nil,
+                totalSugar: nil,
+                totalWater: nil,
+                breakfast: nil, lunch: nil, dinner: nil, snacks: nil
+            )
+        }
+        
+        print("📅 Fetching nutrition for \(startDate.formatted(date: .abbreviated, time: .omitted))")
+        
+        // Fetch all nutrition data concurrently - no longer throws
+        let totalCal = await fetchNutritionSum(for: .dietaryEnergyConsumed, startDate: startDate, endDate: endDate, unit: .kilocalorie())
+        let totalPro = await fetchNutritionSum(for: .dietaryProtein, startDate: startDate, endDate: endDate, unit: .gram())
+        let totalCarb = await fetchNutritionSum(for: .dietaryCarbohydrates, startDate: startDate, endDate: endDate, unit: .gram())
+        let totalFat = await fetchNutritionSum(for: .dietaryFatTotal, startDate: startDate, endDate: endDate, unit: .gram())
+        let totalFib = await fetchNutritionSum(for: .dietaryFiber, startDate: startDate, endDate: endDate, unit: .gram())
+        let totalSug = await fetchNutritionSum(for: .dietarySugar, startDate: startDate, endDate: endDate, unit: .gram())
+        let totalH2O = await fetchNutritionSum(for: .dietaryWater, startDate: startDate, endDate: endDate, unit: .liter())
+        
+        if totalCal > 0 {
+            print("   ✅ Found data: \(Int(totalCal)) cal, \(Int(totalPro))g P, \(Int(totalCarb))g C, \(Int(totalFat))g F")
+        }
+        
+        return DailyNutrition(
+            date: startDate,
+            totalCalories: totalCal,
+            totalProtein: totalPro,
+            totalCarbs: totalCarb,
+            totalFat: totalFat,
+            totalFiber: totalFib > 0 ? totalFib : nil,
+            totalSugar: totalSug > 0 ? totalSug : nil,
+            totalWater: totalH2O > 0 ? totalH2O : nil,
+            breakfast: nil,
+            lunch: nil,
+            dinner: nil,
+            snacks: nil
+        )
+    }
+    
+    /// Fetches nutrition data for a date range
+    func fetchNutrition(startDate: Date, endDate: Date) async -> [DailyNutrition] {
+        let calendar = Calendar.current
+        var nutrition: [DailyNutrition] = []
+        
+        var currentDate = calendar.startOfDay(for: startDate)
+        let end = calendar.startOfDay(for: endDate)
+        
+        print("🔄 Fetching nutrition from \(currentDate.formatted(date: .abbreviated, time: .omitted)) to \(end.formatted(date: .abbreviated, time: .omitted))")
+        
+        while currentDate <= end {
+            let dayNutrition = await fetchDailyNutrition(for: currentDate)
+            nutrition.append(dayNutrition)
+            
+            guard let nextDay = calendar.date(byAdding: .day, value: 1, to: currentDate) else { break }
+            currentDate = nextDay
+        }
+        
+        return nutrition
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func fetchNutritionSum(
+        for identifier: HKQuantityTypeIdentifier,
+        startDate: Date,
+        endDate: Date,
+        unit: HKUnit
+    ) async -> Double {
+        guard let quantityType = HKQuantityType.quantityType(forIdentifier: identifier) else {
+            print("⚠️ Nutrition type not available: \(identifier.rawValue)")
+            return 0
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsQuery(
+                quantityType: quantityType,
+                quantitySamplePredicate: predicate,
+                options: .cumulativeSum
+            ) { _, statistics, error in
+                if let error = error {
+                    print("⚠️ Error fetching \(identifier.rawValue): \(error.localizedDescription)")
+                    continuation.resume(returning: 0)
+                    return
+                }
+                
+                let sum = statistics?.sumQuantity()?.doubleValue(for: unit) ?? 0
+                if sum > 0 {
+                    print("✅ Found \(identifier.rawValue): \(String(format: "%.1f", sum)) \(unit)")
+                } else {
+                    print("⚠️ No data for \(identifier.rawValue)")
+                }
+                continuation.resume(returning: sum)
+            }
+            
+            healthStore.execute(query)
+        }
+    }
+    
+    private func fetchNutritionByMeal(
+        startDate: Date,
+        endDate: Date
+    ) async throws -> [MealNutrition] {
+        
+        // Simplified: Just return empty array for now
+        // We'll focus on daily totals first, then add meal breakdown later
+        print("📊 Skipping meal-level data for now - focusing on daily totals")
+        return []
     }
     
 }

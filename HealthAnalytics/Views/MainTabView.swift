@@ -19,6 +19,13 @@ struct MainTabView: View {
             }
             
             NavigationStack {
+                NutritionView()
+            }
+            .tabItem {
+                Label("Nutrition", systemImage: "fork.knife")
+            }
+            
+            NavigationStack {
                 InsightsView()
             }
             .tabItem {

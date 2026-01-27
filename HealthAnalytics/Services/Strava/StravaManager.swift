@@ -92,7 +92,7 @@ class StravaManager: ObservableObject {
             self.tokenExpiresAt = Date(timeIntervalSince1970: TimeInterval(tokenResponse.expiresAt))
             self.athlete = tokenResponse.athlete
             self.isAuthenticated = true
-            print("✅ Successfully authenticated as \(tokenResponse.athlete.fullName)")
+            print("✅ Successfully authenticated as \(tokenResponse.athlete?.fullName ?? "Unknown")")
         }
         
         saveTokensToKeychain()

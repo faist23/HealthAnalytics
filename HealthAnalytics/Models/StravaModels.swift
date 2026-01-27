@@ -16,7 +16,7 @@ struct StravaTokenResponse: Codable {
     let expiresIn: Int
     let refreshToken: String
     let accessToken: String
-    let athlete: StravaAthlete
+    let athlete: StravaAthlete?
     
     enum CodingKeys: String, CodingKey {
         case tokenType = "token_type"
