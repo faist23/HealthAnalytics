@@ -307,7 +307,16 @@ struct NutritionCorrelationEngine {
         // Analyze workouts with previous day's carbs
         var lowCarbWorkouts: [Double] = []
         var highCarbWorkouts: [Double] = []
-        let carbThreshold: Double = 310 // Grams - adjust based on data
+        // Use median carb intake as threshold
+        let allCarbs = nutritionData.filter { $0.isComplete }.map { $0.totalCarbs }.sorted()
+        let carbThreshold: Double
+        if allCarbs.isEmpty {
+            carbThreshold = 250
+        } else {
+            let midIndex = allCarbs.count / 2
+            carbThreshold = allCarbs[midIndex]
+        }
+        print("📊 Using dynamic carb threshold: \(Int(carbThreshold))g (median of your intake)")
         
         // Process Strava activities
         for activity in stravaActivities {
@@ -430,7 +439,16 @@ struct NutritionCorrelationEngine {
         // Analyze workouts with same-day carbs
         var lowCarbWorkouts: [Double] = []
         var highCarbWorkouts: [Double] = []
-        let carbThreshold: Double = 310
+        // Use median carb intake as threshold
+        let allCarbs = nutritionData.filter { $0.isComplete }.map { $0.totalCarbs }.sorted()
+        let carbThreshold: Double
+        if allCarbs.isEmpty {
+            carbThreshold = 250
+        } else {
+            let midIndex = allCarbs.count / 2
+            carbThreshold = allCarbs[midIndex]
+        }
+        print("📊 Using dynamic carb threshold: \(Int(carbThreshold))g (median of your intake)")
         
         // Process Strava activities
         for activity in stravaActivities {
