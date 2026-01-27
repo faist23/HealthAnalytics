@@ -21,9 +21,9 @@ class NutritionViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        // Start from today and go back 7 days to test
+        // Get last 60 days (excluding today since it's incomplete)
         let endDate = Date()
-        let startDate = Calendar.current.date(byAdding: .day, value: -7, to: endDate) ?? endDate
+        let startDate = Calendar.current.date(byAdding: .day, value: -60, to: endDate) ?? endDate
         
         print("📅 Loading nutrition data:")
         print("   Start: \(startDate.formatted(date: .abbreviated, time: .omitted))")

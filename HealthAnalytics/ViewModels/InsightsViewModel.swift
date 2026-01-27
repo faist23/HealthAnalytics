@@ -24,6 +24,7 @@ class InsightsViewModel: ObservableObject {
     @Published var recommendations: [ActionableRecommendations.Recommendation] = []
     @Published var injuryRisk: InjuryRiskCalculator.InjuryRiskAssessment?
     @Published var proteinRecoveryInsight: NutritionCorrelationEngine.ProteinRecoveryInsight?
+    @Published var carbPerformanceInsights: [NutritionCorrelationEngine.CarbPerformanceInsight] = []
 
     private let nutritionCorrelationEngine = NutritionCorrelationEngine()
     private let injuryRiskCalculator = InjuryRiskCalculator()
@@ -38,9 +39,9 @@ class InsightsViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        // Get last 30 days for better correlation analysis
+        // Get last 60 days for better correlation analysis
         let endDate = Date()
-        let startDate = Calendar.current.date(byAdding: .day, value: -30, to: endDate) ?? endDate
+        let startDate = Calendar.current.date(byAdding: .day, value: -60, to: endDate) ?? endDate
         
         do {
             // Fetch HealthKit data
@@ -84,13 +85,22 @@ class InsightsViewModel: ObservableObject {
             )
             
             // Protein vs Recovery analysis
-            let nutritionStartDate = Calendar.current.date(byAdding: .day, value: -30, to: endDate) ?? startDate
-            let nutritionData = await healthKitManager.fetchNutrition(startDate: nutritionStartDate, endDate: endDate)
+            // Exclude today since nutrition data is likely incomplete
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: endDate) ?? endDate
+            let nutritionStartDate = Calendar.current.date(byAdding: .day, value: -30, to: yesterday) ?? startDate
+            let nutritionData = await healthKitManager.fetchNutrition(startDate: nutritionStartDate, endDate: yesterday)
             
             self.proteinRecoveryInsight = nutritionCorrelationEngine.analyzeProteinVsRecovery(
                 nutritionData: nutritionData,
                 restingHRData: rhrData,
                 hrvData: hrvData
+            )
+            
+            // Carbs vs Performance analysis
+            self.carbPerformanceInsights = nutritionCorrelationEngine.analyzeCarbsVsPerformance(
+                nutritionData: nutritionData,
+                healthKitWorkouts: hkWorkouts,
+                stravaActivities: recentActivities
             )
             
             // Recovery status analysis

@@ -7,6 +7,7 @@
 
 
 import Foundation
+import HealthKit
 
 struct NutritionCorrelationEngine {
     
@@ -212,7 +213,7 @@ struct NutritionCorrelationEngine {
         if let current = currentRange, current.range == optimal.range {
             return "Your current protein intake (\(Int(currentAverage))g) is in the optimal range for recovery. Next-day HRV averages \(String(format: "%.1f", optimal.avgHRV ?? 0))ms in this range."
         } else {
-            let direction = currentAverage < optimal.minProtein ? "increase" : "decrease"
+            let _ = currentAverage < optimal.minProtein ? "increase" : "decrease"
             let target = "\(Int(optimal.minProtein))-\(Int(optimal.maxProtein))g"
             
             if let optimalHRV = optimal.avgHRV, let currentHRV = currentRange?.avgHRV {
@@ -222,5 +223,300 @@ struct NutritionCorrelationEngine {
                 return "Your optimal recovery occurs with \(target) protein daily. Current average: \(Int(currentAverage))g."
             }
         }
+    }
+    
+    // MARK: - Carb Timing & Performance Analysis
+    
+    struct CarbPerformanceInsight {
+        let analysisType: AnalysisType
+        let lowCarbPerformance: Double
+        let highCarbPerformance: Double
+        let percentDifference: Double
+        let carbThreshold: Double
+        let sampleSize: Int
+        let confidence: ConfidenceLevel
+        let recommendation: String
+        
+        enum AnalysisType {
+            case preworkout    // Previous day's total carbs
+            case postworkout   // Same day refueling (dinner + snacks)
+            case dailyTotal    // Overall daily carbs
+        }
+        
+        enum ConfidenceLevel {
+            case high, medium, low, insufficient
+            
+            var description: String {
+                switch self {
+                case .high: return "High confidence"
+                case .medium: return "Medium confidence"
+                case .low: return "Low confidence"
+                case .insufficient: return "More data needed"
+                }
+            }
+        }
+    }
+    
+    /// Analyzes correlation between carb intake and workout performance
+    func analyzeCarbsVsPerformance(
+        nutritionData: [DailyNutrition],
+        healthKitWorkouts: [WorkoutData],
+        stravaActivities: [StravaActivity]
+    ) -> [CarbPerformanceInsight] {
+        
+        var insights: [CarbPerformanceInsight] = []
+        
+        // Analysis 1: Previous day carbs vs performance
+        if let preDayInsight = analyzePreDayCarbs(
+            nutritionData: nutritionData,
+            healthKitWorkouts: healthKitWorkouts,
+            stravaActivities: stravaActivities
+        ) {
+            insights.append(preDayInsight)
+        }
+        
+        // Analysis 2: Daily total carbs vs performance
+        if let dailyInsight = analyzeDailyCarbs(
+            nutritionData: nutritionData,
+            healthKitWorkouts: healthKitWorkouts,
+            stravaActivities: stravaActivities
+        ) {
+            insights.append(dailyInsight)
+        }
+        
+        return insights
+    }
+    
+    // MARK: - Helper Methods for Carb Analysis
+    
+    private func analyzePreDayCarbs(
+        nutritionData: [DailyNutrition],
+        healthKitWorkouts: [WorkoutData],
+        stravaActivities: [StravaActivity]
+    ) -> CarbPerformanceInsight? {
+        
+        let calendar = Calendar.current
+        
+        // Create nutrition lookup
+        var nutritionByDate: [Date: DailyNutrition] = [:]
+        for nutrition in nutritionData where nutrition.isComplete {
+            let day = calendar.startOfDay(for: nutrition.date)
+            nutritionByDate[day] = nutrition
+        }
+        
+        // Analyze workouts with previous day's carbs
+        var lowCarbWorkouts: [Double] = []
+        var highCarbWorkouts: [Double] = []
+        let carbThreshold: Double = 310 // Grams - adjust based on data
+        
+        // Process Strava activities
+        for activity in stravaActivities {
+            guard let workoutDate = activity.startDateFormatted else { continue }
+            guard activity.type == "Run" || activity.type == "Ride" else { continue }
+            guard let avgSpeed = activity.averageSpeed, avgSpeed > 0 else { continue }
+            
+            // Get previous day's nutrition
+            let workoutDay = calendar.startOfDay(for: workoutDate)
+            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: workoutDay),
+                  let prevDayNutrition = nutritionByDate[previousDay] else {
+                continue
+            }
+            
+            // Calculate performance metric
+            let performanceMetric: Double
+            if activity.type == "Run" {
+                performanceMetric = avgSpeed * 2.23694 // m/s to mph
+            } else {
+                performanceMetric = activity.averageWatts ?? (avgSpeed * 2.23694)
+            }
+            
+            // Categorize by previous day's carbs
+            if prevDayNutrition.totalCarbs < carbThreshold {
+                lowCarbWorkouts.append(performanceMetric)
+            } else {
+                highCarbWorkouts.append(performanceMetric)
+            }
+        }
+        
+        // Process HealthKit workouts
+        for workout in healthKitWorkouts {
+            let cardioTypes: [HKWorkoutActivityType] = [.running, .cycling, .walking, .hiking]
+            guard cardioTypes.contains(workout.workoutType) else { continue }
+            guard let distance = workout.totalDistance, distance > 0, workout.duration > 0 else { continue }
+            
+            let workoutDay = calendar.startOfDay(for: workout.startDate)
+            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: workoutDay),
+                  let prevDayNutrition = nutritionByDate[previousDay] else {
+                continue
+            }
+            
+            let speedMPS = distance / workout.duration
+            let speedMPH = speedMPS * 2.23694
+            
+            if prevDayNutrition.totalCarbs < carbThreshold {
+                lowCarbWorkouts.append(speedMPH)
+            } else {
+                highCarbWorkouts.append(speedMPH)
+            }
+        }
+        
+        // Need at least 3 workouts in each category
+        print("📊 Carb vs Performance Data:")
+        print("   Low carb (<\(Int(carbThreshold))g): \(lowCarbWorkouts.count) workouts")
+        print("   High carb (≥\(Int(carbThreshold))g): \(highCarbWorkouts.count) workouts")
+        
+        guard lowCarbWorkouts.count >= 3, highCarbWorkouts.count >= 3 else {
+            print("⚠️ Carb analysis: Need 3+ workouts in each carb category")
+            return nil
+        }
+        
+        let avgLow = lowCarbWorkouts.reduce(0, +) / Double(lowCarbWorkouts.count)
+        let avgHigh = highCarbWorkouts.reduce(0, +) / Double(highCarbWorkouts.count)
+        
+        let baseline = max(avgLow, avgHigh)
+        let percentDiff = baseline > 0 ? ((avgHigh - avgLow) / baseline) * 100 : 0
+        
+        let totalSamples = lowCarbWorkouts.count + highCarbWorkouts.count
+        let confidence: CarbPerformanceInsight.ConfidenceLevel
+        if totalSamples >= 15 {
+            confidence = .high
+        } else if totalSamples >= 10 {
+            confidence = .medium
+        } else {
+            confidence = .low
+        }
+        
+        let recommendation: String
+        if abs(percentDiff) < 5 {
+            recommendation = "Previous day's carbs don't show strong correlation with performance. Focus on day-of fueling."
+        } else if percentDiff > 0 {
+            recommendation = "Performance is \(String(format: "%.1f", percentDiff))% better after high-carb days (\(Int(carbThreshold))g+). Prioritize carbs the night before hard workouts."
+        } else {
+            recommendation = "Interestingly, performance is slightly better after lower-carb days. This might indicate other factors are more important, or sample size is still small."
+        }
+        
+        print("📊 Pre-Day Carbs Analysis:")
+        print("   Low carb (<\(Int(carbThreshold))g): \(lowCarbWorkouts.count) workouts, avg \(String(format: "%.1f", avgLow))")
+        print("   High carb (≥\(Int(carbThreshold))g): \(highCarbWorkouts.count) workouts, avg \(String(format: "%.1f", avgHigh))")
+        print("   Difference: \(String(format: "%.1f", percentDiff))%")
+        
+        return CarbPerformanceInsight(
+            analysisType: .preworkout,
+            lowCarbPerformance: avgLow,
+            highCarbPerformance: avgHigh,
+            percentDifference: percentDiff,
+            carbThreshold: carbThreshold,
+            sampleSize: totalSamples,
+            confidence: confidence,
+            recommendation: recommendation
+        )
+    }
+    
+    private func analyzeDailyCarbs(
+        nutritionData: [DailyNutrition],
+        healthKitWorkouts: [WorkoutData],
+        stravaActivities: [StravaActivity]
+    ) -> CarbPerformanceInsight? {
+        
+        let calendar = Calendar.current
+        
+        // Create nutrition lookup
+        var nutritionByDate: [Date: DailyNutrition] = [:]
+        for nutrition in nutritionData where nutrition.isComplete {
+            let day = calendar.startOfDay(for: nutrition.date)
+            nutritionByDate[day] = nutrition
+        }
+        
+        // Analyze workouts with same-day carbs
+        var lowCarbWorkouts: [Double] = []
+        var highCarbWorkouts: [Double] = []
+        let carbThreshold: Double = 310
+        
+        // Process Strava activities
+        for activity in stravaActivities {
+            guard let workoutDate = activity.startDateFormatted else { continue }
+            guard activity.type == "Run" || activity.type == "Ride" else { continue }
+            guard let avgSpeed = activity.averageSpeed, avgSpeed > 0 else { continue }
+            
+            let workoutDay = calendar.startOfDay(for: workoutDate)
+            guard let dayNutrition = nutritionByDate[workoutDay] else { continue }
+            
+            let performanceMetric: Double
+            if activity.type == "Run" {
+                performanceMetric = avgSpeed * 2.23694
+            } else {
+                performanceMetric = activity.averageWatts ?? (avgSpeed * 2.23694)
+            }
+            
+            if dayNutrition.totalCarbs < carbThreshold {
+                lowCarbWorkouts.append(performanceMetric)
+            } else {
+                highCarbWorkouts.append(performanceMetric)
+            }
+        }
+        
+        // Process HealthKit workouts
+        for workout in healthKitWorkouts {
+            let cardioTypes: [HKWorkoutActivityType] = [.running, .cycling]
+            guard cardioTypes.contains(workout.workoutType) else { continue }
+            guard let distance = workout.totalDistance, distance > 0, workout.duration > 0 else { continue }
+            
+            let workoutDay = calendar.startOfDay(for: workout.startDate)
+            guard let dayNutrition = nutritionByDate[workoutDay] else { continue }
+            
+            let speedMPS = distance / workout.duration
+            let speedMPH = speedMPS * 2.23694
+            
+            if dayNutrition.totalCarbs < carbThreshold {
+                lowCarbWorkouts.append(speedMPH)
+            } else {
+                highCarbWorkouts.append(speedMPH)
+            }
+        }
+        
+        // Need at least 3 workouts in each category
+        print("📊 Carb vs Performance Data:")
+        print("   Low carb (<\(Int(carbThreshold))g): \(lowCarbWorkouts.count) workouts")
+        print("   High carb (≥\(Int(carbThreshold))g): \(highCarbWorkouts.count) workouts")
+        
+        guard lowCarbWorkouts.count >= 3, highCarbWorkouts.count >= 3 else {
+            return nil
+        }
+        
+        let avgLow = lowCarbWorkouts.reduce(0, +) / Double(lowCarbWorkouts.count)
+        let avgHigh = highCarbWorkouts.reduce(0, +) / Double(highCarbWorkouts.count)
+        
+        let baseline = max(avgLow, avgHigh)
+        let percentDiff = baseline > 0 ? ((avgHigh - avgLow) / baseline) * 100 : 0
+        
+        let totalSamples = lowCarbWorkouts.count + highCarbWorkouts.count
+        let confidence: CarbPerformanceInsight.ConfidenceLevel
+        if totalSamples >= 15 {
+            confidence = .high
+        } else if totalSamples >= 10 {
+            confidence = .medium
+        } else {
+            confidence = .low
+        }
+        
+        let recommendation: String
+        if abs(percentDiff) < 5 {
+            recommendation = "Same-day carbs show minimal correlation with performance. Day-of fueling may be less critical than training status."
+        } else if percentDiff > 0 {
+            recommendation = "Performance improves \(String(format: "%.1f", percentDiff))% on days with \(Int(carbThreshold))g+ carbs. Ensure adequate fueling on workout days."
+        } else {
+            recommendation = "Lower-carb days show slightly better performance. This may indicate adaptation or other confounding factors."
+        }
+        
+        return CarbPerformanceInsight(
+            analysisType: .dailyTotal,
+            lowCarbPerformance: avgLow,
+            highCarbPerformance: avgHigh,
+            percentDifference: percentDiff,
+            carbThreshold: carbThreshold,
+            sampleSize: totalSamples,
+            confidence: confidence,
+            recommendation: recommendation
+        )
     }
 }

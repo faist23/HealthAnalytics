@@ -118,6 +118,21 @@ struct InsightsView: View {
                         ProteinRecoveryCard(insight: proteinInsight)
                     }
                     
+                    // Carbs & Performance
+                    if !viewModel.carbPerformanceInsights.isEmpty {
+                        Divider()
+                            .padding(.vertical)
+                        
+                        Text("Carbs & Performance")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        ForEach(viewModel.carbPerformanceInsights, id: \.analysisType) { insight in
+                            CarbPerformanceCard(insight: insight)
+                        }
+                    }
+                    
                     // Activity-specific insights (when enough data)
                     if !viewModel.activityTypeInsights.isEmpty {
                         Divider()
@@ -769,6 +784,114 @@ struct ProteinRangeRow: View {
         .padding(.horizontal, 8)
         .background(isOptimal ? Color.green.opacity(0.1) : Color.clear)
         .cornerRadius(6)
+    }
+}
+
+struct CarbPerformanceCard: View {
+    let insight: NutritionCorrelationEngine.CarbPerformanceInsight
+    
+    var title: String {
+        switch insight.analysisType {
+        case .preworkout: return "Previous Day Carbs"
+        case .postworkout: return "Post-Workout Refueling"
+        case .dailyTotal: return "Same-Day Carbs"
+        }
+    }
+    
+    var icon: String {
+        switch insight.analysisType {
+        case .preworkout: return "moon.fill"
+        case .postworkout: return "clock.arrow.circlepath"
+        case .dailyTotal: return "calendar"
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(.green)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                    
+                    Text("\(insight.sampleSize) workouts analyzed")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                Text(insight.confidence.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            // Performance comparison
+            HStack(spacing: 30) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("<\(Int(insight.carbThreshold))g carbs")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(String(format: "%.1f", insight.lowCarbPerformance))
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                }
+                
+                Image(systemName: "arrow.right")
+                    .foregroundStyle(.secondary)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("≥\(Int(insight.carbThreshold))g carbs")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(String(format: "%.1f", insight.highCarbPerformance))
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(insight.percentDifference > 0 ? .green : .primary)
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(8)
+            
+            // Difference badge
+            if abs(insight.percentDifference) >= 5 {
+                HStack {
+                    Image(systemName: insight.percentDifference > 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                        .foregroundStyle(insight.percentDifference > 0 ? .green : .orange)
+                    
+                    Text("\(String(format: "%.1f", abs(insight.percentDifference)))% \(insight.percentDifference > 0 ? "better" : "worse") with higher carbs")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                .padding(.horizontal)
+            }
+            
+            // Recommendation
+            Text(insight.recommendation)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding()
+                .background(Color.green.opacity(0.1))
+                .cornerRadius(8)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+// Make AnalysisType Identifiable
+extension NutritionCorrelationEngine.CarbPerformanceInsight.AnalysisType: Identifiable {
+    var id: String {
+        switch self {
+        case .preworkout: return "preworkout"
+        case .postworkout: return "postworkout"
+        case .dailyTotal: return "dailyTotal"
+        }
     }
 }
 
