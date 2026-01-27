@@ -104,6 +104,20 @@ struct InsightsView: View {
                         }
                     }
                     
+                    // Protein & Recovery
+                    if let proteinInsight = viewModel.proteinRecoveryInsight,
+                       proteinInsight.confidence != .insufficient {
+                        Divider()
+                            .padding(.vertical)
+                        
+                        Text("Protein & Recovery")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        ProteinRecoveryCard(insight: proteinInsight)
+                    }
+                    
                     // Activity-specific insights (when enough data)
                     if !viewModel.activityTypeInsights.isEmpty {
                         Divider()
@@ -636,6 +650,125 @@ struct RecommendationCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(priorityColor.opacity(0.3), lineWidth: 1)
         )
+    }
+}
+
+struct ProteinRecoveryCard: View {
+    let insight: NutritionCorrelationEngine.ProteinRecoveryInsight
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            // Header
+            HStack {
+                Image(systemName: "fork.knife")
+                    .font(.title2)
+                    .foregroundStyle(.red)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Protein Optimization")
+                        .font(.headline)
+                    
+                    Text("Current avg: \(Int(insight.currentAverage))g/day")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                Text(insight.confidence.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            // Recommendation
+            Text(insight.recommendation)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .padding()
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(8)
+            
+            // Protein Ranges
+            if !insight.proteinRanges.isEmpty {
+                Divider()
+                
+                Text("Recovery by Protein Intake")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                VStack(spacing: 8) {
+                    ForEach(insight.proteinRanges, id: \.range) { range in
+                        ProteinRangeRow(
+                            range: range,
+                            isOptimal: range.range == insight.optimalProteinRange?.range
+                        )
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct ProteinRangeRow: View {
+    let range: NutritionCorrelationEngine.ProteinRecoveryInsight.ProteinRange
+    let isOptimal: Bool
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Range label
+            Text(range.range)
+                .font(.caption)
+                .fontWeight(isOptimal ? .bold : .regular)
+                .foregroundStyle(isOptimal ? .green : .primary)
+                .frame(width: 80, alignment: .leading)
+            
+            // HRV indicator
+            if let hrv = range.avgHRV {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("HRV")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("\(Int(hrv))ms")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                .frame(width: 60)
+            }
+            
+            // RHR indicator
+            if let rhr = range.avgRHR {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("RHR")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("\(Int(rhr))bpm")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                .frame(width: 60)
+            }
+            
+            Spacer()
+            
+            // Sample size
+            Text("\(range.sampleSize)d")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            // Optimal badge
+            if isOptimal {
+                Image(systemName: "star.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(isOptimal ? Color.green.opacity(0.1) : Color.clear)
+        .cornerRadius(6)
     }
 }
 

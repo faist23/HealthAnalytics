@@ -23,7 +23,9 @@ class InsightsViewModel: ObservableObject {
     @Published var metricTrends: [TrendDetector.MetricTrend] = []
     @Published var recommendations: [ActionableRecommendations.Recommendation] = []
     @Published var injuryRisk: InjuryRiskCalculator.InjuryRiskAssessment?
-    
+    @Published var proteinRecoveryInsight: NutritionCorrelationEngine.ProteinRecoveryInsight?
+
+    private let nutritionCorrelationEngine = NutritionCorrelationEngine()
     private let injuryRiskCalculator = InjuryRiskCalculator()
     private let recommendationEngine = ActionableRecommendations()
     private let trainingLoadCalculator = TrainingLoadCalculator()
@@ -79,6 +81,16 @@ class InsightsViewModel: ObservableObject {
                 hrvData: hrvData,
                 healthKitWorkouts: hkWorkouts,
                 stravaActivities: recentActivities
+            )
+            
+            // Protein vs Recovery analysis
+            let nutritionStartDate = Calendar.current.date(byAdding: .day, value: -30, to: endDate) ?? startDate
+            let nutritionData = await healthKitManager.fetchNutrition(startDate: nutritionStartDate, endDate: endDate)
+            
+            self.proteinRecoveryInsight = nutritionCorrelationEngine.analyzeProteinVsRecovery(
+                nutritionData: nutritionData,
+                restingHRData: rhrData,
+                hrvData: hrvData
             )
             
             // Recovery status analysis
