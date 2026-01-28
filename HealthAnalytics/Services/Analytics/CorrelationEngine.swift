@@ -120,18 +120,37 @@ class CorrelationEngine {
             }
         }
         
-        // Process matched workouts (prefer Strava)
-        for (_, stravaActivity) in matched {
-            if let metric = processStravaActivity(stravaActivity, sleepByDate: sleepByDate, calendar: calendar) {
-                let type = stravaActivity.type
-                if performanceByType[type] == nil {
-                    performanceByType[type] = (good: [], poor: [])
+        // Process matched workouts (prefer workout with power data)
+        for matchedPair in matched {
+            let bestWorkout = WorkoutMatcher.selectBestWorkout(from: matchedPair)
+            
+            switch bestWorkout {
+            case .healthKit(let workout):
+                if let metric = processHealthKitWorkout(workout, sleepByDate: sleepByDate, calendar: calendar) {
+                    let type = workout.workoutType.name
+                    if performanceByType[type] == nil {
+                        performanceByType[type] = (good: [], poor: [])
+                    }
+                    
+                    if metric.sleepHours >= 7.0 {
+                        performanceByType[type]?.good.append(metric.performance)
+                    } else {
+                        performanceByType[type]?.poor.append(metric.performance)
+                    }
                 }
                 
-                if metric.sleepHours >= 7.0 {
-                    performanceByType[type]?.good.append(metric.performance)
-                } else {
-                    performanceByType[type]?.poor.append(metric.performance)
+            case .strava(let stravaActivity):
+                if let metric = processStravaActivity(stravaActivity, sleepByDate: sleepByDate, calendar: calendar) {
+                    let type = stravaActivity.type
+                    if performanceByType[type] == nil {
+                        performanceByType[type] = (good: [], poor: [])
+                    }
+                    
+                    if metric.sleepHours >= 7.0 {
+                        performanceByType[type]?.good.append(metric.performance)
+                    } else {
+                        performanceByType[type]?.poor.append(metric.performance)
+                    }
                 }
             }
         }
@@ -232,13 +251,27 @@ class CorrelationEngine {
             }
         }
         
-        // Process matched workouts (prefer Strava data as it's usually more detailed)
-        for (_, stravaActivity) in matched {
-            if let performanceMetric = processStravaActivity(stravaActivity, sleepByDate: sleepByDate, calendar: calendar) {
-                if performanceMetric.sleepHours >= 7.0 {
-                    goodSleepWorkouts.append(performanceMetric.performance)
-                } else {
-                    poorSleepWorkouts.append(performanceMetric.performance)
+        // Process matched workouts (prefer workout with power data)
+        for matchedPair in matched {
+            let bestWorkout = WorkoutMatcher.selectBestWorkout(from: matchedPair)
+            
+            switch bestWorkout {
+            case .healthKit(let workout):
+                if let metric = processHealthKitWorkout(workout, sleepByDate: sleepByDate, calendar: calendar) {
+                    if metric.sleepHours >= 7.0 {
+                        goodSleepWorkouts.append(metric.performance)
+                    } else {
+                        poorSleepWorkouts.append(metric.performance)
+                    }
+                }
+                
+            case .strava(let stravaActivity):
+                if let metric = processStravaActivity(stravaActivity, sleepByDate: sleepByDate, calendar: calendar) {
+                    if metric.sleepHours >= 7.0 {
+                        goodSleepWorkouts.append(metric.performance)
+                    } else {
+                        poorSleepWorkouts.append(metric.performance)
+                    }
                 }
             }
         }

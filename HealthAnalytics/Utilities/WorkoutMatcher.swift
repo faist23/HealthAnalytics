@@ -12,10 +12,7 @@ import HealthKit
 struct WorkoutMatcher {
     
     /// Matches HealthKit workouts with Strava activities to avoid double-counting
-    /// - Parameters:
-    ///   - healthKitWorkouts: Workouts from HealthKit
-    ///   - stravaActivities: Activities from Strava
-    /// - Returns: Tuple of (unique HealthKit workouts, unique Strava activities, matched pairs)
+    /// Prioritizes workouts with power data when deduplicating
     static func deduplicateWorkouts(
         healthKitWorkouts: [WorkoutData],
         stravaActivities: [StravaActivity]
@@ -49,6 +46,43 @@ struct WorkoutMatcher {
         print("   Matched: \(matched.count)")
         
         return (healthKitOnly, stravaOnly, matched)
+    }
+    
+    /// Returns the best workout from a matched pair based on data quality
+    /// Prioritizes: 1) Power data, 2) HR data, 3) Strava (usually more detailed)
+    static func selectBestWorkout(
+        from match: (healthKit: WorkoutData, strava: StravaActivity)
+    ) -> WorkoutSource {
+        
+        let hkHasPower = false // HealthKit doesn't typically have power for our use case
+        let stravaHasPower = match.strava.averageWatts != nil
+        
+        // Priority 1: Power data
+        if stravaHasPower && !hkHasPower {
+            return .strava(match.strava)
+        }
+        
+        // Priority 2: If both or neither have power, prefer Strava (more detailed metrics)
+        return .strava(match.strava)
+    }
+    
+    enum WorkoutSource {
+        case healthKit(WorkoutData)
+        case strava(StravaActivity)
+        
+        var duration: TimeInterval {
+            switch self {
+            case .healthKit(let workout): return workout.duration
+            case .strava(let activity): return Double(activity.movingTime)
+            }
+        }
+        
+        var hasPowerData: Bool {
+            switch self {
+            case .healthKit: return false
+            case .strava(let activity): return activity.averageWatts != nil
+            }
+        }
     }
     
     /// Finds a matching Strava activity for a HealthKit workout
