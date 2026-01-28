@@ -28,6 +28,7 @@ class HealthKitManager: ObservableObject {
         HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
         HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
         HKObjectType.quantityType(forIdentifier: .vo2Max)!,
+        HKObjectType.quantityType(forIdentifier: .cyclingPower)!,
         HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
         HKObjectType.workoutType(),
         
@@ -361,34 +362,91 @@ class HealthKitManager: ObservableObject {
                     return
                 }
                 
-                let workoutData = workouts.map { workout in
-                    // Handle energy burned for iOS 18+
-                    var energyBurned: Double?
-                    if #available(iOS 18.0, *) {
-                        if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
-                           let statistics = workout.statistics(for: energyType),
-                           let sum = statistics.sumQuantity() {
-                            energyBurned = sum.doubleValue(for: .kilocalorie())
-                        }
-                    } else {
-                        energyBurned = workout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
-                    }
+                // We need to fetch power data for each workout
+                let group = DispatchGroup()
+                var workoutDataArray: [WorkoutData] = []
+                
+                for workout in workouts {
+                    group.enter()
                     
-                    return WorkoutData(
-                        workoutType: workout.workoutActivityType,
-                        startDate: workout.startDate,
-                        endDate: workout.endDate,
-                        duration: workout.duration,
-                        totalEnergyBurned: energyBurned,
-                        totalDistance: workout.totalDistance?.doubleValue(for: .meter())
-                    )
+                    // Fetch average power for this workout
+                    self.fetchAveragePower(for: workout) { averagePower in
+                        // Handle energy burned for iOS 18+
+                        var energyBurned: Double?
+                        if #available(iOS 18.0, *) {
+                            if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
+                               let statistics = workout.statistics(for: energyType),
+                               let sum = statistics.sumQuantity() {
+                                energyBurned = sum.doubleValue(for: .kilocalorie())
+                            }
+                        } else {
+                            energyBurned = workout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
+                        }
+                        
+                        let data = WorkoutData(
+                            workoutType: workout.workoutActivityType,
+                            startDate: workout.startDate,
+                            endDate: workout.endDate,
+                            duration: workout.duration,
+                            totalEnergyBurned: energyBurned,
+                            totalDistance: workout.totalDistance?.doubleValue(for: .meter()),
+                            averagePower: averagePower
+                        )
+                        
+                        workoutDataArray.append(data)
+                        group.leave()
+                    }
                 }
                 
-                continuation.resume(returning: workoutData)
+                group.notify(queue: .main) {
+                    // Sort by start date (descending) to match original behavior
+                    let sortedData = workoutDataArray.sorted { $0.startDate > $1.startDate }
+                    continuation.resume(returning: sortedData)
+                }
             }
             
             healthStore.execute(query)
         }
+    }
+    
+    // MARK: - Power Data Fetching
+    
+    /// Fetches average power for a specific workout
+    private func fetchAveragePower(for workout: HKWorkout, completion: @escaping (Double?) -> Void) {
+        guard let powerType = HKQuantityType.quantityType(forIdentifier: .cyclingPower) else {
+            completion(nil)
+            return
+        }
+        
+        let predicate = HKQuery.predicateForSamples(
+            withStart: workout.startDate,
+            end: workout.endDate,
+            options: .strictStartDate
+        )
+        
+        let query = HKStatisticsQuery(
+            quantityType: powerType,
+            quantitySamplePredicate: predicate,
+            options: .discreteAverage
+        ) { _, statistics, error in
+            
+            if let error = error {
+                print("⚠️ Error fetching power data: \(error.localizedDescription)")
+                completion(nil)
+                return
+            }
+            
+            guard let statistics = statistics,
+                  let averageQuantity = statistics.averageQuantity() else {
+                completion(nil)
+                return
+            }
+            
+            let averagePower = averageQuantity.doubleValue(for: .watt())
+            completion(averagePower)
+        }
+        
+        healthStore.execute(query)
     }
     
     // MARK: - Nutrition Data Fetching

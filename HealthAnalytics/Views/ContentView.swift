@@ -555,7 +555,16 @@ struct WorkoutRow: View {
                     .font(.subheadline)
                     .fontWeight(.medium)
                 
-                if let distance = workout.formattedDistance {
+                // Show power if available, otherwise show distance or calories
+                if let power = workout.formattedPower {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                            .font(.caption2)
+                        Text(power)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                } else if let distance = workout.formattedDistance {
                     Text(distance)
                         .font(.caption)
                         .foregroundStyle(.secondary)

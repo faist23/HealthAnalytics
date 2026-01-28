@@ -1,4 +1,13 @@
+//
+//  UnifiedWorkoutsView.swift
+//  HealthAnalytics
+//
+//  Created by Craig Faist on 1/28/26.
+//
+
+
 import SwiftUI
+import Combine
 
 struct UnifiedWorkoutsView: View {
     @StateObject private var viewModel = UnifiedWorkoutsViewModel()

@@ -1,5 +1,13 @@
+//
+//  TimelineView.swift
+//  HealthAnalytics
+//
+//  Created by Craig Faist on 1/28/26.
+//
+
 import SwiftUI
 import Charts
+import Combine
 
 struct TimelineView: View {
     @StateObject private var viewModel = TimelineViewModel()
@@ -388,111 +396,118 @@ struct TimelineChart: View {
     let workouts: [WorkoutData]
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Metrics Over Time")
                 .font(.headline)
+                .padding(.horizontal)
             
-            Chart {
-                ForEach(data) { point in
-                    // RHR
-                    if selectedMetrics.contains(.rhr), let rhr = point.restingHR {
-                        LineMark(
-                            x: .value("Date", point.date),
-                            y: .value("RHR", normalizeRHR(rhr)),
-                            series: .value("Metric", "RHR")
-                        )
-                        .foregroundStyle(TimelineMetric.rhr.color.gradient)
-                        .lineStyle(StrokeStyle(lineWidth: 2))
-                    }
-                    
-                    // HRV
-                    if selectedMetrics.contains(.hrv), let hrv = point.hrv {
-                        LineMark(
-                            x: .value("Date", point.date),
-                            y: .value("HRV", normalizeHRV(hrv)),
-                            series: .value("Metric", "HRV")
-                        )
-                        .foregroundStyle(TimelineMetric.hrv.color.gradient)
-                        .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
-                    }
-                    
-                    // Sleep
-                    if selectedMetrics.contains(.sleep), let sleep = point.sleepHours {
-                        LineMark(
-                            x: .value("Date", point.date),
-                            y: .value("Sleep", normalizeSleep(sleep)),
-                            series: .value("Metric", "Sleep")
-                        )
-                        .foregroundStyle(TimelineMetric.sleep.color.gradient)
-                        .lineStyle(StrokeStyle(lineWidth: 2, dash: [2, 4]))
-                    }
-                    
-                    // Steps
-                    if selectedMetrics.contains(.steps), let steps = point.steps {
-                        LineMark(
-                            x: .value("Date", point.date),
-                            y: .value("Steps", normalizeSteps(steps)),
-                            series: .value("Metric", "Steps")
-                        )
-                        .foregroundStyle(TimelineMetric.steps.color.gradient)
-                        .lineStyle(StrokeStyle(lineWidth: 2, dash: [8, 2]))
-                    }
-                }
-                
-                // Workout markers
-                ForEach(workouts) { workout in
-                    PointMark(
-                        x: .value("Date", Calendar.current.startOfDay(for: workout.startDate)),
-                        y: .value("Value", 50)
-                    )
-                    .foregroundStyle(.orange)
-                    .symbol(.circle)
-                    .symbolSize(60)
-                }
-            }
-            .frame(height: 300)
-            .chartYScale(domain: 0...100)
-            .chartYAxis {
-                AxisMarks(position: .leading, values: [0, 50, 100])
-            }
-            .chartXAxis {
-                AxisMarks { value in
-                    if let date = value.as(Date.self) {
-                        AxisValueLabel {
-                            Text(date, format: .dateTime.month(.abbreviated).day())
-                                .font(.caption2)
+            if selectedMetrics.isEmpty {
+                Text("Select metrics above to display")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(height: 200)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+            } else {
+                VStack(spacing: 20) {
+                    // Separate chart for each metric
+                    ForEach(Array(selectedMetrics).sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { metric in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Image(systemName: metric.icon)
+                                    .foregroundStyle(metric.color)
+                                Text(metric.rawValue)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Spacer()
+                                Text(averageValue(for: metric))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal)
+                            
+                            Chart {
+                                ForEach(data) { point in
+                                    if let value = getValue(from: point, for: metric) {
+                                        LineMark(
+                                            x: .value("Date", point.date),
+                                            y: .value("Value", value)
+                                        )
+                                        .foregroundStyle(metric.color.gradient)
+                                        .lineStyle(StrokeStyle(lineWidth: 2.5))
+                                        
+                                        AreaMark(
+                                            x: .value("Date", point.date),
+                                            y: .value("Value", value)
+                                        )
+                                        .foregroundStyle(metric.color.opacity(0.1).gradient)
+                                    }
+                                }
+                            }
+                            .frame(height: 100)
+                            .chartYAxis {
+                                AxisMarks(position: .leading) { value in
+                                    AxisValueLabel {
+                                        if let doubleValue = value.as(Double.self) {
+                                            Text(formatValue(doubleValue, for: metric))
+                                                .font(.caption2)
+                                        }
+                                    }
+                                    AxisGridLine()
+                                }
+                            }
+                            .chartXAxis {
+                                AxisMarks { value in
+                                    if let date = value.as(Date.self) {
+                                        AxisValueLabel {
+                                            Text(date, format: .dateTime.month(.abbreviated).day())
+                                                .font(.caption2)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
                         }
                     }
                 }
             }
         }
-        .padding(20)
+        .padding(.vertical)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 15, y: 8)
+                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
         )
     }
     
-    private func normalizeRHR(_ rhr: Double) -> Double {
-        // Normalize RHR: 40-80 bpm -> 0-100 (inverted)
-        let normalized = (80 - rhr) / 40 * 100
-        return min(max(normalized, 0), 100)
+    private func getValue(from point: TimelineDataPoint, for metric: TimelineMetric) -> Double? {
+        switch metric {
+        case .rhr: return point.restingHR
+        case .hrv: return point.hrv
+        case .sleep: return point.sleepHours
+        case .steps: return point.steps
+        case .weight: return point.weight
+        }
     }
     
-    private func normalizeHRV(_ hrv: Double) -> Double {
-        // Normalize HRV: 0-100 ms -> 0-100
-        return min(max(hrv, 0), 100)
+    private func averageValue(for metric: TimelineMetric) -> String {
+        let values = data.compactMap { getValue(from: $0, for: metric) }
+        guard !values.isEmpty else { return "No data" }
+        let avg = values.reduce(0, +) / Double(values.count)
+        return "Avg: \(formatValue(avg, for: metric))"
     }
     
-    private func normalizeSleep(_ sleep: Double) -> Double {
-        // Normalize Sleep: 0-10 hours -> 0-100
-        return min(max((sleep / 10) * 100, 0), 100)
-    }
-    
-    private func normalizeSteps(_ steps: Double) -> Double {
-        // Normalize Steps: 0-20000 -> 0-100
-        return min(max((steps / 20000) * 100, 0), 100)
+    private func formatValue(_ value: Double, for metric: TimelineMetric) -> String {
+        switch metric {
+        case .rhr, .hrv:
+            return "\(Int(value))"
+        case .sleep:
+            return String(format: "%.1f", value)
+        case .steps:
+            return "\(Int(value / 1000))k"
+        case .weight:
+            return String(format: "%.1f", value)
+        }
     }
 }
 

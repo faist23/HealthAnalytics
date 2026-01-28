@@ -5,14 +5,6 @@
 //  Created by Craig Faist on 1/28/26.
 //
 
-
-//
-//  RecoveryDashboardView.swift
-//  HealthAnalytics
-//
-//  Created by Craig Faist on 1/28/26.
-//
-
 import SwiftUI
 import Charts
 
@@ -22,9 +14,9 @@ struct RecoveryDashboardView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Today's Readiness Card (Hero)
-                if let today = viewModel.recoveryData.last {
-                    TodayReadinessCard(data: today)
+                // Today's Readiness Card (Hero) - Use yesterday's data since today is incomplete
+                if let yesterday = viewModel.recoveryData.dropLast().last {
+                    TodayReadinessCard(data: yesterday)
                         .transition(.scale.combined(with: .opacity))
                 }
                 
@@ -198,7 +190,7 @@ struct TodayReadinessCard: View {
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 20, y: 10)
+                .shadow(color: .black.opacity(0.1), radius: 20, y: 10)
         )
     }
     
@@ -254,36 +246,41 @@ struct RecoveryMetricsChart: View {
     let data: [DailyRecoveryData]
     let period: TimePeriod
     
-    @State private var selectedMetrics: Set<MetricType> = [.readiness, .hrv, .rhr]
+    @State private var selectedMetrics: Set<MetricType> = [.hrv, .rhr, .sleep]
     
     enum MetricType: String, CaseIterable, Identifiable {
-        case readiness = "Readiness"
         case hrv = "HRV"
         case rhr = "RHR"
         case sleep = "Sleep"
-        case load = "Load"
         
         var id: String { rawValue }
         
         var color: Color {
             switch self {
-            case .readiness: return .blue
             case .hrv: return .green
             case .rhr: return .red
             case .sleep: return .purple
-            case .load: return .orange
             }
         }
         
         var icon: String {
             switch self {
-            case .readiness: return "gauge.with.dots.needle.67percent"
             case .hrv: return "waveform.path.ecg"
             case .rhr: return "heart.fill"
             case .sleep: return "bed.double.fill"
-            case .load: return "figure.run"
             }
         }
+    }
+    
+    // Calculate averages for normalization
+    var hrvAvg: Double {
+        let values = data.compactMap { $0.hrv }.filter { $0 > 0 }
+        return values.isEmpty ? 50 : values.reduce(0, +) / Double(values.count)
+    }
+    
+    var rhrAvg: Double {
+        let values = data.compactMap { $0.restingHR }.filter { $0 > 0 }
+        return values.isEmpty ? 60 : values.reduce(0, +) / Double(values.count)
     }
     
     var body: some View {
@@ -319,73 +316,138 @@ struct RecoveryMetricsChart: View {
                 .padding(.horizontal)
             }
             
-            // Chart
-            Chart {
-                ForEach(data) { day in
-                    if selectedMetrics.contains(.readiness), let score = day.readinessScore {
-                        LineMark(
-                            x: .value("Date", day.date),
-                            y: .value("Readiness", score)
-                        )
-                        .foregroundStyle(MetricType.readiness.color.gradient)
-                        .lineStyle(StrokeStyle(lineWidth: 3))
-                        .symbol(.circle)
-                        .symbolSize(40)
-                    }
-                    
-                    if selectedMetrics.contains(.hrv), let hrv = day.hrv {
-                        LineMark(
-                            x: .value("Date", day.date),
-                            y: .value("HRV", normalizeHRV(hrv))
-                        )
-                        .foregroundStyle(MetricType.hrv.color.gradient)
-                        .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
-                    }
-                    
-                    if selectedMetrics.contains(.rhr), let rhr = day.restingHR {
-                        LineMark(
-                            x: .value("Date", day.date),
-                            y: .value("RHR", normalizeRHR(rhr))
-                        )
-                        .foregroundStyle(MetricType.rhr.color.gradient)
-                        .lineStyle(StrokeStyle(lineWidth: 2, dash: [2, 4]))
-                    }
-                }
-            }
-            .frame(height: 200)
-            .chartYScale(domain: 0...100)
-            .chartYAxis {
-                AxisMarks(position: .leading, values: [0, 25, 50, 75, 100])
-            }
-            .chartXAxis {
-                AxisMarks(values: .stride(by: period == .week ? .day : .day, count: period == .week ? 1 : period == .month ? 5 : 15)) { value in
-                    if let date = value.as(Date.self) {
-                        AxisValueLabel {
-                            Text(date, format: period == .week ? .dateTime.month(.abbreviated).day() : .dateTime.month(.abbreviated))
-                                .font(.caption2)
+            // Chart - show each metric separately for clarity
+            if selectedMetrics.isEmpty {
+                Text("Select metrics to display")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(height: 200)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+            } else {
+                VStack(spacing: 16) {
+                    ForEach(Array(selectedMetrics).sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { metric in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Image(systemName: metric.icon)
+                                    .font(.caption)
+                                    .foregroundStyle(metric.color)
+                                Text(metric.rawValue)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Spacer()
+                                Text(averageText(for: metric))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal)
+                            
+                            Chart {
+                                ForEach(data.filter { hasValue(for: $0, metric: metric) }) { day in
+                                    if let value = getValue(for: day, metric: metric) {
+                                        LineMark(
+                                            x: .value("Date", day.date),
+                                            y: .value("Value", value)
+                                        )
+                                        .foregroundStyle(metric.color)
+                                        .lineStyle(StrokeStyle(lineWidth: 2.5))
+                                        .symbol(Circle().strokeBorder(lineWidth: 2))
+                                        .symbolSize(40)
+                                        
+                                        AreaMark(
+                                            x: .value("Date", day.date),
+                                            y: .value("Value", value)
+                                        )
+                                        .foregroundStyle(metric.color.opacity(0.1))
+                                    }
+                                }
+                                
+                                // Baseline reference
+                                if metric == .hrv || metric == .rhr {
+                                    RuleMark(y: .value("Average", getBaseline(for: metric)))
+                                        .foregroundStyle(.gray.opacity(0.3))
+                                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                                }
+                            }
+                            .frame(height: 80)
+                            .chartYAxis {
+                                AxisMarks(position: .leading) { value in
+                                    AxisValueLabel {
+                                        if let doubleValue = value.as(Double.self) {
+                                            Text(formatValue(doubleValue, for: metric))
+                                                .font(.caption2)
+                                        }
+                                    }
+                                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                                        .foregroundStyle(.gray.opacity(0.2))
+                                }
+                            }
+                            .chartXAxis {
+                                AxisMarks { value in
+                                    if let date = value.as(Date.self) {
+                                        AxisValueLabel {
+                                            Text(date, format: .dateTime.month(.abbreviated).day())
+                                                .font(.caption2)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
                         }
                     }
                 }
             }
-            .padding()
         }
+        .padding(.vertical)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 15, y: 8)
+                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
         )
     }
     
-    private func normalizeHRV(_ hrv: Double) -> Double {
-        // Normalize HRV to 0-100 scale (typical range 20-100ms)
-        return min(max((hrv / 100.0) * 100, 0), 100)
+    private func hasValue(for day: DailyRecoveryData, metric: MetricType) -> Bool {
+        switch metric {
+        case .hrv: return day.hrv != nil && day.hrv! > 0
+        case .rhr: return day.restingHR != nil && day.restingHR! > 0
+        case .sleep: return day.sleepHours != nil && day.sleepHours! > 0
+        }
     }
     
-    private func normalizeRHR(_ rhr: Double) -> Double {
-        // Normalize RHR to 0-100 scale (inverted: lower is better)
-        // Typical range: 40-80 bpm
-        let normalized = (80 - rhr) / 40 * 100
-        return min(max(normalized, 0), 100)
+    private func getValue(for day: DailyRecoveryData, metric: MetricType) -> Double? {
+        switch metric {
+        case .hrv: return day.hrv
+        case .rhr: return day.restingHR
+        case .sleep: return day.sleepHours
+        }
+    }
+    
+    private func getBaseline(for metric: MetricType) -> Double {
+        switch metric {
+        case .hrv: return hrvAvg
+        case .rhr: return rhrAvg
+        case .sleep: return 7.5
+        }
+    }
+    
+    private func averageText(for metric: MetricType) -> String {
+        switch metric {
+        case .hrv: return "Avg: \(Int(hrvAvg)) ms"
+        case .rhr: return "Avg: \(Int(rhrAvg)) bpm"
+        case .sleep:
+            let values = data.compactMap { $0.sleepHours }.filter { $0 > 0 }
+            let avg = values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
+            return "Avg: \(String(format: "%.1f", avg)) hrs"
+        }
+    }
+    
+    private func formatValue(_ value: Double, for metric: MetricType) -> String {
+        switch metric {
+        case .hrv, .rhr:
+            return "\(Int(value))"
+        case .sleep:
+            return String(format: "%.1f", value)
+        }
     }
 }
 
@@ -413,7 +475,7 @@ struct MetricToggle: View {
             .foregroundStyle(isSelected ? metric.color : .secondary)
             .overlay(
                 Capsule()
-                    .strokeBorder(metric.color.opacity(isSelected ? 0.4 : 0), lineWidth: 1.5)
+                    .strokeBorder(metric.color.opacity(isSelected ? 0.6 : 0), lineWidth: 2)
             )
         }
         .buttonStyle(.plain)
@@ -425,30 +487,31 @@ struct MetricToggle: View {
 struct MetricBreakdownCards: View {
     let data: [DailyRecoveryData]
     
+    // Use yesterday's data since today is incomplete
     var latestHRV: Double? {
-        data.last(where: { $0.hrv != nil })?.hrv
+        data.dropLast().last(where: { $0.hrv != nil && $0.hrv! > 0 })?.hrv
     }
     
     var latestRHR: Double? {
-        data.last(where: { $0.restingHR != nil })?.restingHR
+        data.dropLast().last(where: { $0.restingHR != nil && $0.restingHR! > 0 })?.restingHR
     }
     
     var latestSleep: Double? {
-        data.last(where: { $0.sleepHours != nil })?.sleepHours
+        data.dropLast().last(where: { $0.sleepHours != nil && $0.sleepHours! > 0 })?.sleepHours
     }
     
     var avgHRV: Double {
-        let values = data.compactMap { $0.hrv }
+        let values = data.compactMap { $0.hrv }.filter { $0 > 0 }
         return values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
     }
     
     var avgRHR: Double {
-        let values = data.compactMap { $0.restingHR }
+        let values = data.compactMap { $0.restingHR }.filter { $0 > 0 }
         return values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
     }
     
     var avgSleep: Double {
-        let values = data.compactMap { $0.sleepHours }
+        let values = data.compactMap { $0.sleepHours }.filter { $0 > 0 }
         return values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
     }
     
@@ -540,7 +603,13 @@ struct MetricCard: View {
                 
                 Image(systemName: trend.icon)
                     .font(.caption)
+                    .fontWeight(.semibold)
                     .foregroundStyle(trend.color)
+                    .padding(6)
+                    .background(
+                        Circle()
+                            .fill(trend.color.opacity(0.15))
+                    )
             }
             
             VStack(alignment: .leading, spacing: 4) {
@@ -569,7 +638,7 @@ struct MetricCard: View {
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
+                .shadow(color: .black.opacity(0.08), radius: 10, y: 5)
         )
     }
 }
@@ -616,15 +685,17 @@ struct WeeklySummaryCard: View {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                        Text("\(excellentDays) excellent days")
+                        Text("\(excellentDays) excellent")
                             .font(.caption)
                     }
                     
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundStyle(.orange)
-                        Text("\(poorDays) poor days")
-                            .font(.caption)
+                    if poorDays > 0 {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundStyle(.orange)
+                            Text("\(poorDays) poor")
+                                .font(.caption)
+                        }
                     }
                 }
             }
@@ -633,7 +704,7 @@ struct WeeklySummaryCard: View {
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 15, y: 8)
+                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
         )
     }
 }

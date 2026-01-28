@@ -17,6 +17,7 @@ struct WorkoutData: Identifiable {
     let duration: TimeInterval
     let totalEnergyBurned: Double?
     let totalDistance: Double?
+    let averagePower: Double?
     
     var workoutName: String {
         switch workoutType {
@@ -104,5 +105,10 @@ struct WorkoutData: Identifiable {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, h:mm a"
         return formatter.string(from: startDate)
+    }
+    // NEW: Formatted average power
+    var formattedPower: String? {
+        guard let power = averagePower, power > 0 else { return nil }
+        return "\(Int(power)) W"
     }
 }

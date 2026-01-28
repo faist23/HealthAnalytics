@@ -25,18 +25,16 @@ struct MainTabView: View {
                 Label("Nutrition", systemImage: "fork.knife")
             }
             
+            RecoveryTabView()
+                .tabItem {
+                    Label("Recovery", systemImage: "heart.circle.fill")
+                }
+            
             NavigationStack {
                 InsightsView()
             }
             .tabItem {
                 Label("Insights", systemImage: "lightbulb.fill")
-            }
-            
-            NavigationStack {
-                StravaConnectionView()
-            }
-            .tabItem {
-                Label("Strava", systemImage: "bicycle")
             }
             
             NavigationStack {

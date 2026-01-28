@@ -1,3 +1,10 @@
+//
+//  PerformanceCalendarView.swift
+//  HealthAnalytics
+//
+//  Created by Craig Faist on 1/28/26.
+//
+
 import SwiftUI
 
 struct PerformanceCalendarView: View {
@@ -218,10 +225,10 @@ struct HeatmapLegend: View {
                 .fontWeight(.semibold)
             
             HStack(spacing: 16) {
-                LegendItem(color: .green, label: "Excellent (85+)")
-                LegendItem(color: .blue, label: "Good (70-84)")
-                LegendItem(color: .orange, label: "Moderate (55-69)")
-                LegendItem(color: .red, label: "Poor (<55)")
+                CalendarLegendItem(color: .green, label: "Excellent (85+)")
+                CalendarLegendItem(color: .blue, label: "Good (70-84)")
+                CalendarLegendItem(color: .orange, label: "Moderate (55-69)")
+                CalendarLegendItem(color: .red, label: "Poor (<55)")
             }
         }
         .padding(16)
@@ -234,7 +241,7 @@ struct HeatmapLegend: View {
     }
 }
 
-struct LegendItem: View {
+struct CalendarLegendItem: View {
     let color: Color
     let label: String
     
@@ -419,7 +426,7 @@ struct DayDetailSheet: View {
                 .padding()
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle(data.date, format: .dateTime.month().day().year())
+            .navigationTitle(formattedDateTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -429,6 +436,12 @@ struct DayDetailSheet: View {
                 }
             }
         }
+    }
+    
+    private var formattedDateTitle: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM d, yyyy"
+        return formatter.string(from: data.date)
     }
     
     private func colorForScore(_ score: Double) -> Color {

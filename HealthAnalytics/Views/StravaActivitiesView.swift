@@ -93,6 +93,16 @@ struct StravaActivityRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
+                // Show power if available
+                if let avgWatts = activity.averageWatts, avgWatts > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                        Text("\(Int(avgWatts)) W")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                }
+                
                 if let avgHR = activity.averageHeartrate {
                     Label("\(Int(avgHR)) bpm", systemImage: "heart.fill")
                         .font(.caption)
