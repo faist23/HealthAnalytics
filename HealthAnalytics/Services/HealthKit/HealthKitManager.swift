@@ -28,7 +28,7 @@ class HealthKitManager: ObservableObject {
         HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
         HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
         HKObjectType.quantityType(forIdentifier: .vo2Max)!,
-        HKObjectType.quantityType(forIdentifier: .cyclingPower)!,
+        HKObjectType.quantityType(forIdentifier: .cyclingPower)!,  // NEW: For power data
         HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
         HKObjectType.workoutType(),
         
@@ -174,10 +174,20 @@ class HealthKitManager: ObservableObject {
                 
                 let calendar = Calendar.current
                 
-                // Group samples by "sleep night" (shift -6 hours so 11PM-7AM is same night)
+                // Group samples by "sleep night"
+                // Sleep before noon belongs to the previous night
+                // Sleep after noon belongs to tonight
                 let samplesByNight = Dictionary(grouping: samples) { sample in
-                    let adjustedDate = sample.startDate.addingTimeInterval(-6 * 3600)
-                    return calendar.startOfDay(for: adjustedDate)
+                    let hour = calendar.component(.hour, from: sample.startDate)
+                    
+                    if hour < 12 {
+                        // Before noon - belongs to previous night
+                        // So shift back one day
+                        return calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: sample.startDate))!
+                    } else {
+                        // After noon - belongs to tonight
+                        return calendar.startOfDay(for: sample.startDate)
+                    }
                 }
                 
                 var dataPoints: [HealthDataPoint] = []
@@ -188,7 +198,8 @@ class HealthKitManager: ObservableObject {
                     if duration > 0 {
                         let hours = duration / 3600.0
                         
-                        // Use the next day (wake-up day) as the date
+                        // The wake-up day is the day after the "night" date
+                        // Since we already shifted morning sleep back one day
                         let wakeUpDay = calendar.date(byAdding: .day, value: 1, to: night) ?? night
                         
                         dataPoints.append(HealthDataPoint(
@@ -248,17 +259,138 @@ class HealthKitManager: ObservableObject {
             targetSamples = samples
         }
         
-        // 2. Filter for valid sleep stages (exclude "in bed" and "awake")
-        let validSamples = targetSamples.filter { sample in
+        // DEBUG: Print details for Jan 26, 2026
+        if !targetSamples.isEmpty {
+            let calendar = Calendar.current
+            let firstSample = targetSamples[0]
+            let hour = calendar.component(.hour, from: firstSample.startDate)
+            
+            let nightDate: Date
+            if hour < 12 {
+                // Before noon - belongs to previous night
+                nightDate = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: firstSample.startDate))!
+            } else {
+                // After noon - belongs to tonight
+                nightDate = calendar.startOfDay(for: firstSample.startDate)
+            }
+            
+            // Check if this is Jan 25, 2026 (night of Jan 25 = wakes up Jan 26)
+            let components = calendar.dateComponents([.year, .month, .day], from: nightDate)
+            if components.year == 2026 && components.month == 1 && components.day == 25 {
+                print("   🔍 DEBUG Jan 26 ALL samples (including awake):")
+                print("      Total samples: \(targetSamples.count)")
+                
+                // Sort all samples by time for readability
+                let sortedAll = targetSamples.sorted { $0.startDate < $1.startDate }
+                for (index, sample) in sortedAll.enumerated() {
+                    let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
+                    let stageName: String
+                    if sample.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue {
+                        stageName = "Core"
+                    } else if sample.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue {
+                        stageName = "Deep"
+                    } else if sample.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue {
+                        stageName = "REM"
+                    } else if sample.value == HKCategoryValueSleepAnalysis.awake.rawValue {
+                        stageName = "AWAKE"
+                    } else if sample.value == HKCategoryValueSleepAnalysis.inBed.rawValue {
+                        stageName = "InBed"
+                    } else {
+                        stageName = "Unspecified"
+                    }
+                    print("      [\(index+1)] \(stageName): \(String(format: "%.2f", duration))h | \(sample.startDate.formatted(date: .omitted, time: .shortened)) - \(sample.endDate.formatted(date: .omitted, time: .shortened))")
+                }
+            }
+        }
+        
+        // 2. Sort all samples by time and stop counting after significant wake period
+        // This matches Apple Health's behavior of only counting the main sleep session
+        let sortedSamples = targetSamples.sorted { $0.startDate < $1.startDate }
+        var validSamples: [HKCategorySample] = []
+        let significantWakeThreshold: TimeInterval = 30 * 60 // 30 minutes
+        
+        for sample in sortedSamples {
             let val = sample.value
-            return val == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
-            val == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
-            val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
-            val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+            let isSleep = val == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
+                         val == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+                         val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
+                         val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+            
+            let isAwake = val == HKCategoryValueSleepAnalysis.awake.rawValue
+            
+            if isSleep {
+                validSamples.append(sample)
+            } else if isAwake {
+                // Check if this is a significant wake period (30+ minutes)
+                let awakeDuration = sample.endDate.timeIntervalSince(sample.startDate)
+                if awakeDuration >= significantWakeThreshold {
+                    // Stop counting - main sleep session is over
+                    break
+                }
+            }
+        }
+        
+        // DEBUG: Show only sleep samples
+        if !validSamples.isEmpty {
+            let calendar = Calendar.current
+            let firstSample = validSamples[0]
+            let hour = calendar.component(.hour, from: firstSample.startDate)
+            
+            let nightDate: Date
+            if hour < 12 {
+                nightDate = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: firstSample.startDate))!
+            } else {
+                nightDate = calendar.startOfDay(for: firstSample.startDate)
+            }
+            
+            let components = calendar.dateComponents([.year, .month, .day], from: nightDate)
+            if components.year == 2026 && components.month == 1 && components.day == 25 {
+                print("   🔍 DEBUG Jan 26 SLEEP-ONLY samples (stopped at long wake):")
+
+                print("      Total samples: \(validSamples.count)")
+                
+                // Sort by time for readability
+                let sortedSleep = validSamples.sorted { $0.startDate < $1.startDate }
+                for (index, sample) in sortedSleep.enumerated() {
+                    let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
+                    let stageName: String
+                    if sample.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue {
+                        stageName = "Core"
+                    } else if sample.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue {
+                        stageName = "Deep"
+                    } else if sample.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue {
+                        stageName = "REM"
+                    } else {
+                        stageName = "Unspecified"
+                    }
+                    print("      [\(index+1)] \(stageName): \(String(format: "%.2f", duration))h | \(sample.startDate.formatted(date: .omitted, time: .shortened)) - \(sample.endDate.formatted(date: .omitted, time: .shortened))")
+                }
+            }
         }
         
         // 3. Merge overlapping intervals to prevent double-counting
-        return calculateUniqueDuration(validSamples)
+        let duration = calculateUniqueDuration(validSamples)
+        
+        // DEBUG: Show merge result for Jan 25 night
+        if let first = validSamples.first {
+            let calendar = Calendar.current
+            let hour = calendar.component(.hour, from: first.startDate)
+            
+            let nightDate: Date
+            if hour < 12 {
+                nightDate = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: first.startDate))!
+            } else {
+                nightDate = calendar.startOfDay(for: first.startDate)
+            }
+            
+            let components = calendar.dateComponents([.year, .month, .day], from: nightDate)
+            if components.year == 2026 && components.month == 1 && components.day == 25 {
+                let hours = duration / 3600.0
+                print("      ✅ After merge: \(String(format: "%.2f", hours))h")
+            }
+        }
+        
+        return duration
     }
     
     /// Merges overlapping sleep intervals to prevent double-counting
@@ -369,6 +501,17 @@ class HealthKitManager: ObservableObject {
                 for workout in workouts {
                     group.enter()
                     
+                    // Detect workout source
+                    let bundleId = workout.sourceRevision.source.bundleIdentifier.lowercased()
+                    let source: WorkoutSource
+                    if bundleId.contains("apple") || bundleId.contains("watch") {
+                        source = .appleWatch
+                    } else if bundleId.contains("strava") {
+                        source = .strava
+                    } else {
+                        source = .other
+                    }
+                    
                     // Fetch average power for this workout
                     self.fetchAveragePower(for: workout) { averagePower in
                         // Handle energy burned for iOS 18+
@@ -390,7 +533,8 @@ class HealthKitManager: ObservableObject {
                             duration: workout.duration,
                             totalEnergyBurned: energyBurned,
                             totalDistance: workout.totalDistance?.doubleValue(for: .meter()),
-                            averagePower: averagePower
+                            averagePower: averagePower,
+                            source: source
                         )
                         
                         workoutDataArray.append(data)
@@ -430,8 +574,8 @@ class HealthKitManager: ObservableObject {
             options: .discreteAverage
         ) { _, statistics, error in
             
-            if let error = error {
-                print("⚠️ Error fetching power data: \(error.localizedDescription)")
+            // Silently handle errors - workout just won't have power data
+            if error != nil {
                 completion(nil)
                 return
             }

@@ -35,7 +35,7 @@ struct RecoveryDashboardView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color(UIColor.systemBackground))
         .navigationTitle("Recovery")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -189,7 +189,7 @@ struct TodayReadinessCard: View {
         .padding(24)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
                 .shadow(color: .black.opacity(0.1), radius: 20, y: 10)
         )
     }
@@ -401,7 +401,7 @@ struct RecoveryMetricsChart: View {
         .padding(.vertical)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
                 .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
         )
     }
@@ -637,7 +637,7 @@ struct MetricCard: View {
         .frame(height: 140)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
                 .shadow(color: .black.opacity(0.08), radius: 10, y: 5)
         )
     }
@@ -703,7 +703,7 @@ struct WeeklySummaryCard: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
                 .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
         )
     }

@@ -91,6 +91,7 @@ struct ContentView: View {
                     }
                     .padding()
                 }
+                .background(Color(UIColor.systemBackground))
             }
             .navigationTitle("Dashboard")
             .toolbar {
@@ -135,8 +136,8 @@ struct RestingHeartRateCard: View {
                 
                 VStack(alignment: .trailing) {
                     Text("\(Int(averageHR))")
-                        .font(.title)
-                        .fontWeight(.bold)
+                        .font(.system(size: 36, weight: .bold, design: .rounded))
+                        .foregroundStyle(.red)
                     Text("avg bpm")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -151,26 +152,52 @@ struct RestingHeartRateCard: View {
                 )
                 .foregroundStyle(.red.gradient)
                 .interpolationMethod(.catmullRom)
+                .lineStyle(StrokeStyle(lineWidth: 3))
                 
                 AreaMark(
                     x: .value("Date", point.date),
                     y: .value("BPM", point.value)
                 )
-                .foregroundStyle(.red.gradient.opacity(0.1))
-                .interpolationMethod(.catmullRom)
-                
-                PointMark(
-                    x: .value("Date", point.date),
-                    y: .value("BPM", point.value)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.red.opacity(0.3), .red.opacity(0.05)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 )
-                .foregroundStyle(.red)
+                .interpolationMethod(.catmullRom)
             }
             .frame(height: 200)
             .chartYScale(domain: .automatic(includesZero: false))
+            .chartXAxis {
+                AxisMarks { value in
+                    if let date = value.as(Date.self) {
+                        AxisValueLabel {
+                            Text(date, format: .dateTime.month(.abbreviated).day())
+                                .font(.caption2)
+                        }
+                    }
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisValueLabel {
+                        if let intValue = value.as(Int.self) {
+                            Text("\(intValue)")
+                                .font(.caption2)
+                        }
+                    }
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                        .foregroundStyle(.gray.opacity(0.2))
+                }
+            }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
+                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
+        )
     }
 }
 
@@ -280,9 +307,12 @@ struct HRVCard: View {
                 }
             }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
+                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
+        )
     }
 }
 
@@ -348,9 +378,12 @@ struct SleepCard: View {
                 }
             }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
+                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
+        )
     }
 }
 
@@ -421,8 +454,12 @@ struct StepCountCard: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
+                    .shadow(color: .black.opacity(0.15), radius: 20, y: 10)
+            )
+        
     }
 }
 
@@ -494,8 +531,12 @@ struct WorkoutSummaryCard: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
+                    .shadow(color: .black.opacity(0.15), radius: 20, y: 10)
+            )
+        
     }
 }
 
@@ -538,9 +579,26 @@ struct WorkoutRow: View {
             
             // Workout info
             VStack(alignment: .leading, spacing: 3) {
-                Text(workout.workoutName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                HStack(spacing: 6) {
+                    Text(workout.workoutName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    // Source badge
+                    HStack(spacing: 3) {
+                        Image(systemName: workout.source.iconName)
+                            .font(.system(size: 8))
+                        Text(workout.source.rawValue)
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(sourceColor(for: workout.source).opacity(0.15))
+                    )
+                    .foregroundStyle(sourceColor(for: workout.source))
+                }
                 
                 Text(workout.formattedDate)
                     .font(.caption)
@@ -576,6 +634,36 @@ struct WorkoutRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+    
+    private func sourceColor(for source: WorkoutSource) -> Color {
+        switch source {
+        case .appleWatch: return .blue
+        case .strava: return .orange
+        case .other: return .gray
+        }
+    }
+}
+
+// MARK: - Modern Card Style
+
+struct ModernCardStyle: ViewModifier {
+    @Environment(\.colorScheme) var colorScheme
+    
+    func body(content: Content) -> some View {
+        content
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
+                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.15), radius: 20, y: 10)
+            )
+    }
+}
+
+extension View {
+    func modernCard() -> some View {
+        modifier(ModernCardStyle())
     }
 }
 

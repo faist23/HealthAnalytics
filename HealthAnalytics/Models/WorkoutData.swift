@@ -9,6 +9,28 @@
 import Foundation
 import HealthKit
 
+enum WorkoutSource: String {
+    case appleWatch = "Apple Watch"
+    case strava = "Strava"
+    case other = "Other"
+    
+    var iconName: String {
+        switch self {
+        case .appleWatch: return "applewatch"
+        case .strava: return "figure.outdoor.cycle"  // Strava doesn't have an SF Symbol
+        case .other: return "heart.circle"
+        }
+    }
+    
+    var color: String {
+        switch self {
+        case .appleWatch: return "blue"
+        case .strava: return "orange"
+        case .other: return "gray"
+        }
+    }
+}
+
 struct WorkoutData: Identifiable {
     let id = UUID()
     let workoutType: HKWorkoutActivityType
@@ -18,6 +40,7 @@ struct WorkoutData: Identifiable {
     let totalEnergyBurned: Double?
     let totalDistance: Double?
     let averagePower: Double?
+    let source: WorkoutSource  // NEW: Workout source
     
     var workoutName: String {
         switch workoutType {
@@ -62,14 +85,14 @@ struct WorkoutData: Identifiable {
             return "figure.walk"
         case .hiking:
             return "figure.hiking"
+        case .rowing:
+            return "figure.rower"
+        case .yoga:
+            return "figure.yoga"
         case .functionalStrengthTraining, .traditionalStrengthTraining:
             return "dumbbell.fill"
         case .coreTraining:
             return "figure.core.training"
-        case .yoga:
-            return "figure.yoga"
-        case .rowing:
-            return "figure.rower"
         case .elliptical:
             return "figure.elliptical"
         case .stairClimbing:
@@ -106,6 +129,7 @@ struct WorkoutData: Identifiable {
         formatter.dateFormat = "MMM d, h:mm a"
         return formatter.string(from: startDate)
     }
+    
     // NEW: Formatted average power
     var formattedPower: String? {
         guard let power = averagePower, power > 0 else { return nil }
