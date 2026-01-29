@@ -11,7 +11,8 @@ import SwiftUI
 struct SettingsView: View {
     @StateObject private var healthKitManager = HealthKitManager.shared
     @State private var isRequestingAuth = false
-    
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
         List {
             Section("App") {
@@ -55,6 +56,8 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .scrollContentBackground(.hidden)
+        .background(TabBackgroundColor.settings(for: colorScheme))
     }
 }
 

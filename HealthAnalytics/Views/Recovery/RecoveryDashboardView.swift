@@ -10,6 +10,7 @@ import Charts
 
 struct RecoveryDashboardView: View {
     @StateObject private var viewModel = RecoveryViewModel()
+    @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
         ScrollView {
@@ -35,7 +36,7 @@ struct RecoveryDashboardView: View {
             }
             .padding()
         }
-        .background(Color(UIColor.systemBackground))
+        .background(TabBackgroundColor.recovery(for: colorScheme))
         .navigationTitle("Recovery")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -87,7 +88,7 @@ struct RecoveryDashboardView: View {
 
 // MARK: - Today's Readiness Card (Hero)
 
-struct TodayReadinessCard: View {
+struct TodayReadinessCard: View {    
     let data: DailyRecoveryData
     
     var body: some View {

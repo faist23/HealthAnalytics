@@ -9,7 +9,8 @@ import SwiftUI
 
 struct RecoveryTabView: View {
     @State private var selectedView: RecoverySection = .dashboard
-    
+    @Environment(\.colorScheme) var colorScheme
+
     enum RecoverySection: String, CaseIterable, Identifiable {
         case dashboard = "Dashboard"
         case calendar = "Calendar"
@@ -34,8 +35,8 @@ struct RecoveryTabView: View {
                 // Custom segmented control
                 RecoverySegmentedControl(selection: $selectedView)
                     .padding()
-                    .background(Color(.systemBackground))
-                
+                    .background(TabBackgroundColor.recovery(for: colorScheme))
+
                 // Content views
                 TabView(selection: $selectedView) {
                     RecoveryDashboardView()

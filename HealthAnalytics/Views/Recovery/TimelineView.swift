@@ -11,7 +11,8 @@ import Combine
 
 struct TimelineView: View {
     @StateObject private var viewModel = TimelineViewModel()
-    
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
         VStack(spacing: 0) {
             // Date range picker
@@ -25,8 +26,8 @@ struct TimelineView: View {
                 }
             )
             .padding()
-            .background(Color(.systemBackground))
-            
+            .background(TabBackgroundColor.recovery(for: colorScheme))
+
             ScrollView {
                 VStack(spacing: 24) {
                     // Metric toggles
@@ -54,7 +55,7 @@ struct TimelineView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .background(TabBackgroundColor.recovery(for: colorScheme))
         }
         .navigationTitle("Timeline")
         .navigationBarTitleDisplayMode(.large)

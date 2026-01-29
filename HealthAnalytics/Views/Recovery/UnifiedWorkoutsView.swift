@@ -12,7 +12,8 @@ import Combine
 struct UnifiedWorkoutsView: View {
     @StateObject private var viewModel = UnifiedWorkoutsViewModel()
     @State private var selectedFilter: WorkoutFilter = .all
-    
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
         VStack(spacing: 0) {
             // Filter and sort controls
@@ -39,8 +40,8 @@ struct UnifiedWorkoutsView: View {
                 WorkoutStats(workouts: filteredWorkouts)
             }
             .padding(.vertical)
-            .background(Color(.systemBackground))
-            
+            .background(TabBackgroundColor.recovery(for: colorScheme))
+
             // Workout list
             ScrollView {
                 LazyVStack(spacing: 12) {
@@ -50,7 +51,7 @@ struct UnifiedWorkoutsView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .background(TabBackgroundColor.recovery(for: colorScheme))
         }
         .navigationTitle("Workouts")
         .navigationBarTitleDisplayMode(.large)

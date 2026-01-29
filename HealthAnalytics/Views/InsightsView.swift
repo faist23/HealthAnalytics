@@ -10,7 +10,8 @@ import SwiftUI
 
 struct InsightsView: View {
     @StateObject private var viewModel = InsightsViewModel()
-    
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -163,6 +164,7 @@ struct InsightsView: View {
             }
             .padding()
         }
+        .background(TabBackgroundColor.insights(for: colorScheme))
         .navigationTitle("Insights")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -661,10 +663,10 @@ struct RecommendationCard: View {
         .padding()
         .background(priorityColor.opacity(0.1))
         .cornerRadius(12)
-        .overlay(
+/*        .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(priorityColor.opacity(0.3), lineWidth: 1)
-        )
+        )*/
     }
 }
 

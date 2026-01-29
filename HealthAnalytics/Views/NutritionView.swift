@@ -11,7 +11,8 @@ import Charts
 
 struct NutritionView: View {
     @StateObject private var viewModel = NutritionViewModel()
-    
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -38,6 +39,7 @@ struct NutritionView: View {
             }
             .padding()
         }
+        .background(TabBackgroundColor.nutrition(for: colorScheme))
         .navigationTitle("Nutrition")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

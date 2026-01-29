@@ -12,7 +12,8 @@ struct PerformanceCalendarView: View {
     @State private var selectedDate: Date?
     @State private var showingDetail = false
     @State private var selectedMonth = Date()
-    
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -43,7 +44,7 @@ struct PerformanceCalendarView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .background(TabBackgroundColor.recovery(for: colorScheme))
         .navigationTitle("Performance Calendar")
         .navigationBarTitleDisplayMode(.large)
         .sheet(isPresented: $showingDetail) {
@@ -366,7 +367,8 @@ struct MetricRow: View {
 struct DayDetailSheet: View {
     let data: DailyRecoveryData
     @Environment(\.dismiss) private var dismiss
-    
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -425,7 +427,7 @@ struct DayDetailSheet: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .background(TabBackgroundColor.recovery(for: colorScheme))
             .navigationTitle(formattedDateTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

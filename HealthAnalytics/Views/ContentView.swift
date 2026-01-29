@@ -10,7 +10,8 @@ import Charts
 
 struct ContentView: View {
     @StateObject private var viewModel = DashboardViewModel()
-    
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -91,8 +92,8 @@ struct ContentView: View {
                     }
                     .padding()
                 }
-                .background(Color(UIColor.systemBackground))
             }
+            .background(TabBackgroundColor.dashboard(for: colorScheme))
             .navigationTitle("Dashboard")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
