@@ -57,7 +57,7 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .scrollContentBackground(.hidden)
-        .background(TabBackgroundColor.settings(for: colorScheme))
+        .background(ModernBackground(baseColor: TabBackgroundColor.settings(for: colorScheme)))
     }
 }
 

@@ -55,39 +55,48 @@ struct MainTabView: View {
     }
 }
 
-// MARK: - Tab Background Colors (for use in individual views)
-
-struct TabBackgroundColor {
-    static func dashboard(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.15, green: 0.20, blue: 0.35) // Rich deep blue
-            : Color(red: 0.85, green: 0.92, blue: 1.0)  // Bright sky blue
-    }
+// Replace the solid color backgrounds
+struct ModernBackground: View {
+    let baseColor: Color
     
-    static func nutrition(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.12, green: 0.30, blue: 0.15) // Rich forest green
-            : Color(red: 0.85, green: 1.0, blue: 0.88)  // Bright mint green
-    }
-    
-    static func recovery(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.35, green: 0.15, blue: 0.20) // Rich burgundy/wine
-            : Color(red: 1.0, green: 0.88, blue: 0.92)  // Bright pink
-    }
-    
-    static func insights(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.32, green: 0.24, blue: 0.12) // Rich warm brown/amber
-            : Color(red: 1.0, green: 0.93, blue: 0.78)  // Bright golden yellow
-    }
-    
-    static func settings(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.18, green: 0.18, blue: 0.22) // Cool slate blue-gray
-            : Color(red: 0.92, green: 0.92, blue: 0.94) // Light neutral
+    var body: some View {
+        let meshColors: [Color] = [
+            baseColor.opacity(0.8), baseColor.opacity(0.4), baseColor.opacity(0.9),
+            baseColor.opacity(0.4), baseColor, baseColor.opacity(0.7),
+            baseColor.opacity(0.6), baseColor.opacity(0.4), baseColor
+        ]
+        
+        MeshGradient(width: 3, height: 3, points: [
+            [0, 0], [0.5, 0], [1, 0],
+            [0, 0.5], [0.5, 0.5], [1, 0.5],
+            [0, 1], [0.5, 1], [1, 1]
+        ], colors: meshColors)
+        .ignoresSafeArea()
+        .blur(radius: 50)
+        Color.black.opacity(0.15)
     }
 }
+
+// MARK: - Tab Background Colors
+struct TabBackgroundColor {
+    static func dashboard(for colorScheme: ColorScheme) -> Color { .blue }
+    static func nutrition(for colorScheme: ColorScheme) -> Color {
+        // Deep Emerald instead of bright green
+        colorScheme == .dark ? Color(red: 0.05, green: 0.25, blue: 0.15) : Color(red: 0.9, green: 1.0, blue: 0.95)
+    }
+    static func insights(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color(red: 0.15, green: 0.12, blue: 0.08) // Deep Espresso/Charcoal
+            : Color(red: 0.98, green: 0.94, blue: 0.85) // Soft Vanilla
+    }
+    
+    // Recovery burgundy looks better slightly cooler
+    static func recovery(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color(red: 0.25, green: 0.05, blue: 0.1) : Color(red: 1.0, green: 0.93, blue: 0.95)
+    }
+    static func settings(for colorScheme: ColorScheme) -> Color { .gray }
+}
+
 
 #Preview {
     MainTabView()

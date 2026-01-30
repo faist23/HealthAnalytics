@@ -13,31 +13,37 @@ struct RecoveryDashboardView: View {
     @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Today's Readiness Card (Hero) - Use yesterday's data since today is incomplete
-                if let yesterday = viewModel.recoveryData.dropLast().last {
-                    TodayReadinessCard(data: yesterday)
-                        .transition(.scale.combined(with: .opacity))
+/*        ZStack {
+            // Fix: Move background to ZStack so it covers the whole screen
+            ModernBackground(baseColor: TabBackgroundColor.recovery(for: colorScheme))
+                .ignoresSafeArea()
+ */
+            ScrollView {
+                VStack(spacing: 24) {
+                    if let yesterday = viewModel.recoveryData.dropLast().last {
+                        TodayReadinessCard(data: yesterday)
+                    }
+                    
+                    if !viewModel.recoveryData.isEmpty {
+                        RecoveryMetricsChart(data: viewModel.recoveryData, period: viewModel.selectedPeriod)
+                            .modernCard() // Apply the new glass style
+                    }
+                    
+                    MetricBreakdownCards(data: viewModel.recoveryData)
+                    
+                    if !viewModel.recoveryData.isEmpty {
+                        WeeklySummaryCard(data: viewModel.recoveryData)
+                            .modernCard()
+                    }
                 }
-                
-                // Multi-Metric Recovery Chart
-                if !viewModel.recoveryData.isEmpty {
-                    RecoveryMetricsChart(data: viewModel.recoveryData, period: viewModel.selectedPeriod)
-                }
-                
-                // Individual Metric Cards
-                MetricBreakdownCards(data: viewModel.recoveryData)
-                
-                // Weekly Summary
-                if !viewModel.recoveryData.isEmpty {
-                    WeeklySummaryCard(data: viewModel.recoveryData)
-                }
-            }
-            .padding()
-        }
-        .background(TabBackgroundColor.recovery(for: colorScheme))
-        .navigationTitle("Recovery")
+                .padding()
+/*            }
+            .scrollContentBackground(.hidden) // Prevents the break
+*/
+ }
+            .background(TabBackgroundColor.recovery(for: colorScheme))
+
+            .navigationTitle("Recovery")        
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -188,11 +194,7 @@ struct TodayReadinessCard: View {
             }
         }
         .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
-                .shadow(color: .black.opacity(0.1), radius: 20, y: 10)
-        )
+        .modernCard()
     }
     
     private func gradientForScore(_ score: Double) -> LinearGradient {
@@ -400,11 +402,7 @@ struct RecoveryMetricsChart: View {
             }
         }
         .padding(.vertical)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
-                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
-        )
+        .modernCard()
     }
     
     private func hasValue(for day: DailyRecoveryData, metric: MetricType) -> Bool {
@@ -636,11 +634,7 @@ struct MetricCard: View {
         }
         .padding(16)
         .frame(height: 140)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
-                .shadow(color: .black.opacity(0.08), radius: 10, y: 5)
-        )
+        .modernCard()
     }
 }
 
@@ -702,11 +696,7 @@ struct WeeklySummaryCard: View {
             }
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
-                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
-        )
+        .modernCard()
     }
 }
 

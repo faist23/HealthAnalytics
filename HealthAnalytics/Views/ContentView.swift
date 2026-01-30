@@ -14,86 +14,76 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Time period picker
-                Picker("Time Period", selection: $viewModel.selectedPeriod) {
-                    ForEach(TimePeriod.allCases) { period in
-                        Text(period.displayName).tag(period)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding()
-                .onChange(of: viewModel.selectedPeriod) { oldValue, newValue in
-                    Task {
-                        await viewModel.loadData()
-                    }
-                }
+            // Root ZStack ensures the background flows behind the Navigation Bar
+            ZStack {
+                // Layer 1: Seamless Mesh Background
+                ModernBackground(baseColor: TabBackgroundColor.dashboard(for: colorScheme))
                 
-                ScrollView {
-                    VStack(spacing: 20) {
-                        
-                        if viewModel.isLoading {
-                            ProgressView("Loading health data...")
-                                .padding()
-                        } else if let error = viewModel.errorMessage {
-                            ErrorView(message: error)
-                        } else {
-                            // Resting Heart Rate
-                            if !viewModel.restingHeartRateData.isEmpty {
-                                RestingHeartRateCard(
-                                    data: viewModel.restingHeartRateData,
-                                    period: viewModel.selectedPeriod
-                                )
-                            }
-                            
-                            // HRV
-                            if !viewModel.hrvData.isEmpty {
-                                HRVCard(
-                                    data: viewModel.hrvData,
-                                    period: viewModel.selectedPeriod
-                                )
-                            }
-                            
-                            // Sleep
-                            if !viewModel.sleepData.isEmpty {
-                                SleepCard(
-                                    data: viewModel.sleepData,
-                                    period: viewModel.selectedPeriod
-                                )
-                            }
-                            
-                            // Steps
-                            if !viewModel.stepCountData.isEmpty {
-                                StepCountCard(
-                                    data: viewModel.stepCountData,
-                                    period: viewModel.selectedPeriod
-                                )
-                            }
-                            
-                            // Workouts
-                            if !viewModel.workouts.isEmpty {
-                                WorkoutSummaryCard(
-                                    workouts: viewModel.workouts,
-                                    period: viewModel.selectedPeriod
-                                )
-                            }
-                            
-                            // Show empty state only if ALL data is empty
-                            if viewModel.restingHeartRateData.isEmpty &&
-                                viewModel.hrvData.isEmpty &&
-                                viewModel.sleepData.isEmpty &&
-                                viewModel.stepCountData.isEmpty &&
-                                viewModel.workouts.isEmpty {
-                                EmptyStateView()
-                            }
+                // Layer 2: The Content
+                VStack(spacing: 0) {
+                    // Glassy Time period picker
+                    Picker("Time Period", selection: $viewModel.selectedPeriod) {
+                        ForEach(TimePeriod.allCases) { period in
+                            Text(period.displayName).tag(period)
                         }
-                        
-                        Spacer()
                     }
+                    .pickerStyle(.segmented)
                     .padding()
+                    .background(.ultraThinMaterial) // Integrates picker into the glass look
+                    .onChange(of: viewModel.selectedPeriod) { oldValue, newValue in
+                        Task {
+                            await viewModel.loadData()
+                        }
+                    }
+                    
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            if viewModel.isLoading {
+                                ProgressView("Loading health data...")
+                                    .padding()
+                            } else if let error = viewModel.errorMessage {
+                                ErrorView(message: error)
+                            } else {
+                                // Applying the .modernCard() glass modifier to every card
+                                if !viewModel.restingHeartRateData.isEmpty {
+                                    RestingHeartRateCard(data: viewModel.restingHeartRateData, period: viewModel.selectedPeriod)
+                                        .modernCard()
+                                }
+                                
+                                if !viewModel.hrvData.isEmpty {
+                                    HRVCard(data: viewModel.hrvData, period: viewModel.selectedPeriod)
+                                        .modernCard()
+                                }
+                                
+                                if !viewModel.sleepData.isEmpty {
+                                    SleepCard(data: viewModel.sleepData, period: viewModel.selectedPeriod)
+                                        .modernCard()
+                                }
+                                
+                                if !viewModel.stepCountData.isEmpty {
+                                    StepCountCard(data: viewModel.stepCountData, period: viewModel.selectedPeriod)
+                                        .modernCard()
+                                }
+                                
+                                if !viewModel.workouts.isEmpty {
+                                    WorkoutSummaryCard(workouts: viewModel.workouts, period: viewModel.selectedPeriod)
+                                        .modernCard()
+                                }
+                                
+                                if viewModel.restingHeartRateData.isEmpty && viewModel.hrvData.isEmpty && viewModel.sleepData.isEmpty && viewModel.stepCountData.isEmpty && viewModel.workouts.isEmpty {
+                                    EmptyStateView()
+                                        .modernCard()
+                                }
+                            }
+                            
+                            Spacer()
+                        }
+                        .padding()
+                    }
+                    // CRITICAL: This hides the default ScrollView background that creates the "box"
+                    .scrollContentBackground(.hidden)
                 }
             }
-            .background(TabBackgroundColor.dashboard(for: colorScheme))
             .navigationTitle("Dashboard")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -194,11 +184,6 @@ struct RestingHeartRateCard: View {
             }
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
-                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
-        )
     }
 }
 
@@ -309,11 +294,6 @@ struct HRVCard: View {
             }
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
-                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
-        )
     }
 }
 
@@ -380,11 +360,6 @@ struct SleepCard: View {
             }
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
-                .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
-        )
     }
 }
 
@@ -455,12 +430,6 @@ struct StepCountCard: View {
             }
         }
         .padding()
-        .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
-                    .shadow(color: .black.opacity(0.15), radius: 20, y: 10)
-            )
-        
     }
 }
 
@@ -532,12 +501,6 @@ struct WorkoutSummaryCard: View {
             }
         }
         .padding()
-        .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
-                    .shadow(color: .black.opacity(0.15), radius: 20, y: 10)
-            )
-        
     }
 }
 
@@ -646,19 +609,15 @@ struct WorkoutRow: View {
     }
 }
 
-// MARK: - Modern Card Style
-
+// Updated Modifier: Removed the stroke and adjusted shadow for 2026 depth
 struct ModernCardStyle: ViewModifier {
-    @Environment(\.colorScheme) var colorScheme
-    
     func body(content: Content) -> some View {
         content
             .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.secondarySystemGroupedBackground }))
-                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.15), radius: 20, y: 10)
-            )
+            .background(.ultraThinMaterial) // One single glass layer
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            // No stroke here to prevent the "double border" look
+            .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
     }
 }
 
