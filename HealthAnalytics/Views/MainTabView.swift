@@ -81,22 +81,23 @@ struct ModernBackground: View {
 struct TabBackgroundColor {
     static func dashboard(for colorScheme: ColorScheme) -> Color { .blue }
     static func nutrition(for colorScheme: ColorScheme) -> Color {
-        // Deep Emerald instead of bright green
         colorScheme == .dark ? Color(red: 0.05, green: 0.25, blue: 0.15) : Color(red: 0.9, green: 1.0, blue: 0.95)
     }
-    static func insights(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.15, green: 0.12, blue: 0.08) // Deep Espresso/Charcoal
-            : Color(red: 0.98, green: 0.94, blue: 0.85) // Soft Vanilla
-    }
-    
-    // Recovery burgundy looks better slightly cooler
     static func recovery(for colorScheme: ColorScheme) -> Color {
         colorScheme == .dark ? Color(red: 0.25, green: 0.05, blue: 0.1) : Color(red: 1.0, green: 0.93, blue: 0.95)
     }
-    static func settings(for colorScheme: ColorScheme) -> Color { .gray }
+    static func insights(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+        ? Color(red: 0.15, green: 0.05, blue: 0.25) // Deep Royal Purple
+        : Color(red: 0.95, green: 0.90, blue: 1.0)  // Soft Lavender
+    }
+    
+    static func settings(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+        ? Color(red: 0.18, green: 0.18, blue: 0.20) // Dark Charcoal/Onyx
+        : Color(red: 0.88, green: 0.88, blue: 0.90) // Deep Slate Gray
+    }
 }
-
 
 #Preview {
     MainTabView()

@@ -12,7 +12,7 @@ import Combine
 struct TimelineView: View {
     @StateObject private var viewModel = TimelineViewModel()
     @Environment(\.colorScheme) var colorScheme
-
+    
     var body: some View {
         VStack(spacing: 0) {
             // Date range picker
@@ -27,7 +27,7 @@ struct TimelineView: View {
             )
             .padding()
             .background(TabBackgroundColor.recovery(for: colorScheme))
-
+            
             ScrollView {
                 VStack(spacing: 24) {
                     // Metric toggles
@@ -213,6 +213,7 @@ struct DateRangePicker: View {
     let onApply: () -> Void
     
     @State private var showingCustomRange = false
+    @State private var selectedQuickRange: String? = "90D" // Default to match initial ViewModel state
     
     var body: some View {
         VStack(spacing: 12) {
@@ -224,6 +225,7 @@ struct DateRangePicker: View {
                 
                 Button {
                     showingCustomRange.toggle()
+                    if showingCustomRange { selectedQuickRange = nil }
                 } label: {
                     HStack(spacing: 4) {
                         Text(formattedRange)
@@ -258,39 +260,48 @@ struct DateRangePicker: View {
             if !showingCustomRange {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        QuickRangeButton(title: "7D") {
-                            startDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-                            endDate = Date()
-                            onApply()
+                        // 7 Days
+                        QuickRangeButton(title: "7D", isSelected: selectedQuickRange == "7D") {
+                            updateRange(days: -7, title: "7D")
                         }
                         
-                        QuickRangeButton(title: "30D") {
-                            startDate = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-                            endDate = Date()
-                            onApply()
+                        // 30 Days
+                        QuickRangeButton(title: "30D", isSelected: selectedQuickRange == "30D") {
+                            updateRange(days: -30, title: "30D")
                         }
                         
-                        QuickRangeButton(title: "90D") {
-                            startDate = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
-                            endDate = Date()
-                            onApply()
+                        // 90 Days
+                        QuickRangeButton(title: "90D", isSelected: selectedQuickRange == "90D") {
+                            updateRange(days: -90, title: "90D")
                         }
                         
-                        QuickRangeButton(title: "6M") {
-                            startDate = Calendar.current.date(byAdding: .month, value: -6, to: Date()) ?? Date()
-                            endDate = Date()
-                            onApply()
+                        // 6 Months
+                        QuickRangeButton(title: "6M", isSelected: selectedQuickRange == "6M") {
+                            updateRange(months: -6, title: "6M")
                         }
                         
-                        QuickRangeButton(title: "1Y") {
-                            startDate = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date()
-                            endDate = Date()
-                            onApply()
+                        // 1 Year
+                        QuickRangeButton(title: "1Y", isSelected: selectedQuickRange == "1Y") {
+                            updateRange(years: -1, title: "1Y")
                         }
                     }
                 }
             }
         }
+    }
+    
+    // Helper to update dates and highlight the button
+    private func updateRange(days: Int = 0, months: Int = 0, years: Int = 0, title: String) {
+        let calendar = Calendar.current
+        var component = DateComponents()
+        component.day = days
+        component.month = months
+        component.year = years
+        
+        startDate = calendar.date(byAdding: component, to: Date()) ?? Date()
+        endDate = Date()
+        selectedQuickRange = title
+        onApply()
     }
     
     private var formattedRange: String {
@@ -302,18 +313,21 @@ struct DateRangePicker: View {
 
 struct QuickRangeButton: View {
     let title: String
+    let isSelected: Bool // New property for highlighting
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
             Text(title)
                 .font(.subheadline)
-                .fontWeight(.medium)
+                .fontWeight(isSelected ? .bold : .medium)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
+                .foregroundStyle(isSelected ? .white : .primary)
                 .background(
                     Capsule()
-                        .fill(Color(.systemGray6))
+                    // Highlight with blue when selected, otherwise system gray
+                        .fill(isSelected ? Color.blue : Color(.systemGray6))
                 )
         }
         .buttonStyle(.plain)
