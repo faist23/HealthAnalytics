@@ -13,37 +13,32 @@ struct RecoveryDashboardView: View {
     @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
-/*        ZStack {
-            // Fix: Move background to ZStack so it covers the whole screen
-            ModernBackground(baseColor: TabBackgroundColor.recovery(for: colorScheme))
-                .ignoresSafeArea()
- */
-            ScrollView {
-                VStack(spacing: 24) {
-                    if let yesterday = viewModel.recoveryData.dropLast().last {
-                        TodayReadinessCard(data: yesterday)
-                    }
-                    
-                    if !viewModel.recoveryData.isEmpty {
-                        RecoveryMetricsChart(data: viewModel.recoveryData, period: viewModel.selectedPeriod)
-                            .modernCard() // Apply the new glass style
-                    }
-                    
-                    MetricBreakdownCards(data: viewModel.recoveryData)
-                    
-                    if !viewModel.recoveryData.isEmpty {
-                        WeeklySummaryCard(data: viewModel.recoveryData)
-                            .modernCard()
-                    }
+        ScrollView {
+            VStack(spacing: 24) {
+                if let yesterday = viewModel.recoveryData.dropLast().last {
+                    TodayReadinessCard(data: yesterday)
                 }
-                .padding()
-/*            }
-            .scrollContentBackground(.hidden) // Prevents the break
-*/
- }
-            .background(TabBackgroundColor.recovery(for: colorScheme))
-
-            .navigationTitle("Recovery")        
+                
+                if !viewModel.recoveryData.isEmpty {
+                    RecoveryMetricsChart(data: viewModel.recoveryData, period: viewModel.selectedPeriod)
+                        .solidCard()
+                }
+                
+                MetricBreakdownCards(data: viewModel.recoveryData)
+                
+                if !viewModel.recoveryData.isEmpty {
+                    WeeklySummaryCard(data: viewModel.recoveryData)
+                        .solidCard()
+                }
+            }
+            .padding()
+            /*            }
+             .scrollContentBackground(.hidden) // Prevents the break
+             */
+        }
+        .background(TabBackgroundColor.recovery(for: colorScheme))
+        
+        .navigationTitle("Recovery")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -94,7 +89,7 @@ struct RecoveryDashboardView: View {
 
 // MARK: - Today's Readiness Card (Hero)
 
-struct TodayReadinessCard: View {    
+struct TodayReadinessCard: View {
     let data: DailyRecoveryData
     
     var body: some View {
@@ -194,7 +189,7 @@ struct TodayReadinessCard: View {
             }
         }
         .padding(24)
-        .modernCard()
+        .solidCard()
     }
     
     private func gradientForScore(_ score: Double) -> LinearGradient {
@@ -402,7 +397,6 @@ struct RecoveryMetricsChart: View {
             }
         }
         .padding(.vertical)
-        .modernCard()
     }
     
     private func hasValue(for day: DailyRecoveryData, metric: MetricType) -> Bool {
@@ -559,6 +553,8 @@ struct MetricBreakdownCards: View {
                 }
             }
         }
+        .padding(20)
+        .solidCard()
     }
 }
 
@@ -634,7 +630,7 @@ struct MetricCard: View {
         }
         .padding(16)
         .frame(height: 140)
-        .modernCard()
+        .solidCard()
     }
 }
 
@@ -696,7 +692,6 @@ struct WeeklySummaryCard: View {
             }
         }
         .padding(20)
-        .modernCard()
     }
 }
 

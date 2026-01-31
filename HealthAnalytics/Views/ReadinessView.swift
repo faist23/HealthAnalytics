@@ -1,0 +1,654 @@
+//
+//  ReadinessView.swift
+//  HealthAnalytics
+//
+//  Revolutionary readiness and form analysis view
+//  Bold, forward-looking, athlete-centric
+//
+
+import SwiftUI
+import Charts
+
+struct ReadinessView: View {
+    @StateObject private var viewModel = ReadinessViewModel()
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        ZStack {
+            // Gradient background - athletic and energetic
+            LinearGradient(
+                colors: colorScheme == .dark
+                    ? [Color(red: 0.1, green: 0.05, blue: 0.2), Color(red: 0.05, green: 0.1, blue: 0.15)]
+                    : [Color(red: 0.95, green: 0.97, blue: 1.0), Color(red: 0.9, green: 0.95, blue: 0.98)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 24) {
+                    
+                    if viewModel.isLoading {
+                        ProgressView("Analyzing your readiness...")
+                            .padding()
+                    } else if let error = viewModel.errorMessage {
+                        ErrorView(message: error)
+                    } else if let readiness = viewModel.readinessScore {
+                        
+                        // HERO: Readiness Score
+                        ReadinessScoreHero(readiness: readiness)
+                            .solidCard()
+                        
+                        // Form Indicator
+                        if let form = viewModel.formIndicator {
+                            FormIndicatorCard(form: form)
+                                .solidCard()
+                        }
+                        
+                        // Trajectory Forecast
+                        TrajectoryCard(readiness: readiness)
+                            .solidCard()
+                        
+                        // Score Breakdown
+                        ScoreBreakdownCard(breakdown: readiness.breakdown)
+                            .solidCard()
+                        
+                        // Performance Windows Section
+                        if !viewModel.performanceWindows.isEmpty {
+                            SectionHeader(
+                                title: "Your Performance Windows",
+                                subtitle: "Discovered from YOUR data"
+                            )
+                            
+                            ForEach(viewModel.performanceWindows.prefix(3), id: \.activityType) { window in
+                                PerformanceWindowCard(window: window)
+                                    .solidCard()
+                            }
+                        }
+                        
+                        // Optimal Timing Section
+                        if !viewModel.optimalTimings.isEmpty {
+                            SectionHeader(
+                                title: "Optimal Timing",
+                                subtitle: "When you perform best"
+                            )
+                            
+                            ForEach(viewModel.optimalTimings.prefix(2), id: \.activityType) { timing in
+                                OptimalTimingCard(timing: timing)
+                                    .solidCard()
+                            }
+                        }
+                        
+                        // Workout Sequences
+                        if !viewModel.workoutSequences.isEmpty {
+                            SectionHeader(
+                                title: "Effective Sequences",
+                                subtitle: "Workout combinations that work"
+                            )
+                            
+                            ForEach(viewModel.workoutSequences.prefix(3), id: \.description) { sequence in
+                                WorkoutSequenceCard(sequence: sequence)
+                                    .solidCard()
+                            }
+                        }
+                        
+                    } else {
+                        EmptyReadinessView()
+                    }
+                    
+                    Spacer()
+                }
+                .padding()
+            }
+            .scrollContentBackground(.hidden)
+        }
+        .navigationTitle("Readiness")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task {
+                        await viewModel.analyze()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(viewModel.isLoading)
+            }
+        }
+        .task {
+            await viewModel.analyze()
+        }
+    }
+}
+
+// MARK: - Hero Readiness Score
+
+struct ReadinessScoreHero: View {
+    let readiness: ReadinessAnalyzer.ReadinessScore
+    
+    var scoreColor: Color {
+        if readiness.score >= 80 { return .green }
+        if readiness.score >= 60 { return .blue }
+        if readiness.score >= 40 { return .orange }
+        return .red
+    }
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Main Score Circle
+            ZStack {
+                // Background ring
+                Circle()
+                    .stroke(scoreColor.opacity(0.2), lineWidth: 20)
+                    .frame(width: 200, height: 200)
+                
+                // Progress ring
+                Circle()
+                    .trim(from: 0, to: CGFloat(readiness.score) / 100.0)
+                    .stroke(
+                        scoreColor,
+                        style: StrokeStyle(lineWidth: 20, lineCap: .round)
+                    )
+                    .frame(width: 200, height: 200)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.spring(duration: 1.0), value: readiness.score)
+                
+                // Score text
+                VStack(spacing: 4) {
+                    Text("\(readiness.score)")
+                        .font(.system(size: 72, weight: .bold, design: .rounded))
+                        .foregroundStyle(scoreColor)
+                    
+                    Text("/ 100")
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.top)
+            
+            // Trend Badge
+            HStack(spacing: 8) {
+                Text(readiness.trend.emoji)
+                    .font(.title2)
+                
+                Text(trendLabel)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(trendColor)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(trendColor.opacity(0.15))
+            .clipShape(Capsule())
+            
+            // Recommendation
+            VStack(spacing: 8) {
+                Text("Today's Guidance")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(1)
+                
+                Text(readiness.recommendation)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+            }
+            .padding()
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            
+            // Confidence indicator
+            HStack {
+                Image(systemName: confidenceIcon)
+                    .font(.caption)
+                
+                Text(readiness.confidence.description)
+                    .font(.caption)
+            }
+            .foregroundStyle(.secondary)
+        }
+    }
+    
+    private var trendLabel: String {
+        switch readiness.trend {
+        case .improving: return "Building Form"
+        case .maintaining: return "Steady State"
+        case .declining: return "Managing Fatigue"
+        case .peaking: return "PEAK WINDOW"
+        case .recovering: return "Recovering Well"
+        }
+    }
+    
+    private var trendColor: Color {
+        switch readiness.trend {
+        case .improving: return .green
+        case .maintaining: return .blue
+        case .declining: return .orange
+        case .peaking: return .purple
+        case .recovering: return .cyan
+        }
+    }
+    
+    private var confidenceIcon: String {
+        switch readiness.confidence {
+        case .high: return "checkmark.circle.fill"
+        case .medium: return "checkmark.circle"
+        case .low: return "clock.circle"
+        }
+    }
+}
+
+// MARK: - Form Indicator Card
+
+struct FormIndicatorCard: View {
+    let form: ReadinessAnalyzer.FormIndicator
+    
+    var statusColor: Color {
+        switch form.status {
+        case .fresh, .primed: return .green
+        case .functional: return .blue
+        case .fatigued: return .orange
+        case .depleted: return .red
+        }
+    }
+    
+    var riskColor: Color {
+        switch form.riskLevel {
+        case .low: return .green
+        case .moderate: return .yellow
+        case .high: return .orange
+        case .veryHigh: return .red
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Current Form")
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Risk indicator
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(riskColor)
+                        .frame(width: 8, height: 8)
+                    
+                    Text(riskLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            // Status badge
+            HStack(spacing: 12) {
+                Text(form.status.emoji)
+                    .font(.system(size: 48))
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(form.status.label)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(statusColor)
+                    
+                    Text("Day \(form.daysInStatus)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            Divider()
+            
+            // Optimal window
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Optimal Action Window", systemImage: "calendar.badge.clock")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                Text(form.optimalActionWindow)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+    }
+    
+    private var riskLabel: String {
+        switch form.riskLevel {
+        case .low: return "Low risk"
+        case .moderate: return "Moderate risk"
+        case .high: return "High risk"
+        case .veryHigh: return "Very high risk"
+        }
+    }
+}
+
+// MARK: - Trajectory Card
+
+struct TrajectoryCard: View {
+    let readiness: ReadinessAnalyzer.ReadinessScore
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("7-Day Forecast")
+                .font(.headline)
+            
+            // Chart - Simplified to avoid rendering issues
+            Chart(readiness.trajectory) { point in
+                LineMark(
+                    x: .value("Date", point.date),
+                    y: .value("Readiness", point.predictedReadiness)
+                )
+                .foregroundStyle(.blue)
+                .lineStyle(StrokeStyle(lineWidth: 3))
+                .interpolationMethod(.catmullRom)
+                
+                PointMark(
+                    x: .value("Date", point.date),
+                    y: .value("Readiness", point.predictedReadiness)
+                )
+                .foregroundStyle(.blue)
+                .symbolSize(50)
+            }
+            .frame(height: 180)
+            .chartYScale(domain: 0...100)
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day)) { value in
+                    if let date = value.as(Date.self) {
+                        AxisValueLabel {
+                            Text(date, format: .dateTime.weekday(.abbreviated))
+                                .font(.caption2)
+                        }
+                    }
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisValueLabel()
+                    AxisGridLine()
+                }
+            }
+            
+            // Legend
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle")
+                    .font(.caption)
+                Text("Based on current trajectory. Adjust with training load.")
+                    .font(.caption)
+            }
+            .foregroundStyle(.secondary)
+        }
+        .padding()
+    }
+}
+
+// MARK: - Score Breakdown Card
+
+struct ScoreBreakdownCard: View {
+    let breakdown: ReadinessAnalyzer.ScoreBreakdown
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Score Breakdown")
+                .font(.headline)
+            
+            VStack(spacing: 12) {
+                BreakdownRow(
+                    label: "Recovery",
+                    score: breakdown.recoveryScore,
+                    maxScore: 40,
+                    color: .green,
+                    details: breakdown.recoveryDetails
+                )
+                
+                BreakdownRow(
+                    label: "Fitness",
+                    score: breakdown.fitnessScore,
+                    maxScore: 30,
+                    color: .blue,
+                    details: breakdown.fitnessDetails
+                )
+                
+                BreakdownRow(
+                    label: "Fatigue Management",
+                    score: breakdown.fatigueScore,
+                    maxScore: 30,
+                    color: .orange,
+                    details: breakdown.fatigueDetails
+                )
+            }
+        }
+        .padding()
+    }
+}
+
+struct BreakdownRow: View {
+    let label: String
+    let score: Int
+    let maxScore: Int
+    let color: Color
+    let details: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(label)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Spacer()
+                
+                Text("\(score)/\(maxScore)")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(color)
+            }
+            
+            // Progress bar
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(color.opacity(0.2))
+                        .frame(height: 8)
+                    
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(color)
+                        .frame(
+                            width: geometry.size.width * CGFloat(score) / CGFloat(maxScore),
+                            height: 8
+                        )
+                }
+            }
+            .frame(height: 8)
+            
+            Text(details)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(.ultraThinMaterial.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Performance Window Card
+
+struct PerformanceWindowCard: View {
+    let window: PerformancePatternAnalyzer.PerformanceWindow
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(window.activityType)
+                        .font(.headline)
+                    
+                    Text(window.performanceMetric)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                // Boost badge
+                VStack {
+                    Text("\(String(format: "%+.0f", window.averageBoost))%")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(window.averageBoost > 0 ? .green : .red)
+                    
+                    Image(systemName: window.averageBoost > 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                        .foregroundStyle(window.averageBoost > 0 ? .green : .red)
+                }
+            }
+            
+            Divider()
+            
+            // Pattern description
+            Text(window.readableDescription)
+                .font(.body)
+                .foregroundStyle(.primary)
+            
+            // Metadata
+            HStack {
+                Label("\(window.sampleSize) examples", systemImage: "chart.bar.fill")
+                Spacer()
+                Text(window.confidence.description)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding()
+    }
+}
+
+// MARK: - Optimal Timing Card
+
+struct OptimalTimingCard: View {
+    let timing: PerformancePatternAnalyzer.OptimalTiming
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // Icon
+            Image(systemName: "clock.fill")
+                .font(.system(size: 32))
+                .foregroundStyle(.blue)
+                .frame(width: 50)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text(timing.activityType)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                Text(timing.description)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                
+                Text("\(timing.sampleSize) workouts analyzed")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+        }
+        .padding()
+    }
+}
+
+// MARK: - Workout Sequence Card
+
+struct WorkoutSequenceCard: View {
+    let sequence: PerformancePatternAnalyzer.WorkoutSequence
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Sequence visualization
+            HStack(spacing: 8) {
+                ForEach(sequence.sequence.indices, id: \.self) { index in
+                    if index > 0 {
+                        Image(systemName: "arrow.right")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Text(sequence.sequence[index])
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.blue.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+            }
+            
+            // Result
+            HStack {
+                Text(sequence.description)
+                    .font(.body)
+                
+                Spacer()
+            }
+        }
+        .padding()
+    }
+}
+
+// MARK: - Section Header
+
+struct SectionHeader: View {
+    let title: String
+    let subtitle: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 8)
+    }
+}
+
+// MARK: - Empty State
+
+struct EmptyReadinessView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "figure.mixed.cardio")
+                .font(.system(size: 64))
+                .foregroundStyle(.blue)
+            
+            Text("Building Your Baseline")
+                .font(.title2)
+                .fontWeight(.semibold)
+            
+            Text("Keep tracking your workouts, sleep, and recovery metrics. We'll analyze your patterns and provide personalized readiness insights.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            
+            Text("Minimum needed:\n• 7 days of sleep data\n• 7 days of HRV or Resting HR\n• 5+ workouts")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
+        .solidCard()
+    }
+}
+
+#Preview {
+    NavigationStack {
+        ReadinessView()
+    }
+}

@@ -16,8 +16,8 @@ struct SettingsView: View {
     var body: some View {
         ZStack {
             // Apply the background at the root
-            ModernBackground(baseColor: TabBackgroundColor.settings(for: colorScheme))
-                .ignoresSafeArea()
+//            ModernBackground(baseColor: TabBackgroundColor.settings(for: colorScheme))
+//                .ignoresSafeArea()
             
             List {
                 Section("App") {

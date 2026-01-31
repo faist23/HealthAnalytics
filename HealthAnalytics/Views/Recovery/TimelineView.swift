@@ -76,7 +76,7 @@ struct TimelineView: View {
 class TimelineViewModel: ObservableObject {
     @Published var timelineData: [TimelineDataPoint] = []
     @Published var workouts: [WorkoutData] = []
-    @Published var selectedMetrics: Set<TimelineMetric> = [.rhr, .hrv, .sleep]
+    @Published var selectedMetrics: Set<TimelineMetric> = [.rhr, .hrv, .sleep, .steps, .weight]
     @Published var startDate = Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? Date()
     @Published var endDate = Date()
     @Published var isLoading = false
@@ -87,21 +87,30 @@ class TimelineViewModel: ObservableObject {
         isLoading = true
         
         do {
-            // Fetch all metrics
+            // 1. Fetch all 5 data streams concurrently
             async let rhrData = healthKitManager.fetchRestingHeartRate(startDate: startDate, endDate: endDate)
             async let hrvData = healthKitManager.fetchHeartRateVariability(startDate: startDate, endDate: endDate)
             async let sleepData = healthKitManager.fetchSleepDuration(startDate: startDate, endDate: endDate)
             async let stepData = healthKitManager.fetchStepCount(startDate: startDate, endDate: endDate)
+            async let weightData = healthKitManager.fetchWeight(startDate: startDate, endDate: endDate) // Ensure this method exists
             async let workoutData = healthKitManager.fetchWorkouts(startDate: startDate, endDate: endDate)
             
+            // 2. Await the results
             let rhr = try await rhrData
             let hrv = try await hrvData
             let sleep = try await sleepData
             let steps = try await stepData
+            let weight = try await weightData // Capture weight result
             self.workouts = try await workoutData
             
-            // Combine into timeline data points
-            self.timelineData = combineMetrics(rhr: rhr, hrv: hrv, sleep: sleep, steps: steps)
+            // 3. CRITICAL: Pass all 5 arguments to combineMetrics
+            self.timelineData = combineMetrics(
+                rhr: rhr,
+                hrv: hrv,
+                sleep: sleep,
+                steps: steps,
+                weight: weight // <--- This must be here
+            )
             
         } catch {
             print("Error loading timeline data: \(error)")
@@ -114,7 +123,8 @@ class TimelineViewModel: ObservableObject {
         rhr: [HealthDataPoint],
         hrv: [HealthDataPoint],
         sleep: [HealthDataPoint],
-        steps: [HealthDataPoint]
+        steps: [HealthDataPoint],
+        weight: [HealthDataPoint]
     ) -> [TimelineDataPoint] {
         var dataByDate: [Date: TimelineDataPoint] = [:]
         let calendar = Calendar.current
@@ -149,6 +159,14 @@ class TimelineViewModel: ObservableObject {
                 dataByDate[day] = TimelineDataPoint(date: day)
             }
             dataByDate[day]?.steps = point.value
+        }
+        
+        for point in weight {
+            let day = calendar.startOfDay(for: point.date)
+            if dataByDate[day] == nil {
+                dataByDate[day] = TimelineDataPoint(date: day)
+            }
+            dataByDate[day]?.weight = point.value
         }
         
         return dataByDate.values.sorted { $0.date < $1.date }

@@ -5,7 +5,6 @@
 //  Created by Craig Faist on 1/25/26.
 //
 
-
 import SwiftUI
 
 struct MainTabView: View {
@@ -30,12 +29,20 @@ struct MainTabView: View {
             }
             .tag(1)
             
-            RecoveryTabView()
+/*            RecoveryTabView()
                 .tabItem {
                     Label("Recovery", systemImage: "heart.circle.fill")
                 }
                 .tag(2)
-            
+ */
+            NavigationStack {
+                ReadinessView()
+            }
+            .tabItem {
+                Label("Readiness", systemImage: "bolt.circle.fill")
+            }
+            .tag(2)
+
             NavigationStack {
                 InsightsView()
             }
@@ -55,8 +62,8 @@ struct MainTabView: View {
     }
 }
 
-// Replace the solid color backgrounds
-struct ModernBackground: View {
+// MARK: - Header Gradient (Only for nav bar area)
+struct HeaderGradient: View {
     let baseColor: Color
     
     var body: some View {
@@ -71,31 +78,56 @@ struct ModernBackground: View {
             [0, 0.5], [0.5, 0.5], [1, 0.5],
             [0, 1], [0.5, 1], [1, 1]
         ], colors: meshColors)
-        .ignoresSafeArea()
         .blur(radius: 50)
-        Color.black.opacity(0.15)
+        .opacity(0.3) // Dimmed for readability
     }
 }
 
-// MARK: - Tab Background Colors
+// MARK: - Tab Background Colors (Solid for content)
 struct TabBackgroundColor {
-    static func dashboard(for colorScheme: ColorScheme) -> Color { .blue }
+    static func dashboard(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color(red: 0.05, green: 0.05, blue: 0.08) : Color(red: 0.97, green: 0.97, blue: 0.99)
+    }
+    
     static func nutrition(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(red: 0.05, green: 0.25, blue: 0.15) : Color(red: 0.9, green: 1.0, blue: 0.95)
+        colorScheme == .dark ? Color(red: 0.05, green: 0.08, blue: 0.05) : Color(red: 0.97, green: 0.99, blue: 0.97)
     }
+    
     static func recovery(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(red: 0.25, green: 0.05, blue: 0.1) : Color(red: 1.0, green: 0.93, blue: 0.95)
+        colorScheme == .dark ? Color(red: 0.08, green: 0.05, blue: 0.05) : Color(red: 0.99, green: 0.97, blue: 0.97)
     }
+    
     static func insights(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-        ? Color(red: 0.15, green: 0.05, blue: 0.25) // Deep Royal Purple
-        : Color(red: 0.95, green: 0.90, blue: 1.0)  // Soft Lavender
+        colorScheme == .dark ? Color(red: 0.06, green: 0.05, blue: 0.08) : Color(red: 0.98, green: 0.97, blue: 0.99)
     }
     
     static func settings(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-        ? Color(red: 0.18, green: 0.18, blue: 0.20) // Dark Charcoal/Onyx
-        : Color(red: 0.88, green: 0.88, blue: 0.90) // Deep Slate Gray
+        colorScheme == .dark ? Color(red: 0.05, green: 0.05, blue: 0.05) : Color(red: 0.97, green: 0.97, blue: 0.97)
+    }
+    
+    // Header gradient colors (for nav bar area only)
+    static func headerGradient(for colorScheme: ColorScheme) -> Color {
+        .blue
+    }
+}
+
+// MARK: - New Solid Card Style (Replaces glass effect)
+struct SolidCardStyle: ViewModifier {
+    @Environment(\.colorScheme) var colorScheme
+    
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, y: 4)
+            )
+    }
+}
+
+extension View {
+    func solidCard() -> some View {
+        modifier(SolidCardStyle())
     }
 }
 

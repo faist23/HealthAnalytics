@@ -17,8 +17,8 @@ struct NutritionView: View {
         // The ZStack MUST be the absolute root to prevent hard breaks under the Nav Bar
         ZStack {
             // Layer 1: Seamless Mesh Background
-            ModernBackground(baseColor: TabBackgroundColor.nutrition(for: colorScheme))
-                .ignoresSafeArea()
+ //           ModernBackground(baseColor: TabBackgroundColor.nutrition(for: colorScheme))
+ //               .ignoresSafeArea()
             
             // Layer 2: Content
             ScrollView {
@@ -34,15 +34,15 @@ struct NutritionView: View {
                     } else {
                         // Summary Card
                         NutritionSummaryCard(data: viewModel.nutritionData)
-                            .modernCard()
+                            .solidCard()
                         
                         // Macro Breakdown Chart
                         MacroChartCard(data: viewModel.nutritionData)
-                            .modernCard()
-                        
+                            .solidCard()
+
                         // Daily List
                         DailyNutritionList(data: viewModel.nutritionData)
-                            .modernCard()
+                            .solidCard()
                     }
                     
                     Spacer()
@@ -124,6 +124,7 @@ struct NutritionSummaryCard: View {
                 MacroBox(label: "Fat", value: "\(Int(avgFat))", unit: "g", color: .orange)
             }
         }
+        .padding(20)
     }
 }
 
@@ -186,6 +187,7 @@ struct MacroChartCard: View {
             }
             .font(.caption)
         }
+        .padding(20)
     }
 }
 
@@ -216,6 +218,7 @@ struct DailyNutritionList: View {
                 DailyNutritionRow(nutrition: day)
             }
         }
+        .padding(20)
     }
 }
 

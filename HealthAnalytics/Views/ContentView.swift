@@ -13,92 +13,79 @@ struct ContentView: View {
     @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
-        NavigationStack {
-            // Root ZStack ensures the background flows behind the Navigation Bar
-            ZStack {
-                // Layer 1: Seamless Mesh Background
-                ModernBackground(baseColor: TabBackgroundColor.dashboard(for: colorScheme))
-                
-                // Layer 2: The Content
-                VStack(spacing: 0) {
-                    // Glassy Time period picker
-                    Picker("Time Period", selection: $viewModel.selectedPeriod) {
-                        ForEach(TimePeriod.allCases) { period in
-                            Text(period.displayName).tag(period)
-                        }
+        ScrollView {
+            VStack(spacing: 20) {
+                // Time period picker - clean, no background
+                Picker("Time Period", selection: $viewModel.selectedPeriod) {
+                    ForEach(TimePeriod.allCases) { period in
+                        Text(period.displayName).tag(period)
                     }
-                    .pickerStyle(.segmented)
-                    .padding()
-                    .background(.ultraThinMaterial) // Integrates picker into the glass look
-                    .onChange(of: viewModel.selectedPeriod) { oldValue, newValue in
-                        Task {
-                            await viewModel.loadData()
-                        }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: viewModel.selectedPeriod) { oldValue, newValue in
+                    Task {
+                        await viewModel.loadData()
+                    }
+                }
+                
+                if viewModel.isLoading {
+                    ProgressView("Loading health data...")
+                        .padding()
+                } else if let error = viewModel.errorMessage {
+                    ErrorView(message: error)
+                        .solidCard()
+                } else {
+                    // All cards now use solid backgrounds for readability
+                    if !viewModel.restingHeartRateData.isEmpty {
+                        RestingHeartRateCard(data: viewModel.restingHeartRateData, period: viewModel.selectedPeriod)
+                            .solidCard()
                     }
                     
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            if viewModel.isLoading {
-                                ProgressView("Loading health data...")
-                                    .padding()
-                            } else if let error = viewModel.errorMessage {
-                                ErrorView(message: error)
-                            } else {
-                                // Applying the .modernCard() glass modifier to every card
-                                if !viewModel.restingHeartRateData.isEmpty {
-                                    RestingHeartRateCard(data: viewModel.restingHeartRateData, period: viewModel.selectedPeriod)
-                                        .modernCard()
-                                }
-                                
-                                if !viewModel.hrvData.isEmpty {
-                                    HRVCard(data: viewModel.hrvData, period: viewModel.selectedPeriod)
-                                        .modernCard()
-                                }
-                                
-                                if !viewModel.sleepData.isEmpty {
-                                    SleepCard(data: viewModel.sleepData, period: viewModel.selectedPeriod)
-                                        .modernCard()
-                                }
-                                
-                                if !viewModel.stepCountData.isEmpty {
-                                    StepCountCard(data: viewModel.stepCountData, period: viewModel.selectedPeriod)
-                                        .modernCard()
-                                }
-                                
-                                if !viewModel.workouts.isEmpty {
-                                    WorkoutSummaryCard(workouts: viewModel.workouts, period: viewModel.selectedPeriod)
-                                        .modernCard()
-                                }
-                                
-                                if viewModel.restingHeartRateData.isEmpty && viewModel.hrvData.isEmpty && viewModel.sleepData.isEmpty && viewModel.stepCountData.isEmpty && viewModel.workouts.isEmpty {
-                                    EmptyStateView()
-                                        .modernCard()
-                                }
-                            }
-                            
-                            Spacer()
-                        }
-                        .padding()
+                    if !viewModel.hrvData.isEmpty {
+                        HRVCard(data: viewModel.hrvData, period: viewModel.selectedPeriod)
+                            .solidCard()
                     }
-                    // CRITICAL: This hides the default ScrollView background that creates the "box"
-                    .scrollContentBackground(.hidden)
-                }
-            }
-            .navigationTitle("Dashboard")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task {
-                            await viewModel.loadData()
-                        }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
+                    
+                    if !viewModel.sleepData.isEmpty {
+                        SleepCard(data: viewModel.sleepData, period: viewModel.selectedPeriod)
+                            .solidCard()
+                    }
+                    
+                    if !viewModel.stepCountData.isEmpty {
+                        StepCountCard(data: viewModel.stepCountData, period: viewModel.selectedPeriod)
+                            .solidCard()
+                    }
+                    
+                    if !viewModel.workouts.isEmpty {
+                        WorkoutSummaryCard(workouts: viewModel.workouts, period: viewModel.selectedPeriod)
+                            .solidCard()
+                    }
+                    
+                    if viewModel.restingHeartRateData.isEmpty && viewModel.hrvData.isEmpty && viewModel.sleepData.isEmpty && viewModel.stepCountData.isEmpty && viewModel.workouts.isEmpty {
+                        EmptyStateView()
+                            .solidCard()
                     }
                 }
+                
+                Spacer()
             }
-            .task {
-                await viewModel.loadData()
+            .padding()
+        }
+        .background(TabBackgroundColor.dashboard(for: colorScheme))
+        .navigationTitle("Dashboard")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task {
+                        await viewModel.loadData()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
             }
+        }
+        .task {
+            await viewModel.loadData()
         }
     }
 }
@@ -606,24 +593,6 @@ struct WorkoutRow: View {
         case .strava: return .orange
         case .other: return .gray
         }
-    }
-}
-
-// Updated Modifier: Removed the stroke and adjusted shadow for 2026 depth
-struct ModernCardStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(20)
-            .background(.ultraThinMaterial) // One single glass layer
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            // No stroke here to prevent the "double border" look
-            .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
-    }
-}
-
-extension View {
-    func modernCard() -> some View {
-        modifier(ModernCardStyle())
     }
 }
 

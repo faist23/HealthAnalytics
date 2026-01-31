@@ -43,8 +43,8 @@ struct InsightsView: View {
                             SimpleInsightCard(insight: insight)
                         }
                         
-                        Divider()
-                            .padding(.vertical)
+//                       Divider()
+//                            .padding(.vertical)
                     }
                     
                     // Recovery Status

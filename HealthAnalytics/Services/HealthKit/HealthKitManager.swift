@@ -25,10 +25,11 @@ class HealthKitManager: ObservableObject {
         HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
         HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!,
         HKObjectType.quantityType(forIdentifier: .stepCount)!,
+        HKObjectType.quantityType(forIdentifier: .bodyMass)!,
         HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
         HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
         HKObjectType.quantityType(forIdentifier: .vo2Max)!,
-        HKObjectType.quantityType(forIdentifier: .cyclingPower)!,  // NEW: For power data
+        HKObjectType.quantityType(forIdentifier: .cyclingPower)!,
         HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
         HKObjectType.workoutType(),
         
@@ -216,6 +217,45 @@ class HealthKitManager: ObservableObject {
                 continuation.resume(returning: sortedDataPoints)
             }
             
+            healthStore.execute(query)
+        }
+    }
+    
+    /// Fetch body weight data for the specified date range
+    func fetchWeight(startDate: Date, endDate: Date) async throws -> [HealthDataPoint] {
+        guard let weightType = HKQuantityType.quantityType(forIdentifier: .bodyMass) else {
+            throw HealthKitError.dataTypeNotAvailable
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: weightType,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+            ) { _, samples, error in
+                
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                guard let samples = samples as? [HKQuantitySample] else {
+                    continuation.resume(returning: []) // Ensure it returns even if empty
+                    return
+                }
+                
+                let dataPoints = samples.map { sample in
+                    HealthDataPoint(
+                        date: sample.startDate,
+                        value: sample.quantity.doubleValue(for: HKUnit.pound())
+                    )
+                }
+                
+                continuation.resume(returning: dataPoints)
+            }
             healthStore.execute(query)
         }
     }
