@@ -25,7 +25,11 @@ class InsightsViewModel: ObservableObject {
     @Published var injuryRisk: InjuryRiskCalculator.InjuryRiskAssessment?
     @Published var proteinRecoveryInsight: NutritionCorrelationEngine.ProteinRecoveryInsight?
     @Published var carbPerformanceInsights: [NutritionCorrelationEngine.CarbPerformanceInsight] = []
-
+    @Published var proteinPerformanceInsights: [NutritionCorrelationEngine.ProteinPerformanceInsight] = []
+    @Published var readinessAssessment: PredictiveReadinessService.ReadinessAssessment?
+    @Published var acwrTrend: [PredictiveReadinessService.ACWRDay] = []
+    
+    private let predictiveService = PredictiveReadinessService()
     private let nutritionCorrelationEngine = NutritionCorrelationEngine()
     private let injuryRiskCalculator = InjuryRiskCalculator()
     private let recommendationEngine = ActionableRecommendations()
@@ -96,6 +100,12 @@ class InsightsViewModel: ObservableObject {
                 hrvData: hrvData
             )
             
+            self.proteinPerformanceInsights = nutritionCorrelationEngine.analyzeProteinVsPerformance(
+                nutritionData: nutritionData,
+                healthKitWorkouts: hkWorkouts,
+                stravaActivities: recentActivities
+            )
+
             // Carbs vs Performance analysis
             self.carbPerformanceInsights = nutritionCorrelationEngine.analyzeCarbsVsPerformance(
                 nutritionData: nutritionData,
@@ -122,12 +132,14 @@ class InsightsViewModel: ObservableObject {
             async let trendHRV = healthKitManager.fetchHeartRateVariability(startDate: trendStartDate, endDate: endDate)
             async let trendSleep = healthKitManager.fetchSleepDuration(startDate: trendStartDate, endDate: endDate)
             async let trendSteps = healthKitManager.fetchStepCount(startDate: trendStartDate, endDate: endDate)
+            async let trendWeight = healthKitManager.fetchWeight(startDate: trendStartDate, endDate: endDate)
             
             self.metricTrends = trendDetector.detectTrends(
                 restingHRData: try await trendRHR,
                 hrvData: try await trendHRV,
                 sleepData: try await trendSleep,
-                stepData: try await trendSteps
+                stepData: try await trendSteps,
+                weightData: try await trendWeight
             )
             
             // Run activity-specific analysis (better than combined)
@@ -159,6 +171,16 @@ class InsightsViewModel: ObservableObject {
                 recoveryInsights: recoveryInsights,
                 trends: metricTrends,
                 injuryRisk: injuryRisk
+            )
+            
+            self.readinessAssessment = predictiveService.calculateReadiness(
+                stravaActivities: recentActivities,
+                healthKitWorkouts: hkWorkouts
+            )
+
+            self.acwrTrend = predictiveService.calculate7DayTrend(
+                stravaActivities: recentActivities,
+                healthKitWorkouts: hkWorkouts
             )
             
             print("📊 Analysis complete:")

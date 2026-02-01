@@ -40,6 +40,12 @@ struct TrendDetector {
                 }
             }
         }
+
+        enum TrendPeriod: String {
+            case acute = "7 days"
+            case shortTerm = "14 days"
+            case longTerm = "90 days"
+        }
     }
     
     // MARK: - Detect Trends
@@ -49,7 +55,8 @@ struct TrendDetector {
         restingHRData: [HealthDataPoint],
         hrvData: [HealthDataPoint],
         sleepData: [HealthDataPoint],
-        stepData: [HealthDataPoint]
+        stepData: [HealthDataPoint],
+        weightData: [HealthDataPoint]
     ) -> [MetricTrend] {
         
         var trends: [MetricTrend] = []
@@ -65,11 +72,13 @@ struct TrendDetector {
         }
         
         // HRV trend (higher is better)
+        // REFINED HRV: Analyze over 14 days rather than 90 for better sensitivity
         if let hrvTrend = analyzeTrend(
             data: hrvData,
             metricName: "HRV",
             lowerIsBetter: false,
-            unit: "ms"
+            unit: "ms",
+            maxDays: 14 // Cap HRV to 2 weeks for "Recovery" context
         ) {
             trends.append(hrvTrend)
         }
@@ -95,6 +104,16 @@ struct TrendDetector {
             trends.append(stepTrend)
         }
         
+        // NEW: Body Weight Trend
+        if let weightTrend = analyzeTrend(
+            data: weightData,
+            metricName: "Body Weight",
+            lowerIsBetter: true, // Assuming weight loss/maintenance for biking app
+            unit: "lbs"
+        ) {
+            trends.append(weightTrend)
+        }
+        
         return trends
     }
     
@@ -105,14 +124,14 @@ struct TrendDetector {
         metricName: String,
         lowerIsBetter: Bool,
         unit: String,
-        optimalRange: ClosedRange<Double>? = nil
+        optimalRange: ClosedRange<Double>? = nil,
+        maxDays: Int = 90 // Default to 90, but override for HRV
     ) -> MetricTrend? {
         
-        guard data.count >= 14 else { return nil } // Need at least 2 weeks
+        guard data.count >= 7 else { return nil }
         
-        // Cap analysis period to 90 days for more relevant trends
-        let cappedData = data.count > 90 ? Array(data.suffix(90)) : data
-        let dataToAnalyze = cappedData
+        // Cap analysis to the requested window
+        let dataToAnalyze = data.count > maxDays ? Array(data.suffix(maxDays)) : data
         
         // Split into two periods: recent vs. earlier
         let midpoint = dataToAnalyze.count / 2

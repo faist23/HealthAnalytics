@@ -213,4 +213,34 @@ struct TrainingLoadCalculator {
         
         return baseLoad
     }
+    
+    func calculateEWMA(currentValue: Double, previousAverage: Double, timeConstant: Int) -> Double {
+        let alpha = 2.0 / (Double(timeConstant) + 1.0)
+        return (currentValue * alpha) + (previousAverage * (1.0 - alpha))
+    }
+    
+    func getActivityLoad(activity: StravaActivity) -> Double {
+        let durationMinutes = Double(activity.movingTime ?? 0) / 60.0
+        
+        // 1. Prioritize Power
+        if let power = activity.averageWatts, power > 0 {
+            // Simple Normalized Power Proxy: intensity^2 * duration
+            // Assuming a baseline FTP or relative intensity
+            let intensityFactor = power / 200.0 // 200 is a placeholder baseline
+            return (intensityFactor * intensityFactor) * durationMinutes
+        }
+        
+        // 2. Fallback to Heart Rate
+        if let hr = activity.averageHeartrate, hr > 0 {
+            let hrFactor = (hr - 60) / 100.0 // Intensity above baseline
+            return (hrFactor * hrFactor) * durationMinutes
+        }
+        
+        // 3. Fallback for Core/Maintenance
+        if activity.type == "WeightTraining" || activity.type == "Yoga" {
+            return durationMinutes * 0.2 // Minimal toll
+        }
+        
+        return durationMinutes * 0.5 // Default
+    }
 }

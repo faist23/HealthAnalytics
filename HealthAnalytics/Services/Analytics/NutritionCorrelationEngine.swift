@@ -537,4 +537,78 @@ struct NutritionCorrelationEngine {
             recommendation: recommendation
         )
     }
+    
+    struct ProteinPerformanceInsight {
+        let activityType: String
+        let highProteinAvg: Double // Performance metric at high protein
+        let lowProteinAvg: Double  // Performance metric at low protein
+        let percentDifference: Double
+        let proteinThreshold: Double
+        let sampleSize: Int
+        let recommendation: String
+    }
+
+    func analyzeProteinVsPerformance(
+        nutritionData: [DailyNutrition],
+        healthKitWorkouts: [WorkoutData],
+        stravaActivities: [StravaActivity]
+    ) -> [ProteinPerformanceInsight] {
+        let calendar = Calendar.current
+        var insights: [ProteinPerformanceInsight] = []
+        
+        // 1. Create nutrition lookup
+        var nutritionByDate: [Date: DailyNutrition] = [:]
+        for nutrition in nutritionData where nutrition.isComplete {
+            nutritionByDate[calendar.startOfDay(for: nutrition.date)] = nutrition
+        }
+        
+        // 2. Define Threshold (e.g., 120g as mentioned in your outline)
+        let threshold: Double = 120.0
+        
+        // 3. Group workouts by activity type
+        var perfByType: [String: (high: [Double], low: [Double])] = [:]
+        
+        // Combined Strava and HK logic
+        let allWorkouts = stravaActivities.compactMap { activity -> (String, Date, Double)? in
+            guard let date = activity.startDateFormatted, let speed = activity.averageSpeed else { return nil }
+            return (activity.type, date, activity.averageWatts ?? (speed * 2.23694))
+        }
+        
+        for (type, date, perf) in allWorkouts {
+            let workoutDay = calendar.startOfDay(for: date)
+            guard let prevDay = calendar.date(byAdding: .day, value: -1, to: workoutDay),
+                  let nutrition = nutritionByDate[prevDay] else { continue }
+            
+            if perfByType[type] == nil { perfByType[type] = ([], []) }
+            
+            if nutrition.totalProtein >= threshold {
+                perfByType[type]?.high.append(perf)
+            } else {
+                perfByType[type]?.low.append(perf)
+            }
+        }
+        
+        // 4. Calculate Averages
+        for (type, data) in perfByType {
+            guard data.high.count >= 3, data.low.count >= 3 else { continue }
+            
+            let avgHigh = data.high.reduce(0, +) / Double(data.high.count)
+            let avgLow = data.low.count == 0 ? 0 : data.low.reduce(0, +) / Double(data.low.count)
+            let diff = avgLow > 0 ? ((avgHigh - avgLow) / avgLow) * 100 : 0
+            
+            let rec = "You perform \(String(format: "%.1f", abs(diff)))% \(diff > 0 ? "faster" : "slower") on \(type)s after eating \(Int(threshold))g+ of protein."
+            
+            insights.append(ProteinPerformanceInsight(
+                activityType: type,
+                highProteinAvg: avgHigh,
+                lowProteinAvg: avgLow,
+                percentDifference: diff,
+                proteinThreshold: threshold,
+                sampleSize: data.high.count + data.low.count,
+                recommendation: rec
+            ))
+        }
+        
+        return insights
+    }
 }

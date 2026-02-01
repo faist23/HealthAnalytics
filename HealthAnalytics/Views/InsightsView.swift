@@ -7,11 +7,13 @@
 
 
 import SwiftUI
+import Charts
 
 struct InsightsView: View {
     @StateObject private var viewModel = InsightsViewModel()
     @Environment(\.colorScheme) var colorScheme
-
+    @State private var showACWRInfo = false
+    
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -31,7 +33,96 @@ struct InsightsView: View {
                         Divider()
                             .padding(.vertical)
                     }
+                    if let assessment = viewModel.readinessAssessment {
+                        // Inside InsightsView.swift
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    HStack(spacing: 4) {
+                                        Text("TRAINING STATUS")
+                                            .font(.caption).bold().foregroundColor(.secondary)
+                                        
+                                        Button {
+                                            showACWRInfo = true
+                                        } label: {
+                                            Image(systemName: "info.circle")
+                                                .font(.caption)
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                    
+                                    Text(assessment.state.label)
+                                        .font(.title).bold()
+                                        .foregroundColor(assessment.state.color)
+                                }
+                                Spacer()
+                                Text(String(format: "%.2f", assessment.acwr))
+                                    .font(.system(size: 34, weight: .black, design: .monospaced))
+                            }
+                        }
+                        .sheet(isPresented: $showACWRInfo) {
+                            ACWRInfoSheet()
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(12)
+                    }
                     
+                    if !viewModel.acwrTrend.isEmpty {
+                        VStack(alignment: .leading) {
+                            Text("7-DAY ACWR TREND")
+                                .font(.caption).bold().foregroundColor(.secondary)
+                                .padding(.top)
+
+                            Chart {
+                                // Sweet Spot Area
+                                RectangleMark(
+                                    xStart: .value("Start", viewModel.acwrTrend.first?.date ?? Date()),
+                                    xEnd: .value("End", viewModel.acwrTrend.last?.date ?? Date()),
+                                    yStart: .value("Low", 0.8),
+                                    yEnd: .value("High", 1.3)
+                                )
+                                .foregroundStyle(.green.opacity(0.2)) // Increased from 0.1 for better visibility
+                                .annotation(position: .overlay, alignment: .trailing) {
+                                    Text("Sweet Spot")
+                                        .font(.caption2)
+                                        .foregroundColor(.green.opacity(0.8))
+                                        .padding(.trailing, 4)
+                                }
+
+                                // Baseline Rule (1.0)
+                                RuleMark(y: .value("Baseline", 1.0))
+                                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [5]))
+                                    .foregroundStyle(.gray)
+
+                                // The Trend Line
+                                ForEach(viewModel.acwrTrend) { day in
+                                    LineMark(
+                                        x: .value("Date", day.date, unit: .day),
+                                        y: .value("Ratio", day.value)
+                                    )
+                                    .interpolationMethod(.catmullRom)
+                                    .foregroundStyle(viewModel.readinessAssessment?.state.color ?? .blue)
+                                    
+                                    PointMark(
+                                        x: .value("Date", day.date, unit: .day),
+                                        y: .value("Ratio", day.value)
+                                    )
+                                    .foregroundStyle(viewModel.readinessAssessment?.state.color ?? .blue)
+                                }
+                            }
+                            .frame(height: 150)
+                            .chartYScale(domain: 0.5...2.0)
+                            .chartXAxis {
+                                AxisMarks(values: .stride(by: .day)) { _ in
+                                    AxisGridLine()
+                                    AxisValueLabel(format: .dateTime.weekday(.abbreviated))
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+
                     // Simple insights (always available)
                     if !viewModel.simpleInsights.isEmpty {
                         Text("Your Health Trends")
@@ -119,6 +210,34 @@ struct InsightsView: View {
                         ProteinRecoveryCard(insight: proteinInsight)
                     }
                     
+                    // Protein performance
+                    if !viewModel.proteinPerformanceInsights.isEmpty {
+                        Section(header: Text("Protein & Performance")) {
+                            ForEach(viewModel.proteinPerformanceInsights, id: \.activityType) { insight in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Image(systemName: insight.activityType == "Run" ? "figure.run" : "figure.outdoor.cycle")
+                                        Text("\(insight.activityType) Performance")
+                                            .font(.headline)
+                                        Spacer()
+                                        Text("\(String(format: "%.1f", insight.percentDifference))%")
+                                            .foregroundColor(insight.percentDifference >= 0 ? .green : .red)
+                                            .bold()
+                                    }
+                                    
+                                    Text(insight.recommendation)
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Text("Based on \(insight.sampleSize) workouts")
+                                        .font(.caption2)
+                                        .foregroundColor(.gray)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    }
+
                     // Carbs & Performance
                     if !viewModel.carbPerformanceInsights.isEmpty {
                         Divider()
@@ -881,6 +1000,36 @@ struct CarbPerformanceCard: View {
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(12)
+    }
+}
+
+struct ACWRInfoSheet: View {
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List {
+                Section(header: Text("What is ACWR?")) {
+                    Text("The Acute:Chronic Workload Ratio (ACWR) compares your training load from the last 7 days (Fatigue) to your average load over the last 28 days (Fitness).")
+                }
+                
+                Section(header: Text("Understanding the Number")) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("0.8 - 1.3 (Sweet Spot): You are building fitness safely.", systemImage: "checkmark.circle.fill").foregroundColor(.green)
+                        Label("1.3 - 1.5 (Overreaching): You are pushing hard; monitor recovery.", systemImage: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                        Label("> 1.5 (Danger Zone): High risk of injury or burnout.", systemImage: "xmark.octagon.fill").foregroundColor(.red)
+                    }
+                    .font(.subheadline)
+                    .padding(.vertical, 8)
+                }
+            }
+            .navigationTitle("Training Readiness")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                Button("Done") { dismiss() }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }
 

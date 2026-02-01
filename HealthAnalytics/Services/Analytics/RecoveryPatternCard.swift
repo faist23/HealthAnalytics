@@ -333,7 +333,7 @@ private struct WeeklySnapshotView: View {
         // Workout count
         let recentWorkouts = workouts.filter { $0.startDate >= weekAgo }
         if !recentWorkouts.isEmpty {
-            result.append(SnapshotLine(icon: "figure.running", text: "\(recentWorkouts.count) workout\(recentWorkouts.count == 1 ? "" : "s") this week", color: .secondary))
+            result.append(SnapshotLine(icon: "figure.run", text: "\(recentWorkouts.count) workout\(recentWorkouts.count == 1 ? "" : "s") this week", color: .secondary))
         }
         
         // Cap at 3 lines — priority order is already correct (HRV, sleep, RHR, workouts)
