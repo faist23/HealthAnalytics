@@ -35,7 +35,19 @@ struct ContentView: View {
                     ErrorView(message: error)
                         .solidCard()
                 } else {
-                    // All cards now use solid backgrounds for readability
+                    
+                    // ─── Recovery pattern / weekly summary ─────────
+                    if !viewModel.hrvData.isEmpty && !viewModel.workouts.isEmpty {
+                        RecoveryPatternCard(
+                            hrvData:   viewModel.hrvData,
+                            rhrData:   viewModel.restingHeartRateData,
+                            sleepData: viewModel.sleepData,
+                            workouts:  viewModel.workouts
+                        )
+                        .solidCard()
+                    }
+                    // ─── END ────────────────────────────────────────
+                    
                     if !viewModel.restingHeartRateData.isEmpty {
                         RestingHeartRateCard(data: viewModel.restingHeartRateData, period: viewModel.selectedPeriod)
                             .solidCard()
@@ -66,7 +78,7 @@ struct ContentView: View {
                             .solidCard()
                     }
                 }
-                
+
                 Spacer()
             }
             .padding()
@@ -218,7 +230,7 @@ struct ErrorView: View {
     }
 }
 
-struct HRVCard: View {
+/*struct HRVCard: View {
     let data: [HealthDataPoint]
     let period: TimePeriod
     
@@ -282,7 +294,7 @@ struct HRVCard: View {
         }
         .padding(20)
     }
-}
+}*/
 
 struct SleepCard: View {
     let data: [HealthDataPoint]

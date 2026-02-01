@@ -155,8 +155,6 @@ struct InsightsView: View {
                     }
                     
                     // Placeholder for future insights
-                    ComingSoonCard(title: "Recovery & Training Load")
-                    ComingSoonCard(title: "Heart Rate Trends")
                     ComingSoonCard(title: "Optimal Training Windows")
                 }
                 

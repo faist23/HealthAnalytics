@@ -45,14 +45,10 @@ struct ReadinessView: View {
                                 .solidCard()
                         }
                         
-                        // Trajectory Forecast
-                        TrajectoryCard(readiness: readiness)
-                            .solidCard()
-                        
                         // Score Breakdown
                         ScoreBreakdownCard(breakdown: readiness.breakdown)
                             .solidCard()
-                        
+
                         // Performance Windows Section
                         if !viewModel.performanceWindows.isEmpty {
                             SectionHeader(
@@ -209,6 +205,7 @@ struct ReadinessScoreHero: View {
             }
             .foregroundStyle(.secondary)
         }
+        .padding(20)
     }
     
     private var trendLabel: String {
@@ -313,7 +310,7 @@ struct FormIndicatorCard: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding()
+        .padding(20)
     }
     
     private var riskLabel: String {
@@ -323,65 +320,6 @@ struct FormIndicatorCard: View {
         case .high: return "High risk"
         case .veryHigh: return "Very high risk"
         }
-    }
-}
-
-// MARK: - Trajectory Card
-
-struct TrajectoryCard: View {
-    let readiness: ReadinessAnalyzer.ReadinessScore
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("7-Day Forecast")
-                .font(.headline)
-            
-            // Chart - Simplified to avoid rendering issues
-            Chart(readiness.trajectory) { point in
-                LineMark(
-                    x: .value("Date", point.date),
-                    y: .value("Readiness", point.predictedReadiness)
-                )
-                .foregroundStyle(.blue)
-                .lineStyle(StrokeStyle(lineWidth: 3))
-                .interpolationMethod(.catmullRom)
-                
-                PointMark(
-                    x: .value("Date", point.date),
-                    y: .value("Readiness", point.predictedReadiness)
-                )
-                .foregroundStyle(.blue)
-                .symbolSize(50)
-            }
-            .frame(height: 180)
-            .chartYScale(domain: 0...100)
-            .chartXAxis {
-                AxisMarks(values: .stride(by: .day)) { value in
-                    if let date = value.as(Date.self) {
-                        AxisValueLabel {
-                            Text(date, format: .dateTime.weekday(.abbreviated))
-                                .font(.caption2)
-                        }
-                    }
-                }
-            }
-            .chartYAxis {
-                AxisMarks(position: .leading) { value in
-                    AxisValueLabel()
-                    AxisGridLine()
-                }
-            }
-            
-            // Legend
-            HStack(spacing: 4) {
-                Image(systemName: "info.circle")
-                    .font(.caption)
-                Text("Based on current trajectory. Adjust with training load.")
-                    .font(.caption)
-            }
-            .foregroundStyle(.secondary)
-        }
-        .padding()
     }
 }
 
@@ -421,7 +359,7 @@ struct ScoreBreakdownCard: View {
                 )
             }
         }
-        .padding()
+        .padding(20)
     }
 }
 
@@ -522,7 +460,6 @@ struct PerformanceWindowCard: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
-        .padding()
     }
 }
 
@@ -555,7 +492,6 @@ struct OptimalTimingCard: View {
             
             Spacer()
         }
-        .padding()
     }
 }
 
@@ -593,7 +529,7 @@ struct WorkoutSequenceCard: View {
                 Spacer()
             }
         }
-        .padding()
+        .padding(20)
     }
 }
 
