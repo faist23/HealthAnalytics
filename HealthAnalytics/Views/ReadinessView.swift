@@ -49,6 +49,19 @@ struct ReadinessView: View {
                         ScoreBreakdownCard(breakdown: readiness.breakdown)
                             .solidCard()
 
+                        // ── ML Prediction ──
+                        if let prediction = viewModel.mlPrediction,
+                           let weights    = viewModel.mlFeatureWeights {
+                            PredictionInsightCard(
+                                prediction: prediction,
+                                weights:    weights
+                            )
+                            .solidCard()
+                        } else if let mlError = viewModel.mlError {
+                            PredictionUnavailableCard(reason: mlError)
+                                .solidCard()
+                        }
+
                         // Performance Windows Section
                         if !viewModel.performanceWindows.isEmpty {
                             SectionHeader(

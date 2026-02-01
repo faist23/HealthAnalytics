@@ -19,7 +19,12 @@ class ReadinessViewModel: ObservableObject {
     
     @Published var isLoading = false
     @Published var errorMessage: String?
-    
+
+    // ML Prediction
+    @Published var mlPrediction:      PerformancePredictor.Prediction?
+    @Published var mlFeatureWeights:  PerformancePredictor.FeatureWeights?
+    @Published var mlError:           String?
+
     private let healthKitManager = HealthKitManager.shared
     private let stravaManager = StravaManager.shared
     
@@ -116,7 +121,9 @@ class ReadinessViewModel: ObservableObject {
             }
             
             isLoading = false
-            
+            // ── ML prediction ──
+            await trainAndPredict()
+
         } catch {
             errorMessage = error.localizedDescription
             isLoading = false
@@ -165,5 +172,73 @@ class ReadinessViewModel: ObservableObject {
             optimalActionWindow: optimalWindow,
             riskLevel: riskLevel
         )
+    }
+    
+    @MainActor
+    private func trainAndPredict() async {
+        let cache = PredictionCache.shared
+
+        // ── Build fingerprint from current data ──
+        let fp = PredictionCache.fingerprint(
+            workoutCount: workouts.count + stravaActivities.count,
+            sleepCount:   sleepData.count,
+            hrvCount:     hrvData.count,
+            rhrCount:     restingHeartRateData.count
+        )
+
+        // ── Train only if data changed since last time ──
+        if !cache.isUpToDate(fingerprint: fp) {
+            do {
+                let models = try await PerformancePredictor.train(
+                    sleepData:         sleepData,
+                    hrvData:           hrvData,
+                    restingHRData:     restingHeartRateData,
+                    healthKitWorkouts: workouts,
+                    stravaActivities:  stravaActivities
+                )
+                cache.store(models: models, fingerprint: fp)
+            } catch {
+                cache.storeError(error)
+                mlError = error.localizedDescription
+                mlPrediction = nil
+                mlFeatureWeights = nil
+                return
+            }
+        }
+
+        // ── Predict using today's conditions ──
+        //    Use the most recent sleep / HRV / RHR values as inputs.
+        guard let lastSleep = sleepData.last?.value,
+              let lastHRV   = hrvData.last?.value,
+              let lastRHR   = restingHeartRateData.last?.value else {
+            mlError = "Need sleep, HRV, and resting HR data to predict"
+            mlPrediction = nil
+            mlFeatureWeights = nil
+            return
+        }
+
+        // Predict for both Run and Ride; show whichever model exists
+        let activityTypes = ["Run", "Ride"]
+        for activityType in activityTypes {
+            do {
+                let prediction = try PerformancePredictor.predict(
+                    models:       cache.models,
+                    activityType: activityType,
+                    sleepHours:   lastSleep,
+                    hrvMs:        lastHRV,
+                    restingHR:    lastRHR
+                )
+                mlPrediction    = prediction
+                mlFeatureWeights = cache.models.first?.featureWeights
+                mlError         = nil
+                cache.storePrediction(prediction)
+                print("🧠 Predicted \(activityType): \(prediction.predictedPerformance) \(prediction.unit)")
+                return   // First successful prediction wins
+            } catch {
+                continue // Try next activity type
+            }
+        }
+
+        mlError = "No trained model available for prediction"
     }
 }
