@@ -15,17 +15,15 @@ struct ContentView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Time period picker - clean, no background
+                // Time period picker
                 Picker("Time Period", selection: $viewModel.selectedPeriod) {
                     ForEach(TimePeriod.allCases) { period in
                         Text(period.displayName).tag(period)
                     }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: viewModel.selectedPeriod) { oldValue, newValue in
-                    Task {
-                        await viewModel.loadData()
-                    }
+                .onChange(of: viewModel.selectedPeriod) { _, _ in
+                    Task { await viewModel.loadData() }
                 }
                 
                 if viewModel.isLoading {
@@ -33,10 +31,9 @@ struct ContentView: View {
                         .padding()
                 } else if let error = viewModel.errorMessage {
                     ErrorView(message: error)
-                        .solidCard()
+                        .tintedCard(tint: .red.opacity(0.3))
                 } else {
-                    
-                    // ─── Recovery pattern / weekly summary ─────────
+                    // ─── Recovery Pattern ─────────
                     if !viewModel.hrvData.isEmpty && !viewModel.workouts.isEmpty {
                         RecoveryPatternCard(
                             hrvData:   viewModel.hrvData,
@@ -44,38 +41,41 @@ struct ContentView: View {
                             sleepData: viewModel.sleepData,
                             workouts:  viewModel.workouts
                         )
-                        .solidCard()
+                        .cardStyle(for: .recovery)
                     }
-                    // ─── END ────────────────────────────────────────
                     
                     if !viewModel.restingHeartRateData.isEmpty {
                         RestingHeartRateCard(data: viewModel.restingHeartRateData, period: viewModel.selectedPeriod)
-                            .solidCard()
+                            .cardStyle(for: .heartRate)
                     }
                     
                     if !viewModel.hrvData.isEmpty {
                         HRVCard(data: viewModel.hrvData, period: viewModel.selectedPeriod)
-                            .solidCard()
+                            .cardStyle(for: .hrv)
                     }
                     
                     if !viewModel.sleepData.isEmpty {
                         SleepCard(data: viewModel.sleepData, period: viewModel.selectedPeriod)
-                            .solidCard()
+                            .cardStyle(for: .sleep)
                     }
                     
                     if !viewModel.stepCountData.isEmpty {
                         StepCountCard(data: viewModel.stepCountData, period: viewModel.selectedPeriod)
-                            .solidCard()
+                            .cardStyle(for: .steps)
                     }
                     
                     if !viewModel.workouts.isEmpty {
                         WorkoutSummaryCard(workouts: viewModel.workouts, period: viewModel.selectedPeriod)
-                            .solidCard()
+                            .cardStyle(for: .workouts)
                     }
                     
-                    if viewModel.restingHeartRateData.isEmpty && viewModel.hrvData.isEmpty && viewModel.sleepData.isEmpty && viewModel.stepCountData.isEmpty && viewModel.workouts.isEmpty {
+                    if viewModel.restingHeartRateData.isEmpty &&
+                        viewModel.hrvData.isEmpty &&
+                        viewModel.sleepData.isEmpty &&
+                        viewModel.stepCountData.isEmpty &&
+                        viewModel.workouts.isEmpty {
                         EmptyStateView()
-                            .solidCard()
+                            .tintedCard(tint: .gray.opacity(0.2))
                     }
                 }
 
@@ -83,24 +83,21 @@ struct ContentView: View {
             }
             .padding()
         }
-        .background(TabBackgroundColor.dashboard(for: colorScheme))
+        .background(TabBackgroundColor.dashboard(for: colorScheme)) // Colorful, not dark gray
         .navigationTitle("Dashboard")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    Task {
-                        await viewModel.loadData()
-                    }
+                    Task { await viewModel.loadData() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
             }
         }
-        .task {
-            await viewModel.loadData()
-        }
+        .task { await viewModel.loadData() }
     }
 }
+
 
 struct RestingHeartRateCard: View {
     let data: [HealthDataPoint]
@@ -229,72 +226,6 @@ struct ErrorView: View {
         .padding()
     }
 }
-
-/*struct HRVCard: View {
-    let data: [HealthDataPoint]
-    let period: TimePeriod
-    
-    var averageHRV: Double {
-        guard !data.isEmpty else { return 0 }
-        return data.map { $0.value }.reduce(0, +) / Double(data.count)
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Heart Rate Variability")
-                        .font(.headline)
-                    Text(period.displayName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing) {
-                    Text("\(Int(averageHRV))")
-                        .font(.title)
-                        .fontWeight(.bold)
-                    Text("avg ms")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            
-            // Chart
-            Chart(data) { point in
-                LineMark(
-                    x: .value("Date", point.date),
-                    y: .value("HRV", point.value)
-                )
-                .foregroundStyle(.green.gradient)
-                .interpolationMethod(.catmullRom)
-                
-                AreaMark(
-                    x: .value("Date", point.date),
-                    y: .value("HRV", point.value)
-                )
-                .foregroundStyle(.green.gradient.opacity(0.1))
-                .interpolationMethod(.catmullRom)
-                
-                PointMark(
-                    x: .value("Date", point.date),
-                    y: .value("HRV", point.value)
-                )
-                .foregroundStyle(.green)
-            }
-            .frame(height: 200)
-            .chartYScale(domain: .automatic(includesZero: false))
-            .chartXAxis {
-                AxisMarks(values: .automatic) { _ in
-                    AxisValueLabel(format: period == .week ? .dateTime.month().day() : .dateTime.month())
-                }
-            }
-        }
-        .padding(20)
-    }
-}*/
 
 struct SleepCard: View {
     let data: [HealthDataPoint]

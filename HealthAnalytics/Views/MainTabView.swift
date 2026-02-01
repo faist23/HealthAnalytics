@@ -83,33 +83,14 @@ struct HeaderGradient: View {
     }
 }
 
-// MARK: - Tab Background Colors (Solid for content)
 struct TabBackgroundColor {
-    static func dashboard(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(red: 0.05, green: 0.05, blue: 0.08) : Color(red: 0.97, green: 0.97, blue: 0.99)
-    }
-    
-    static func nutrition(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(red: 0.05, green: 0.08, blue: 0.05) : Color(red: 0.97, green: 0.99, blue: 0.97)
-    }
-    
-    static func recovery(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(red: 0.08, green: 0.05, blue: 0.05) : Color(red: 0.99, green: 0.97, blue: 0.97)
-    }
-    
-    static func insights(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(red: 0.06, green: 0.05, blue: 0.08) : Color(red: 0.98, green: 0.97, blue: 0.99)
-    }
-    
-    static func settings(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(red: 0.05, green: 0.05, blue: 0.05) : Color(red: 0.97, green: 0.97, blue: 0.97)
-    }
-    
-    // Header gradient colors (for nav bar area only)
-    static func headerGradient(for colorScheme: ColorScheme) -> Color {
-        .blue
-    }
+    static func dashboard(for colorScheme: ColorScheme) -> Color { AppColors.dashboardBG }
+    static func nutrition(for colorScheme: ColorScheme) -> Color { AppColors.nutritionBG }
+    static func recovery(for colorScheme: ColorScheme) -> Color { AppColors.recoveryBG }
+    static func insights(for colorScheme: ColorScheme) -> Color { AppColors.insightsBG }
+    static func settings(for colorScheme: ColorScheme) -> Color { AppColors.settingsBG }
 }
+
 
 // MARK: - New Solid Card Style (Replaces glass effect)
 struct SolidCardStyle: ViewModifier {
@@ -130,6 +111,67 @@ extension View {
         modifier(SolidCardStyle())
     }
 }
+
+struct AppColors {
+    // Card tints
+    static let heartRate = Color.red
+    static let hrv       = Color.green
+    static let sleep     = Color.blue
+    static let steps     = Color.orange
+    static let workouts  = Color.pink
+    static let recovery  = Color.purple
+    static let nutrition = Color.teal
+    static let error     = Color.red
+    static let info      = Color.gray
+
+    // Tab background colors
+    static let dashboardBG = Color(red: 0.1, green: 0.05, blue: 0.15)
+    static let nutritionBG = Color(red: 0.05, green: 0.15, blue: 0.1)
+    static let recoveryBG  = Color(red: 0.15, green: 0.05, blue: 0.1)
+    static let insightsBG  = Color(red: 0.05, green: 0.1, blue: 0.15)
+    static let settingsBG  = Color(red: 0.1, green: 0.1, blue: 0.1)
+}
+
+// MARK: - Tinted Card Modifier
+struct TintedCardStyle: ViewModifier {
+    var tint: Color
+    
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(tint.opacity(0.2))
+                    .shadow(color: tint.opacity(0.3), radius: 8, y: 4)
+            )
+            .padding(.horizontal, 0)
+    }
+}
+
+extension View {
+    func tintedCard(tint: Color) -> some View {
+        modifier(TintedCardStyle(tint: tint))
+    }
+}
+extension View {
+    func cardStyle(for type: CardType) -> some View {
+        switch type {
+        case .heartRate: return tintedCard(tint: AppColors.heartRate)
+        case .hrv:       return tintedCard(tint: AppColors.hrv)
+        case .sleep:     return tintedCard(tint: AppColors.sleep)
+        case .steps:     return tintedCard(tint: AppColors.steps)
+        case .workouts:  return tintedCard(tint: AppColors.workouts)
+        case .recovery:  return tintedCard(tint: AppColors.recovery)
+        case .nutrition: return tintedCard(tint: AppColors.nutrition)
+        case .error:     return tintedCard(tint: AppColors.error)
+        case .info:      return tintedCard(tint: AppColors.info)
+        }
+    }
+}
+
+enum CardType {
+    case heartRate, hrv, sleep, steps, workouts, recovery, nutrition, error, info
+}
+
 
 #Preview {
     MainTabView()
