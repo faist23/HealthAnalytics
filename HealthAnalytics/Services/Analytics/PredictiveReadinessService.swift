@@ -112,7 +112,7 @@ struct PredictiveReadinessService {
     }
     
     private func calculateActivityLoad(activity: StravaActivity) -> Double {
-        let durationMinutes = Double(activity.movingTime ?? 0) / 60.0
+        let durationMinutes = Double(activity.movingTime) / 60.0
         
         // Weighting Core/Maintenance very low
         if activity.type == "WeightTraining" || activity.type == "Yoga" {

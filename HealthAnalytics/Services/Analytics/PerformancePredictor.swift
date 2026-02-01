@@ -13,6 +13,7 @@ import Foundation
 import CreateML
 import CoreML
 import HealthKit
+import TabularData
 
 // MARK: - Public API
 
@@ -361,17 +362,22 @@ struct PerformancePredictor {
     ) async throws -> TrainedModel {
 
         // ── Build the MLDataTable ──
-        let table = try MLDataTable(dictionary: [
-            "sleep_hours": rows.map { $0.sleepHours  as Any },
-            "hrv_ms":      rows.map { $0.hrvMs       as Any },
-            "resting_hr":  rows.map { $0.restingHR   as Any },
-            "performance": rows.map { $0.performance as Any }
-        ])
+        let sleepCol:  [Double] = rows.map { $0.sleepHours  }
+        let hrvCol:    [Double] = rows.map { $0.hrvMs       }
+        let rhrCol:    [Double] = rows.map { $0.restingHR   }
+        let perfCol:   [Double] = rows.map { $0.performance }
+
+        var df = DataFrame()
+        df.append(column: Column(name: "sleep_hours", contents: sleepCol))
+        df.append(column: Column(name: "hrv_ms", contents: hrvCol))
+        df.append(column: Column(name: "resting_hr", contents: rhrCol))
+        df.append(column: Column(name: "performance", contents: perfCol))
 
         // ── Train Linear first ──
         let linear = try MLLinearRegressor(
-            trainingData: table,
-            targetColumn: "performance"
+            trainingData: df,
+            targetColumn: "performance",
+            featureColumns: ["sleep_hours", "hrv_ms", "resting_hr"]
         )
         let linearRMSE = linear.trainingMetrics.rootMeanSquaredError
 
@@ -388,8 +394,9 @@ struct PerformancePredictor {
         if linearRMSE > stdDev * 0.6 {
             print("   ⚡ Linear RMSE (\(String(format: "%.2f", linearRMSE))) > 60% of stdDev — trying RandomForest")
             let forest = try MLRandomForestRegressor(
-                trainingData: table,
-                targetColumn: "performance"
+                trainingData: df,
+                targetColumn: "performance",
+                featureColumns: ["sleep_hours", "hrv_ms", "resting_hr"]
             )
             let forestRMSE = forest.trainingMetrics.rootMeanSquaredError
 

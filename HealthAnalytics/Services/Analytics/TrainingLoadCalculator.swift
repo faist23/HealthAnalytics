@@ -220,7 +220,7 @@ struct TrainingLoadCalculator {
     }
     
     func getActivityLoad(activity: StravaActivity) -> Double {
-        let durationMinutes = Double(activity.movingTime ?? 0) / 60.0
+        let durationMinutes = Double(activity.movingTime) / 60.0
         
         // 1. Prioritize Power
         if let power = activity.averageWatts, power > 0 {
