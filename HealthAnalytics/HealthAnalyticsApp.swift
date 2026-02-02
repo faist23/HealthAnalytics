@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import SwiftData
 
 @main
 struct HealthAnalyticsApp: App {
@@ -23,6 +24,8 @@ struct HealthAnalyticsApp: App {
                 OnboardingView(isOnboardingComplete: $isOnboardingComplete)
             }
         }
+        // Use the shared container from your HealthDataContainer.swift file
+        .modelContainer(HealthDataContainer.shared)
     }
     
     private func handleIncomingURL(_ url: URL) {

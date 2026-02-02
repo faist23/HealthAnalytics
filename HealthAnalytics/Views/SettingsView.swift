@@ -11,6 +11,7 @@ import SwiftUI
 struct SettingsView: View {
     @StateObject private var healthKitManager = HealthKitManager.shared
     @State private var isRequestingAuth = false
+    @State private var showingClearConfirmation = false // State for confirmation dialog
     @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
@@ -69,6 +70,28 @@ struct SettingsView: View {
                     .padding()
                     .cardStyle(for: .info)
                     
+                    // MARK: - Data Management
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Data Management")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                        
+                        Button(role: .destructive) {
+                            showingClearConfirmation = true
+                        } label: {
+                            HStack {
+                                Label("Clear Analysis Cache", systemImage: "trash")
+                                Spacer()
+                            }
+                        }
+                        
+                        Text("This will remove all cached analysis and trained models. Your raw health and workout data will remain safe.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .cardStyle(for: .info)
+                    
                     // MARK: - Permissions
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Permissions")
@@ -87,6 +110,20 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .confirmationDialog(
+            "Clear Analysis Cache?",
+            isPresented: $showingClearConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear All Cached Data", role: .destructive) {
+                Task {
+                    await PredictionCache.shared.invalidate()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure? This will force the app to re-analyze your training data and re-train models from scratch.")
+        }
     }
 }
 

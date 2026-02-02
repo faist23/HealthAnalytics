@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import WidgetKit
 
 @MainActor
 class ReadinessViewModel: ObservableObject {
@@ -16,6 +17,9 @@ class ReadinessViewModel: ObservableObject {
     @Published var optimalTimings: [PerformancePatternAnalyzer.OptimalTiming] = []
     @Published var workoutSequences: [PerformancePatternAnalyzer.WorkoutSequence] = []
     @Published var formIndicator: ReadinessAnalyzer.FormIndicator?
+    
+    // Coaching Layer
+    @Published var dailyInstruction: CoachingService.DailyInstruction?
     
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -30,6 +34,11 @@ class ReadinessViewModel: ObservableObject {
     
     private let readinessAnalyzer = ReadinessAnalyzer()
     private let patternAnalyzer = PerformancePatternAnalyzer()
+    
+    // Coaching dependencies
+    private let coachingService = CoachingService()
+    private let predictiveReadinessService = PredictiveReadinessService()
+    private let correlationEngine = CorrelationEngine()
     
     func analyze() async {
         isLoading = true
@@ -120,6 +129,30 @@ class ReadinessViewModel: ObservableObject {
                 formIndicator = generateFormIndicator(from: readiness, workouts: workouts + stravaActivities.compactMap { WorkoutData(from: $0) })
             }
             
+            // Generate Coaching Instruction
+            let assessment = predictiveReadinessService.calculateReadiness(
+                stravaActivities: stravaActivities,
+                healthKitWorkouts: workouts
+            )
+            
+            let insights = correlationEngine.analyzeSleepVsPerformanceByActivityType(
+                sleepData: sleep,
+                healthKitWorkouts: workouts,
+                stravaActivities: stravaActivities
+            )
+            
+            let recoveryStatus = correlationEngine.analyzeRecoveryStatus(
+                restingHRData: restingHR,
+                hrvData: hrv
+            )
+            
+            self.dailyInstruction = coachingService.generateDailyInstruction(
+                readiness: assessment, // You'll need to keep this local or as a property
+                insights: insights,
+                recovery: recoveryStatus,
+                prediction: mlPrediction 
+            )
+            WidgetCenter.shared.reloadAllTimelines()
             isLoading = false
 
             // ── ML prediction ── pass the local variables directly

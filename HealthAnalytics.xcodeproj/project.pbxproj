@@ -6,7 +6,20 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7E4D99E62F315ECC00034822 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7E4D99E52F315ECC00034822 /* WidgetKit.framework */; };
+		7E4D99E82F315ECC00034822 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7E4D99E72F315ECC00034822 /* SwiftUI.framework */; };
+		7E4D99F52F315ECD00034822 /* HealthAnalyticsWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7E4D99E32F315ECC00034822 /* HealthAnalyticsWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		7E4D99F32F315ECD00034822 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7E7F4A1A2F26BD2700623779 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E4D99E22F315ECC00034822;
+			remoteInfo = HealthAnalyticsWidgetExtension;
+		};
 		7E7F4A322F26BD2800623779 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 7E7F4A1A2F26BD2700623779 /* Project object */;
@@ -23,7 +36,25 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		7E4D99FA2F315ECD00034822 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7E4D99F52F315ECD00034822 /* HealthAnalyticsWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		7E4D99E32F315ECC00034822 /* HealthAnalyticsWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HealthAnalyticsWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E4D99E52F315ECC00034822 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		7E4D99E72F315ECC00034822 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		7E4D99FB2F315EDD00034822 /* HealthAnalyticsWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HealthAnalyticsWidgetExtension.entitlements; sourceTree = "<group>"; };
 		7E7F4A222F26BD2700623779 /* HealthAnalytics.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HealthAnalytics.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E7F4A312F26BD2800623779 /* HealthAnalyticsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HealthAnalyticsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E7F4A3B2F26BD2800623779 /* HealthAnalyticsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HealthAnalyticsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -37,13 +68,45 @@
 			);
 			target = 7E7F4A212F26BD2700623779 /* HealthAnalytics */;
 		};
+		7E4D99F92F315ECD00034822 /* Exceptions for "HealthAnalyticsWidget" folder in "HealthAnalyticsWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7E4D99E22F315ECC00034822 /* HealthAnalyticsWidgetExtension */;
+		};
+		7E4D99FD2F315F0100034822 /* Exceptions for "HealthAnalytics" folder in "HealthAnalyticsWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Models/CachedAnalysis.swift,
+				Models/DailyNutrition.swift,
+				Models/HealthDataPoint.swift,
+				Models/StravaModels.swift,
+				Models/TimePeriod.swift,
+				Models/WorkoutData.swift,
+				Services/Analytics/PerformancePredictor.swift,
+				Utilities/HealthDataContainer.swift,
+				Utilities/PredictionCache.swift,
+				Utilities/WorkoutMatcher.swift,
+			);
+			target = 7E4D99E22F315ECC00034822 /* HealthAnalyticsWidgetExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		7E4D99E92F315ECC00034822 /* HealthAnalyticsWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7E4D99F92F315ECD00034822 /* Exceptions for "HealthAnalyticsWidget" folder in "HealthAnalyticsWidgetExtension" target */,
+			);
+			path = HealthAnalyticsWidget;
+			sourceTree = "<group>";
+		};
 		7E7F4A242F26BD2700623779 /* HealthAnalytics */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				7E45DCB22F26DEA200DFCA61 /* Exceptions for "HealthAnalytics" folder in "HealthAnalytics" target */,
+				7E4D99FD2F315F0100034822 /* Exceptions for "HealthAnalytics" folder in "HealthAnalyticsWidgetExtension" target */,
 			);
 			path = HealthAnalytics;
 			sourceTree = "<group>";
@@ -61,6 +124,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		7E4D99E02F315ECC00034822 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E4D99E82F315ECC00034822 /* SwiftUI.framework in Frameworks */,
+				7E4D99E62F315ECC00034822 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7E7F4A1F2F26BD2700623779 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -85,12 +157,24 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		7E4D99E42F315ECC00034822 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				7E4D99E52F315ECC00034822 /* WidgetKit.framework */,
+				7E4D99E72F315ECC00034822 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		7E7F4A192F26BD2700623779 = {
 			isa = PBXGroup;
 			children = (
+				7E4D99FB2F315EDD00034822 /* HealthAnalyticsWidgetExtension.entitlements */,
 				7E7F4A242F26BD2700623779 /* HealthAnalytics */,
 				7E7F4A342F26BD2800623779 /* HealthAnalyticsTests */,
 				7E7F4A3E2F26BD2800623779 /* HealthAnalyticsUITests */,
+				7E4D99E92F315ECC00034822 /* HealthAnalyticsWidget */,
+				7E4D99E42F315ECC00034822 /* Frameworks */,
 				7E7F4A232F26BD2700623779 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -101,6 +185,7 @@
 				7E7F4A222F26BD2700623779 /* HealthAnalytics.app */,
 				7E7F4A312F26BD2800623779 /* HealthAnalyticsTests.xctest */,
 				7E7F4A3B2F26BD2800623779 /* HealthAnalyticsUITests.xctest */,
+				7E4D99E32F315ECC00034822 /* HealthAnalyticsWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -108,6 +193,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		7E4D99E22F315ECC00034822 /* HealthAnalyticsWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E4D99F62F315ECD00034822 /* Build configuration list for PBXNativeTarget "HealthAnalyticsWidgetExtension" */;
+			buildPhases = (
+				7E4D99DF2F315ECC00034822 /* Sources */,
+				7E4D99E02F315ECC00034822 /* Frameworks */,
+				7E4D99E12F315ECC00034822 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7E4D99E92F315ECC00034822 /* HealthAnalyticsWidget */,
+			);
+			name = HealthAnalyticsWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = HealthAnalyticsWidgetExtension;
+			productReference = 7E4D99E32F315ECC00034822 /* HealthAnalyticsWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		7E7F4A212F26BD2700623779 /* HealthAnalytics */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 7E7F4A452F26BD2800623779 /* Build configuration list for PBXNativeTarget "HealthAnalytics" */;
@@ -115,10 +222,12 @@
 				7E7F4A1E2F26BD2700623779 /* Sources */,
 				7E7F4A1F2F26BD2700623779 /* Frameworks */,
 				7E7F4A202F26BD2700623779 /* Resources */,
+				7E4D99FA2F315ECD00034822 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7E4D99F42F315ECD00034822 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7E7F4A242F26BD2700623779 /* HealthAnalytics */,
@@ -186,6 +295,9 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					7E4D99E22F315ECC00034822 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					7E7F4A212F26BD2700623779 = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -216,11 +328,19 @@
 				7E7F4A212F26BD2700623779 /* HealthAnalytics */,
 				7E7F4A302F26BD2800623779 /* HealthAnalyticsTests */,
 				7E7F4A3A2F26BD2800623779 /* HealthAnalyticsUITests */,
+				7E4D99E22F315ECC00034822 /* HealthAnalyticsWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		7E4D99E12F315ECC00034822 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7E7F4A202F26BD2700623779 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -245,6 +365,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		7E4D99DF2F315ECC00034822 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7E7F4A1E2F26BD2700623779 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -269,6 +396,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		7E4D99F42F315ECD00034822 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E4D99E22F315ECC00034822 /* HealthAnalyticsWidgetExtension */;
+			targetProxy = 7E4D99F32F315ECD00034822 /* PBXContainerItemProxy */;
+		};
 		7E7F4A332F26BD2800623779 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 7E7F4A212F26BD2700623779 /* HealthAnalytics */;
@@ -282,6 +414,68 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		7E4D99F72F315ECD00034822 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = HealthAnalyticsWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HealthAnalyticsWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HealthAnalyticsWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.HealthAnalytics.HealthAnalyticsWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7E4D99F82F315ECD00034822 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = HealthAnalyticsWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HealthAnalyticsWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HealthAnalyticsWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.HealthAnalytics.HealthAnalyticsWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		7E7F4A432F26BD2800623779 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -562,6 +756,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		7E4D99F62F315ECD00034822 /* Build configuration list for PBXNativeTarget "HealthAnalyticsWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E4D99F72F315ECD00034822 /* Debug */,
+				7E4D99F82F315ECD00034822 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		7E7F4A1D2F26BD2700623779 /* Build configuration list for PBXProject "HealthAnalytics" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

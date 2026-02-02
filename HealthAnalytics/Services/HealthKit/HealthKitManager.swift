@@ -289,7 +289,7 @@ class HealthKitManager: ObservableObject {
                 targetSamples = autoSleepSamples
             } else {
                 // AutoSleep exists but has no sleep data - fall back to Apple Watch
-                print("   ⚠️ AutoSleep detected but empty. Falling back to Apple Watch.")
+ //               print("   ⚠️ AutoSleep detected but empty. Falling back to Apple Watch.")
                 targetSamples = samples.filter {
                     !$0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep")
                 }
@@ -316,7 +316,7 @@ class HealthKitManager: ObservableObject {
             
             // Check if this is Jan 25, 2026 (night of Jan 25 = wakes up Jan 26)
             let components = calendar.dateComponents([.year, .month, .day], from: nightDate)
-            if components.year == 2026 && components.month == 1 && components.day == 25 {
+/*            if components.year == 2026 && components.month == 1 && components.day == 25 {
                 print("   🔍 DEBUG Jan 26 ALL samples (including awake):")
                 print("      Total samples: \(targetSamples.count)")
                 
@@ -340,7 +340,7 @@ class HealthKitManager: ObservableObject {
                     }
                     print("      [\(index+1)] \(stageName): \(String(format: "%.2f", duration))h | \(sample.startDate.formatted(date: .omitted, time: .shortened)) - \(sample.endDate.formatted(date: .omitted, time: .shortened))")
                 }
-            }
+            }*/
         }
         
         // 2. Sort all samples by time and stop counting after significant wake period
@@ -384,7 +384,7 @@ class HealthKitManager: ObservableObject {
             }
             
             let components = calendar.dateComponents([.year, .month, .day], from: nightDate)
-            if components.year == 2026 && components.month == 1 && components.day == 25 {
+/*            if components.year == 2026 && components.month == 1 && components.day == 25 {
                 print("   🔍 DEBUG Jan 26 SLEEP-ONLY samples (stopped at long wake):")
 
                 print("      Total samples: \(validSamples.count)")
@@ -405,13 +405,13 @@ class HealthKitManager: ObservableObject {
                     }
                     print("      [\(index+1)] \(stageName): \(String(format: "%.2f", duration))h | \(sample.startDate.formatted(date: .omitted, time: .shortened)) - \(sample.endDate.formatted(date: .omitted, time: .shortened))")
                 }
-            }
+            }*/
         }
         
         // 3. Merge overlapping intervals to prevent double-counting
         let duration = calculateUniqueDuration(validSamples)
         
-        // DEBUG: Show merge result for Jan 25 night
+/*       // DEBUG: Show merge result for Jan 25 night
         if let first = validSamples.first {
             let calendar = Calendar.current
             let hour = calendar.component(.hour, from: first.startDate)
@@ -429,7 +429,7 @@ class HealthKitManager: ObservableObject {
                 print("      ✅ After merge: \(String(format: "%.2f", hours))h")
             }
         }
-        
+*/
         return duration
     }
     
@@ -734,7 +734,7 @@ class HealthKitManager: ObservableObject {
                 
                 let sum = statistics?.sumQuantity()?.doubleValue(for: unit) ?? 0
                 if sum > 0 {
-                    print("✅ Found \(identifier.rawValue): \(String(format: "%.1f", sum)) \(unit)")
+//                    print("✅ Found \(identifier.rawValue): \(String(format: "%.1f", sum)) \(unit)")
                 } else {
                     print("⚠️ No data for \(identifier.rawValue)")
                 }

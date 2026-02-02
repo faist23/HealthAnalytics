@@ -27,9 +27,47 @@ struct ReadinessView: View {
                     } else if let error = viewModel.errorMessage {
                         ErrorView(message: error)
                             .cardStyle(for: .error)
-                    } else if let readiness = viewModel.readinessScore {
-                        
-                        // HERO: Readiness Score
+                    } else if let instruction = viewModel.dailyInstruction {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                Text(instruction.headline)
+                                    .font(.title2.bold())
+                                Spacer()
+                                Circle()
+                                    .fill(instruction.status.color)
+                                    .frame(width: 12, height: 12)
+                            }
+                            
+                            Text(instruction.subline)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            
+                            if let target = instruction.targetAction {
+                                HStack {
+                                    Image(systemName: "target")
+                                        .foregroundColor(instruction.status.color)
+                                    Text(target)
+                                        .font(.subheadline.weight(.semibold))
+                                }
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                                .background(instruction.status.color.opacity(0.1))
+                                .cornerRadius(8)
+                            }
+                            
+                            if let insight = instruction.primaryInsight {
+                                Divider()
+                                Text(insight)
+                                    .font(.caption.bold())
+                                    .foregroundStyle(instruction.status.color)
+                            }
+                        }
+                        .padding()
+                        .cardStyle(for: .info) // Maintain your existing UI style
+                    }
+                    
+                    // HERO: Readiness Score
+                   if let readiness = viewModel.readinessScore {
                         ReadinessScoreHero(readiness: readiness)
                             .cardStyle(for: .recovery)
                         
