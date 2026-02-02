@@ -122,7 +122,7 @@ struct AppColors {
     static let recovery  = Color.purple
     static let nutrition = Color.teal
     static let error     = Color.red
-    static let info      = Color.gray
+    static let info      = Color.indigo
 
     // Tab background colors
     static let dashboardBG = Color(red: 0.1, green: 0.05, blue: 0.15)
@@ -140,7 +140,7 @@ struct TintedCardStyle: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(tint.opacity(0.2))
+                    .fill(tint.opacity(0.15))
                     .shadow(color: tint.opacity(0.3), radius: 8, y: 4)
             )
             .padding(.horizontal, 0)
