@@ -15,15 +15,8 @@ struct ReadinessView: View {
     
     var body: some View {
         ZStack {
-            // Gradient background - athletic and energetic
-            LinearGradient(
-                colors: colorScheme == .dark
-                    ? [Color(red: 0.1, green: 0.05, blue: 0.2), Color(red: 0.05, green: 0.1, blue: 0.15)]
-                    : [Color(red: 0.95, green: 0.97, blue: 1.0), Color(red: 0.9, green: 0.95, blue: 0.98)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            TabBackgroundColor.recovery(for: colorScheme)
+                .ignoresSafeArea()
             
             ScrollView {
                 VStack(spacing: 24) {
@@ -33,21 +26,22 @@ struct ReadinessView: View {
                             .padding()
                     } else if let error = viewModel.errorMessage {
                         ErrorView(message: error)
+                            .cardStyle(for: .error)
                     } else if let readiness = viewModel.readinessScore {
                         
                         // HERO: Readiness Score
                         ReadinessScoreHero(readiness: readiness)
-                            .solidCard()
+                            .cardStyle(for: .recovery)
                         
                         // Form Indicator
                         if let form = viewModel.formIndicator {
                             FormIndicatorCard(form: form)
-                                .solidCard()
+                                .cardStyle(for: .recovery)
                         }
                         
                         // Score Breakdown
                         ScoreBreakdownCard(breakdown: readiness.breakdown)
-                            .solidCard()
+                            .cardStyle(for: .recovery)
 
                         // ── ML Prediction ──
                         if let prediction = viewModel.mlPrediction,
@@ -56,10 +50,10 @@ struct ReadinessView: View {
                                 prediction: prediction,
                                 weights:    weights
                             )
-                            .solidCard()
+                            .cardStyle(for: .recovery)
                         } else if let mlError = viewModel.mlError {
                             PredictionUnavailableCard(reason: mlError)
-                                .solidCard()
+                                .cardStyle(for: .error)
                         }
 
                         // Performance Windows Section
@@ -71,7 +65,7 @@ struct ReadinessView: View {
                             
                             ForEach(viewModel.performanceWindows.prefix(3), id: \.activityType) { window in
                                 PerformanceWindowCard(window: window)
-                                    .solidCard()
+                                    .cardStyle(for: .recovery)
                             }
                         }
                         
@@ -84,7 +78,7 @@ struct ReadinessView: View {
                             
                             ForEach(viewModel.optimalTimings.prefix(2), id: \.activityType) { timing in
                                 OptimalTimingCard(timing: timing)
-                                    .solidCard()
+                                    .cardStyle(for: .recovery)
                             }
                         }
                         
@@ -97,13 +91,14 @@ struct ReadinessView: View {
                             
                             ForEach(viewModel.workoutSequences.prefix(3), id: \.description) { sequence in
                                 WorkoutSequenceCard(sequence: sequence)
-                                    .solidCard()
+                                    .cardStyle(for: .workouts)
                             }
                         }
                         
                     } else {
                         EmptyReadinessView()
-                    }
+                            .cardStyle(for: .info)
+                   }
                     
                     Spacer()
                 }
@@ -233,11 +228,11 @@ struct ReadinessScoreHero: View {
     
     private var trendColor: Color {
         switch readiness.trend {
-        case .improving: return .green
-        case .maintaining: return .blue
-        case .declining: return .orange
-        case .peaking: return .purple
-        case .recovering: return .cyan
+        case .improving: return AppColors.hrv      // green
+        case .maintaining: return AppColors.sleep  // blue
+        case .declining: return AppColors.steps    // orange
+        case .peaking: return AppColors.workouts   // purple
+        case .recovering: return AppColors.nutrition // cyan/teal
         }
     }
     
@@ -257,12 +252,13 @@ struct FormIndicatorCard: View {
     
     var statusColor: Color {
         switch form.status {
-        case .fresh, .primed: return .green
-        case .functional: return .blue
-        case .fatigued: return .orange
-        case .depleted: return .red
+        case .fresh, .primed: return AppColors.hrv
+        case .functional: return AppColors.sleep
+        case .fatigued: return AppColors.steps
+        case .depleted: return AppColors.heartRate
         }
     }
+
     
     var riskColor: Color {
         switch form.riskLevel {
@@ -351,7 +347,7 @@ struct ScoreBreakdownCard: View {
                     label: "Recovery",
                     score: breakdown.recoveryScore,
                     maxScore: 40,
-                    color: .green,
+                    color: AppColors.hrv,
                     details: breakdown.recoveryDetails
                 )
                 
@@ -359,7 +355,7 @@ struct ScoreBreakdownCard: View {
                     label: "Fitness",
                     score: breakdown.fitnessScore,
                     maxScore: 30,
-                    color: .blue,
+                    color: AppColors.sleep,
                     details: breakdown.fitnessDetails
                 )
                 
@@ -367,7 +363,7 @@ struct ScoreBreakdownCard: View {
                     label: "Fatigue Management",
                     score: breakdown.fatigueScore,
                     maxScore: 30,
-                    color: .orange,
+                    color: AppColors.steps,
                     details: breakdown.fatigueDetails
                 )
             }
@@ -592,7 +588,7 @@ struct EmptyReadinessView: View {
                 .multilineTextAlignment(.center)
         }
         .padding()
-        .solidCard()
+        .cardStyle(for: .info)
     }
 }
 
@@ -601,3 +597,4 @@ struct EmptyReadinessView: View {
         ReadinessView()
     }
 }
+

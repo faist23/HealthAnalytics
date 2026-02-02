@@ -23,6 +23,7 @@ struct InsightsView: View {
                         .padding()
                 } else if let error = viewModel.errorMessage {
                     ErrorView(message: error)
+                        .cardStyle(for: .error)
                 } else {
                     // Recommendations (high priority items at top)
                     if !viewModel.recommendations.isEmpty {
@@ -64,9 +65,8 @@ struct InsightsView: View {
                             ACWRInfoSheet()
                         }
                         .padding()
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(12)
-                    }
+                        .cardStyle(for: .recovery)
+                   }
                     
                     if !viewModel.acwrTrend.isEmpty {
                         VStack(alignment: .leading) {
@@ -121,6 +121,7 @@ struct InsightsView: View {
                             }
                         }
                         .padding()
+                        .cardStyle(for: .recovery)
                     }
 
                     // Simple insights (always available)
@@ -265,7 +266,8 @@ struct InsightsView: View {
                         
                         ForEach(viewModel.activityTypeInsights, id: \.activityType) { insight in
                             ActivityInsightCard(insight: insight)
-                        }
+                                .cardStyle(for: .sleep)
+                       }
                     }
                     
                     // Data collection progress
@@ -356,8 +358,7 @@ struct InsightCard: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cardStyle(for: .info)
     }
 }
 
@@ -383,8 +384,7 @@ struct ComingSoonCard: View {
                 .cornerRadius(4)
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cardStyle(for: .info)
     }
 }
 
@@ -488,8 +488,7 @@ struct DataCollectionCard: View {
                 .padding(.top, 5)
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cardStyle(for: .info)
     }
 }
 
@@ -530,8 +529,7 @@ struct SimpleInsightCard: View {
             Spacer()
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cardStyle(for: .info)
     }
 }
 
@@ -576,8 +574,7 @@ struct RecoveryInsightCard: View {
             Spacer()
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cardStyle(for: .recovery)
     }
 }
 
@@ -674,9 +671,8 @@ struct TrainingLoadCard: View {
                 .foregroundStyle(.secondary)
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
+        .cardStyle(for: .workouts)
+   }
 }
 
 struct TrendCard: View {
@@ -713,8 +709,7 @@ struct TrendCard: View {
             Spacer()
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cardStyle(for: .info)
     }
 }
 
@@ -778,12 +773,7 @@ struct RecommendationCard: View {
             }
         }
         .padding()
-        .background(priorityColor.opacity(0.1))
-        .cornerRadius(12)
-/*        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(priorityColor.opacity(0.3), lineWidth: 1)
-        )*/
+        .cardStyle(for: .workouts)
     }
 }
 
@@ -841,8 +831,7 @@ struct ProteinRecoveryCard: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cardStyle(for: .nutrition)
     }
 }
 
@@ -998,9 +987,8 @@ struct CarbPerformanceCard: View {
                 .cornerRadius(8)
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
+        .cardStyle(for: .nutrition)
+   }
 }
 
 struct ACWRInfoSheet: View {
@@ -1049,3 +1037,5 @@ extension NutritionCorrelationEngine.CarbPerformanceInsight.AnalysisType: Identi
         InsightsView()
     }
 }
+
+

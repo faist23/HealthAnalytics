@@ -31,7 +31,7 @@ struct ContentView: View {
                         .padding()
                 } else if let error = viewModel.errorMessage {
                     ErrorView(message: error)
-                        .tintedCard(tint: .red.opacity(0.3))
+                        .cardStyle(for: .error)
                 } else {
                     // ─── Recovery Pattern ─────────
                     if !viewModel.hrvData.isEmpty && !viewModel.workouts.isEmpty {
@@ -75,7 +75,7 @@ struct ContentView: View {
                         viewModel.stepCountData.isEmpty &&
                         viewModel.workouts.isEmpty {
                         EmptyStateView()
-                            .tintedCard(tint: .gray.opacity(0.2))
+                            .cardStyle(for: .info)
                     }
                 }
 

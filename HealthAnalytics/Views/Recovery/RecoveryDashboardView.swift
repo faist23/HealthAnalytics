@@ -17,24 +17,22 @@ struct RecoveryDashboardView: View {
             VStack(spacing: 24) {
                 if let yesterday = viewModel.recoveryData.dropLast().last {
                     TodayReadinessCard(data: yesterday)
-                }
+                        .cardStyle(for: .recovery)
+              }
                 
                 if !viewModel.recoveryData.isEmpty {
                     RecoveryMetricsChart(data: viewModel.recoveryData, period: viewModel.selectedPeriod)
-                        .solidCard()
+                        .cardStyle(for: .recovery)
                 }
                 
                 MetricBreakdownCards(data: viewModel.recoveryData)
                 
                 if !viewModel.recoveryData.isEmpty {
                     WeeklySummaryCard(data: viewModel.recoveryData)
-                        .solidCard()
+                        .cardStyle(for: .recovery)
                 }
             }
             .padding()
-            /*            }
-             .scrollContentBackground(.hidden) // Prevents the break
-             */
         }
         .background(TabBackgroundColor.recovery(for: colorScheme))
         
@@ -189,7 +187,7 @@ struct TodayReadinessCard: View {
             }
         }
         .padding(24)
-        .solidCard()
+        .cardStyle(for: .recovery)
     }
     
     private func gradientForScore(_ score: Double) -> LinearGradient {
@@ -554,7 +552,7 @@ struct MetricBreakdownCards: View {
             }
         }
         .padding(20)
-        .solidCard()
+        .cardStyle(for: .recovery)
     }
 }
 
@@ -630,7 +628,7 @@ struct MetricCard: View {
         }
         .padding(16)
         .frame(height: 140)
-        .solidCard()
+        .cardStyle(for: .recovery)
     }
 }
 
