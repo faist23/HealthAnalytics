@@ -22,29 +22,24 @@ struct Provider: TimelineProvider {
     
     @MainActor
     func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleEntry>) -> ()) {
-        // Fetch latest from shared SwiftData container
         let descriptor = FetchDescriptor<CachedAnalysis>()
-        let context = HealthDataContainer.shared.mainContext
-        
-        // Use logic from your existing PredictionCache to determine what to show
-        let cachedData = try? context.fetch(descriptor).last
+        let modelContext = HealthDataContainer.shared.mainContext
+        let cachedData = try? modelContext.fetch(descriptor).last
         
         let entry: SimpleEntry
         if let cached = cachedData {
-            // Logic mapping the cached counts back to a status color (simplified)
+            // Map hex back to Color
+            let color = cached.statusColorHex == "#34C759" ? Color.green :
+            (cached.statusColorHex == "#FF9500" ? Color.orange : Color.blue)
+            
             entry = SimpleEntry(
                 date: Date(),
-                headline: "Latest Analysis",
-                targetAction: "View today's target power",
-                statusColor: .green
+                headline: cached.headline,
+                targetAction: cached.targetAction,
+                statusColor: color
             )
         } else {
-            entry = SimpleEntry(
-                date: Date(),
-                headline: "No Data",
-                targetAction: "Open app to sync",
-                statusColor: .gray
-            )
+            entry = SimpleEntry(date: Date(), headline: "Sync Required", targetAction: "Open app to analyze data", statusColor: .gray)
         }
         
         let timeline = Timeline(entries: [entry], policy: .atEnd)
@@ -90,12 +85,12 @@ struct HealthAnalyticsWidgetEntryView : View {
 
 struct HealthAnalyticsWidget: Widget {
     let kind: String = "HealthAnalyticsWidget"
-
+    
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: Provider()) { entry in
             HealthAnalyticsWidgetEntryView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
-                // Access the shared App Group database
+            // Access the shared App Group database
                 .modelContainer(HealthDataContainer.shared)
         }
         .configurationDisplayName("Daily Readiness")

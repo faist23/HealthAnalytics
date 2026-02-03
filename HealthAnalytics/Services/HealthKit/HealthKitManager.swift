@@ -315,7 +315,7 @@ class HealthKitManager: ObservableObject {
             }
             
             // Check if this is Jan 25, 2026 (night of Jan 25 = wakes up Jan 26)
-            let components = calendar.dateComponents([.year, .month, .day], from: nightDate)
+            _ = calendar.dateComponents([.year, .month, .day], from: nightDate)
 /*            if components.year == 2026 && components.month == 1 && components.day == 25 {
                 print("   🔍 DEBUG Jan 26 ALL samples (including awake):")
                 print("      Total samples: \(targetSamples.count)")
@@ -383,7 +383,7 @@ class HealthKitManager: ObservableObject {
                 nightDate = calendar.startOfDay(for: firstSample.startDate)
             }
             
-            let components = calendar.dateComponents([.year, .month, .day], from: nightDate)
+            _ = calendar.dateComponents([.year, .month, .day], from: nightDate)
 /*            if components.year == 2026 && components.month == 1 && components.day == 25 {
                 print("   🔍 DEBUG Jan 26 SLEEP-ONLY samples (stopped at long wake):")
 

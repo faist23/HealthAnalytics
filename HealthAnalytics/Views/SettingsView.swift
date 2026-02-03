@@ -117,7 +117,7 @@ struct SettingsView: View {
         ) {
             Button("Clear All Cached Data", role: .destructive) {
                 Task {
-                    await PredictionCache.shared.invalidate()
+                    PredictionCache.shared.invalidate()
                 }
             }
             Button("Cancel", role: .cancel) {}
