@@ -152,7 +152,7 @@ class ReadinessViewModel: ObservableObject {
                 recovery: recoveryStatus,
                 prediction: mlPrediction
             )
-            WidgetCenter.shared.reloadAllTimelines()
+ //           WidgetCenter.shared.reloadAllTimelines()
             isLoading = false
             
             // ── ML prediction ── pass the local variables directly
@@ -226,7 +226,6 @@ class ReadinessViewModel: ObservableObject {
     ) async {
         let cache = PredictionCache.shared
         
-        // ── Build fingerprint from current data ──
         let fp = PredictionCache.fingerprint(
             workoutCount: workouts.count + stravaActivities.count,
             sleepCount:   sleep.count,
@@ -234,7 +233,6 @@ class ReadinessViewModel: ObservableObject {
             rhrCount:     restingHR.count
         )
         
-        // ── Train only if data changed since last time ──
         if !cache.isUpToDate(fingerprint: fp) {
             do {
                 let models = try await PerformancePredictor.train(
@@ -245,12 +243,9 @@ class ReadinessViewModel: ObservableObject {
                     stravaActivities:  stravaActivities
                 )
                 
-                // FIX: Pass the dailyInstruction to the store method
+                // Initial store with current instructions
                 if let instruction = self.dailyInstruction {
                     cache.store(models: models, fingerprint: fp, instruction: instruction)
-                } else {
-                    // Fallback if instruction hasn't been generated yet
-                    print("⚠️ Skipping cache store: dailyInstruction is nil")
                 }
                 
             } catch {
@@ -262,7 +257,6 @@ class ReadinessViewModel: ObservableObject {
             }
         }
         
-        // ── Predict using today's conditions ──
         guard let lastSleep = sleep.last?.value,
               let lastHRV   = hrv.last?.value,
               let lastRHR   = restingHR.last?.value else {
@@ -272,7 +266,6 @@ class ReadinessViewModel: ObservableObject {
             return
         }
         
-        // Predict for both Run and Ride; show whichever model exists
         let activityTypes = ["Run", "Ride"]
         for activityType in activityTypes {
             do {
@@ -283,17 +276,80 @@ class ReadinessViewModel: ObservableObject {
                     hrvMs:        lastHRV,
                     restingHR:    lastRHR
                 )
-                mlPrediction     = prediction
-                mlFeatureWeights = cache.models.first?.featureWeights
-                mlError          = nil
+                
+                // Update local state
+                self.mlPrediction     = prediction
+                self.mlFeatureWeights = cache.models.first?.featureWeights
+                self.mlError          = nil
                 cache.storePrediction(prediction)
+                
+                // NEW: Explicitly update coaching with this prediction and refresh widget
+                updateCoachingAndWidget(
+                    prediction: prediction,
+                    fp: fp,
+                    sleep: sleep,
+                    workouts: workouts,
+                    stravaActivities: stravaActivities,
+                    restingHR: restingHR,
+                    hrv: hrv
+                )
+                
                 print("🧠 Predicted \(activityType): \(prediction.predictedPerformance) \(prediction.unit)")
-                return   // First successful prediction wins
+                return
             } catch {
-                continue // Try next activity type
+                continue
             }
         }
         
         mlError = "No trained model available for prediction"
     }
+    
+    private func updateCoachingAndWidget(
+        prediction: PerformancePredictor.Prediction?,
+        fp: PredictionCache.DataFingerprint,
+        sleep: [HealthDataPoint],
+        workouts: [WorkoutData],
+        stravaActivities: [StravaActivity],
+        restingHR: [HealthDataPoint],
+        hrv: [HealthDataPoint]
+    ) {
+        // 1. Re-generate assessment and insights for the CoachingService
+        let assessment = predictiveReadinessService.calculateReadiness(
+            stravaActivities: stravaActivities,
+            healthKitWorkouts: workouts
+        )
+        
+        let insights = correlationEngine.analyzeSleepVsPerformanceByActivityType(
+            sleepData: sleep,
+            healthKitWorkouts: workouts,
+            stravaActivities: stravaActivities
+        )
+        
+        let recoveryStatus = correlationEngine.analyzeRecoveryStatus(
+            restingHRData: restingHR,
+            hrvData: hrv
+        )
+        
+        // 2. Create the final instruction that includes the ML Target
+        let instruction = coachingService.generateDailyInstruction(
+            readiness: assessment,
+            insights: insights,
+            recovery: recoveryStatus,
+            prediction: prediction
+        )
+        
+        // 3. Update the UI property
+        self.dailyInstruction = instruction
+        
+        // 4. Overwrite the cache with the instruction strings and refresh the widget
+        PredictionCache.shared.store(
+            models: PredictionCache.shared.models,
+            fingerprint: fp,
+            instruction: instruction
+        )
+        
+        WidgetCenter.shared.reloadAllTimelines()
+        print("🔔 Widget refreshed with target: \(instruction.targetAction ?? "None")")
+    }
+    
 }
