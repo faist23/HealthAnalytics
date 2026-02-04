@@ -315,8 +315,8 @@ class HealthKitManager: ObservableObject {
             }
             
             // Check if this is Jan 25, 2026 (night of Jan 25 = wakes up Jan 26)
-            _ = calendar.dateComponents([.year, .month, .day], from: nightDate)
-/*            if components.year == 2026 && components.month == 1 && components.day == 25 {
+/*            _ = calendar.dateComponents([.year, .month, .day], from: nightDate)
+           if components.year == 2026 && components.month == 1 && components.day == 25 {
                 print("   🔍 DEBUG Jan 26 ALL samples (including awake):")
                 print("      Total samples: \(targetSamples.count)")
                 
@@ -343,11 +343,9 @@ class HealthKitManager: ObservableObject {
             }*/
         }
         
-        // 2. Sort all samples by time and stop counting after significant wake period
-        // This matches Apple Health's behavior of only counting the main sleep session
+        // 2. Sort all samples by time and accumulate only sleep stages
         let sortedSamples = targetSamples.sorted { $0.startDate < $1.startDate }
         var validSamples: [HKCategorySample] = []
-        let significantWakeThreshold: TimeInterval = 30 * 60 // 30 minutes
         
         for sample in sortedSamples {
             let val = sample.value
@@ -356,18 +354,11 @@ class HealthKitManager: ObservableObject {
                          val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
                          val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
             
-            let isAwake = val == HKCategoryValueSleepAnalysis.awake.rawValue
-            
+            // Simply add all sleep-related samples to validSamples
             if isSleep {
                 validSamples.append(sample)
-            } else if isAwake {
-                // Check if this is a significant wake period (30+ minutes)
-                let awakeDuration = sample.endDate.timeIntervalSince(sample.startDate)
-                if awakeDuration >= significantWakeThreshold {
-                    // Stop counting - main sleep session is over
-                    break
-                }
             }
+            // We no longer 'break' on awake periods, allowing for multiple sleep sessions
         }
         
         // DEBUG: Show only sleep samples
@@ -383,8 +374,8 @@ class HealthKitManager: ObservableObject {
                 nightDate = calendar.startOfDay(for: firstSample.startDate)
             }
             
-            _ = calendar.dateComponents([.year, .month, .day], from: nightDate)
-/*            if components.year == 2026 && components.month == 1 && components.day == 25 {
+/*            _ = calendar.dateComponents([.year, .month, .day], from: nightDate)
+            if components.year == 2026 && components.month == 1 && components.day == 25 {
                 print("   🔍 DEBUG Jan 26 SLEEP-ONLY samples (stopped at long wake):")
 
                 print("      Total samples: \(validSamples.count)")
