@@ -48,7 +48,9 @@ class ReadinessViewModel: ObservableObject {
             // Fetch all necessary data
             let calendar = Calendar.current
             let endDate = Date()
-            let startDate = calendar.date(byAdding: .day, value: -90, to: endDate)! // 90 days
+            
+            // Change from -90 to -120 to fetch 120 days of data
+            let startDate = calendar.date(byAdding: .day, value: -120, to: endDate)! // 90 days
             
             print("📊 Starting Readiness Analysis...")
             
@@ -77,7 +79,7 @@ class ReadinessViewModel: ObservableObject {
             var stravaActivities: [StravaActivity] = []
             if stravaManager.isAuthenticated {
                 do {
-                    stravaActivities = try await stravaManager.fetchActivities(page: 1, perPage: 100)
+                    stravaActivities = try await stravaManager.fetchActivities(page: 1, perPage: 150)
                 } catch {
                     print("⚠️ Strava fetch failed: \(error.localizedDescription)")
                 }
@@ -161,7 +163,9 @@ class ReadinessViewModel: ObservableObject {
                 hrv:              hrv,
                 restingHR:        restingHR,
                 workouts:         workouts,
-                stravaActivities: stravaActivities
+                stravaActivities: stravaActivities,
+                startDate: startDate,
+                endDate: endDate
             )
             
         } catch {
@@ -222,7 +226,9 @@ class ReadinessViewModel: ObservableObject {
         hrv:              [HealthDataPoint],
         restingHR:        [HealthDataPoint],
         workouts:         [WorkoutData],
-        stravaActivities: [StravaActivity]
+        stravaActivities: [StravaActivity],
+        startDate:        Date,
+        endDate:          Date
     ) async {
         let cache = PredictionCache.shared
         
@@ -233,6 +239,8 @@ class ReadinessViewModel: ObservableObject {
             rhrCount:     restingHR.count
         )
         
+        let nutrition = await healthKitManager.fetchNutrition(startDate: startDate, endDate: endDate)
+
         if !cache.isUpToDate(fingerprint: fp) {
             do {
                 let models = try await PerformancePredictor.train(
@@ -240,7 +248,9 @@ class ReadinessViewModel: ObservableObject {
                     hrvData:           hrv,
                     restingHRData:     restingHR,
                     healthKitWorkouts: workouts,
-                    stravaActivities:  stravaActivities
+                    stravaActivities:  stravaActivities,
+                    nutritionData: nutrition,
+                    readinessService: predictiveReadinessService
                 )
                 
                 // Initial store with current instructions
@@ -266,6 +276,12 @@ class ReadinessViewModel: ObservableObject {
             return
         }
         
+        let currentAssessment = predictiveReadinessService.calculateReadiness(
+            stravaActivities: stravaActivities,
+            healthKitWorkouts: workouts
+        )
+        let currentCarbs = nutrition.last?.totalCarbs ?? 0
+        
         let activityTypes = ["Run", "Ride"]
         for activityType in activityTypes {
             do {
@@ -274,7 +290,9 @@ class ReadinessViewModel: ObservableObject {
                     activityType: activityType,
                     sleepHours:   lastSleep,
                     hrvMs:        lastHRV,
-                    restingHR:    lastRHR
+                    restingHR:    lastRHR,
+                    acwr:         currentAssessment.acwr,
+                    carbs:        currentCarbs
                 )
                 
                 // Update local state
@@ -291,7 +309,9 @@ class ReadinessViewModel: ObservableObject {
                     workouts: workouts,
                     stravaActivities: stravaActivities,
                     restingHR: restingHR,
-                    hrv: hrv
+                    hrv: hrv,
+                    acwr: currentAssessment.acwr,
+                    carbs: currentCarbs
                 )
                 
                 print("🧠 Predicted \(activityType): \(prediction.predictedPerformance) \(prediction.unit)")
@@ -311,7 +331,9 @@ class ReadinessViewModel: ObservableObject {
         workouts: [WorkoutData],
         stravaActivities: [StravaActivity],
         restingHR: [HealthDataPoint],
-        hrv: [HealthDataPoint]
+        hrv: [HealthDataPoint],
+        acwr: Double,
+        carbs: Double
     ) {
         // 1. Re-generate assessment and insights for the CoachingService
         let assessment = predictiveReadinessService.calculateReadiness(

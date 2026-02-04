@@ -718,7 +718,7 @@ class HealthKitManager: ObservableObject {
                 options: .cumulativeSum
             ) { _, statistics, error in
                 if let error = error {
-                    print("⚠️ Error fetching \(identifier.rawValue): \(error.localizedDescription)")
+ //                   print("⚠️ Error fetching \(identifier.rawValue): \(error.localizedDescription)")
                     continuation.resume(returning: 0)
                     return
                 }

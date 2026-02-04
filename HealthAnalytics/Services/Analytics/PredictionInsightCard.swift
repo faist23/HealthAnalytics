@@ -65,6 +65,8 @@ struct PredictionInsightCard: View {
                 FeatureBar(label: "Sleep",      value: weights.sleep,     color: .blue,   detail: formatSleep(prediction.inputs.sleepHours))
                 FeatureBar(label: "HRV",        value: weights.hrv,       color: .green,  detail: "\(Int(prediction.inputs.hrvMs)) ms")
                 FeatureBar(label: "Resting HR", value: weights.restingHR, color: .red,    detail: "\(Int(prediction.inputs.restingHR)) bpm")
+                FeatureBar(label: "Fatigue",    value: weights.acwr,      color: .orange, detail: String(format: "%.2f ACR", prediction.inputs.acwr))
+                FeatureBar(label: "Fueling",    value: weights.carbs,     color: .purple, detail: "\(Int(prediction.inputs.carbs))g Carbs")
             }
 
             // ── Dominant-factor callout ──
