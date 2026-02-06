@@ -32,7 +32,7 @@ enum WorkoutSource: String {
 }
 
 struct WorkoutData: Identifiable {
-    let id = UUID()
+    let id: UUID
     let workoutType: HKWorkoutActivityType
     let startDate: Date
     let endDate: Date
@@ -40,8 +40,30 @@ struct WorkoutData: Identifiable {
     let totalEnergyBurned: Double?
     let totalDistance: Double?
     let averagePower: Double?
-    let source: WorkoutSource  // NEW: Workout source
+    let source: WorkoutSource
     
+    init(
+            id: UUID = UUID(), // Default for previews only
+            workoutType: HKWorkoutActivityType,
+            startDate: Date,
+            endDate: Date,
+            duration: TimeInterval,
+            totalEnergyBurned: Double?,
+            totalDistance: Double?,
+            averagePower: Double?,
+            source: WorkoutSource
+        ) {
+            self.id = id
+            self.workoutType = workoutType
+            self.startDate = startDate
+            self.endDate = endDate
+            self.duration = duration
+            self.totalEnergyBurned = totalEnergyBurned
+            self.totalDistance = totalDistance
+            self.averagePower = averagePower
+            self.source = source
+        }
+
     var workoutName: String {
         switch workoutType {
         case .running:

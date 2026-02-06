@@ -88,7 +88,19 @@ struct SettingsView: View {
                         Text("This will remove all cached analysis and trained models. Your raw health and workout data will remain safe.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                    }
+
+
+                        Button(role: .destructive) {
+                            // Trigger reset
+                            Task {
+                                await SyncManager.shared.resetAllData()
+                            }
+                        } label: {
+                            Label("Reset Workout Data", systemImage: "arrow.counterclockwise")
+                        }
+                        Text("Deletes all duplicate workouts and re-syncs from scratch.")
+                            .font(.caption)
+                        .foregroundStyle(.secondary)                    }
                     .padding()
                     .cardStyle(for: .info)
                     

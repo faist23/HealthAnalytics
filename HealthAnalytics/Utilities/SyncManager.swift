@@ -140,4 +140,12 @@ class SyncManager: ObservableObject {
         // Single batch save
         try? context.save()
     }
+    
+    func resetAllData() async {
+        let context = HealthDataContainer.shared.mainContext
+        try? context.delete(model: StoredWorkout.self)
+        try? context.save()
+        print("🗑️ All workouts deleted. Starting fresh sync...")
+        await performGlobalSync()
+    }
 }

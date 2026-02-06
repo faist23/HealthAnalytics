@@ -568,6 +568,7 @@ class HealthKitManager: ObservableObject {
                         // --- 🟢 END FIX ---
                         
                         let data = WorkoutData(
+                            id: workout.uuid, 
                             workoutType: workout.workoutActivityType,
                             startDate: workout.startDate,
                             endDate: workout.endDate,

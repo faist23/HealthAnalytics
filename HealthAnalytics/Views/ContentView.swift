@@ -382,16 +382,12 @@ struct WorkoutSummaryCard: View {
     var formattedTotalDuration: String {
         let hours = Int(totalDuration) / 3600
         let minutes = Int(totalDuration) / 60 % 60
-        
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
+        return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
     }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
+            // Header
             HStack {
                 VStack(alignment: .leading) {
                     Text("Workouts")
@@ -400,15 +396,13 @@ struct WorkoutSummaryCard: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                
                 Spacer()
-                
                 Text("\(totalWorkouts) workouts")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             
-            // Summary stats
+            // Stats Row
             HStack(spacing: 20) {
                 StatBox(icon: "clock.fill", value: formattedTotalDuration, label: "Total Time")
                 StatBox(icon: "flame.fill", value: "\(Int(totalCalories))", label: "Calories")
@@ -416,21 +410,40 @@ struct WorkoutSummaryCard: View {
             
             Divider()
             
-            // Workout list
-            VStack(spacing: 12) {
-                ForEach(workouts.prefix(5)) { workout in
-                    WorkoutRow(workout: workout)
+            // Recent Workouts Section
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Recent Workouts")
+                        .font(.title2)
+                        .bold()
+                    
+                    Spacer()
+                    
+                    NavigationLink {
+                        UnifiedWorkoutsView()
+                    } label: {
+                        Text("See All")
+                            .font(.subheadline)
+                    }
                 }
-            }
-            
-            if workouts.count > 5 {
-                Text("+ \(workouts.count - 5) more workouts")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 5)
+                
+                // 🟢 FIXED: Use local 'workouts' array instead of 'viewModel'
+                // Sort by date (newest first) and take top 3
+                let recent = workouts.sorted { $0.startDate > $1.startDate }.prefix(3)
+                
+                if recent.isEmpty {
+                    Text("No workouts found.")
+                        .foregroundColor(.secondary)
+                        .padding()
+                } else {
+                    ForEach(recent) { workout in
+                        WorkoutRow(workout: workout) // Uses the shared row
+                    }
+                }
             }
         }
         .padding()
+        .cardStyle(for: .workouts)
     }
 }
 
@@ -542,3 +555,4 @@ struct WorkoutRow: View {
 #Preview {
     ContentView()
 }
+
