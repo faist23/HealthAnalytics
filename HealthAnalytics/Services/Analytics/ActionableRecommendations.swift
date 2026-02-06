@@ -3,24 +3,29 @@
 //  HealthAnalytics
 //
 //  Created by Craig Faist on 1/26/26.
+//  Updated to match new MetricTrend model
 //
-
 
 import Foundation
 
-struct ActionableRecommendations {
+class ActionableRecommendations {
     
-    struct Recommendation {
+    struct Recommendation: Identifiable {
+        let id = UUID()
         let priority: Priority
         let category: Category
         let title: String
         let message: String
         let actionItems: [String]
         
-        enum Priority {
-            case high
-            case medium
-            case low
+        enum Priority: Int, Comparable {
+            case high = 0
+            case medium = 1
+            case low = 2
+            
+            static func < (lhs: Priority, rhs: Priority) -> Bool {
+                return lhs.rawValue < rhs.rawValue
+            }
             
             var emoji: String {
                 switch self {
@@ -41,7 +46,7 @@ struct ActionableRecommendations {
     func generateRecommendations(
         trainingLoad: TrainingLoadCalculator.TrainingLoadSummary?,
         recoveryInsights: [CorrelationEngine.RecoveryInsight],
-        trends: [TrendDetector.MetricTrend],
+        trends: [MetricTrend], // 🟢 Uses the new global struct
         injuryRisk: InjuryRiskCalculator.InjuryRiskAssessment?
     ) -> [Recommendation] {
         
@@ -49,35 +54,24 @@ struct ActionableRecommendations {
         
         // 0. Injury Risk (Highest Priority)
         if let risk = injuryRisk {
-            // Only show if moderate or higher to avoid noise
             if risk.riskLevel != .low {
                 let priority: Recommendation.Priority
                 switch risk.riskLevel {
-                case .veryHigh:
-                    priority = .high
-                case .high:
-                    priority = .high
-                case .moderate:
-                    priority = .medium
-                case .low:
-                    priority = .low
+                case .veryHigh, .high: priority = .high
+                case .moderate: priority = .medium
+                case .low: priority = .low
                 }
                 
-                // Format contributing factors properly
-                var actionItems: [String] = [
-                    "Risk Factors:"
-                ]
-                
+                var actionItems: [String] = ["Risk Factors:"]
                 for factor in risk.contributingFactors {
-                    actionItems.append("  • \(factor.description)")
+                    actionItems.append(" • \(factor.description)")
                 }
                 
                 actionItems.append("")
                 actionItems.append("Recommended Actions:")
-                actionItems.append("  • Monitor for pain, soreness, or unusual fatigue")
-                actionItems.append("  • Reduce training intensity if symptoms appear")
-                actionItems.append("  • Ensure adequate recovery between hard sessions")
-                actionItems.append("  • Focus on sleep, nutrition, and stress management")
+                actionItems.append(" • Monitor for pain, soreness, or unusual fatigue")
+                actionItems.append(" • Reduce training intensity if symptoms appear")
+                actionItems.append(" • Ensure adequate recovery between hard sessions")
                 
                 recommendations.append(Recommendation(
                     priority: priority,
@@ -100,8 +94,7 @@ struct ActionableRecommendations {
                     actionItems: [
                         "Take 2-3 complete rest days this week",
                         "Replace hard workouts with easy recovery sessions",
-                        "Prioritize 8+ hours of sleep",
-                        "Consider getting a massage or other recovery modalities"
+                        "Prioritize 8+ hours of sleep"
                     ]
                 ))
             } else if load.status == .fatigued {
@@ -113,8 +106,7 @@ struct ActionableRecommendations {
                     actionItems: [
                         "Add one extra rest day this week",
                         "Keep hard workouts short and focused",
-                        "Ensure adequate sleep (7-9 hours)",
-                        "Monitor resting HR and HRV trends"
+                        "Ensure adequate sleep (7-9 hours)"
                     ]
                 ))
             } else if load.status == .fresh {
@@ -126,14 +118,15 @@ struct ActionableRecommendations {
                     actionItems: [
                         "Good time for hard interval sessions",
                         "Consider scheduling a race or time trial",
-                        "Gradually increase training volume if desired",
-                        "Maintain current recovery practices"
+                        "Gradually increase training volume if desired"
                     ]
                 ))
             }
         }
         
-        // 2. Check recovery metrics
+        // 2. Check recovery metrics (from CorrelationEngine)
+        // Note: Assuming RecoveryInsight structure hasn't changed.
+        // If RecoveryInsight.metric is a string, this logic holds.
         let rhrInsight = recoveryInsights.first { $0.metric == "Resting Heart Rate" }
         let hrvInsight = recoveryInsights.first { $0.metric == "Heart Rate Variability" }
         
@@ -147,17 +140,18 @@ struct ActionableRecommendations {
                 actionItems: [
                     "Take at least one complete rest day",
                     "Review recent training intensity",
-                    "Check for life stressors (work, travel, illness)",
-                    "Ensure proper nutrition and hydration"
+                    "Check for life stressors"
                 ]
             ))
         }
         
-        // 3. Check for declining trends
-        let decliningTrends = trends.filter { $0.direction == .declining }
+        // 3. Check for declining trends (Updated for new MetricTrend)
+        // 🟢 FIX: Use 'status' (.declining/.warning) instead of 'direction'
+        let decliningTrends = trends.filter { $0.status == .declining || $0.status == .warning }
         
         if decliningTrends.count >= 2 {
-            let metrics = decliningTrends.map { $0.metric }.joined(separator: ", ")
+            // 🟢 FIX: Use 'metricName' instead of 'metric'
+            let metrics = decliningTrends.map { $0.metricName }.joined(separator: ", ")
             recommendations.append(Recommendation(
                 priority: .medium,
                 category: .lifestyle,
@@ -166,33 +160,37 @@ struct ActionableRecommendations {
                 actionItems: [
                     "Review recent lifestyle changes",
                     "Assess sleep quality and consistency",
-                    "Consider stress management techniques",
-                    "Evaluate training-to-recovery balance"
+                    "Consider stress management techniques"
                 ]
             ))
         }
         
-        // 4. Check for sleep issues
-        if let sleepTrend = trends.first(where: { $0.metric == "Sleep Duration" }),
-           sleepTrend.direction == .declining {
+        // 4. Check for sleep issues (Updated)
+        // 🟢 FIX: Use 'metricName' and 'status'
+        if let sleepTrend = trends.first(where: { $0.metricName == "Sleep Duration" }),
+           sleepTrend.status == .declining || sleepTrend.status == .warning {
+            
+            // 🟢 FIX: Use 'context' or construct message instead of 'message' property
+            let msg = "Your sleep duration is trending negatively (\(sleepTrend.context))."
+            
             recommendations.append(Recommendation(
                 priority: .medium,
                 category: .lifestyle,
                 title: "Sleep Duration Declining",
-                message: sleepTrend.message,
+                message: msg,
                 actionItems: [
                     "Set a consistent bedtime",
                     "Reduce screen time before bed",
-                    "Create a cool, dark sleep environment",
-                    "Limit caffeine after 2 PM"
+                    "Create a cool, dark sleep environment"
                 ]
             ))
         }
         
-        // 5. Positive reinforcement for improving trends
-        let improvingTrends = trends.filter { $0.direction == .improving }
+        // 5. Positive reinforcement (Updated)
+        // 🟢 FIX: Use 'status' (.improving)
+        let improvingTrends = trends.filter { $0.status == .improving }
         if improvingTrends.count >= 2 {
-            let metrics = improvingTrends.map { $0.metric }.joined(separator: ", ")
+            let metrics = improvingTrends.map { $0.metricName }.joined(separator: ", ")
             recommendations.append(Recommendation(
                 priority: .low,
                 category: .training,
@@ -201,23 +199,11 @@ struct ActionableRecommendations {
                 actionItems: [
                     "Keep doing what you're doing",
                     "Document what's working well",
-                    "Consider gradually progressing training",
-                    "Maintain current recovery habits"
+                    "Consider gradually progressing training"
                 ]
             ))
         }
         
-        return recommendations.sorted { $0.priority.hashValue < $1.priority.hashValue }
-    }
-}
-
-// Make Priority hashable for sorting
-extension ActionableRecommendations.Recommendation.Priority: Hashable {
-    func hash(into hasher: inout Hasher) {
-        switch self {
-        case .high: hasher.combine(0)
-        case .medium: hasher.combine(1)
-        case .low: hasher.combine(2)
-        }
+        return recommendations.sorted { $0.priority < $1.priority }
     }
 }

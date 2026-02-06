@@ -84,7 +84,8 @@ struct StravaActivityRow: View {
                     .cornerRadius(4)
             }
             
-            HStack(spacing: 20) {
+            // 2. Stats Row: Time, Dist, Power, HR, and NOW Kilojoules
+            HStack(spacing: 12) { // Slightly tighter spacing to fit more data
                 Label(activity.durationFormatted, systemImage: "clock")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -93,16 +94,28 @@ struct StravaActivityRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
-                // Show power if available
+                // Existing Power
                 if let avgWatts = activity.averageWatts, avgWatts > 0 {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 2) {
                         Image(systemName: "bolt.fill")
-                        Text("\(Int(avgWatts)) W")
+                        Text("\(Int(avgWatts))W")
                     }
                     .font(.caption)
                     .foregroundStyle(.orange)
                 }
                 
+                // 🟢 ADDED: Calories / Kilojoules
+                // Uses 1:1 KJ to Calorie approximation standard in cycling
+                if let kj = activity.kilojoules, kj > 0 {
+                    HStack(spacing: 2) {
+                        Image(systemName: "flame.fill")
+                        Text("\(Int(kj))")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                }
+                
+                // Existing Heart Rate
                 if let avgHR = activity.averageHeartrate {
                     Label("\(Int(avgHR)) bpm", systemImage: "heart.fill")
                         .font(.caption)
@@ -110,6 +123,7 @@ struct StravaActivityRow: View {
                 }
             }
             
+            // 3. Date Footer
             if let date = activity.startDateFormatted {
                 Text(date, style: .date)
                     .font(.caption2)

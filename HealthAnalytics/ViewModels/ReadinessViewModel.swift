@@ -2,12 +2,13 @@
 //  ReadinessViewModel.swift
 //  HealthAnalytics
 //
-//  View model for revolutionary readiness and pattern insights
+//  Created for HealthAnalytics
 //
 
 import Foundation
 import Combine
 import WidgetKit
+import SwiftData
 
 @MainActor
 class ReadinessViewModel: ObservableObject {
@@ -29,9 +30,6 @@ class ReadinessViewModel: ObservableObject {
     @Published var mlFeatureWeights:  PerformancePredictor.FeatureWeights?
     @Published var mlError:           String?
     
-    private let healthKitManager = HealthKitManager.shared
-    private let stravaManager = StravaManager.shared
-    
     private let readinessAnalyzer = ReadinessAnalyzer()
     private let patternAnalyzer = PerformancePatternAnalyzer()
     
@@ -44,147 +42,214 @@ class ReadinessViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
+        // 1. Trigger Global Sync
+        // This updates SwiftData with the latest 120 days of data from HealthKit/Strava
+        await SyncManager.shared.performGlobalSync()
+        
         do {
-            // Fetch all necessary data
-            let calendar = Calendar.current
-            let endDate = Date()
+            print("📊 Loading data from local storage for analysis...")
             
-            // Change from -90 to -120 to fetch 120 days of data
-            let startDate = calendar.date(byAdding: .day, value: -120, to: endDate)! // 90 days
+            // 2. Fetch from SwiftData (Single Source of Truth)
+            let context = HealthDataContainer.shared.mainContext
             
-            print("📊 Starting Readiness Analysis...")
+            // Fetch raw persistent objects
+            let storedWorkouts = try context.fetch(FetchDescriptor<StoredWorkout>(sortBy: [SortDescriptor(\.startDate)]))
+            let storedMetrics = try context.fetch(FetchDescriptor<StoredHealthMetric>(sortBy: [SortDescriptor(\.date)]))
+            let storedNutrition = try context.fetch(FetchDescriptor<StoredNutrition>(sortBy: [SortDescriptor(\.date)]))
             
-            // Fetch from HealthKit
-            let restingHR = try await healthKitManager.fetchRestingHeartRate(
-                startDate: startDate,
-                endDate: endDate
-            )
+            // 3. Map to Domain Models using your new DomainMapping.swift extensions
+            let workouts = storedWorkouts.map { $0.toWorkoutData() }
+            let nutrition = storedNutrition.map { $0.toDailyNutrition() }
             
-            let hrv = try await healthKitManager.fetchHeartRateVariability(
-                startDate: startDate,
-                endDate: endDate
-            )
+            let hrv = storedMetrics.filter { $0.type == "HRV" }.map { $0.toHealthDataPoint() }
+            let rhr = storedMetrics.filter { $0.type == "RHR" }.map { $0.toHealthDataPoint() }
+            let sleep = storedMetrics.filter { $0.type == "Sleep" }.map { $0.toHealthDataPoint() }
             
-            let sleep = try await healthKitManager.fetchSleepDuration(
-                startDate: startDate,
-                endDate: endDate
-            )
+            print("✅ Data loaded from storage")
+            print("   • Resting HR: \(rhr.count) points")
+            print("   • Workouts: \(workouts.count) (HK + Strava)")
+            print("   • Nutrition: \(nutrition.count) days")
             
-            let workouts = try await healthKitManager.fetchWorkouts(
-                startDate: startDate,
-                endDate: endDate
-            )
-            
-            // Fetch from Strava
-            var stravaActivities: [StravaActivity] = []
-            if stravaManager.isAuthenticated {
-                do {
-                    stravaActivities = try await stravaManager.fetchActivities(page: 1, perPage: 150)
-                } catch {
-                    print("⚠️ Strava fetch failed: \(error.localizedDescription)")
-                }
-            }
-            
-            // Fetch nutrition
-            let nutrition = await healthKitManager.fetchNutrition(
-                startDate: startDate,
-                endDate: endDate
-            )
-            
-            print("✅ Data fetched successfully")
-            print("   • Resting HR: \(restingHR.count) points")
-            print("   • HRV: \(hrv.count) points")
-            print("   • Sleep: \(sleep.count) nights")
-            print("   • Workouts: \(workouts.count)")
-            print("   • Strava: \(stravaActivities.count)")
-            
-            // Analyze readiness
+            // 4. Analyze Readiness
             readinessScore = readinessAnalyzer.analyzeReadiness(
-                restingHR: restingHR,
+                restingHR: rhr,
                 hrv: hrv,
                 sleep: sleep,
                 workouts: workouts,
-                stravaActivities: stravaActivities,
+                stravaActivities: [], // Empty because they are already merged into 'workouts'
                 nutrition: nutrition
             )
             
-            // Discover patterns
+            // 5. Discover Patterns
             performanceWindows = patternAnalyzer.discoverPerformanceWindows(
                 workouts: workouts,
-                activities: stravaActivities,
+                activities: [],
                 sleep: sleep,
                 nutrition: nutrition
             )
             
             optimalTimings = patternAnalyzer.discoverOptimalTiming(
                 workouts: workouts,
-                activities: stravaActivities
+                activities: []
             )
             
             workoutSequences = patternAnalyzer.discoverWorkoutSequences(
                 workouts: workouts,
-                activities: stravaActivities
+                activities: []
             )
             
-            // Generate form indicator
+            // 6. Generate Form Indicator
             if let readiness = readinessScore {
-                formIndicator = generateFormIndicator(from: readiness, workouts: workouts + stravaActivities.compactMap { WorkoutData(from: $0) })
+                formIndicator = generateFormIndicator(from: readiness, workouts: workouts)
             }
             
-            // Generate Coaching Instruction
+            // 7. Generate Coaching Instruction
             let assessment = predictiveReadinessService.calculateReadiness(
-                stravaActivities: stravaActivities,
-                healthKitWorkouts: workouts
+                stravaActivities: [],
+                healthKitWorkouts: workouts // Pass unified list
             )
             
             let insights = correlationEngine.analyzeSleepVsPerformanceByActivityType(
                 sleepData: sleep,
                 healthKitWorkouts: workouts,
-                stravaActivities: stravaActivities
+                stravaActivities: []
             )
             
             let recoveryStatus = correlationEngine.analyzeRecoveryStatus(
-                restingHRData: restingHR,
+                restingHRData: rhr,
                 hrvData: hrv
             )
             
             self.dailyInstruction = coachingService.generateDailyInstruction(
-                readiness: assessment, // You'll need to keep this local or as a property
+                readiness: assessment,
                 insights: insights,
                 recovery: recoveryStatus,
                 prediction: mlPrediction
             )
- //           WidgetCenter.shared.reloadAllTimelines()
+            
             isLoading = false
             
-            // ── ML prediction ── pass the local variables directly
+            // 8. Trigger ML Prediction
+            let endDate = Date()
+            let startDate = Calendar.current.date(byAdding: .day, value: -120, to: endDate)!
+            
             await trainAndPredict(
                 sleep:            sleep,
                 hrv:              hrv,
-                restingHR:        restingHR,
+                restingHR:        rhr,
                 workouts:         workouts,
-                stravaActivities: stravaActivities,
-                startDate: startDate,
-                endDate: endDate
+                startDate:        startDate,
+                endDate:          endDate,
+                currentNutrition: nutrition // Pass the mapped nutrition array
             )
             
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Analysis failed: \(error.localizedDescription)"
             isLoading = false
-            print("❌ Analysis failed: \(error)")
+            print("❌ Analysis error: \(error)")
         }
+    }
+    
+    // MARK: - ML Prediction
+    
+    @MainActor
+    private func trainAndPredict(
+        sleep:            [HealthDataPoint],
+        hrv:              [HealthDataPoint],
+        restingHR:        [HealthDataPoint],
+        workouts:         [WorkoutData],
+        startDate:        Date,
+        endDate:          Date,
+        currentNutrition: [DailyNutrition] // This matches the call site in analyze()
+    ) async {
+        let cache = PredictionCache.shared
+        
+        let fp = PredictionCache.fingerprint(
+            workoutCount: workouts.count,
+            sleepCount:   sleep.count,
+            hrvCount:     hrv.count,
+            rhrCount:     restingHR.count
+        )
+        
+        if !cache.isUpToDate(fingerprint: fp) {
+            do {
+                // Pass unified workouts and mapped nutrition
+                let models = try await PerformancePredictor.train(
+                    sleepData:         sleep,
+                    hrvData:           hrv,
+                    restingHRData:     restingHR,
+                    healthKitWorkouts: workouts,
+                    stravaActivities:  [], // Unified in workouts
+                    nutritionData:     currentNutrition,
+                    readinessService:  predictiveReadinessService
+                )
+                
+                if let instruction = self.dailyInstruction {
+                    cache.store(models: models, fingerprint: fp, instruction: instruction)
+                }
+            } catch {
+                mlError = error.localizedDescription
+                return
+            }
+        }
+        
+        guard let lastSleep = sleep.last?.value,
+              let lastHRV   = hrv.last?.value,
+              let lastRHR   = restingHR.last?.value else {
+            mlError = "Need sleep, HRV, and resting HR data to predict"
+            return
+        }
+        
+        let currentAssessment = predictiveReadinessService.calculateReadiness(
+            stravaActivities: [],
+            healthKitWorkouts: workouts
+        )
+        
+        // FIXED: Use 'currentNutrition' parameter instead of undefined 'nutrition'
+        let currentCarbs = currentNutrition.last?.totalCarbs ?? 0
+        
+        let activityTypes = ["Run", "Ride"]
+        for activityType in activityTypes {
+            do {
+                let prediction = try PerformancePredictor.predict(
+                    models:       cache.models,
+                    activityType: activityType,
+                    sleepHours:   lastSleep,
+                    hrvMs:        lastHRV,
+                    restingHR:    lastRHR,
+                    acwr:         currentAssessment.acwr,
+                    carbs:        currentCarbs
+                )
+                
+                self.mlPrediction     = prediction
+                self.mlFeatureWeights = cache.models.first?.featureWeights
+                self.mlError          = nil
+                cache.storePrediction(prediction)
+                
+                updateCoachingAndWidget(
+                    prediction: prediction,
+                    fp: fp,
+                    sleep: sleep,
+                    workouts: workouts,
+                    restingHR: restingHR,
+                    hrv: hrv,
+                    acwr: currentAssessment.acwr,
+                    carbs: currentCarbs
+                )
+                return
+            } catch { continue }
+        }
+        mlError = "No trained model available"
     }
     
     private func generateFormIndicator(
         from readiness: ReadinessAnalyzer.ReadinessScore,
         workouts: [WorkoutData]
     ) -> ReadinessAnalyzer.FormIndicator {
-        
         let status: ReadinessAnalyzer.FormIndicator.FormStatus
         let riskLevel: ReadinessAnalyzer.FormIndicator.RiskLevel
         let optimalWindow: String
         
-        // Determine status
         if readiness.score >= 85 {
             status = .primed
             optimalWindow = "Next 1-3 days perfect for breakthrough efforts"
@@ -207,121 +272,12 @@ class ReadinessViewModel: ObservableObject {
             riskLevel = .veryHigh
         }
         
-        // Calculate days in status (simplified)
-        let daysInStatus = 1 // Would need historical tracking
-        
         return ReadinessAnalyzer.FormIndicator(
             status: status,
-            daysInStatus: daysInStatus,
+            daysInStatus: 1,
             optimalActionWindow: optimalWindow,
             riskLevel: riskLevel
         )
-    }
-    
-    // MARK: - ML Prediction
-    
-    @MainActor
-    private func trainAndPredict(
-        sleep:            [HealthDataPoint],
-        hrv:              [HealthDataPoint],
-        restingHR:        [HealthDataPoint],
-        workouts:         [WorkoutData],
-        stravaActivities: [StravaActivity],
-        startDate:        Date,
-        endDate:          Date
-    ) async {
-        let cache = PredictionCache.shared
-        
-        let fp = PredictionCache.fingerprint(
-            workoutCount: workouts.count + stravaActivities.count,
-            sleepCount:   sleep.count,
-            hrvCount:     hrv.count,
-            rhrCount:     restingHR.count
-        )
-        
-        let nutrition = await healthKitManager.fetchNutrition(startDate: startDate, endDate: endDate)
-
-        if !cache.isUpToDate(fingerprint: fp) {
-            do {
-                let models = try await PerformancePredictor.train(
-                    sleepData:         sleep,
-                    hrvData:           hrv,
-                    restingHRData:     restingHR,
-                    healthKitWorkouts: workouts,
-                    stravaActivities:  stravaActivities,
-                    nutritionData: nutrition,
-                    readinessService: predictiveReadinessService
-                )
-                
-                // Initial store with current instructions
-                if let instruction = self.dailyInstruction {
-                    cache.store(models: models, fingerprint: fp, instruction: instruction)
-                }
-                
-            } catch {
-                cache.storeError(error)
-                mlError = error.localizedDescription
-                mlPrediction = nil
-                mlFeatureWeights = nil
-                return
-            }
-        }
-        
-        guard let lastSleep = sleep.last?.value,
-              let lastHRV   = hrv.last?.value,
-              let lastRHR   = restingHR.last?.value else {
-            mlError = "Need sleep, HRV, and resting HR data to predict"
-            mlPrediction = nil
-            mlFeatureWeights = nil
-            return
-        }
-        
-        let currentAssessment = predictiveReadinessService.calculateReadiness(
-            stravaActivities: stravaActivities,
-            healthKitWorkouts: workouts
-        )
-        let currentCarbs = nutrition.last?.totalCarbs ?? 0
-        
-        let activityTypes = ["Run", "Ride"]
-        for activityType in activityTypes {
-            do {
-                let prediction = try PerformancePredictor.predict(
-                    models:       cache.models,
-                    activityType: activityType,
-                    sleepHours:   lastSleep,
-                    hrvMs:        lastHRV,
-                    restingHR:    lastRHR,
-                    acwr:         currentAssessment.acwr,
-                    carbs:        currentCarbs
-                )
-                
-                // Update local state
-                self.mlPrediction     = prediction
-                self.mlFeatureWeights = cache.models.first?.featureWeights
-                self.mlError          = nil
-                cache.storePrediction(prediction)
-                
-                // NEW: Explicitly update coaching with this prediction and refresh widget
-                updateCoachingAndWidget(
-                    prediction: prediction,
-                    fp: fp,
-                    sleep: sleep,
-                    workouts: workouts,
-                    stravaActivities: stravaActivities,
-                    restingHR: restingHR,
-                    hrv: hrv,
-                    acwr: currentAssessment.acwr,
-                    carbs: currentCarbs
-                )
-                
-                print("🧠 Predicted \(activityType): \(prediction.predictedPerformance) \(prediction.unit)")
-                return
-            } catch {
-                continue
-            }
-        }
-        
-        mlError = "No trained model available for prediction"
     }
     
     private func updateCoachingAndWidget(
@@ -329,22 +285,20 @@ class ReadinessViewModel: ObservableObject {
         fp: PredictionCache.DataFingerprint,
         sleep: [HealthDataPoint],
         workouts: [WorkoutData],
-        stravaActivities: [StravaActivity],
         restingHR: [HealthDataPoint],
         hrv: [HealthDataPoint],
         acwr: Double,
         carbs: Double
     ) {
-        // 1. Re-generate assessment and insights for the CoachingService
         let assessment = predictiveReadinessService.calculateReadiness(
-            stravaActivities: stravaActivities,
+            stravaActivities: [],
             healthKitWorkouts: workouts
         )
         
         let insights = correlationEngine.analyzeSleepVsPerformanceByActivityType(
             sleepData: sleep,
             healthKitWorkouts: workouts,
-            stravaActivities: stravaActivities
+            stravaActivities: []
         )
         
         let recoveryStatus = correlationEngine.analyzeRecoveryStatus(
@@ -352,7 +306,6 @@ class ReadinessViewModel: ObservableObject {
             hrvData: hrv
         )
         
-        // 2. Create the final instruction that includes the ML Target
         let instruction = coachingService.generateDailyInstruction(
             readiness: assessment,
             insights: insights,
@@ -360,10 +313,8 @@ class ReadinessViewModel: ObservableObject {
             prediction: prediction
         )
         
-        // 3. Update the UI property
         self.dailyInstruction = instruction
         
-        // 4. Overwrite the cache with the instruction strings and refresh the widget
         PredictionCache.shared.store(
             models: PredictionCache.shared.models,
             fingerprint: fp,
@@ -371,7 +322,5 @@ class ReadinessViewModel: ObservableObject {
         )
         
         WidgetCenter.shared.reloadAllTimelines()
-        print("🔔 Widget refreshed with target: \(instruction.targetAction ?? "None")")
     }
-    
 }

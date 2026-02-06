@@ -289,7 +289,7 @@ class HealthKitManager: ObservableObject {
                 targetSamples = autoSleepSamples
             } else {
                 // AutoSleep exists but has no sleep data - fall back to Apple Watch
- //               print("   ⚠️ AutoSleep detected but empty. Falling back to Apple Watch.")
+                //               print("   ⚠️ AutoSleep detected but empty. Falling back to Apple Watch.")
                 targetSamples = samples.filter {
                     !$0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep")
                 }
@@ -315,32 +315,32 @@ class HealthKitManager: ObservableObject {
             }
             
             // Check if this is Jan 25, 2026 (night of Jan 25 = wakes up Jan 26)
-/*            _ = calendar.dateComponents([.year, .month, .day], from: nightDate)
-           if components.year == 2026 && components.month == 1 && components.day == 25 {
-                print("   🔍 DEBUG Jan 26 ALL samples (including awake):")
-                print("      Total samples: \(targetSamples.count)")
-                
-                // Sort all samples by time for readability
-                let sortedAll = targetSamples.sorted { $0.startDate < $1.startDate }
-                for (index, sample) in sortedAll.enumerated() {
-                    let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
-                    let stageName: String
-                    if sample.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue {
-                        stageName = "Core"
-                    } else if sample.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue {
-                        stageName = "Deep"
-                    } else if sample.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue {
-                        stageName = "REM"
-                    } else if sample.value == HKCategoryValueSleepAnalysis.awake.rawValue {
-                        stageName = "AWAKE"
-                    } else if sample.value == HKCategoryValueSleepAnalysis.inBed.rawValue {
-                        stageName = "InBed"
-                    } else {
-                        stageName = "Unspecified"
-                    }
-                    print("      [\(index+1)] \(stageName): \(String(format: "%.2f", duration))h | \(sample.startDate.formatted(date: .omitted, time: .shortened)) - \(sample.endDate.formatted(date: .omitted, time: .shortened))")
-                }
-            }*/
+            /*            _ = calendar.dateComponents([.year, .month, .day], from: nightDate)
+             if components.year == 2026 && components.month == 1 && components.day == 25 {
+             print("   🔍 DEBUG Jan 26 ALL samples (including awake):")
+             print("      Total samples: \(targetSamples.count)")
+             
+             // Sort all samples by time for readability
+             let sortedAll = targetSamples.sorted { $0.startDate < $1.startDate }
+             for (index, sample) in sortedAll.enumerated() {
+             let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
+             let stageName: String
+             if sample.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue {
+             stageName = "Core"
+             } else if sample.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue {
+             stageName = "Deep"
+             } else if sample.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue {
+             stageName = "REM"
+             } else if sample.value == HKCategoryValueSleepAnalysis.awake.rawValue {
+             stageName = "AWAKE"
+             } else if sample.value == HKCategoryValueSleepAnalysis.inBed.rawValue {
+             stageName = "InBed"
+             } else {
+             stageName = "Unspecified"
+             }
+             print("      [\(index+1)] \(stageName): \(String(format: "%.2f", duration))h | \(sample.startDate.formatted(date: .omitted, time: .shortened)) - \(sample.endDate.formatted(date: .omitted, time: .shortened))")
+             }
+             }*/
         }
         
         // 2. Sort all samples by time and accumulate only sleep stages
@@ -350,9 +350,9 @@ class HealthKitManager: ObservableObject {
         for sample in sortedSamples {
             let val = sample.value
             let isSleep = val == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
-                         val == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
-                         val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
-                         val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+            val == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+            val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
+            val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
             
             // Simply add all sleep-related samples to validSamples
             if isSleep {
@@ -374,53 +374,53 @@ class HealthKitManager: ObservableObject {
                 nightDate = calendar.startOfDay(for: firstSample.startDate)
             }
             
-/*            _ = calendar.dateComponents([.year, .month, .day], from: nightDate)
-            if components.year == 2026 && components.month == 1 && components.day == 25 {
-                print("   🔍 DEBUG Jan 26 SLEEP-ONLY samples (stopped at long wake):")
-
-                print("      Total samples: \(validSamples.count)")
-                
-                // Sort by time for readability
-                let sortedSleep = validSamples.sorted { $0.startDate < $1.startDate }
-                for (index, sample) in sortedSleep.enumerated() {
-                    let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
-                    let stageName: String
-                    if sample.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue {
-                        stageName = "Core"
-                    } else if sample.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue {
-                        stageName = "Deep"
-                    } else if sample.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue {
-                        stageName = "REM"
-                    } else {
-                        stageName = "Unspecified"
-                    }
-                    print("      [\(index+1)] \(stageName): \(String(format: "%.2f", duration))h | \(sample.startDate.formatted(date: .omitted, time: .shortened)) - \(sample.endDate.formatted(date: .omitted, time: .shortened))")
-                }
-            }*/
+            /*            _ = calendar.dateComponents([.year, .month, .day], from: nightDate)
+             if components.year == 2026 && components.month == 1 && components.day == 25 {
+             print("   🔍 DEBUG Jan 26 SLEEP-ONLY samples (stopped at long wake):")
+             
+             print("      Total samples: \(validSamples.count)")
+             
+             // Sort by time for readability
+             let sortedSleep = validSamples.sorted { $0.startDate < $1.startDate }
+             for (index, sample) in sortedSleep.enumerated() {
+             let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
+             let stageName: String
+             if sample.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue {
+             stageName = "Core"
+             } else if sample.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue {
+             stageName = "Deep"
+             } else if sample.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue {
+             stageName = "REM"
+             } else {
+             stageName = "Unspecified"
+             }
+             print("      [\(index+1)] \(stageName): \(String(format: "%.2f", duration))h | \(sample.startDate.formatted(date: .omitted, time: .shortened)) - \(sample.endDate.formatted(date: .omitted, time: .shortened))")
+             }
+             }*/
         }
         
         // 3. Merge overlapping intervals to prevent double-counting
         let duration = calculateUniqueDuration(validSamples)
         
-/*       // DEBUG: Show merge result for Jan 25 night
-        if let first = validSamples.first {
-            let calendar = Calendar.current
-            let hour = calendar.component(.hour, from: first.startDate)
-            
-            let nightDate: Date
-            if hour < 12 {
-                nightDate = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: first.startDate))!
-            } else {
-                nightDate = calendar.startOfDay(for: first.startDate)
-            }
-            
-            let components = calendar.dateComponents([.year, .month, .day], from: nightDate)
-            if components.year == 2026 && components.month == 1 && components.day == 25 {
-                let hours = duration / 3600.0
-                print("      ✅ After merge: \(String(format: "%.2f", hours))h")
-            }
-        }
-*/
+        /*       // DEBUG: Show merge result for Jan 25 night
+         if let first = validSamples.first {
+         let calendar = Calendar.current
+         let hour = calendar.component(.hour, from: first.startDate)
+         
+         let nightDate: Date
+         if hour < 12 {
+         nightDate = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: first.startDate))!
+         } else {
+         nightDate = calendar.startOfDay(for: first.startDate)
+         }
+         
+         let components = calendar.dateComponents([.year, .month, .day], from: nightDate)
+         if components.year == 2026 && components.month == 1 && components.day == 25 {
+         let hours = duration / 3600.0
+         print("      ✅ After merge: \(String(format: "%.2f", hours))h")
+         }
+         }
+         */
         return duration
     }
     
@@ -547,15 +547,25 @@ class HealthKitManager: ObservableObject {
                     self.fetchAveragePower(for: workout) { averagePower in
                         // Handle energy burned for iOS 18+
                         var energyBurned: Double?
+                        
+                        // 1. Attempt to read from the modern Statistics API (iOS 18+)
+                        // Note: Even on iOS 18+, this often returns nil for standard workouts
                         if #available(iOS 18.0, *) {
                             if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
                                let statistics = workout.statistics(for: energyType),
                                let sum = statistics.sumQuantity() {
                                 energyBurned = sum.doubleValue(for: .kilocalorie())
                             }
-                        } else {
-                            energyBurned = workout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
                         }
+                        
+                        // 2. CRITICAL FALLBACK: If the new API returned nothing, use the legacy property.
+                        // This property contains the data for 99% of Apple Watch workouts.
+                        if energyBurned == nil {
+                            if let legacyQuantity = workout.value(forKey: "totalEnergyBurned") as? HKQuantity {
+                                energyBurned = legacyQuantity.doubleValue(for: .kilocalorie())
+                            }
+                        }
+                        // --- 🟢 END FIX ---
                         
                         let data = WorkoutData(
                             workoutType: workout.workoutActivityType,
@@ -718,14 +728,14 @@ class HealthKitManager: ObservableObject {
                 options: .cumulativeSum
             ) { _, statistics, error in
                 if let error = error {
- //                   print("⚠️ Error fetching \(identifier.rawValue): \(error.localizedDescription)")
+                    //                   print("⚠️ Error fetching \(identifier.rawValue): \(error.localizedDescription)")
                     continuation.resume(returning: 0)
                     return
                 }
                 
                 let sum = statistics?.sumQuantity()?.doubleValue(for: unit) ?? 0
                 if sum > 0 {
-//                    print("✅ Found \(identifier.rawValue): \(String(format: "%.1f", sum)) \(unit)")
+                    //                    print("✅ Found \(identifier.rawValue): \(String(format: "%.1f", sum)) \(unit)")
                 } else {
                     print("⚠️ No data for \(identifier.rawValue)")
                 }
@@ -747,6 +757,49 @@ class HealthKitManager: ObservableObject {
         return []
     }
     
+    func fetchSteps(startDate: Date, endDate: Date) async -> [HealthDataPoint] {
+        guard let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) else {
+            return []
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        
+        // Use StatisticsCollectionQuery for accurate daily sums
+        let anchorDate = Calendar.current.startOfDay(for: startDate)
+        let daily = DateComponents(day: 1)
+        
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: stepType,
+                quantitySamplePredicate: predicate,
+                options: .cumulativeSum,
+                anchorDate: anchorDate,
+                intervalComponents: daily
+            )
+            
+            query.initialResultsHandler = { _, results, error in
+                guard let results = results, error == nil else {
+                    print("❌ Error fetching steps: \(error?.localizedDescription ?? "Unknown")")
+                    continuation.resume(returning: [])
+                    return
+                }
+                
+                var points: [HealthDataPoint] = []
+                
+                results.enumerateStatistics(from: startDate, to: endDate) { statistics, _ in
+                    if let sum = statistics.sumQuantity() {
+                        let count = sum.doubleValue(for: HKUnit.count())
+                        // Use the start of the day for the data point
+                        points.append(HealthDataPoint(date: statistics.startDate, value: count))
+                    }
+                }
+                
+                continuation.resume(returning: points)
+            }
+            
+            healthStore.execute(query)
+        }
+    }
 }
 
 enum HealthKitError: Error {

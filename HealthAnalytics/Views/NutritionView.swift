@@ -2,74 +2,186 @@
 //  NutritionView.swift
 //  HealthAnalytics
 //
-//  Created by Craig Faist on 1/26/26.
+//  Created for HealthAnalytics
 //
-
 
 import SwiftUI
 import Charts
 
 struct NutritionView: View {
     @StateObject private var viewModel = NutritionViewModel()
-    @Environment(\.colorScheme) var colorScheme
-
-    private let nutritionAccent = Color.teal
-
+    
     var body: some View {
-        ZStack {
-            TabBackgroundColor.nutrition(for: colorScheme)
-                 .ignoresSafeArea()
-
-             ScrollView {
+        NavigationStack {
+            ScrollView {
                 VStack(spacing: 20) {
                     
-                    if viewModel.isLoading {
-                        ProgressView("Loading nutrition data...")
-                            .padding()
-                    } else if let error = viewModel.errorMessage {
-                        ErrorView(message: error)
-                    } else if viewModel.nutritionData.isEmpty {
-                        EmptyNutritionView()
-                    } else {
-                        // SUMMARY
-                         NutritionSummaryCard(data: viewModel.nutritionData)
-                            .cardStyle(for: .nutrition)
-
-                         // CHART
-                         MacroChartCard(data: viewModel.nutritionData)
-                            .cardStyle(for: .nutrition)
-
-                         // LIST
-                         DailyNutritionList(data: viewModel.nutritionData)
-                            .cardStyle(for: .nutrition)
+                    // MARK: - Time Range Picker
+                    Picker("Time Range", selection: $viewModel.selectedTimeRange) {
+                        ForEach(NutritionViewModel.TimeRange.allCases, id: \.self) { range in
+                            Text(range.rawValue).tag(range)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .onChange(of: viewModel.selectedTimeRange) { _, newRange in
+                        Task {
+                            await viewModel.loadNutritionData()
+                        }
                     }
                     
-                    Spacer()
-                }
-                .padding()
-            }
-            // Ensures the scroll view doesn't bring its own background "box"
-            .scrollContentBackground(.hidden)
-        }
-        .navigationTitle("Nutrition")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task {
-                        await viewModel.loadNutrition()
+                    if viewModel.isLoading {
+                        ProgressView("Loading data...")
+                            .padding()
+                    } else if viewModel.dailyNutrition.isEmpty {
+                        ContentUnavailableView(
+                            "No Nutrition Data",
+                            systemImage: "fork.knife",
+                            description: Text("Log food in MyFitnessPal or Apple Health to see insights.")
+                        )
+                        .padding(.top, 40)
+                    } else {
+                        // MARK: - Summary Cards
+                        NutritionSummaryGrid(viewModel: viewModel)
+                            .padding(.horizontal)
+                        
+                        // MARK: - Calories Chart
+                        ChartSection(title: "Calorie Intake") {
+                            Chart(viewModel.dailyNutrition) { day in
+                                BarMark(
+                                    x: .value("Date", day.date, unit: .day),
+                                    y: .value("Calories", day.totalCalories)
+                                )
+                                .foregroundStyle(.orange.gradient)
+                            }
+                        }
+                        
+                        // MARK: - Macros Chart
+                        ChartSection(title: "Macro Breakdown") {
+                            Chart {
+                                ForEach(viewModel.dailyNutrition) { day in
+                                    BarMark(
+                                        x: .value("Date", day.date, unit: .day),
+                                        y: .value("Protein", day.totalProtein)
+                                    )
+                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(by: .value("Macro", "Protein"))
+                                    
+                                    BarMark(
+                                        x: .value("Date", day.date, unit: .day),
+                                        y: .value("Carbs", day.totalCarbs)
+                                    )
+                                    .foregroundStyle(.green)
+                                    .foregroundStyle(by: .value("Macro", "Carbs"))
+                                    
+                                    BarMark(
+                                        x: .value("Date", day.date, unit: .day),
+                                        y: .value("Fat", day.totalFat)
+                                    )
+                                    .foregroundStyle(.purple)
+                                    .foregroundStyle(by: .value("Macro", "Fat"))
+                                }
+                            }
+                        }
                     }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
                 }
-                .disabled(viewModel.isLoading)
+                .padding(.vertical)
             }
-        }
-        .task {
-            await viewModel.loadNutrition()
+            .navigationTitle("Nutrition")
+            .background(Color(uiColor: .systemGroupedBackground))
+            .task {
+                // Ensure data is loaded when view appears
+                await viewModel.loadNutritionData()
+            }
         }
     }
 }
 
+// MARK: - Subviews
+
+struct NutritionSummaryGrid: View {
+    @ObservedObject var viewModel: NutritionViewModel
+    
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+            SummaryCard(
+                title: "Avg Calories",
+                value: String(format: "%.0f", viewModel.averageCalories),
+                unit: "kcal",
+                color: .orange
+            )
+            SummaryCard(
+                title: "Avg Protein",
+                value: String(format: "%.0f", viewModel.averageProtein),
+                unit: "g",
+                color: .blue
+            )
+            SummaryCard(
+                title: "Avg Carbs",
+                value: String(format: "%.0f", viewModel.averageCarbs),
+                unit: "g",
+                color: .green
+            )
+            SummaryCard(
+                title: "Avg Fat",
+                value: String(format: "%.0f", viewModel.averageFat),
+                unit: "g",
+                color: .purple
+            )
+        }
+    }
+}
+
+struct SummaryCard: View {
+    let title: String
+    let value: String
+    let unit: String
+    let color: Color
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.title2.bold())
+                    .foregroundStyle(color)
+                Text(unit)
+                    .font(.caption.bold())
+                    .foregroundStyle(color.opacity(0.8))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+struct ChartSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title)
+                .font(.headline)
+                .padding(.horizontal)
+            
+            content()
+                .frame(height: 250)
+                .padding(.horizontal)
+        }
+        .padding(.vertical)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal)
+    }
+}
+
+// OLD STUFF, DON'T KNOW IF WE NEED IT
 // MARK: - Original Components (Preserved with Modern Styling)
 
 struct NutritionSummaryCard: View {

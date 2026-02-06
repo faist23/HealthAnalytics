@@ -5,7 +5,6 @@
 //  Created by Craig Faist on 1/25/26.
 //
 
-
 import SwiftUI
 import Charts
 
@@ -17,7 +16,7 @@ struct InsightsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                
+                // 1. Handle Loading & Error States
                 if viewModel.isLoading {
                     ProgressView("Analyzing your data...")
                         .padding()
@@ -25,258 +24,8 @@ struct InsightsView: View {
                     ErrorView(message: error)
                         .cardStyle(for: .error)
                 } else {
-                    // Recommendations (high priority items at top)
-                    if !viewModel.recommendations.isEmpty {
-                        ForEach(viewModel.recommendations, id: \.title) { recommendation in
-                            RecommendationCard(recommendation: recommendation)
-                        }
-                        
-                        Divider()
-                            .padding(.vertical)
-                    }
-                    if let assessment = viewModel.readinessAssessment {
-                        // Inside InsightsView.swift
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    HStack(spacing: 4) {
-                                        Text("TRAINING STATUS")
-                                            .font(.caption).bold().foregroundColor(.secondary)
-                                        
-                                        Button {
-                                            showACWRInfo = true
-                                        } label: {
-                                            Image(systemName: "info.circle")
-                                                .font(.caption)
-                                                .foregroundColor(.blue)
-                                        }
-                                    }
-                                    
-                                    Text(assessment.state.label)
-                                        .font(.title).bold()
-                                        .foregroundColor(assessment.state.color)
-                                }
-                                Spacer()
-                                Text(String(format: "%.2f", assessment.acwr))
-                                    .font(.system(size: 34, weight: .black, design: .monospaced))
-                            }
-                        }
-                        .sheet(isPresented: $showACWRInfo) {
-                            ACWRInfoSheet()
-                        }
-                        .padding()
-                        .cardStyle(for: .recovery)
-                   }
-                    
-                    if !viewModel.acwrTrend.isEmpty {
-                        VStack(alignment: .leading) {
-                            Text("7-DAY ACWR TREND")
-                                .font(.caption).bold().foregroundColor(.secondary)
-                                .padding(.top)
-
-                            Chart {
-                                // Sweet Spot Area
-                                RectangleMark(
-                                    xStart: .value("Start", viewModel.acwrTrend.first?.date ?? Date()),
-                                    xEnd: .value("End", viewModel.acwrTrend.last?.date ?? Date()),
-                                    yStart: .value("Low", 0.8),
-                                    yEnd: .value("High", 1.3)
-                                )
-                                .foregroundStyle(.green.opacity(0.2)) // Increased from 0.1 for better visibility
-                                .annotation(position: .overlay, alignment: .trailing) {
-                                    Text("Sweet Spot")
-                                        .font(.caption2)
-                                        .foregroundColor(.green.opacity(0.8))
-                                        .padding(.trailing, 4)
-                                }
-
-                                // Baseline Rule (1.0)
-                                RuleMark(y: .value("Baseline", 1.0))
-                                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [5]))
-                                    .foregroundStyle(.gray)
-
-                                // The Trend Line
-                                ForEach(viewModel.acwrTrend) { day in
-                                    LineMark(
-                                        x: .value("Date", day.date, unit: .day),
-                                        y: .value("Ratio", day.value)
-                                    )
-                                    .interpolationMethod(.catmullRom)
-                                    .foregroundStyle(viewModel.readinessAssessment?.state.color ?? .blue)
-                                    
-                                    PointMark(
-                                        x: .value("Date", day.date, unit: .day),
-                                        y: .value("Ratio", day.value)
-                                    )
-                                    .foregroundStyle(viewModel.readinessAssessment?.state.color ?? .blue)
-                                }
-                            }
-                            .frame(height: 150)
-                            .chartYScale(domain: 0.5...2.0)
-                            .chartXAxis {
-                                AxisMarks(values: .stride(by: .day)) { _ in
-                                    AxisGridLine()
-                                    AxisValueLabel(format: .dateTime.weekday(.abbreviated))
-                                }
-                            }
-                        }
-                        .padding()
-                        .cardStyle(for: .recovery)
-                    }
-
-                    // Simple insights (always available)
-                    if !viewModel.simpleInsights.isEmpty {
-                        Text("Your Health Trends")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        ForEach(viewModel.simpleInsights, id: \.title) { insight in
-                            SimpleInsightCard(insight: insight)
-                        }
-                        
-//                       Divider()
-//                            .padding(.vertical)
-                    }
-                    
-                    // Recovery Status
-                    if !viewModel.recoveryInsights.isEmpty {
-                        Divider()
-                            .padding(.vertical)
-                        
-                        Text("Recovery Status")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        ForEach(viewModel.recoveryInsights, id: \.metric) { insight in
-                            RecoveryInsightCard(insight: insight)
-                        }
-                    }
-                    
-                    // Training Load
-                    if let trainingLoad = viewModel.trainingLoadSummary {
-                        Divider()
-                            .padding(.vertical)
-                        
-                        Text("Training Load")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        TrainingLoadCard(summary: trainingLoad)
-                    }
-                    
-                    // Metric Trends
-                    if !viewModel.metricTrends.isEmpty {
-                        Divider()
-                            .padding(.vertical)
-                        
-                        Text("Trends")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        ForEach(viewModel.metricTrends, id: \.metric) { trend in
-                            TrendCard(trend: trend)
-                        }
-                    }
-                    
-                    // HRV vs Performance
-                    if !viewModel.hrvPerformanceInsights.isEmpty {
-                        Divider()
-                            .padding(.vertical)
-                        
-                        Text("HRV & Performance")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        ForEach(viewModel.hrvPerformanceInsights, id: \.activityType) { insight in
-                            HRVInsightCard(insight: insight)
-                        }
-                    }
-                    
-                    // Protein & Recovery
-                    if let proteinInsight = viewModel.proteinRecoveryInsight,
-                       proteinInsight.confidence != .insufficient {
-                        Divider()
-                            .padding(.vertical)
-                        
-                        Text("Protein & Recovery")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        ProteinRecoveryCard(insight: proteinInsight)
-                    }
-                    
-                    // Protein performance
-                    if !viewModel.proteinPerformanceInsights.isEmpty {
-                        Section(header: Text("Protein & Performance")) {
-                            ForEach(viewModel.proteinPerformanceInsights, id: \.activityType) { insight in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack {
-                                        Image(systemName: insight.activityType == "Run" ? "figure.run" : "figure.outdoor.cycle")
-                                        Text("\(insight.activityType) Performance")
-                                            .font(.headline)
-                                        Spacer()
-                                        Text("\(String(format: "%.1f", insight.percentDifference))%")
-                                            .foregroundColor(insight.percentDifference >= 0 ? .green : .red)
-                                            .bold()
-                                    }
-                                    
-                                    Text(insight.recommendation)
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                    
-                                    Text("Based on \(insight.sampleSize) workouts")
-                                        .font(.caption2)
-                                        .foregroundColor(.gray)
-                                }
-                                .padding(.vertical, 4)
-                            }
-                        }
-                    }
-
-                    // Carbs & Performance
-                    if !viewModel.carbPerformanceInsights.isEmpty {
-                        Divider()
-                            .padding(.vertical)
-                        
-                        Text("Carbs & Performance")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        ForEach(viewModel.carbPerformanceInsights, id: \.analysisType) { insight in
-                            CarbPerformanceCard(insight: insight)
-                        }
-                    }
-                    
-                    // Activity-specific insights (when enough data)
-                    if !viewModel.activityTypeInsights.isEmpty {
-                        Divider()
-                            .padding(.vertical)
-                        
-                        Text("Sleep & Performance")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        ForEach(viewModel.activityTypeInsights, id: \.activityType) { insight in
-                            ActivityInsightCard(insight: insight)
-                                .cardStyle(for: .sleep)
-                       }
-                    }
-                    
-                    // Data collection progress
-                    if !viewModel.dataSummary.isEmpty && viewModel.activityTypeInsights.isEmpty {
-                        DataCollectionCard(summary: viewModel.dataSummary)
-                    }
-                    
-                    // Placeholder for future insights
-                    ComingSoonCard(title: "Optimal Training Windows")
+                    // 2. Main Dashboard Content (Broken into groups to fix compiler timeout)
+                    dashboardContent
                 }
                 
                 Spacer()
@@ -302,16 +51,302 @@ struct InsightsView: View {
         }
     }
     
-    private func sleepInsightDetails(_ insight: CorrelationEngine.SleepPerformanceInsight) -> [(String, String)] {
-        var details: [(String, String)] = []
-        
-        if insight.confidence != .insufficient {
-            details.append(("With 7+ hrs sleep", String(format: "%.1f avg", insight.averagePerformanceWithGoodSleep)))
-            details.append(("With <7 hrs sleep", String(format: "%.1f avg", insight.averagePerformanceWithPoorSleep)))
-            details.append(("Sample size", "\(insight.sampleSize) workouts"))
+    // MARK: - Sub-View Groups
+    // Breaking the body into these groups solves the "Expression too complex" error
+    
+    @ViewBuilder
+    private var dashboardContent: some View {
+        Group {
+            recommendationsSection
+            readinessSection
+            acwrTrendSection
         }
         
-        return details
+        Group {
+            simpleInsightsSection
+            recoveryStatusSection
+            trainingLoadSection
+            metricTrendsSection
+        }
+        
+        Group {
+            hrvPerformanceSection
+            proteinRecoverySection
+            proteinPerformanceSection
+            carbPerformanceSection
+        }
+        
+        Group {
+            activityInsightsSection
+            dataCollectionSection
+            ComingSoonCard(title: "Optimal Training Windows")
+        }
+    }
+    
+    // MARK: - Individual Sections
+    
+    @ViewBuilder
+    private var recommendationsSection: some View {
+        if !viewModel.recommendations.isEmpty {
+            ForEach(viewModel.recommendations, id: \.title) { recommendation in
+                RecommendationCard(recommendation: recommendation)
+            }
+            Divider().padding(.vertical)
+        }
+    }
+    
+    @ViewBuilder
+    private var readinessSection: some View {
+        if let assessment = viewModel.readinessAssessment {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading) {
+                        HStack(spacing: 4) {
+                            Text("TRAINING STATUS")
+                                .font(.caption).bold().foregroundColor(.secondary)
+                            
+                            Button {
+                                showACWRInfo = true
+                            } label: {
+                                Image(systemName: "info.circle")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        
+                        Text(assessment.state.label)
+                            .font(.title).bold()
+                            .foregroundColor(assessment.state.color)
+                    }
+                    Spacer()
+                    Text(String(format: "%.2f", assessment.acwr))
+                        .font(.system(size: 34, weight: .black, design: .monospaced))
+                }
+            }
+            .sheet(isPresented: $showACWRInfo) {
+                ACWRInfoSheet()
+            }
+            .padding()
+            .cardStyle(for: .recovery)
+        }
+    }
+    
+    @ViewBuilder
+    private var acwrTrendSection: some View {
+        if !viewModel.acwrTrend.isEmpty {
+            VStack(alignment: .leading) {
+                Text("7-DAY ACWR TREND")
+                    .font(.caption).bold().foregroundColor(.secondary)
+                    .padding(.top)
+                
+                Chart {
+                    RectangleMark(
+                        xStart: .value("Start", viewModel.acwrTrend.first?.date ?? Date()),
+                        xEnd: .value("End", viewModel.acwrTrend.last?.date ?? Date()),
+                        yStart: .value("Low", 0.8),
+                        yEnd: .value("High", 1.3)
+                    )
+                    .foregroundStyle(.green.opacity(0.2))
+                    .annotation(position: .overlay, alignment: .trailing) {
+                        Text("Sweet Spot")
+                            .font(.caption2)
+                            .foregroundColor(.green.opacity(0.8))
+                            .padding(.trailing, 4)
+                    }
+                    
+                    RuleMark(y: .value("Baseline", 1.0))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5]))
+                        .foregroundStyle(.gray)
+                    
+                    ForEach(viewModel.acwrTrend) { day in
+                        LineMark(
+                            x: .value("Date", day.date, unit: .day),
+                            y: .value("Ratio", day.value)
+                        )
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(viewModel.readinessAssessment?.state.color ?? .blue)
+                        
+                        PointMark(
+                            x: .value("Date", day.date, unit: .day),
+                            y: .value("Ratio", day.value)
+                        )
+                        .foregroundStyle(viewModel.readinessAssessment?.state.color ?? .blue)
+                    }
+                }
+                .frame(height: 150)
+                .chartYScale(domain: 0.5...2.0)
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .day)) { _ in
+                        AxisGridLine()
+                        AxisValueLabel(format: .dateTime.weekday(.abbreviated))
+                    }
+                }
+            }
+            .padding()
+            .cardStyle(for: .recovery)
+        }
+    }
+    
+    @ViewBuilder
+    private var simpleInsightsSection: some View {
+        if !viewModel.simpleInsights.isEmpty {
+            Text("Your Health Trends")
+                .font(.title2)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            ForEach(viewModel.simpleInsights, id: \.title) { insight in
+                SimpleInsightCard(insight: insight)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var recoveryStatusSection: some View {
+        if !viewModel.recoveryInsights.isEmpty {
+            Divider().padding(.vertical)
+            
+            Text("Recovery Status")
+                .font(.title2)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            ForEach(viewModel.recoveryInsights, id: \.metric) { insight in
+                RecoveryInsightCard(insight: insight)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var trainingLoadSection: some View {
+        if let trainingLoad = viewModel.trainingLoadSummary {
+            Divider().padding(.vertical)
+            
+            Text("Training Load")
+                .font(.title2)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            TrainingLoadCard(summary: trainingLoad)
+        }
+    }
+    
+    @ViewBuilder
+    private var metricTrendsSection: some View {
+        if !viewModel.metricTrends.isEmpty {
+            Divider().padding(.vertical)
+            
+            Text("Trends")
+                .font(.title2)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // 🟢 FIXED: Use 'metricName' instead of 'metric' for ID
+            ForEach(viewModel.metricTrends, id: \.metricName) { trend in
+                TrendCard(trend: trend)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var hrvPerformanceSection: some View {
+        if !viewModel.hrvPerformanceInsights.isEmpty {
+            Divider().padding(.vertical)
+            
+            Text("HRV & Performance")
+                .font(.title2)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            ForEach(viewModel.hrvPerformanceInsights, id: \.activityType) { insight in
+                HRVInsightCard(insight: insight)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var proteinRecoverySection: some View {
+        if let proteinInsight = viewModel.proteinRecoveryInsight,
+           proteinInsight.confidence != .insufficient {
+            Divider().padding(.vertical)
+            
+            Text("Protein & Recovery")
+                .font(.title2)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            ProteinRecoveryCard(insight: proteinInsight)
+        }
+    }
+    
+    @ViewBuilder
+    private var proteinPerformanceSection: some View {
+        if !viewModel.proteinPerformanceInsights.isEmpty {
+            Section(header: Text("Protein & Performance")) {
+                ForEach(viewModel.proteinPerformanceInsights, id: \.activityType) { insight in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: insight.activityType == "Run" ? "figure.run" : "figure.outdoor.cycle")
+                            Text("\(insight.activityType) Performance")
+                                .font(.headline)
+                            Spacer()
+                            Text("\(String(format: "%.1f", insight.percentDifference))%")
+                                .foregroundColor(insight.percentDifference >= 0 ? .green : .red)
+                                .bold()
+                        }
+                        
+                        Text(insight.recommendation)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Based on \(insight.sampleSize) workouts")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var carbPerformanceSection: some View {
+        if !viewModel.carbPerformanceInsights.isEmpty {
+            Divider().padding(.vertical)
+            
+            Text("Carbs & Performance")
+                .font(.title2)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            ForEach(viewModel.carbPerformanceInsights, id: \.analysisType) { insight in
+                CarbPerformanceCard(insight: insight)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var activityInsightsSection: some View {
+        if !viewModel.activityTypeInsights.isEmpty {
+            Divider().padding(.vertical)
+            
+            Text("Sleep & Performance")
+                .font(.title2)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            ForEach(viewModel.activityTypeInsights, id: \.activityType) { insight in
+                ActivityInsightCard(insight: insight)
+                    .cardStyle(for: .sleep)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var dataCollectionSection: some View {
+        if !viewModel.dataSummary.isEmpty && viewModel.activityTypeInsights.isEmpty {
+            DataCollectionCard(summary: viewModel.dataSummary)
+        }
     }
 }
 
@@ -676,37 +711,42 @@ struct TrainingLoadCard: View {
 }
 
 struct TrendCard: View {
-    let trend: TrendDetector.MetricTrend
-    
-    var trendColor: Color {
-        switch trend.direction.color {
-        case "green": return .green
-        case "orange": return .orange
-        case "blue": return .blue
-        default: return .gray
-        }
-    }
+    let trend: MetricTrend
     
     var body: some View {
         HStack(spacing: 15) {
-            Text(trend.direction.emoji)
+            // Emoji for direction
+            Text(trend.trendDirection.emoji)
                 .font(.system(size: 32))
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(trend.metric)
+                // Metric Name
+                Text(trend.metricName)
                     .font(.subheadline)
                     .fontWeight(.medium)
                 
-                Text(trend.message)
+                // Context / Value
+                Text(trend.context)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
-                Text("Over \(trend.period)")
+                // Current Value Display
+                Text("Current: \(String(format: "%.1f", trend.currentValue))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
             
             Spacer()
+            
+            // Status Badge
+            Text(trend.status.rawValue.capitalized)
+                .font(.caption)
+                .fontWeight(.bold)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(trend.status.color.opacity(0.15))
+                .foregroundStyle(trend.status.color)
+                .cornerRadius(6)
         }
         .padding()
         .cardStyle(for: .info)

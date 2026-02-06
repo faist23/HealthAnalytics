@@ -14,10 +14,13 @@ public enum HealthDataContainer {
     public static let shared: ModelContainer = {
         // 1. Define the schema (must include your CachedAnalysis model)
         let schema = Schema([
-            CachedAnalysis.self
+            CachedAnalysis.self,
+            StoredWorkout.self,
+            StoredHealthMetric.self,
+            StoredNutrition.self
         ])
         
-        let appGroupID = "group.com.ridepro.HealthAnalytics" 
+        let appGroupID = "group.com.ridepro.HealthAnalytics"
         
         // 1. Manually ensure the directory exists in the App Group container
         let fileManager = FileManager.default

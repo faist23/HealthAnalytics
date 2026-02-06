@@ -13,6 +13,8 @@ import SwiftData
 struct HealthAnalyticsApp: App {
     @AppStorage("isOnboardingComplete") private var isOnboardingComplete = false
     
+    @Environment(\.scenePhase) private var scenePhase
+    
     var body: some Scene {
         WindowGroup {
             if isOnboardingComplete {
@@ -20,12 +22,24 @@ struct HealthAnalyticsApp: App {
                     .onOpenURL { url in
                         handleIncomingURL(url)
                     }
+                    .task {
+                        // Trigger sync on first launch
+                        await SyncManager.shared.performGlobalSync()
+                    }
             } else {
                 OnboardingView(isOnboardingComplete: $isOnboardingComplete)
             }
         }
         // Use the shared container from your HealthDataContainer.swift file
         .modelContainer(HealthDataContainer.shared)
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active && isOnboardingComplete {
+                Task {
+                    print("🔄 App became active, triggering sync...")
+                    await SyncManager.shared.performGlobalSync()
+                }
+            }
+        }
     }
     
     private func handleIncomingURL(_ url: URL) {

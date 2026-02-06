@@ -81,6 +81,7 @@
 				Models/CachedAnalysis.swift,
 				Models/DailyNutrition.swift,
 				Models/HealthDataPoint.swift,
+				Models/StoredWorkout.swift,
 				Models/StravaModels.swift,
 				Models/TimePeriod.swift,
 				Models/WorkoutData.swift,

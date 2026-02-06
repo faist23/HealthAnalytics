@@ -2,244 +2,169 @@
 //  TrendDetector.swift
 //  HealthAnalytics
 //
-//  Created by Craig Faist on 1/26/26.
+//  Created by Craig Faist.
 //
 
-
 import Foundation
+import HealthKit
+import SwiftUI
 
-struct TrendDetector {
-    
-    // MARK: - Trend Models
-    
-    struct MetricTrend {
-        let metric: String
-        let direction: TrendDirection
-        let percentChange: Double
-        let period: String
-        let message: String
-        
-        enum TrendDirection {
-            case improving
-            case declining
-            case stable
-            
-            var emoji: String {
-                switch self {
-                case .improving: return "📈"
-                case .declining: return "📉"
-                case .stable: return "➡️"
-                }
-            }
-            
-            var color: String {
-                switch self {
-                case .improving: return "green"
-                case .declining: return "orange"
-                case .stable: return "blue"
-                }
-            }
-        }
+// MARK: - Data Models
+// Defined here to be accessible globally
 
-        enum TrendPeriod: String {
-            case acute = "7 days"
-            case shortTerm = "14 days"
-            case longTerm = "90 days"
+struct MetricTrend: Identifiable {
+    let id = UUID()
+    let metricName: String
+    let currentValue: Double
+    let baselineValue: Double?
+    let trendDirection: TrendDirection
+    let percentageChange: Double
+    let status: TrendStatus
+    let context: String
+}
+
+enum TrendDirection: String, Codable {
+    case increasing
+    case decreasing
+    case stable
+    
+    var emoji: String {
+        switch self {
+        case .increasing: return "📈"
+        case .decreasing: return "📉"
+        case .stable: return "➡️"
         }
     }
+}
+
+enum TrendStatus: String, Codable {
+    case improving
+    case declining
+    case neutral
+    case warning
     
-    // MARK: - Detect Trends
+    var color: Color {
+        switch self {
+        case .improving: return .green
+        case .declining: return .orange
+        case .neutral: return .blue
+        case .warning: return .red
+        }
+    }
+}
+
+// MARK: - Logic Engine
+
+class TrendDetector {
     
-    /// Analyzes trends in key health metrics
-    func detectTrends(
-        restingHRData: [HealthDataPoint],
-        hrvData: [HealthDataPoint],
-        sleepData: [HealthDataPoint],
-        stepData: [HealthDataPoint],
-        weightData: [HealthDataPoint]
-    ) -> [MetricTrend] {
+    // Main function to detect trends across multiple metrics
+    func detectTrends(restingHRData: [HealthDataPoint],
+                      hrvData: [HealthDataPoint],
+                      sleepData: [HealthDataPoint],
+                      stepData: [HealthDataPoint],
+                      weightData: [HealthDataPoint],
+                      workouts: [WorkoutData]) -> [MetricTrend] {
         
         var trends: [MetricTrend] = []
         
-        // Resting HR trend (lower is better)
-        if let rhrTrend = analyzeTrend(
-            data: restingHRData,
-            metricName: "Resting Heart Rate",
-            lowerIsBetter: true,
-            unit: "bpm"
-        ) {
+        // 1. Analyze Resting Heart Rate (Lower is better)
+        if let rhrTrend = analyzeMetric(data: restingHRData, name: "Resting Heart Rate", lowerIsBetter: true) {
             trends.append(rhrTrend)
         }
         
-        // HRV trend (higher is better)
-        // REFINED HRV: Analyze over 14 days rather than 90 for better sensitivity
-        if let hrvTrend = analyzeTrend(
-            data: hrvData,
-            metricName: "HRV",
-            lowerIsBetter: false,
-            unit: "ms",
-            maxDays: 14 // Cap HRV to 2 weeks for "Recovery" context
-        ) {
+        // 2. Analyze HRV (Higher is better)
+        if let hrvTrend = analyzeMetric(data: hrvData, name: "HRV", lowerIsBetter: false) {
             trends.append(hrvTrend)
         }
         
-        // Sleep trend (higher is better, target ~7-9 hours)
-        if let sleepTrend = analyzeTrend(
-            data: sleepData,
-            metricName: "Sleep Duration",
-            lowerIsBetter: false,
-            unit: "hours",
-            optimalRange: 7.0...9.0
-        ) {
+        // 3. Analyze Sleep (Higher is better)
+        if let sleepTrend = analyzeMetric(data: sleepData, name: "Sleep Duration", lowerIsBetter: false) {
             trends.append(sleepTrend)
         }
         
-        // Step trend (higher is better)
-        if let stepTrend = analyzeTrend(
-            data: stepData,
-            metricName: "Daily Steps",
-            lowerIsBetter: false,
-            unit: "steps"
-        ) {
+        // 4. Analyze Steps (Higher is better) - RESTORED
+        if let stepTrend = analyzeMetric(data: stepData, name: "Daily Steps", lowerIsBetter: false) {
             trends.append(stepTrend)
         }
-        
-        // NEW: Body Weight Trend
-        if let weightTrend = analyzeTrend(
-            data: weightData,
-            metricName: "Body Weight",
-            lowerIsBetter: true, // Assuming weight loss/maintenance for biking app
-            unit: "lbs"
-        ) {
+
+        // 5. Analyze Weight (Lower is usually targeted, but context dependent. Assume lower for now) - RESTORED
+        if let weightTrend = analyzeMetric(data: weightData, name: "Body Weight", lowerIsBetter: true) {
             trends.append(weightTrend)
+        }
+        
+        // 6. Analyze Training Frequency (FIXED: Filter for last 30 days)
+        let now = Date()
+        if let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: now) {
+            
+            // Only count workouts that actually happened in the analysis window
+            let recentWorkouts = workouts.filter { $0.startDate >= thirtyDaysAgo }
+            
+            // Formula: (Workouts / 30 days) * 7 = Weekly Avg
+            let frequency = Double(recentWorkouts.count) / 30.0 * 7.0
+            
+            trends.append(MetricTrend(
+                metricName: "Training Frequency",
+                currentValue: frequency,
+                baselineValue: nil,
+                trendDirection: .stable,
+                percentageChange: 0.0,
+                status: .neutral,
+                context: String(format: "%.1f workouts/week (last 30 days)", frequency)
+            ))
         }
         
         return trends
     }
     
-    // MARK: - Helper Methods
-    
-    private func analyzeTrend(
-        data: [HealthDataPoint],
-        metricName: String,
-        lowerIsBetter: Bool,
-        unit: String,
-        optimalRange: ClosedRange<Double>? = nil,
-        maxDays: Int = 90 // Default to 90, but override for HRV
-    ) -> MetricTrend? {
+    // Generic Helper to analyze simple High/Low trends
+    // This replaces the multiple copy-pasted functions from the old version
+    private func analyzeMetric(data: [HealthDataPoint], name: String, lowerIsBetter: Bool) -> MetricTrend? {
+        // Require at least 14 days of data to form a trend
+        guard data.count >= 14 else { return nil }
         
-        guard data.count >= 7 else { return nil }
+        let sortedData = data.sorted { $0.date < $1.date }
         
-        // Cap analysis to the requested window
-        let dataToAnalyze = data.count > maxDays ? Array(data.suffix(maxDays)) : data
+        // Split into "Current Week" vs "Previous 3 Weeks" (Baseline)
+        let splitIndex = max(0, sortedData.count - 7)
+        let recentData = Array(sortedData[splitIndex...])
+        let baselineData = Array(sortedData[0..<splitIndex])
         
-        // Split into two periods: recent vs. earlier
-        let midpoint = dataToAnalyze.count / 2
-        let earlierPeriod = Array(dataToAnalyze.prefix(midpoint))
-        let recentPeriod = Array(dataToAnalyze.suffix(dataToAnalyze.count - midpoint))
+        guard !recentData.isEmpty, !baselineData.isEmpty else { return nil }
         
-        guard !earlierPeriod.isEmpty, !recentPeriod.isEmpty else { return nil }
+        let recentAvg = recentData.map { $0.value }.reduce(0, +) / Double(recentData.count)
+        let baselineAvg = baselineData.map { $0.value }.reduce(0, +) / Double(baselineData.count)
         
-        let earlierAvg = earlierPeriod.map { $0.value }.reduce(0, +) / Double(earlierPeriod.count)
-        let recentAvg = recentPeriod.map { $0.value }.reduce(0, +) / Double(recentPeriod.count)
+        let diff = recentAvg - baselineAvg
+        let percentChange = baselineAvg != 0 ? (diff / baselineAvg) * 100 : 0
         
-        let absoluteChange = recentAvg - earlierAvg
-        let percentChange = (absoluteChange / earlierAvg) * 100
-        
-        // Determine direction based on whether lower is better
-        let direction: MetricTrend.TrendDirection
-        let isImproving: Bool
-        
-        if lowerIsBetter {
-            isImproving = absoluteChange < 0
-        } else {
-            isImproving = absoluteChange > 0
-        }
-        
-        // Check if change is significant (>5%)
-        if abs(percentChange) < 5.0 {
+        // Determine Direction
+        let direction: TrendDirection
+        if abs(percentChange) < 1.0 {
             direction = .stable
         } else {
-            direction = isImproving ? .improving : .declining
+            direction = diff > 0 ? .increasing : .decreasing
         }
         
-        // Generate message
-        let message = generateTrendMessage(
-            metricName: metricName,
-            direction: direction,
-            percentChange: abs(percentChange),
-            recentAvg: recentAvg,
-            unit: unit,
-            optimalRange: optimalRange
-        )
-        
-        let daysAnalyzed = dataToAnalyze.count
-        let period = "\(daysAnalyzed) days"
-        
-        print("📊 \(metricName) Trend:")
-        print("   Earlier avg: \(String(format: "%.1f", earlierAvg))")
-        print("   Recent avg: \(String(format: "%.1f", recentAvg))")
-        print("   Change: \(String(format: "%.1f", percentChange))%")
-        print("   Direction: \(direction)")
+        // Determine Status (Good/Bad)
+        let status: TrendStatus
+        if direction == .stable {
+            status = .neutral
+        } else if lowerIsBetter {
+            // Lower is better (e.g. RHR, Weight)
+            status = diff < 0 ? .improving : .declining
+        } else {
+            // Higher is better (e.g. HRV, Sleep, Steps)
+            status = diff > 0 ? .improving : .declining
+        }
         
         return MetricTrend(
-            metric: metricName,
-            direction: direction,
-            percentChange: percentChange,
-            period: period,
-            message: message
+            metricName: name,
+            currentValue: recentAvg,
+            baselineValue: baselineAvg,
+            trendDirection: direction,
+            percentageChange: percentChange,
+            status: status,
+            context: "\(Int(abs(percentChange)))% vs baseline"
         )
-    }
-    
-    private func generateTrendMessage(
-        metricName: String,
-        direction: MetricTrend.TrendDirection,
-        percentChange: Double,
-        recentAvg: Double,
-        unit: String,
-        optimalRange: ClosedRange<Double>?
-    ) -> String {
-        
-        let formattedValue: String
-        if metricName == "Daily Steps" {
-            formattedValue = "\(Int(recentAvg).formatted())"
-        } else {
-            formattedValue = String(format: "%.1f", recentAvg)
-        }
-        
-        switch direction {
-        case .improving:
-            var message = "\(metricName) is improving by \(String(format: "%.1f", percentChange))%"
-            message += " (now \(formattedValue) \(unit))"
-            
-            if let range = optimalRange, range.contains(recentAvg) {
-                message += " - in optimal range!"
-            }
-            
-            return message
-            
-        case .declining:
-            var message = "\(metricName) has declined by \(String(format: "%.1f", percentChange))%"
-            message += " (now \(formattedValue) \(unit))"
-            
-            if let range = optimalRange, !range.contains(recentAvg) {
-                message += " - below optimal range"
-            }
-            
-            return message
-            
-        case .stable:
-            var message = "\(metricName) is stable at \(formattedValue) \(unit)"
-            
-            if let range = optimalRange {
-                if range.contains(recentAvg) {
-                    message += " - maintaining optimal range"
-                } else {
-                    message += " - consider adjusting to reach optimal range"
-                }
-            }
-            
-            return message
-        }
     }
 }
