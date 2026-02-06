@@ -11,7 +11,8 @@ import HealthKit
 
 @Model
 final class StoredWorkout {
-    @Attribute(.unique) var id: String // Strava ID or HealthKit UUID
+    @Attribute(.unique) var id: String
+    var title: String? // 🟢 NEW: Store the custom name
     var workoutTypeInt: Int
     var startDate: Date
     var duration: TimeInterval
@@ -20,8 +21,10 @@ final class StoredWorkout {
     var totalEnergyBurned: Double?
     var source: String
     
-    init(id: String, type: HKWorkoutActivityType, startDate: Date, duration: TimeInterval, distance: Double?, power: Double?, energy: Double?, source: String) {
+    // 🟢 UPDATED INIT
+    init(id: String, title: String? = nil, type: HKWorkoutActivityType, startDate: Date, duration: TimeInterval, distance: Double?, power: Double?, energy: Double?, source: String) {
         self.id = id
+        self.title = title
         self.workoutTypeInt = Int(type.rawValue)
         self.startDate = startDate
         self.duration = duration
@@ -36,10 +39,11 @@ final class StoredWorkout {
     }
 }
 
+// Keep the rest of the file (StoredHealthMetric, StoredNutrition) as is...
 @Model
 final class StoredHealthMetric {
-    @Attribute(.unique) var uniqueKey: String // "type_dateString" to prevent duplicates
-    var type: String // "HRV", "RHR", "Sleep", "Steps", "ActiveEnergy"
+    @Attribute(.unique) var uniqueKey: String
+    var type: String
     var date: Date
     var value: Double
     
@@ -55,7 +59,7 @@ final class StoredHealthMetric {
 
 @Model
 final class StoredNutrition {
-    @Attribute(.unique) var dateString: String // "yyyy-MM-dd"
+    @Attribute(.unique) var dateString: String
     var date: Date
     var calories: Double
     var protein: Double

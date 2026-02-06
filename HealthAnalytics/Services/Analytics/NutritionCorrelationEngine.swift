@@ -5,7 +5,6 @@
 //  Created by Craig Faist on 1/26/26.
 //
 
-
 import Foundation
 import HealthKit
 
@@ -152,11 +151,6 @@ struct NutritionCorrelationEngine {
                 avgRHR: avgRHR,
                 sampleSize: data.protein.count
             ))
-            
-            print("📊 Protein Range: \(groupName)")
-            print("   Samples: \(data.protein.count)")
-            print("   Avg next-day RHR: \(String(format: "%.1f", avgRHR)) bpm")
-            print("   Avg next-day HRV: \(String(format: "%.1f", avgHRV)) ms")
         }
         
         // Find optimal range (best recovery score)
@@ -229,8 +223,8 @@ struct NutritionCorrelationEngine {
     
     struct CarbPerformanceInsight {
         let analysisType: AnalysisType
-        let lowCarbPerformance: Double
-        let highCarbPerformance: Double
+        let lowCarbPerformance: Double // Now represents WATTS
+        let highCarbPerformance: Double // Now represents WATTS
         let percentDifference: Double
         let carbThreshold: Double
         let sampleSize: Int
@@ -239,7 +233,7 @@ struct NutritionCorrelationEngine {
         
         enum AnalysisType {
             case preworkout    // Previous day's total carbs
-            case postworkout   // Same day refueling (dinner + snacks)
+            case postworkout   // Same day refueling
             case dailyTotal    // Overall daily carbs
         }
         
@@ -257,7 +251,7 @@ struct NutritionCorrelationEngine {
         }
     }
     
-    /// Analyzes correlation between carb intake and workout performance
+    /// Analyzes correlation between carb intake and CYCLING POWER
     func analyzeCarbsVsPerformance(
         nutritionData: [DailyNutrition],
         healthKitWorkouts: [WorkoutData],
@@ -266,7 +260,7 @@ struct NutritionCorrelationEngine {
         
         var insights: [CarbPerformanceInsight] = []
         
-        // Analysis 1: Previous day carbs vs performance
+        // Analysis 1: Previous day carbs vs Cycling Power
         if let preDayInsight = analyzePreDayCarbs(
             nutritionData: nutritionData,
             healthKitWorkouts: healthKitWorkouts,
@@ -275,7 +269,7 @@ struct NutritionCorrelationEngine {
             insights.append(preDayInsight)
         }
         
-        // Analysis 2: Daily total carbs vs performance
+        // Analysis 2: Same-day carbs vs Cycling Power
         if let dailyInsight = analyzeDailyCarbs(
             nutritionData: nutritionData,
             healthKitWorkouts: healthKitWorkouts,
@@ -307,6 +301,7 @@ struct NutritionCorrelationEngine {
         // Analyze workouts with previous day's carbs
         var lowCarbWorkouts: [Double] = []
         var highCarbWorkouts: [Double] = []
+        
         // Use median carb intake as threshold
         let allCarbs = nutritionData.filter { $0.isComplete }.map { $0.totalCarbs }.sorted()
         let carbThreshold: Double
@@ -316,13 +311,14 @@ struct NutritionCorrelationEngine {
             let midIndex = allCarbs.count / 2
             carbThreshold = allCarbs[midIndex]
         }
-        print("📊 Using dynamic carb threshold: \(Int(carbThreshold))g (median of your intake)")
         
-        // Process Strava activities
+        // Process Strava activities (Strictly Cycling with Power)
         for activity in stravaActivities {
             guard let workoutDate = activity.startDateFormatted else { continue }
-            guard activity.type == "Run" || activity.type == "Ride" else { continue }
-            guard let avgSpeed = activity.averageSpeed, avgSpeed > 0 else { continue }
+            
+            // 🟢 STRICT FILTER: Only Rides with Power
+            guard activity.type == "Ride" || activity.type == "VirtualRide",
+                  let watts = activity.averageWatts, watts > 0 else { continue }
             
             // Get previous day's nutrition
             let workoutDay = calendar.startOfDay(for: workoutDate)
@@ -331,27 +327,18 @@ struct NutritionCorrelationEngine {
                 continue
             }
             
-            // Calculate performance metric
-            let performanceMetric: Double
-            if activity.type == "Run" {
-                performanceMetric = avgSpeed * 2.23694 // m/s to mph
-            } else {
-                performanceMetric = activity.averageWatts ?? (avgSpeed * 2.23694)
-            }
-            
             // Categorize by previous day's carbs
             if prevDayNutrition.totalCarbs < carbThreshold {
-                lowCarbWorkouts.append(performanceMetric)
+                lowCarbWorkouts.append(watts)
             } else {
-                highCarbWorkouts.append(performanceMetric)
+                highCarbWorkouts.append(watts)
             }
         }
         
-        // Process HealthKit workouts
+        // Process HealthKit workouts (Strictly Cycling with Power)
         for workout in healthKitWorkouts {
-            let cardioTypes: [HKWorkoutActivityType] = [.running, .cycling, .walking, .hiking]
-            guard cardioTypes.contains(workout.workoutType) else { continue }
-            guard let distance = workout.totalDistance, distance > 0, workout.duration > 0 else { continue }
+            guard workout.workoutType == .cycling,
+                  let watts = workout.averagePower, watts > 0 else { continue }
             
             let workoutDay = calendar.startOfDay(for: workout.startDate)
             guard let previousDay = calendar.date(byAdding: .day, value: -1, to: workoutDay),
@@ -359,23 +346,15 @@ struct NutritionCorrelationEngine {
                 continue
             }
             
-            let speedMPS = distance / workout.duration
-            let speedMPH = speedMPS * 2.23694
-            
             if prevDayNutrition.totalCarbs < carbThreshold {
-                lowCarbWorkouts.append(speedMPH)
+                lowCarbWorkouts.append(watts)
             } else {
-                highCarbWorkouts.append(speedMPH)
+                highCarbWorkouts.append(watts)
             }
         }
         
         // Need at least 3 workouts in each category
-        print("📊 Carb vs Performance Data:")
-        print("   Low carb (<\(Int(carbThreshold))g): \(lowCarbWorkouts.count) workouts")
-        print("   High carb (≥\(Int(carbThreshold))g): \(highCarbWorkouts.count) workouts")
-        
         guard lowCarbWorkouts.count >= 3, highCarbWorkouts.count >= 3 else {
-            print("⚠️ Carb analysis: Need 3+ workouts in each carb category")
             return nil
         }
         
@@ -396,18 +375,13 @@ struct NutritionCorrelationEngine {
         }
         
         let recommendation: String
-        if abs(percentDiff) < 5 {
-            recommendation = "Previous day's carbs don't show strong correlation with performance. Focus on day-of fueling."
+        if abs(percentDiff) < 3.0 {
+            recommendation = "Carb intake doesn't significantly impact your cycling power. Focus on timing rather than total quantity."
         } else if percentDiff > 0 {
-            recommendation = "Performance is \(String(format: "%.1f", percentDiff))% better after high-carb days (\(Int(carbThreshold))g+). Prioritize carbs the night before hard workouts."
+            recommendation = "You push \(String(format: "%.0f", avgHigh - avgLow))W more power after high-carb days (\(Int(carbThreshold))g+). Fuel up before big rides!"
         } else {
-            recommendation = "Interestingly, performance is slightly better after lower-carb days. This might indicate other factors are more important, or sample size is still small."
+            recommendation = "Interestingly, power is slightly higher after lower-carb days. This might indicate efficient fat adaptation or recovery rides falling on high-carb days."
         }
-        
-        print("📊 Pre-Day Carbs Analysis:")
-        print("   Low carb (<\(Int(carbThreshold))g): \(lowCarbWorkouts.count) workouts, avg \(String(format: "%.1f", avgLow))")
-        print("   High carb (≥\(Int(carbThreshold))g): \(highCarbWorkouts.count) workouts, avg \(String(format: "%.1f", avgHigh))")
-        print("   Difference: \(String(format: "%.1f", percentDiff))%")
         
         return CarbPerformanceInsight(
             analysisType: .preworkout,
@@ -439,7 +413,7 @@ struct NutritionCorrelationEngine {
         // Analyze workouts with same-day carbs
         var lowCarbWorkouts: [Double] = []
         var highCarbWorkouts: [Double] = []
-        // Use median carb intake as threshold
+        
         let allCarbs = nutritionData.filter { $0.isComplete }.map { $0.totalCarbs }.sorted()
         let carbThreshold: Double
         if allCarbs.isEmpty {
@@ -448,55 +422,41 @@ struct NutritionCorrelationEngine {
             let midIndex = allCarbs.count / 2
             carbThreshold = allCarbs[midIndex]
         }
-        print("📊 Using dynamic carb threshold: \(Int(carbThreshold))g (median of your intake)")
         
-        // Process Strava activities
+        // Process Strava activities (Strictly Cycling with Power)
         for activity in stravaActivities {
             guard let workoutDate = activity.startDateFormatted else { continue }
-            guard activity.type == "Run" || activity.type == "Ride" else { continue }
-            guard let avgSpeed = activity.averageSpeed, avgSpeed > 0 else { continue }
+            
+            // 🟢 STRICT FILTER: Only Rides with Power
+            guard activity.type == "Ride" || activity.type == "VirtualRide",
+                  let watts = activity.averageWatts, watts > 0 else { continue }
             
             let workoutDay = calendar.startOfDay(for: workoutDate)
             guard let dayNutrition = nutritionByDate[workoutDay] else { continue }
             
-            let performanceMetric: Double
-            if activity.type == "Run" {
-                performanceMetric = avgSpeed * 2.23694
-            } else {
-                performanceMetric = activity.averageWatts ?? (avgSpeed * 2.23694)
-            }
-            
             if dayNutrition.totalCarbs < carbThreshold {
-                lowCarbWorkouts.append(performanceMetric)
+                lowCarbWorkouts.append(watts)
             } else {
-                highCarbWorkouts.append(performanceMetric)
+                highCarbWorkouts.append(watts)
             }
         }
         
-        // Process HealthKit workouts
+        // Process HealthKit workouts (Strictly Cycling with Power)
         for workout in healthKitWorkouts {
-            let cardioTypes: [HKWorkoutActivityType] = [.running, .cycling]
-            guard cardioTypes.contains(workout.workoutType) else { continue }
-            guard let distance = workout.totalDistance, distance > 0, workout.duration > 0 else { continue }
+            guard workout.workoutType == .cycling,
+                  let watts = workout.averagePower, watts > 0 else { continue }
             
             let workoutDay = calendar.startOfDay(for: workout.startDate)
             guard let dayNutrition = nutritionByDate[workoutDay] else { continue }
             
-            let speedMPS = distance / workout.duration
-            let speedMPH = speedMPS * 2.23694
-            
             if dayNutrition.totalCarbs < carbThreshold {
-                lowCarbWorkouts.append(speedMPH)
+                lowCarbWorkouts.append(watts)
             } else {
-                highCarbWorkouts.append(speedMPH)
+                highCarbWorkouts.append(watts)
             }
         }
         
         // Need at least 3 workouts in each category
-        print("📊 Carb vs Performance Data:")
-        print("   Low carb (<\(Int(carbThreshold))g): \(lowCarbWorkouts.count) workouts")
-        print("   High carb (≥\(Int(carbThreshold))g): \(highCarbWorkouts.count) workouts")
-        
         guard lowCarbWorkouts.count >= 3, highCarbWorkouts.count >= 3 else {
             return nil
         }
@@ -518,12 +478,12 @@ struct NutritionCorrelationEngine {
         }
         
         let recommendation: String
-        if abs(percentDiff) < 5 {
-            recommendation = "Same-day carbs show minimal correlation with performance. Day-of fueling may be less critical than training status."
+        if abs(percentDiff) < 3.0 {
+            recommendation = "Same-day carbs show minimal correlation with cycling power. Day-of fueling may be less critical than overall training status."
         } else if percentDiff > 0 {
-            recommendation = "Performance improves \(String(format: "%.1f", percentDiff))% on days with \(Int(carbThreshold))g+ carbs. Ensure adequate fueling on workout days."
+            recommendation = "Cycling power improves \(String(format: "%.1f", percentDiff))% on days with \(Int(carbThreshold))g+ carbs. Ensure adequate fueling on ride days."
         } else {
-            recommendation = "Lower-carb days show slightly better performance. This may indicate adaptation or other confounding factors."
+            recommendation = "Lower-carb days show slightly better power numbers. This may be due to easier rides being scheduled on high-carb (refuel) days."
         }
         
         return CarbPerformanceInsight(
@@ -562,16 +522,25 @@ struct NutritionCorrelationEngine {
             nutritionByDate[calendar.startOfDay(for: nutrition.date)] = nutrition
         }
         
-        // 2. Define Threshold (e.g., 120g as mentioned in your outline)
+        // 2. Define Threshold
         let threshold: Double = 120.0
         
         // 3. Group workouts by activity type
         var perfByType: [String: (high: [Double], low: [Double])] = [:]
         
         // Combined Strava and HK logic
+        // For protein, we might still want to look at Running (Speed) AND Cycling (Watts)
+        // But since you asked to focus on power, let's prioritize Watts if available.
+        
         let allWorkouts = stravaActivities.compactMap { activity -> (String, Date, Double)? in
-            guard let date = activity.startDateFormatted, let speed = activity.averageSpeed else { return nil }
-            return (activity.type, date, activity.averageWatts ?? (speed * 2.23694))
+            guard let date = activity.startDateFormatted else { return nil }
+            // Only use sessions with Power or Speed
+            if let watts = activity.averageWatts {
+                return (activity.type, date, watts)
+            } else if let speed = activity.averageSpeed, activity.type == "Run" {
+                return (activity.type, date, speed * 2.23694)
+            }
+            return nil
         }
         
         for (type, date, perf) in allWorkouts {
@@ -596,7 +565,9 @@ struct NutritionCorrelationEngine {
             let avgLow = data.low.count == 0 ? 0 : data.low.reduce(0, +) / Double(data.low.count)
             let diff = avgLow > 0 ? ((avgHigh - avgLow) / avgLow) * 100 : 0
             
-            let rec = "You perform \(String(format: "%.1f", abs(diff)))% \(diff > 0 ? "faster" : "slower") on \(type)s after eating \(Int(threshold))g+ of protein."
+            let metricName = type == "Ride" ? "Power" : "Speed"
+            
+            let rec = "\(metricName) is \(String(format: "%.1f", abs(diff)))% \(diff > 0 ? "higher" : "lower") on \(type)s after eating \(Int(threshold))g+ of protein."
             
             insights.append(ProteinPerformanceInsight(
                 activityType: type,

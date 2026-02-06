@@ -2,7 +2,7 @@
 //  SyncManager.swift
 //  HealthAnalytics
 //
-//  Created by Craig Faist on 2/4/26.
+//  Created by Craig Faist.
 //
 
 import Foundation
@@ -10,6 +10,17 @@ import SwiftData
 import SwiftUI
 import HealthKit
 import Combine
+
+struct StravaImportData: Sendable {
+    let id: String
+    let title: String
+    let workoutType: HKWorkoutActivityType
+    let startDate: Date
+    let duration: Double
+    let distance: Double?
+    let power: Double?
+    let energy: Double?
+}
 
 @MainActor
 class SyncManager: ObservableObject {
@@ -29,40 +40,62 @@ class SyncManager: ObservableObject {
         do {
             let calendar = Calendar.current
             let endDate = Date()
-            let startDate = calendar.date(byAdding: .day, value: -120, to: endDate)!
+            let startDate = calendar.date(byAdding: .day, value: -365, to: endDate)!
             
-            print("🌐 Starting Global Background Sync (120 days)...")
+            print("🌐 Starting Global Background Sync (365 days)...")
             
-            // 1. Concurrent Fetching (Define background tasks)
+            // 1. Fetch data concurrently
             async let rhrTask = healthKitManager.fetchRestingHeartRate(startDate: startDate, endDate: endDate)
             async let hrvTask = healthKitManager.fetchHeartRateVariability(startDate: startDate, endDate: endDate)
             async let sleepTask = healthKitManager.fetchSleepDuration(startDate: startDate, endDate: endDate)
             async let workoutsTask = healthKitManager.fetchWorkouts(startDate: startDate, endDate: endDate)
             async let stepsTask = healthKitManager.fetchSteps(startDate: startDate, endDate: endDate)
+            async let weightTask = healthKitManager.fetchBodyMass(startDate: startDate, endDate: endDate) // 🟢 NEW
             async let nutritionTask = healthKitManager.fetchNutrition(startDate: startDate, endDate: endDate)
             
+            // 2. Fetch Strava data
             var strava: [StravaActivity] = []
             if stravaManager.isAuthenticated {
-                // Fetch Strava concurrently or linearly depending on your API preference
-                strava = (try? await stravaManager.fetchActivities(page: 1, perPage: 150)) ?? []
+                let page1 = (try? await stravaManager.fetchActivities(page: 1, perPage: 100)) ?? []
+                let page2 = (try? await stravaManager.fetchActivities(page: 2, perPage: 100)) ?? []
+                strava = page1 + page2
             }
             
-            // 2. Await all results (Fixes "Use of local variable before declaration")
+            let stravaSafeData: [StravaImportData] = strava.compactMap { activity in
+                guard let date = activity.startDateFormatted else { return nil }
+                return StravaImportData(
+                    id: String(activity.id),
+                    title: activity.name,
+                    workoutType: activity.type == "Run" ? .running : .cycling,
+                    startDate: date,
+                    duration: Double(activity.elapsedTime),
+                    distance: activity.distance,
+                    power: activity.averageWatts,
+                    energy: activity.kilojoules
+                )
+            }
+            
+            // 3. Await results
             let fetchedRHR = (try? await rhrTask) ?? []
             let fetchedHRV = (try? await hrvTask) ?? []
             let fetchedSleep = (try? await sleepTask) ?? []
             let fetchedWorkouts = (try? await workoutsTask) ?? []
             let fetchedSteps = await stepsTask
+            let fetchedWeight = (try? await weightTask) ?? [] // 🟢 NEW
             let fetchedNutrition = await nutritionTask
             
-            // 3. Persist to SwiftData
-            persistData(
+            // 4. Persist safely
+            let container = HealthDataContainer.shared
+            let dataHandler = DataPersistenceActor(modelContainer: container)
+            
+            await dataHandler.saveBatch(
                 workouts: fetchedWorkouts,
-                strava: strava,
+                strava: stravaSafeData,
                 sleep: fetchedSleep,
                 hrv: fetchedHRV,
                 rhr: fetchedRHR,
                 steps: fetchedSteps,
+                weight: fetchedWeight, // 🟢 NEW
                 nutrition: fetchedNutrition
             )
             
@@ -74,40 +107,69 @@ class SyncManager: ObservableObject {
         isSyncing = false
     }
     
-    private func persistData(
+    func resetAllData() async {
+        let container = HealthDataContainer.shared
+        let dataHandler = DataPersistenceActor(modelContainer: container)
+        await dataHandler.deleteAll()
+        
+        print("🗑️ All data deleted. Starting fresh sync...")
+        await performGlobalSync()
+    }
+}
+
+@ModelActor
+actor DataPersistenceActor {
+    
+    func deleteAll() {
+        try? modelContext.delete(model: StoredWorkout.self)
+        try? modelContext.delete(model: StoredHealthMetric.self)
+        try? modelContext.delete(model: StoredNutrition.self)
+        try? modelContext.save()
+    }
+    
+    func saveBatch(
         workouts: [WorkoutData],
-        strava: [StravaActivity],
+        strava: [StravaImportData],
         sleep: [HealthDataPoint],
         hrv: [HealthDataPoint],
         rhr: [HealthDataPoint],
         steps: [HealthDataPoint],
+        weight: [HealthDataPoint], // 🟢 NEW
         nutrition: [DailyNutrition]
     ) {
-        let context = HealthDataContainer.shared.mainContext
+        deleteAll()
         
-        // Persist Nutrition
+        // 1. Metrics (Added Weight to the list)
+        let metrics = [
+            (hrv, "HRV"),
+            (rhr, "RHR"),
+            (sleep, "Sleep"),
+            (steps, "Steps"),
+            (weight, "Weight") // 🟢 NEW
+        ]
+        
+        for (points, type) in metrics {
+            for point in points {
+                modelContext.insert(StoredHealthMetric(type: type, date: point.date, value: point.value))
+            }
+        }
+        
+        // 2. Nutrition
         for entry in nutrition {
-            context.insert(StoredNutrition(
+            modelContext.insert(StoredNutrition(
                 date: entry.date,
                 calories: entry.totalCalories,
                 protein: entry.totalProtein,
                 carbs: entry.totalCarbs,
-                fat: entry.totalFat           
+                fat: entry.totalFat
             ))
         }
         
-        // Persist Health Metrics (including Steps)
-        let metrics = [(hrv, "HRV"), (rhr, "RHR"), (sleep, "Sleep"), (steps, "Steps")]
-        for (points, type) in metrics {
-            for point in points {
-                context.insert(StoredHealthMetric(type: type, date: point.date, value: point.value))
-            }
-        }
-        
-        // Persist Workouts (Strava and HealthKit)
+        // 3. Workouts (HealthKit)
         for workout in workouts {
-            context.insert(StoredWorkout(
+            modelContext.insert(StoredWorkout(
                 id: workout.id.uuidString,
+                title: nil,
                 type: workout.workoutType,
                 startDate: workout.startDate,
                 duration: workout.duration,
@@ -118,34 +180,22 @@ class SyncManager: ObservableObject {
             ))
         }
         
+        // 4. Workouts (Strava)
         for activity in strava {
-            guard let date = activity.startDateFormatted else { continue }
-            
-            // Strava typically provides 'calories' only for certain activity types
-            // or uses 'kilojoules'. We'll use kilojoules as the energy source.
-            let stravaEnergy = activity.kilojoules
-            
-            context.insert(StoredWorkout(
-                id: String(activity.id),
-                type: activity.type == "Run" ? .running : .cycling,
-                startDate: date,
-                duration: Double(activity.elapsedTime),
+            modelContext.insert(StoredWorkout(
+                id: activity.id,
+                title: activity.title,
+                type: activity.workoutType,
+                startDate: activity.startDate,
+                duration: activity.duration,
                 distance: activity.distance,
-                power: activity.averageWatts,
-                energy: stravaEnergy,
+                power: activity.power,
+                energy: activity.energy,
                 source: "Strava"
             ))
         }
         
-        // Single batch save
-        try? context.save()
-    }
-    
-    func resetAllData() async {
-        let context = HealthDataContainer.shared.mainContext
-        try? context.delete(model: StoredWorkout.self)
-        try? context.save()
-        print("🗑️ All workouts deleted. Starting fresh sync...")
-        await performGlobalSync()
+        try? modelContext.save()
+        print("💾 Batch save completed successfully.")
     }
 }

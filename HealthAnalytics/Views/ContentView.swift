@@ -14,77 +14,100 @@ struct ContentView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                // Time period picker
-                Picker("Time Period", selection: $viewModel.selectedPeriod) {
-                    ForEach(TimePeriod.allCases) { period in
-                        Text(period.displayName).tag(period)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: viewModel.selectedPeriod) { _, _ in
-                    Task { await viewModel.loadData() }
-                }
+            // 🟢 CHANGED: Use LazyVStack with pinned headers
+            LazyVStack(spacing: 20, pinnedViews: [.sectionHeaders]) {
                 
-                if viewModel.isLoading {
-                    ProgressView("Loading health data...")
+                Section {
+                    // Dashboard Content
+                    if viewModel.isLoading {
+                        ProgressView("Loading health data...")
+                            .padding()
+                            .padding(.top, 40) // Add spacing below the pinned header
+                    } else if let error = viewModel.errorMessage {
+                        ErrorView(message: error)
+                            .cardStyle(for: .error)
+                            .padding(.top, 40)
+                    } else {
+                        VStack(spacing: 20) {
+                            // ─── Recovery Pattern ─────────
+                            if !viewModel.hrvData.isEmpty && !viewModel.workouts.isEmpty {
+                                RecoveryPatternCard(
+                                    hrvData:   viewModel.hrvData,
+                                    rhrData:   viewModel.restingHeartRateData,
+                                    sleepData: viewModel.sleepData,
+                                    workouts:  viewModel.workouts
+                                )
+                                .cardStyle(for: .recovery)
+                            }
+                            
+                            if !viewModel.restingHeartRateData.isEmpty {
+                                RestingHeartRateCard(data: viewModel.restingHeartRateData, period: viewModel.selectedPeriod)
+                                    .cardStyle(for: .heartRate)
+                            }
+                            
+                            if !viewModel.hrvData.isEmpty {
+                                HRVCard(data: viewModel.hrvData, period: viewModel.selectedPeriod)
+                                    .cardStyle(for: .hrv)
+                            }
+                            
+                            if !viewModel.sleepData.isEmpty {
+                                SleepCard(data: viewModel.sleepData, period: viewModel.selectedPeriod)
+                                    .cardStyle(for: .sleep)
+                            }
+                            
+                            if !viewModel.stepCountData.isEmpty {
+                                StepCountCard(data: viewModel.stepCountData, period: viewModel.selectedPeriod)
+                                    .cardStyle(for: .steps)
+                            }
+                            
+                            if !viewModel.weightData.isEmpty {
+                                WeightCard(data: viewModel.weightData, period: viewModel.selectedPeriod)
+                                    .cardStyle(for: .nutrition) // Optional styling
+                            }
+                            
+                            if !viewModel.workouts.isEmpty {
+                                WorkoutSummaryCard(workouts: viewModel.workouts, period: viewModel.selectedPeriod)
+                                    //.cardStyle(for: .workouts) // Already styled inside
+                            }
+                            
+                            if viewModel.restingHeartRateData.isEmpty &&
+                                viewModel.hrvData.isEmpty &&
+                                viewModel.sleepData.isEmpty &&
+                                viewModel.stepCountData.isEmpty &&
+                                viewModel.workouts.isEmpty {
+                                EmptyStateView()
+                                    .cardStyle(for: .info)
+                            }
+                        }
+                        .padding(.top, 10) // Spacing between header and first card
+                    }
+                } header: {
+                    // PINNED HEADER: Time Period Picker
+                    VStack {
+                        Picker("Time Period", selection: $viewModel.selectedPeriod) {
+                            ForEach(TimePeriod.allCases) { period in
+                                Text(period.displayName).tag(period)
+                            }
+                        }
+                        .pickerStyle(.segmented)
                         .padding()
-                } else if let error = viewModel.errorMessage {
-                    ErrorView(message: error)
-                        .cardStyle(for: .error)
-                } else {
-                    // ─── Recovery Pattern ─────────
-                    if !viewModel.hrvData.isEmpty && !viewModel.workouts.isEmpty {
-                        RecoveryPatternCard(
-                            hrvData:   viewModel.hrvData,
-                            rhrData:   viewModel.restingHeartRateData,
-                            sleepData: viewModel.sleepData,
-                            workouts:  viewModel.workouts
+                        .background(
+                            // Glass background effect
+                            Rectangle()
+                                .fill(.regularMaterial)
+                                .ignoresSafeArea(edges: .top)
                         )
-                        .cardStyle(for: .recovery)
-                    }
-                    
-                    if !viewModel.restingHeartRateData.isEmpty {
-                        RestingHeartRateCard(data: viewModel.restingHeartRateData, period: viewModel.selectedPeriod)
-                            .cardStyle(for: .heartRate)
-                    }
-                    
-                    if !viewModel.hrvData.isEmpty {
-                        HRVCard(data: viewModel.hrvData, period: viewModel.selectedPeriod)
-                            .cardStyle(for: .hrv)
-                    }
-                    
-                    if !viewModel.sleepData.isEmpty {
-                        SleepCard(data: viewModel.sleepData, period: viewModel.selectedPeriod)
-                            .cardStyle(for: .sleep)
-                    }
-                    
-                    if !viewModel.stepCountData.isEmpty {
-                        StepCountCard(data: viewModel.stepCountData, period: viewModel.selectedPeriod)
-                            .cardStyle(for: .steps)
-                    }
-                    
-                    if !viewModel.workouts.isEmpty {
-                        WorkoutSummaryCard(workouts: viewModel.workouts, period: viewModel.selectedPeriod)
-                            .cardStyle(for: .workouts)
-                    }
-                    
-                    if viewModel.restingHeartRateData.isEmpty &&
-                        viewModel.hrvData.isEmpty &&
-                        viewModel.sleepData.isEmpty &&
-                        viewModel.stepCountData.isEmpty &&
-                        viewModel.workouts.isEmpty {
-                        EmptyStateView()
-                            .cardStyle(for: .info)
                     }
                 }
-
-                Spacer()
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.bottom)
         }
-        .background(TabBackgroundColor.dashboard(for: colorScheme)) // Colorful, not dark gray
+        .background(TabBackgroundColor.dashboard(for: colorScheme))
         .navigationTitle("Dashboard")
+        .onChange(of: viewModel.selectedPeriod) { _, _ in
+            Task { await viewModel.loadData() }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -371,18 +394,12 @@ struct WorkoutSummaryCard: View {
         workouts.count
     }
     
-    var totalDuration: TimeInterval {
-        workouts.map { $0.duration }.reduce(0, +)
-    }
-    
-    var totalCalories: Double {
-        workouts.compactMap { $0.totalEnergyBurned }.reduce(0, +)
-    }
-    
-    var formattedTotalDuration: String {
-        let hours = Int(totalDuration) / 3600
-        let minutes = Int(totalDuration) / 60 % 60
-        return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+    // 🟢 NEW: Calculate counts by type
+    var countsByType: [(name: String, count: Int, icon: String)] {
+        let grouped = Dictionary(grouping: workouts, by: { $0.workoutName })
+        return grouped.map { (key, value) in
+            (name: key, count: value.count, icon: value.first?.iconName ?? "figure.run")
+        }.sorted { $0.count > $1.count }.prefix(3).map { $0 } // Top 3 types
     }
     
     var body: some View {
@@ -396,48 +413,63 @@ struct WorkoutSummaryCard: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                
                 Spacer()
-                Text("\(totalWorkouts) workouts")
+                
+                Text("\(totalWorkouts) total")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             
-            // Stats Row
-            HStack(spacing: 20) {
-                StatBox(icon: "clock.fill", value: formattedTotalDuration, label: "Total Time")
-                StatBox(icon: "flame.fill", value: "\(Int(totalCalories))", label: "Calories")
+            // 🟢 NEW: Breakdown by Type (instead of Time/Calories)
+            if !countsByType.isEmpty {
+                HStack(spacing: 12) {
+                    ForEach(countsByType, id: \.name) { item in
+                        HStack(spacing: 4) {
+                            Image(systemName: item.icon)
+                                .font(.caption2)
+                            Text("\(item.count) \(item.name)")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+                }
             }
             
             Divider()
             
-            // Recent Workouts Section
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Recent Workouts")
-                        .font(.title2)
-                        .bold()
-                    
-                    Spacer()
-                    
-                    NavigationLink {
-                        UnifiedWorkoutsView()
-                    } label: {
-                        Text("See All")
-                            .font(.subheadline)
-                    }
+            // Recent Workouts Header + See All Button
+            HStack {
+                Text("Recent Workouts")
+                    .font(.title2)
+                    .bold()
+                
+                Spacer()
+                
+                NavigationLink {
+                    UnifiedWorkoutsView()
+                } label: {
+                    Text("See All")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
                 }
-                
-                // 🟢 FIXED: Use local 'workouts' array instead of 'viewModel'
-                // Sort by date (newest first) and take top 3
-                let recent = workouts.sorted { $0.startDate > $1.startDate }.prefix(3)
-                
-                if recent.isEmpty {
-                    Text("No workouts found.")
-                        .foregroundColor(.secondary)
-                        .padding()
-                } else {
+            }
+            
+            // Workout list (Top 3 only)
+            let recent = workouts.sorted { $0.startDate > $1.startDate }.prefix(3)
+            
+            if recent.isEmpty {
+                Text("No workouts found.")
+                    .foregroundStyle(.secondary)
+                    .padding()
+            } else {
+                VStack(spacing: 12) {
                     ForEach(recent) { workout in
-                        WorkoutRow(workout: workout) // Uses the shared row
+                        WorkoutRow(workout: workout)
                     }
                 }
             }
@@ -549,6 +581,115 @@ struct WorkoutRow: View {
         case .strava: return .orange
         case .other: return .gray
         }
+    }
+}
+
+struct WeightCard: View {
+    let data: [HealthDataPoint]
+    let period: TimePeriod
+    
+    var averageWeight: Double {
+        guard !data.isEmpty else { return 0 }
+        let total = data.map { $0.value }.reduce(0, +)
+        return total / Double(data.count)
+    }
+    
+    // Trend: Last recorded weight vs First recorded weight in period
+    var trend: Double {
+        guard let first = data.first?.value, let last = data.last?.value else { return 0 }
+        return last - first
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("Body Weight")
+                        .font(.headline)
+                    Text(period.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing) {
+                    Text(String(format: "%.1f", averageWeight))
+                        .font(.title)
+                        .fontWeight(.bold)
+                    
+                    Text("avg lbs") // Label changed
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    // Optional: Show trend below average
+                    if abs(trend) >= 0.1 {
+                        HStack(spacing: 2) {
+                            Image(systemName: trend < 0 ? "arrow.down" : "arrow.up")
+                            Text(String(format: "%.1f lbs", abs(trend)))
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(trend < 0 ? .green : .red) // Green if weight lost, Red if gained
+                        .padding(.top, 1)
+                    }
+                }
+            }
+            
+            // Chart
+            if data.isEmpty {
+                Text("No weight data")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(height: 150)
+                    .frame(maxWidth: .infinity)
+            } else {
+                Chart(data) { point in
+                    LineMark(
+                        x: .value("Date", point.date),
+                        y: .value("Weight", point.value)
+                    )
+                    .foregroundStyle(.purple.gradient)
+                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 3))
+                    
+                    // Show Average Line
+                    RuleMark(y: .value("Average", averageWeight))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5]))
+                        .foregroundStyle(.purple.opacity(0.5))
+                    
+                    AreaMark(
+                        x: .value("Date", point.date),
+                        y: .value("Weight", point.value)
+                    )
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.purple.opacity(0.3), .purple.opacity(0.0)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .interpolationMethod(.catmullRom)
+                }
+                .frame(height: 200)
+                // Smart Scale: Zoom to data range, but give 5lb padding
+                .chartYScale(domain: .automatic(includesZero: false))
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .day, count: period == .week ? 1 : period == .month ? 7 : 30)) { value in
+                         if let date = value.as(Date.self) {
+                             AxisValueLabel {
+                                 Text(date, format: period == .week ? .dateTime.weekday() : .dateTime.month(.abbreviated).day())
+                                     .font(.caption2)
+                             }
+                         }
+                        AxisGridLine()
+                    }
+                }
+            }
+        }
+        .padding()
+        .cardStyle(for: .nutrition) // Reuse an existing style or make a new one
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .cornerRadius(12)
     }
 }
 

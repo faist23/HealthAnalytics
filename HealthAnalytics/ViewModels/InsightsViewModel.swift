@@ -105,7 +105,7 @@ class InsightsViewModel: ObservableObject {
             print("📈 Calculating Insights from SwiftData...")
             let context = HealthDataContainer.shared.mainContext
             let endDate = Date()
-            guard let startDate = Calendar.current.date(byAdding: .day, value: -120, to: endDate) else { return }
+            guard let startDate = Calendar.current.date(byAdding: .day, value: -365, to: endDate) else { return }
             
             // 1. Fetch Data
             let storedWorkouts = try context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.startDate >= startDate }, sortBy: [SortDescriptor(\.startDate)]))

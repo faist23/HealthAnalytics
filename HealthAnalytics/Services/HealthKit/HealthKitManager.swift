@@ -568,7 +568,7 @@ class HealthKitManager: ObservableObject {
                         // --- 🟢 END FIX ---
                         
                         let data = WorkoutData(
-                            id: workout.uuid, 
+                            id: workout.uuid,
                             workoutType: workout.workoutActivityType,
                             startDate: workout.startDate,
                             endDate: workout.endDate,
@@ -801,6 +801,39 @@ class HealthKitManager: ObservableObject {
             healthStore.execute(query)
         }
     }
+    
+    func fetchBodyMass(startDate: Date, endDate: Date) async throws -> [HealthDataPoint] {
+        let weightType = HKQuantityType.quantityType(forIdentifier: .bodyMass)!
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(sampleType: weightType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                guard let samples = samples as? [HKQuantitySample] else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                
+                let dataPoints = samples.map { sample in
+                    HealthDataPoint(
+                        date: sample.startDate,
+                        value: sample.quantity.doubleValue(for: .pound()), // Defaulting to lbs
+                        unit: "lbs",
+                        dataType: .bodyMass
+                    )
+                }
+                
+                continuation.resume(returning: dataPoints)
+            }
+            healthStore.execute(query)
+        }
+    }
+    
 }
 
 enum HealthKitError: Error {

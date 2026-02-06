@@ -464,11 +464,38 @@ class CorrelationEngine {
     ) -> [SimpleInsight] {
         
         var insights: [SimpleInsight] = []
+        let calendar = Calendar.current
+        let today = Date()
         
-        // Sleep consistency
-        if sleepData.count >= 7 {
-            let avgSleep = sleepData.map { $0.value }.reduce(0, +) / Double(sleepData.count)
-            let sleepValues = sleepData.map { $0.value }
+        // 🟢 FIXED: Explicitly filter for last 30 days for this specific insight
+        guard let thirtyDaysAgo = calendar.date(byAdding: .day, value: -30, to: today) else { return [] }
+        
+        let recentHKWorkouts = healthKitWorkouts.filter { $0.startDate >= thirtyDaysAgo }
+        let recentStravaActivities = stravaActivities.filter {
+            if let date = $0.startDateFormatted { return date >= thirtyDaysAgo }
+            return false
+        }
+        
+        // Workout frequency (Last 30 Days Only)
+        let totalRecentWorkouts = recentHKWorkouts.count + recentStravaActivities.count
+        if totalRecentWorkouts > 0 {
+            let days = 30
+            let workoutsPerWeek = Double(totalRecentWorkouts) / Double(days) * 7.0
+            
+            insights.append(SimpleInsight(
+                title: "Training Frequency",
+                value: String(format: "%.1f/week", workoutsPerWeek),
+                description: "\(totalRecentWorkouts) workouts in the last 30 days",
+                icon: "figure.run",
+                iconColor: "orange"
+            ))
+        }
+        
+        // Sleep consistency (Last 30 Days)
+        let recentSleep = sleepData.filter { $0.date >= thirtyDaysAgo }
+        if recentSleep.count >= 7 {
+            let avgSleep = recentSleep.map { $0.value }.reduce(0, +) / Double(recentSleep.count)
+            let sleepValues = recentSleep.map { $0.value }
             let variance = sleepValues.map { pow($0 - avgSleep, 2) }.reduce(0, +) / Double(sleepValues.count)
             let stdDev = sqrt(variance)
             
@@ -483,22 +510,7 @@ class CorrelationEngine {
             ))
         }
         
-        // Workout frequency
-        let totalWorkouts = healthKitWorkouts.count + stravaActivities.count
-        if totalWorkouts > 0 {
-            let days = 30
-            let workoutsPerWeek = Double(totalWorkouts) / Double(days) * 7.0
-            
-            insights.append(SimpleInsight(
-                title: "Training Frequency",
-                value: String(format: "%.1f/week", workoutsPerWeek),
-                description: "\(totalWorkouts) workouts in the last 30 days",
-                icon: "figure.run",
-                iconColor: "orange"
-            ))
-        }
-        
-        // Resting HR trend
+        // Resting HR trend (Use full dataset for trend context)
         if restingHRData.count >= 7 {
             let recent = Array(restingHRData.suffix(7))
             let older = Array(restingHRData.prefix(min(7, restingHRData.count - 7)))
@@ -520,7 +532,7 @@ class CorrelationEngine {
             }
         }
         
-        // HRV trend
+        // HRV trend (Recent Average)
         if hrvData.count >= 7 {
             let recent = Array(hrvData.suffix(7))
             let avgHRV = recent.map { $0.value }.reduce(0, +) / Double(recent.count)

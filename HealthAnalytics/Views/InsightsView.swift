@@ -965,7 +965,7 @@ struct CarbPerformanceCard: View {
                     Text(title)
                         .font(.headline)
                     
-                    Text("\(insight.sampleSize) workouts analyzed")
+                    Text("\(insight.sampleSize) cycling workouts analyzed")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -986,6 +986,10 @@ struct CarbPerformanceCard: View {
                     Text(String(format: "%.1f", insight.lowCarbPerformance))
                         .font(.title3)
                         .fontWeight(.semibold)
+                    Text("avg watts")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
                 }
                 
                 Image(systemName: "arrow.right")
@@ -999,6 +1003,10 @@ struct CarbPerformanceCard: View {
                         .font(.title3)
                         .fontWeight(.semibold)
                         .foregroundStyle(insight.percentDifference > 0 ? .green : .primary)
+                    Text("avg watts")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding()

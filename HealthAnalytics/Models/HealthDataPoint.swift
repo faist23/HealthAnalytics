@@ -7,11 +7,15 @@
 
 
 import Foundation
+import HealthKit
 
 struct HealthDataPoint: Identifiable {
     let id = UUID()
     let date: Date
     let value: Double
+    
+    var unit: String = ""
+    var dataType: HKQuantityTypeIdentifier? = nil
     
     var formattedDate: String {
         let formatter = DateFormatter()

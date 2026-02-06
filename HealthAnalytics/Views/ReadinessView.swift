@@ -507,6 +507,7 @@ struct PerformanceWindowCard: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
+        .padding(20)
     }
 }
 
@@ -539,6 +540,7 @@ struct OptimalTimingCard: View {
             
             Spacer()
         }
+        .padding(12)
     }
 }
 
