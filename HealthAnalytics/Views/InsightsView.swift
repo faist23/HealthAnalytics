@@ -426,6 +426,16 @@ struct ComingSoonCard: View {
 struct ActivityInsightCard: View {
     let insight: CorrelationEngine.ActivityTypeInsight
     
+    // 🟢 NEW: Determine unit based on activity type
+    var unitLabel: String {
+        let type = insight.activityType.lowercased()
+        if type.contains("ride") || type.contains("cycling") || type.contains("virtual") {
+            return "W"   // Cycling = Watts
+        } else {
+            return "mph" // Running/Walking = Speed
+        }
+    }
+    
     var insightText: String {
         let direction = insight.percentDifference > 0 ? "better" : "worse"
         let percent = abs(insight.percentDifference)
@@ -435,7 +445,7 @@ struct ActivityInsightCard: View {
     var activityIcon: String {
         switch insight.activityType {
         case "Run": return "figure.run"
-        case "Ride", "VirtualRide": return "bicycle"
+        case "Ride", "VirtualRide", "Cycling": return "bicycle" // Added Cycling case just in case
         case "Walk": return "figure.walk"
         case "Hike": return "figure.hiking"
         case "Swim": return "figure.pool.swim"
@@ -450,8 +460,9 @@ struct ActivityInsightCard: View {
             iconColor: .blue,
             insight: insightText,
             details: [
-                ("With 7+ hrs sleep", String(format: "%.1f avg", insight.goodSleepAvg)),
-                ("With <7 hrs sleep", String(format: "%.1f avg", insight.poorSleepAvg)),
+                // 🟢 UPDATED: Use the correct unit instead of "avg"
+                ("With 7+ hrs sleep", String(format: "%.1f %@", insight.goodSleepAvg, unitLabel)),
+                ("With <7 hrs sleep", String(format: "%.1f %@", insight.poorSleepAvg, unitLabel)),
                 ("Sample size", "\(insight.sampleSize) workouts")
             ]
         )

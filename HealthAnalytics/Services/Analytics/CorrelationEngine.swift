@@ -375,23 +375,28 @@ class CorrelationEngine {
         calendar: Calendar
     ) -> PerformanceMetric? {
         
-        // Only process cardio workouts
-        let cardioTypes: [HKWorkoutActivityType] = [.running, .cycling, .walking, .hiking]
-        guard cardioTypes.contains(workout.workoutType) else { return nil }
-        
-        // Need distance to calculate pace/speed
-        guard let distance = workout.totalDistance, distance > 0, workout.duration > 0 else { return nil }
-        
-        // Get previous night's sleep
         let workoutDay = calendar.startOfDay(for: workout.startDate)
         guard let previousDay = calendar.date(byAdding: .day, value: -1, to: workoutDay),
               let sleepHours = sleepByDate[previousDay] else { return nil }
         
-        // Calculate speed in mph
-        let speedMPS = distance / workout.duration // meters per second
-        let speedMPH = speedMPS * 2.23694
+        let performanceMetric: Double
         
-        return PerformanceMetric(performance: speedMPH, sleepHours: sleepHours)
+        // 🟢 Case 1: Running or Walking -> Use Speed (mph)
+        if workout.workoutType == .running || workout.workoutType == .walking {
+            guard let distance = workout.totalDistance, distance > 0, workout.duration > 0 else { return nil }
+            let speedMPS = distance / workout.duration
+            performanceMetric = speedMPS * 2.23694 // Convert m/s to mph
+            
+            // 🟢 Case 2: Cycling -> Strictly use Watts
+        } else if workout.workoutType == .cycling {
+            guard let watts = workout.averagePower, watts > 0 else { return nil }
+            performanceMetric = watts
+            
+        } else {
+            return nil
+        }
+        
+        return PerformanceMetric(performance: performanceMetric, sleepHours: sleepHours)
     }
     
     /// Get summary of available data for progress tracking
