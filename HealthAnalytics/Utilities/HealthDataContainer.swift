@@ -20,7 +20,7 @@ public enum HealthDataContainer {
             StoredNutrition.self
         ])
         
-        let appGroupID = "group.com.ridepro.HealthAnalytics"
+/*        let appGroupID = "group.com.ridepro.HealthAnalytics"
         
         // 1. Manually ensure the directory exists in the App Group container
         let fileManager = FileManager.default
@@ -32,12 +32,8 @@ public enum HealthDataContainer {
                 print("📦 HealthDataContainer: Created missing Application Support directory in App Group.")
             }
         }
-        
-        let configuration = ModelConfiguration(
-            "HealthAnalyticsShared",
-            schema: schema,
-            groupContainer: .identifier(appGroupID)
-        )
+ */
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: false)
         
         do {
             return try ModelContainer(for: schema, configurations: [configuration])

@@ -316,7 +316,7 @@ struct NutritionCorrelationEngine {
         for activity in stravaActivities {
             guard let workoutDate = activity.startDateFormatted else { continue }
             
-            // 🟢 STRICT FILTER: Only Rides with Power
+            // STRICT FILTER: Only Rides with Power
             guard activity.type == "Ride" || activity.type == "VirtualRide",
                   let watts = activity.averageWatts, watts > 0 else { continue }
             
@@ -427,7 +427,7 @@ struct NutritionCorrelationEngine {
         for activity in stravaActivities {
             guard let workoutDate = activity.startDateFormatted else { continue }
             
-            // 🟢 STRICT FILTER: Only Rides with Power
+            // STRICT FILTER: Only Rides with Power
             guard activity.type == "Ride" || activity.type == "VirtualRide",
                   let watts = activity.averageWatts, watts > 0 else { continue }
             

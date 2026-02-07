@@ -141,6 +141,30 @@ struct WorkoutMatcher {
             stravaType.lowercased().contains(hkType.name.lowercased())
         }
     }
+    
+    nonisolated static func findMatch(for hkWorkout: WorkoutData, in stravaImports: [StravaImportData]) -> StravaImportData? {
+        for stravaActivity in stravaImports {
+            // 1. Time matching (within 5 minutes)
+            let timeDifference = abs(hkWorkout.startDate.timeIntervalSince(stravaActivity.startDate))
+            guard timeDifference <= 300 else { continue }
+            
+            // 2. Activity type matching
+            guard activityTypesMatch(hkType: hkWorkout.workoutType, stravaType: stravaActivity.workoutType) else { continue }
+            
+            // 3. Duration matching (within 10% or 120 seconds)
+            let durationDifference = abs(hkWorkout.duration - stravaActivity.duration)
+            let durationTolerance = max(hkWorkout.duration * 0.1, 120.0)
+            guard durationDifference <= durationTolerance else { continue }
+            
+            return stravaActivity
+        }
+        return nil
+    }
+
+    // helper to compare two HKWorkoutActivityTypes directly
+    private static func activityTypesMatch(hkType: HKWorkoutActivityType, stravaType: HKWorkoutActivityType) -> Bool {
+        return hkType == stravaType
+    }
 }
 
 // Helper extension to get activity name
@@ -157,6 +181,17 @@ extension HKWorkoutActivityType {
         case .functionalStrengthTraining: return "Strength Training"
         case .traditionalStrengthTraining: return "Weight Training"
         default: return "Workout"
+        }
+    }
+    
+    var iconName: String {
+        switch self {
+        case .running: return "figure.run"
+        case .cycling: return "bicycle"
+        case .coreTraining: return "figure.core.training"
+        case .functionalStrengthTraining: return "figure.strengthtraining.functional"
+        case .traditionalStrengthTraining: return "figure.strengthtraining.functional"
+       default: return "figure.mixed.cardio"
         }
     }
 }

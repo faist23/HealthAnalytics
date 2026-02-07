@@ -545,6 +545,15 @@ class HealthKitManager: ObservableObject {
                     
                     // Fetch average power for this workout
                     self.fetchAveragePower(for: workout) { averagePower in
+ 
+                        // FETCH HEART RATE HERE
+                        var heartRate: Double?
+                        if let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate),
+                           let statistics = workout.statistics(for: hrType),
+                           let average = statistics.averageQuantity() {
+                            heartRate = average.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+                        }
+                        
                         // Handle energy burned for iOS 18+
                         var energyBurned: Double?
                         
@@ -565,7 +574,6 @@ class HealthKitManager: ObservableObject {
                                 energyBurned = legacyQuantity.doubleValue(for: .kilocalorie())
                             }
                         }
-                        // --- 🟢 END FIX ---
                         
                         let data = WorkoutData(
                             id: workout.uuid,
@@ -576,6 +584,7 @@ class HealthKitManager: ObservableObject {
                             totalEnergyBurned: energyBurned,
                             totalDistance: workout.totalDistance?.doubleValue(for: .meter()),
                             averagePower: averagePower,
+                            averageHeartRate: heartRate,
                             source: source
                         )
                         

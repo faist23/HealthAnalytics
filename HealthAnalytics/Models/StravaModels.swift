@@ -57,6 +57,7 @@ struct StravaActivity: Codable, Identifiable {
     let averageHeartrate: Double?
     let maxHeartrate: Double?
     let kilojoules: Double?
+    let calories: Double? 
     let averageWatts: Double?
     let maxWatts: Int?
     let sufferScore: Int?
@@ -72,6 +73,7 @@ struct StravaActivity: Codable, Identifiable {
         case averageHeartrate = "average_heartrate"
         case maxHeartrate = "max_heartrate"
         case kilojoules
+        case calories
         case averageWatts = "average_watts"
         case maxWatts = "max_watts"
         case sufferScore = "suffer_score"

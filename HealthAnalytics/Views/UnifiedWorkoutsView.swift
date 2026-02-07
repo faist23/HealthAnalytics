@@ -35,7 +35,11 @@ struct UnifiedWorkoutRow: View {
     
     // Use the custom title if available (Strava), otherwise generic type (Apple)
     var displayName: String {
-        workout.title ?? workout.workoutType.name
+        if let title = workout.title, !title.isEmpty {
+            return title
+        }
+        // Fallback to the mapped name from our extension
+        return workout.toWorkoutData().workoutName
     }
     
     var body: some View {
@@ -50,11 +54,10 @@ struct UnifiedWorkoutRow: View {
                 
                 // Source Badge
                 HStack(spacing: 4) {
-                    Image(systemName: isStrava ? "bicycle" : "apple.logo") // Custom icons
-                        .font(.caption2)
+                    Image(systemName: workout.workoutType.iconName) // Use a dynamic icon                        .font(.caption2)
                     Text(workout.source)
                         .font(.caption2)
-                        .fontWeight(.bold)
+                        .fontWeight(.regular)
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -77,6 +80,13 @@ struct UnifiedWorkoutRow: View {
                         .foregroundStyle(.secondary)
                 }
                 
+                // Heart Rate (Red)
+                if let hr = workout.averageHeartRate, hr > 0 {
+                    Label("\(Int(hr)) bpm", systemImage: "heart.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
                 // Power (Orange)
                 if let power = workout.averagePower, power > 0 {
                     HStack(spacing: 2) {

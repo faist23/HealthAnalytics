@@ -46,7 +46,7 @@ class ActionableRecommendations {
     func generateRecommendations(
         trainingLoad: TrainingLoadCalculator.TrainingLoadSummary?,
         recoveryInsights: [CorrelationEngine.RecoveryInsight],
-        trends: [MetricTrend], // 🟢 Uses the new global struct
+        trends: [MetricTrend],
         injuryRisk: InjuryRiskCalculator.InjuryRiskAssessment?
     ) -> [Recommendation] {
         
@@ -146,11 +146,9 @@ class ActionableRecommendations {
         }
         
         // 3. Check for declining trends (Updated for new MetricTrend)
-        // 🟢 FIX: Use 'status' (.declining/.warning) instead of 'direction'
         let decliningTrends = trends.filter { $0.status == .declining || $0.status == .warning }
         
         if decliningTrends.count >= 2 {
-            // 🟢 FIX: Use 'metricName' instead of 'metric'
             let metrics = decliningTrends.map { $0.metricName }.joined(separator: ", ")
             recommendations.append(Recommendation(
                 priority: .medium,
@@ -166,11 +164,9 @@ class ActionableRecommendations {
         }
         
         // 4. Check for sleep issues (Updated)
-        // 🟢 FIX: Use 'metricName' and 'status'
         if let sleepTrend = trends.first(where: { $0.metricName == "Sleep Duration" }),
            sleepTrend.status == .declining || sleepTrend.status == .warning {
             
-            // 🟢 FIX: Use 'context' or construct message instead of 'message' property
             let msg = "Your sleep duration is trending negatively (\(sleepTrend.context))."
             
             recommendations.append(Recommendation(
@@ -187,7 +183,6 @@ class ActionableRecommendations {
         }
         
         // 5. Positive reinforcement (Updated)
-        // 🟢 FIX: Use 'status' (.improving)
         let improvingTrends = trends.filter { $0.status == .improving }
         if improvingTrends.count >= 2 {
             let metrics = improvingTrends.map { $0.metricName }.joined(separator: ", ")

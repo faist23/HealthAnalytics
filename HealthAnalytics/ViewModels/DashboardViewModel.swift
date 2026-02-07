@@ -39,13 +39,13 @@ class DashboardViewModel: ObservableObject {
             startDate = calendar.date(byAdding: .day, value: -7, to: now)!
         case .month:
             startDate = calendar.date(byAdding: .day, value: -30, to: now)!
-        case .quarter: // 🟢 Added handling for quarter
+        case .quarter:
             startDate = calendar.date(byAdding: .day, value: -90, to: now)!
         case .sixMonths:
             startDate = calendar.date(byAdding: .month, value: -6, to: now)!
         case .year:
             startDate = calendar.date(byAdding: .year, value: -1, to: now)!
-        case .all: // 🟢 FIXED: Added .all case to make switch exhaustive
+        case .all:
             startDate = calendar.date(byAdding: .year, value: -5, to: now)!
         }
         
@@ -60,6 +60,7 @@ class DashboardViewModel: ObservableObject {
             self.workouts = storedWorkouts.map { stored in
                 WorkoutData(
                     id: UUID(uuidString: stored.id) ?? UUID(),
+                    title: stored.title,
                     workoutType: stored.workoutType,
                     startDate: stored.startDate,
                     endDate: stored.startDate.addingTimeInterval(stored.duration),
@@ -67,6 +68,7 @@ class DashboardViewModel: ObservableObject {
                     totalEnergyBurned: stored.totalEnergyBurned,
                     totalDistance: stored.distance,
                     averagePower: stored.averagePower,
+                    averageHeartRate: stored.averageHeartRate,
                     source: stored.source == "Strava" ? .strava : .appleWatch
                 )
             }
@@ -89,7 +91,6 @@ class DashboardViewModel: ObservableObject {
             
             self.sleepData = storedMetrics
                 .filter { $0.type == "Sleep" }
-                // 🟢 FIXED: Removed dataType argument (passed nil implicitly) because .sleepAnalysis is a Category, not a Quantity
                 .map { HealthDataPoint(date: $0.date, value: $0.value, unit: "hr") }
             
             self.stepCountData = storedMetrics

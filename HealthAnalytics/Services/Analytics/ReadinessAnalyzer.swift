@@ -620,6 +620,7 @@ extension WorkoutData {
             totalEnergyBurned: nil,
             totalDistance: activity.distance,
             averagePower: activity.averageWatts,
+            averageHeartRate: activity.averageHeartrate,
             source: .strava
         )
     }

@@ -16,6 +16,8 @@ extension StoredWorkout {
         let end = self.startDate.addingTimeInterval(self.duration)
         
         return WorkoutData(
+            id: UUID(uuidString: self.id) ?? UUID(),
+            title: self.title, // Pass the custom title (e.g., "Shovel Snow")
             workoutType: self.workoutType,
             startDate: self.startDate,
             endDate: end,
@@ -23,8 +25,8 @@ extension StoredWorkout {
             totalEnergyBurned: self.totalEnergyBurned,
             totalDistance: self.distance,
             averagePower: self.averagePower,
+            averageHeartRate: self.averageHeartRate, 
             source: WorkoutSource(rawValue: self.source) ?? .other
-//            source: self.source == "Strava" ? .strava : .appleWatch
         )
     }
 }

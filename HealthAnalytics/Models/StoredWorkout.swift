@@ -12,7 +12,7 @@ import HealthKit
 @Model
 final class StoredWorkout {
     @Attribute(.unique) var id: String
-    var title: String? // 🟢 NEW: Store the custom name
+    var title: String?
     var workoutTypeInt: Int
     var startDate: Date
     var duration: TimeInterval
@@ -20,9 +20,9 @@ final class StoredWorkout {
     var averagePower: Double?
     var totalEnergyBurned: Double?
     var source: String
-    
-    // 🟢 UPDATED INIT
-    init(id: String, title: String? = nil, type: HKWorkoutActivityType, startDate: Date, duration: TimeInterval, distance: Double?, power: Double?, energy: Double?, source: String) {
+    var averageHeartRate: Double?
+
+    init(id: String, title: String? = nil, type: HKWorkoutActivityType, startDate: Date, duration: TimeInterval, distance: Double?, power: Double?, energy: Double?, hr: Double?, source: String) {
         self.id = id
         self.title = title
         self.workoutTypeInt = Int(type.rawValue)
@@ -31,6 +31,8 @@ final class StoredWorkout {
         self.distance = distance
         self.averagePower = power
         self.totalEnergyBurned = energy
+        self.source = source
+        self.averageHeartRate = hr
         self.source = source
     }
     

@@ -11,17 +11,6 @@ import SwiftUI
 import HealthKit
 import Combine
 
-struct StravaImportData: Sendable {
-    let id: String
-    let title: String
-    let workoutType: HKWorkoutActivityType
-    let startDate: Date
-    let duration: Double
-    let distance: Double?
-    let power: Double?
-    let energy: Double?
-}
-
 @MainActor
 class SyncManager: ObservableObject {
     static let shared = SyncManager()
@@ -50,7 +39,7 @@ class SyncManager: ObservableObject {
             async let sleepTask = healthKitManager.fetchSleepDuration(startDate: startDate, endDate: endDate)
             async let workoutsTask = healthKitManager.fetchWorkouts(startDate: startDate, endDate: endDate)
             async let stepsTask = healthKitManager.fetchSteps(startDate: startDate, endDate: endDate)
-            async let weightTask = healthKitManager.fetchBodyMass(startDate: startDate, endDate: endDate) // 🟢 NEW
+            async let weightTask = healthKitManager.fetchBodyMass(startDate: startDate, endDate: endDate)
             async let nutritionTask = healthKitManager.fetchNutrition(startDate: startDate, endDate: endDate)
             
             // 2. Fetch Strava data
@@ -61,17 +50,40 @@ class SyncManager: ObservableObject {
                 strava = page1 + page2
             }
             
-            let stravaSafeData: [StravaImportData] = strava.compactMap { activity in
+            let stravaSafeData: [StravaImportData] = strava.compactMap { (activity: StravaActivity) -> StravaImportData? in // Explicitly allow nil
                 guard let date = activity.startDateFormatted else { return nil }
+                
+                // Energy Fix: Estimate calories if the API returns 0.0
+                // Based on your console debug, Strava is sending 0.0 for calories in the summary list.
+                var energy = activity.calories ?? 0
+                if energy == 0, let kj = activity.kilojoules, kj > 0 {
+                    energy = kj // 1:1 approximation for cycling
+                } else if energy == 0, let hr = activity.averageHeartrate, hr > 0 {
+                    // Fallback estimate for activities like "Shovel Snow"
+                    let minutes = Double(activity.elapsedTime) / 60.0
+                    energy = minutes * (hr > 120 ? 10.0 : 5.0)
+                }
+                
+                // Map the activity type properly so the Matcher can find duplicates
+                let mappedType: HKWorkoutActivityType
+                switch activity.type {
+                case "Run": mappedType = .running
+                case "Ride", "VirtualRide": mappedType = .cycling
+                case "WeightTraining": mappedType = .traditionalStrengthTraining
+                case "Workout": mappedType = .other
+                default: mappedType = .other
+                }
+                
                 return StravaImportData(
                     id: String(activity.id),
                     title: activity.name,
-                    workoutType: activity.type == "Run" ? .running : .cycling,
+                    workoutType: mappedType,
                     startDate: date,
                     duration: Double(activity.elapsedTime),
                     distance: activity.distance,
                     power: activity.averageWatts,
-                    energy: activity.kilojoules
+                    energy: energy,
+                    averageHeartRate: activity.averageHeartrate
                 )
             }
             
@@ -81,7 +93,7 @@ class SyncManager: ObservableObject {
             let fetchedSleep = (try? await sleepTask) ?? []
             let fetchedWorkouts = (try? await workoutsTask) ?? []
             let fetchedSteps = await stepsTask
-            let fetchedWeight = (try? await weightTask) ?? [] // 🟢 NEW
+            let fetchedWeight = (try? await weightTask) ?? []
             let fetchedNutrition = await nutritionTask
             
             // 4. Persist safely
@@ -95,7 +107,7 @@ class SyncManager: ObservableObject {
                 hrv: fetchedHRV,
                 rhr: fetchedRHR,
                 steps: fetchedSteps,
-                weight: fetchedWeight, // 🟢 NEW
+                weight: fetchedWeight,
                 nutrition: fetchedNutrition
             )
             
@@ -134,7 +146,7 @@ actor DataPersistenceActor {
         hrv: [HealthDataPoint],
         rhr: [HealthDataPoint],
         steps: [HealthDataPoint],
-        weight: [HealthDataPoint], // 🟢 NEW
+        weight: [HealthDataPoint],
         nutrition: [DailyNutrition]
     ) {
         deleteAll()
@@ -145,7 +157,7 @@ actor DataPersistenceActor {
             (rhr, "RHR"),
             (sleep, "Sleep"),
             (steps, "Steps"),
-            (weight, "Weight") // 🟢 NEW
+            (weight, "Weight") 
         ]
         
         for (points, type) in metrics {
@@ -165,23 +177,45 @@ actor DataPersistenceActor {
             ))
         }
         
-        // 3. Workouts (HealthKit)
-        for workout in workouts {
-            modelContext.insert(StoredWorkout(
-                id: workout.id.uuidString,
-                title: nil,
-                type: workout.workoutType,
-                startDate: workout.startDate,
-                duration: workout.duration,
-                distance: workout.totalDistance,
-                power: workout.averagePower,
-                energy: workout.totalEnergyBurned,
-                source: workout.source.rawValue
-            ))
+        // Track which Strava IDs we've used so we don't save them twice
+        var matchedStravaIds = Set<String>()
+        
+        for hkWorkout in workouts {
+            // Use the Matcher!
+            if let match = WorkoutMatcher.findMatch(for: hkWorkout, in: strava) {
+                // MATCH FOUND: Save the Strava version (better metadata/titles)
+                modelContext.insert(StoredWorkout(
+                    id: match.id,
+                    title: match.title,
+                    type: match.workoutType,
+                    startDate: match.startDate,
+                    duration: match.duration,
+                    distance: match.distance,
+                    power: match.power,
+                    energy: match.energy,
+                    hr: match.averageHeartRate,
+                    source: "Strava"
+                ))
+                matchedStravaIds.insert(match.id)
+            } else {
+                // NO MATCH: Save the Apple Health version
+                modelContext.insert(StoredWorkout(
+                    id: hkWorkout.id.uuidString,
+                    title: nil,
+                    type: hkWorkout.workoutType,
+                    startDate: hkWorkout.startDate,
+                    duration: hkWorkout.duration,
+                    distance: hkWorkout.totalDistance,
+                    power: hkWorkout.averagePower,
+                    energy: hkWorkout.totalEnergyBurned,
+                    hr: hkWorkout.averageHeartRate,
+                    source: hkWorkout.source.rawValue
+                ))
+            }
         }
         
-        // 4. Workouts (Strava)
-        for activity in strava {
+        // Finally, save Strava activities that had no Apple Health counterpart
+        for activity in strava where !matchedStravaIds.contains(activity.id) {
             modelContext.insert(StoredWorkout(
                 id: activity.id,
                 title: activity.title,
@@ -191,6 +225,7 @@ actor DataPersistenceActor {
                 distance: activity.distance,
                 power: activity.power,
                 energy: activity.energy,
+                hr: activity.averageHeartRate,
                 source: "Strava"
             ))
         }

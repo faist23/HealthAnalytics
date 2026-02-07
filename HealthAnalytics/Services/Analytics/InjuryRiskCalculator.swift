@@ -78,7 +78,7 @@ class InjuryRiskCalculator {
         }
         
         // 2. Analyze Recovery Status
-        // 🟢 FIXED: Check 'trend' enum (.fatigued) instead of 'status' string
+        // Check 'trend' enum (.fatigued) instead of 'status' string
         let strainedRecovery = recoveryStatus.filter { $0.trend == .fatigued }
         
         if !strainedRecovery.isEmpty {

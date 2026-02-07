@@ -33,6 +33,7 @@ enum WorkoutSource: String {
 
 struct WorkoutData: Identifiable {
     let id: UUID
+    let title: String?
     let workoutType: HKWorkoutActivityType
     let startDate: Date
     let endDate: Date
@@ -40,31 +41,41 @@ struct WorkoutData: Identifiable {
     let totalEnergyBurned: Double?
     let totalDistance: Double?
     let averagePower: Double?
+    let averageHeartRate: Double?
     let source: WorkoutSource
     
     init(
-            id: UUID = UUID(), // Default for previews only
-            workoutType: HKWorkoutActivityType,
-            startDate: Date,
-            endDate: Date,
-            duration: TimeInterval,
-            totalEnergyBurned: Double?,
-            totalDistance: Double?,
-            averagePower: Double?,
-            source: WorkoutSource
-        ) {
-            self.id = id
-            self.workoutType = workoutType
-            self.startDate = startDate
-            self.endDate = endDate
-            self.duration = duration
-            self.totalEnergyBurned = totalEnergyBurned
-            self.totalDistance = totalDistance
-            self.averagePower = averagePower
-            self.source = source
-        }
-
+        id: UUID = UUID(), // Default for previews only
+        title: String? = nil,
+        workoutType: HKWorkoutActivityType,
+        startDate: Date,
+        endDate: Date,
+        duration: TimeInterval,
+        totalEnergyBurned: Double?,
+        totalDistance: Double?,
+        averagePower: Double?,
+        averageHeartRate: Double?,
+        source: WorkoutSource
+    ) {
+        self.id = id
+        self.title = title
+        self.workoutType = workoutType
+        self.startDate = startDate
+        self.endDate = endDate
+        self.duration = duration
+        self.totalEnergyBurned = totalEnergyBurned
+        self.totalDistance = totalDistance
+        self.averagePower = averagePower
+        self.averageHeartRate = averageHeartRate
+        self.source = source
+    }
+    
     var workoutName: String {
+        // Priority: Use custom title (e.g., "Shovel Snow") if available
+        if let title = title, !title.isEmpty {
+            return title
+        }
+        
         switch workoutType {
         case .running:
             return "Running"
@@ -157,4 +168,28 @@ struct WorkoutData: Identifiable {
         guard let power = averagePower, power > 0 else { return nil }
         return "\(Int(power)) W"
     }
+    
+    /// Returns distance if available and greater than 0; otherwise returns formatted calories
+    var secondaryMetric: String {
+        if let distance = totalDistance, distance > 0 {
+            let miles = distance / 1609.34
+            return String(format: "%.2f mi", miles)
+        } else if let energy = totalEnergyBurned, energy > 0 {
+            return "\(Int(energy)) cal"
+        }
+        return ""
+    }
 }
+
+struct StravaImportData: Sendable {
+    let id: String
+    let title: String
+    let workoutType: HKWorkoutActivityType
+    let startDate: Date
+    let duration: Double
+    let distance: Double?
+    let power: Double?
+    let energy: Double?
+    let averageHeartRate: Double?
+}
+

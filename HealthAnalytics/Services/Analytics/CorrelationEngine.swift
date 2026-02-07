@@ -381,13 +381,13 @@ class CorrelationEngine {
         
         let performanceMetric: Double
         
-        // 🟢 Case 1: Running or Walking -> Use Speed (mph)
+        // Case 1: Running or Walking -> Use Speed (mph)
         if workout.workoutType == .running || workout.workoutType == .walking {
             guard let distance = workout.totalDistance, distance > 0, workout.duration > 0 else { return nil }
             let speedMPS = distance / workout.duration
             performanceMetric = speedMPS * 2.23694 // Convert m/s to mph
             
-            // 🟢 Case 2: Cycling -> Strictly use Watts
+            // Case 2: Cycling -> Strictly use Watts
         } else if workout.workoutType == .cycling {
             guard let watts = workout.averagePower, watts > 0 else { return nil }
             performanceMetric = watts
@@ -472,7 +472,7 @@ class CorrelationEngine {
         let calendar = Calendar.current
         let today = Date()
         
-        // 🟢 FIXED: Explicitly filter for last 30 days for this specific insight
+        // xplicitly filter for last 30 days for this specific insight
         guard let thirtyDaysAgo = calendar.date(byAdding: .day, value: -30, to: today) else { return [] }
         
         let recentHKWorkouts = healthKitWorkouts.filter { $0.startDate >= thirtyDaysAgo }

@@ -14,7 +14,7 @@ struct ContentView: View {
 
     var body: some View {
         ScrollView {
-            // 🟢 CHANGED: Use LazyVStack with pinned headers
+            // Use LazyVStack with pinned headers
             LazyVStack(spacing: 20, pinnedViews: [.sectionHeaders]) {
                 
                 Section {
@@ -394,7 +394,7 @@ struct WorkoutSummaryCard: View {
         workouts.count
     }
     
-    // 🟢 NEW: Calculate counts by type
+    // Calculate counts by type
     var countsByType: [(name: String, count: Int, icon: String)] {
         let grouped = Dictionary(grouping: workouts, by: { $0.workoutName })
         return grouped.map { (key, value) in
@@ -421,7 +421,7 @@ struct WorkoutSummaryCard: View {
                     .foregroundStyle(.secondary)
             }
             
-            // 🟢 NEW: Breakdown by Type (instead of Time/Calories)
+            //  Breakdown by Type (instead of Time/Calories)
             if !countsByType.isEmpty {
                 HStack(spacing: 12) {
                     ForEach(countsByType, id: \.name) { item in
@@ -553,23 +553,9 @@ struct WorkoutRow: View {
                     .fontWeight(.medium)
                 
                 // Show power if available, otherwise show distance or calories
-                if let power = workout.formattedPower {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bolt.fill")
-                            .font(.caption2)
-                        Text(power)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                } else if let distance = workout.formattedDistance {
-                    Text(distance)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(workout.formattedCalories)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text(workout.secondaryMetric)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)

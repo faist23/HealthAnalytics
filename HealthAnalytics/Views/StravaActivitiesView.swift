@@ -104,7 +104,6 @@ struct StravaActivityRow: View {
                     .foregroundStyle(.orange)
                 }
                 
-                // 🟢 ADDED: Calories / Kilojoules
                 // Uses 1:1 KJ to Calorie approximation standard in cycling
                 if let kj = activity.kilojoules, kj > 0 {
                     HStack(spacing: 2) {

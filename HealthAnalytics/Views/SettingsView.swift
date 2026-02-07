@@ -104,7 +104,7 @@ struct SettingsView: View {
                     .padding()
                     .cardStyle(for: .info)
                     
-                    // MARK: - Permissions
+/*                    // MARK: - Permissions
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Permissions")
                             .font(.headline)
@@ -115,7 +115,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding()
-                    .cardStyle(for: .info)
+                    .cardStyle(for: .info) */
                 }
                 .padding(.horizontal)
                 .padding(.top, 12)

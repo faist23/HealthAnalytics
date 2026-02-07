@@ -241,7 +241,6 @@ struct InsightsView: View {
                 .fontWeight(.bold)
                 .frame(maxWidth: .infinity, alignment: .leading)
             
-            // 🟢 FIXED: Use 'metricName' instead of 'metric' for ID
             ForEach(viewModel.metricTrends, id: \.metricName) { trend in
                 TrendCard(trend: trend)
             }
@@ -426,7 +425,7 @@ struct ComingSoonCard: View {
 struct ActivityInsightCard: View {
     let insight: CorrelationEngine.ActivityTypeInsight
     
-    // 🟢 NEW: Determine unit based on activity type
+    // Determine unit based on activity type
     var unitLabel: String {
         let type = insight.activityType.lowercased()
         if type.contains("ride") || type.contains("cycling") || type.contains("virtual") {
@@ -460,7 +459,6 @@ struct ActivityInsightCard: View {
             iconColor: .blue,
             insight: insightText,
             details: [
-                // 🟢 UPDATED: Use the correct unit instead of "avg"
                 ("With 7+ hrs sleep", String(format: "%.1f %@", insight.goodSleepAvg, unitLabel)),
                 ("With <7 hrs sleep", String(format: "%.1f %@", insight.poorSleepAvg, unitLabel)),
                 ("Sample size", "\(insight.sampleSize) workouts")
