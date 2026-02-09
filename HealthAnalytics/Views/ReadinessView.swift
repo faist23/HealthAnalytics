@@ -12,137 +12,154 @@ import Charts
 struct ReadinessView: View {
     @StateObject private var viewModel = ReadinessViewModel()
     @Environment(\.colorScheme) var colorScheme
+    @ObservedObject var syncManager = SyncManager.shared
     
     var body: some View {
         ZStack {
             TabBackgroundColor.recovery(for: colorScheme)
                 .ignoresSafeArea()
             
-            ScrollView {
-                VStack(spacing: 24) {
-                    
-                    if viewModel.isLoading {
-                        ProgressView("Analyzing your readiness...")
-                            .padding()
-                    } else if let error = viewModel.errorMessage {
-                        ErrorView(message: error)
-                            .cardStyle(for: .error)
-                    } else if let instruction = viewModel.dailyInstruction {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack {
-                                Text(instruction.headline)
-                                    .font(.title2.bold())
-                                Spacer()
-                                Circle()
-                                    .fill(instruction.status.color)
-                                    .frame(width: 12, height: 12)
-                            }
+            Group {
+                if syncManager.isBackfillingHistory {
+                    // This silences the @Query and stops the console errors
+                    VStack(spacing: 20) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        Text("Establishing 10-Year Baseline")
+                            .font(.headline)
+                        Text("This ensures accurate aging and recovery insights.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    // Your regular Readiness UI
+                    ScrollView {
+                        VStack(spacing: 24) {
                             
-                            Text(instruction.subline)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            
-                            if let target = instruction.targetAction {
-                                HStack {
-                                    Image(systemName: "target")
-                                        .foregroundColor(instruction.status.color)
-                                    Text(target)
-                                        .font(.subheadline.weight(.semibold))
+                            if viewModel.isLoading {
+                                ProgressView("Analyzing your readiness...")
+                                    .padding()
+                            } else if let error = viewModel.errorMessage {
+                                ErrorView(message: error)
+                                    .cardStyle(for: .error)
+                            } else if let instruction = viewModel.dailyInstruction {
+                                VStack(alignment: .leading, spacing: 14) {
+                                    HStack {
+                                        Text(instruction.headline)
+                                            .font(.title2.bold())
+                                        Spacer()
+                                        Circle()
+                                            .fill(instruction.status.color)
+                                            .frame(width: 12, height: 12)
+                                    }
+                                    
+                                    Text(instruction.subline)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                    
+                                    if let target = instruction.targetAction {
+                                        HStack {
+                                            Image(systemName: "target")
+                                                .foregroundColor(instruction.status.color)
+                                            Text(target)
+                                                .font(.subheadline.weight(.semibold))
+                                        }
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 12)
+                                        .background(instruction.status.color.opacity(0.1))
+                                        .cornerRadius(8)
+                                    }
+                                    
+                                    if let insight = instruction.primaryInsight {
+                                        Divider()
+                                        Text(insight)
+                                            .font(.caption.bold())
+                                            .foregroundStyle(instruction.status.color)
+                                    }
                                 }
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 12)
-                                .background(instruction.status.color.opacity(0.1))
-                                .cornerRadius(8)
+                                .padding()
+                                .cardStyle(for: .info) // Maintain your existing UI style
                             }
                             
-                            if let insight = instruction.primaryInsight {
-                                Divider()
-                                Text(insight)
-                                    .font(.caption.bold())
-                                    .foregroundStyle(instruction.status.color)
+                            // HERO: Readiness Score
+                            if let readiness = viewModel.readinessScore {
+                                ReadinessScoreHero(readiness: readiness)
+                                    .cardStyle(for: .recovery)
+                                
+                                // Form Indicator
+                                if let form = viewModel.formIndicator {
+                                    FormIndicatorCard(form: form)
+                                        .cardStyle(for: .recovery)
+                                }
+                                
+                                // Score Breakdown
+                                ScoreBreakdownCard(breakdown: readiness.breakdown)
+                                    .cardStyle(for: .recovery)
+                                
+                                // ── ML Prediction ──
+                                if let prediction = viewModel.mlPrediction,
+                                   let weights    = viewModel.mlFeatureWeights {
+                                    PredictionInsightCard(
+                                        prediction: prediction,
+                                        weights:    weights
+                                    )
+                                    .cardStyle(for: .recovery)
+                                } else if let mlError = viewModel.mlError {
+                                    PredictionUnavailableCard(reason: mlError)
+                                        .cardStyle(for: .error)
+                                }
+                                
+                                // Performance Windows Section
+                                if !viewModel.performanceWindows.isEmpty {
+                                    SectionHeader(
+                                        title: "Your Performance Windows",
+                                        subtitle: "Discovered from YOUR data"
+                                    )
+                                    
+                                    ForEach(viewModel.performanceWindows.prefix(3), id: \.activityType) { window in
+                                        PerformanceWindowCard(window: window)
+                                            .cardStyle(for: .recovery)
+                                    }
+                                }
+                                
+                                // Optimal Timing Section
+                                if !viewModel.optimalTimings.isEmpty {
+                                    SectionHeader(
+                                        title: "Optimal Timing",
+                                        subtitle: "When you perform best"
+                                    )
+                                    
+                                    ForEach(viewModel.optimalTimings.prefix(2), id: \.activityType) { timing in
+                                        OptimalTimingCard(timing: timing)
+                                            .cardStyle(for: .recovery)
+                                    }
+                                }
+                                
+                                // Workout Sequences
+                                if !viewModel.workoutSequences.isEmpty {
+                                    SectionHeader(
+                                        title: "Effective Sequences",
+                                        subtitle: "Workout combinations that work"
+                                    )
+                                    
+                                    ForEach(viewModel.workoutSequences.prefix(3)) { sequence in // id no longer needed if Identifiable
+                                        WorkoutSequenceCard(sequence: sequence)
+                                            .cardStyle(for: .workouts)
+                                    }
+                                }
+                                
+                            } else {
+                                EmptyReadinessView()
+                                    .cardStyle(for: .info)
                             }
+                            
+                            Spacer()
                         }
                         .padding()
-                        .cardStyle(for: .info) // Maintain your existing UI style
                     }
-                    
-                    // HERO: Readiness Score
-                   if let readiness = viewModel.readinessScore {
-                        ReadinessScoreHero(readiness: readiness)
-                            .cardStyle(for: .recovery)
-                        
-                        // Form Indicator
-                        if let form = viewModel.formIndicator {
-                            FormIndicatorCard(form: form)
-                                .cardStyle(for: .recovery)
-                        }
-                        
-                        // Score Breakdown
-                        ScoreBreakdownCard(breakdown: readiness.breakdown)
-                            .cardStyle(for: .recovery)
-
-                        // ── ML Prediction ──
-                        if let prediction = viewModel.mlPrediction,
-                           let weights    = viewModel.mlFeatureWeights {
-                            PredictionInsightCard(
-                                prediction: prediction,
-                                weights:    weights
-                            )
-                            .cardStyle(for: .recovery)
-                        } else if let mlError = viewModel.mlError {
-                            PredictionUnavailableCard(reason: mlError)
-                                .cardStyle(for: .error)
-                        }
-
-                        // Performance Windows Section
-                        if !viewModel.performanceWindows.isEmpty {
-                            SectionHeader(
-                                title: "Your Performance Windows",
-                                subtitle: "Discovered from YOUR data"
-                            )
-                            
-                            ForEach(viewModel.performanceWindows.prefix(3), id: \.activityType) { window in
-                                PerformanceWindowCard(window: window)
-                                    .cardStyle(for: .recovery)
-                            }
-                        }
-                        
-                        // Optimal Timing Section
-                        if !viewModel.optimalTimings.isEmpty {
-                            SectionHeader(
-                                title: "Optimal Timing",
-                                subtitle: "When you perform best"
-                            )
-                            
-                            ForEach(viewModel.optimalTimings.prefix(2), id: \.activityType) { timing in
-                                OptimalTimingCard(timing: timing)
-                                    .cardStyle(for: .recovery)
-                            }
-                        }
-                        
-                        // Workout Sequences
-                        if !viewModel.workoutSequences.isEmpty {
-                            SectionHeader(
-                                title: "Effective Sequences",
-                                subtitle: "Workout combinations that work"
-                            )
-                            
-                            ForEach(viewModel.workoutSequences.prefix(3), id: \.description) { sequence in
-                                WorkoutSequenceCard(sequence: sequence)
-                                    .cardStyle(for: .workouts)
-                            }
-                        }
-                        
-                    } else {
-                        EmptyReadinessView()
-                            .cardStyle(for: .info)
-                   }
-                    
-                    Spacer()
+                    .scrollContentBackground(.hidden)
                 }
-                .padding()
             }
-            .scrollContentBackground(.hidden)
         }
         .navigationTitle("Readiness")
         .toolbar {
@@ -296,7 +313,7 @@ struct FormIndicatorCard: View {
         case .depleted: return AppColors.heartRate
         }
     }
-
+    
     
     var riskColor: Color {
         switch form.riskLevel {

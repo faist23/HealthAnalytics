@@ -43,81 +43,77 @@ class ReadinessViewModel: ObservableObject {
         errorMessage = nil
         
         // 1. Trigger Global Sync
-        // This updates SwiftData with the latest 120 days of data from HealthKit/Strava
         await SyncManager.shared.performGlobalSync()
         
+        // 2. Check if we are still backfilling to avoid database collisions
+        if SyncManager.shared.isBackfillingHistory {
+            print("⏳ Analysis paused: System is backfilling historical data.")
+            return
+        }
+        
         do {
-            print("📊 Loading data from local storage for analysis...")
+            print("📊 Fetching data from SwiftData on background thread...")
             
-            // 2. Fetch from SwiftData (Single Source of Truth)
-            let context = HealthDataContainer.shared.mainContext
+            // FIX: Access the container correctly.
+            // If HealthDataContainer.shared IS the container, use .shared
+            // If it's a wrapper, ensure this property name matches your definition.
+            let container = HealthDataContainer.shared
             
-            // Fetch raw persistent objects
-            let storedWorkouts = try context.fetch(FetchDescriptor<StoredWorkout>(sortBy: [SortDescriptor(\.startDate)]))
-            let storedMetrics = try context.fetch(FetchDescriptor<StoredHealthMetric>(sortBy: [SortDescriptor(\.date)]))
-            let storedNutrition = try context.fetch(FetchDescriptor<StoredNutrition>(sortBy: [SortDescriptor(\.date)]))
+            // 3. Offload FETCHING to a background task
+            // We 'await' this task, which makes the 'catch' block reachable.
+            let results = try await Task.detached(priority: .userInitiated) {
+                let bgContext = ModelContext(container)
+                
+                // Perform fetches (These can throw, which satisfies the 'try')
+                let storedWorkouts = try bgContext.fetch(FetchDescriptor<StoredWorkout>(sortBy: [SortDescriptor(\.startDate)]))
+                let storedMetrics = try bgContext.fetch(FetchDescriptor<StoredHealthMetric>(sortBy: [SortDescriptor(\.date)]))
+                let storedNutrition = try bgContext.fetch(FetchDescriptor<StoredNutrition>(sortBy: [SortDescriptor(\.date)]))
+                
+                // Map raw SwiftData objects to Sendable structs
+                let workouts = storedWorkouts.map { $0.toWorkoutData() }
+                let nutrition = storedNutrition.map { $0.toDailyNutrition() }
+                let hrv = storedMetrics.filter { $0.type == "HRV" }.map { $0.toHealthDataPoint() }
+                let rhr = storedMetrics.filter { $0.type == "RHR" }.map { $0.toHealthDataPoint() }
+                let sleep = storedMetrics.filter { $0.type == "Sleep" }.map { $0.toHealthDataPoint() }
+                
+                return (workouts, nutrition, hrv, rhr, sleep)
+            }.value
             
-            // 3. Map to Domain Models using your new DomainMapping.swift extensions
-            let workouts = storedWorkouts.map { $0.toWorkoutData() }
-            let nutrition = storedNutrition.map { $0.toDailyNutrition() }
+            // 4. Update UI Properties on the Main Actor
+            // (results.0 = workouts, results.1 = nutrition, results.2 = hrv, results.3 = rhr, results.4 = sleep)
             
-            let hrv = storedMetrics.filter { $0.type == "HRV" }.map { $0.toHealthDataPoint() }
-            let rhr = storedMetrics.filter { $0.type == "RHR" }.map { $0.toHealthDataPoint() }
-            let sleep = storedMetrics.filter { $0.type == "Sleep" }.map { $0.toHealthDataPoint() }
-            
-            print("✅ Data loaded from storage")
-            print("   • Resting HR: \(rhr.count) points")
-            print("   • Workouts: \(workouts.count) (HK + Strava)")
-            print("   • Nutrition: \(nutrition.count) days")
-            
-            // 4. Analyze Readiness
-            readinessScore = readinessAnalyzer.analyzeReadiness(
-                restingHR: rhr,
-                hrv: hrv,
-                sleep: sleep,
-                workouts: workouts,
-                stravaActivities: [], // Empty because they are already merged into 'workouts'
-                nutrition: nutrition
+            self.readinessScore = readinessAnalyzer.analyzeReadiness(
+                restingHR: results.3, hrv: results.2, sleep: results.4,
+                workouts: results.0, stravaActivities: [], nutrition: results.1
             )
             
-            // 5. Discover Patterns
-            performanceWindows = patternAnalyzer.discoverPerformanceWindows(
-                workouts: workouts,
-                activities: [],
-                sleep: sleep,
-                nutrition: nutrition
+            self.performanceWindows = patternAnalyzer.discoverPerformanceWindows(
+                workouts: results.0, activities: [], sleep: results.4, nutrition: results.1
             )
             
-            optimalTimings = patternAnalyzer.discoverOptimalTiming(
-                workouts: workouts,
-                activities: []
-            )
+            self.optimalTimings = patternAnalyzer.discoverOptimalTiming(workouts: results.0, activities: [])
             
-            workoutSequences = patternAnalyzer.discoverWorkoutSequences(
-                workouts: workouts,
-                activities: []
-            )
+            self.workoutSequences = patternAnalyzer.discoverWorkoutSequences(workouts: results.0, activities: [])
             
-            // 6. Generate Form Indicator
-            if let readiness = readinessScore {
-                formIndicator = generateFormIndicator(from: readiness, workouts: workouts)
+            if let readiness = self.readinessScore {
+                self.formIndicator = generateFormIndicator(from: readiness, workouts: results.0)
             }
             
-            // 7. Generate Coaching Instruction
+            // 5. Coaching Logic
             let assessment = predictiveReadinessService.calculateReadiness(
                 stravaActivities: [],
-                healthKitWorkouts: workouts // Pass unified list
+                healthKitWorkouts: results.0
             )
             
             let insights = correlationEngine.analyzeSleepVsPerformanceByActivityType(
-                sleepData: sleep,
-                healthKitWorkouts: workouts,
+                sleepData: results.4,
+                healthKitWorkouts: results.0,
                 stravaActivities: []
             )
             
             let recoveryStatus = correlationEngine.analyzeRecoveryStatus(
-                restingHRData: rhr,
-                hrvData: hrv
+                restingHRData: results.3,
+                hrvData: results.2
             )
             
             self.dailyInstruction = coachingService.generateDailyInstruction(
@@ -127,26 +123,22 @@ class ReadinessViewModel: ObservableObject {
                 prediction: mlPrediction
             )
             
-            isLoading = false
-            
-            // 8. Trigger ML Prediction
+            // 6. ML Prediction
             let endDate = Date()
             let startDate = Calendar.current.date(byAdding: .day, value: -120, to: endDate)!
             
             await trainAndPredict(
-                sleep:            sleep,
-                hrv:              hrv,
-                restingHR:        rhr,
-                workouts:         workouts,
-                startDate:        startDate,
-                endDate:          endDate,
-                currentNutrition: nutrition // Pass the mapped nutrition array
+                sleep: results.4, hrv: results.2, restingHR: results.3,
+                workouts: results.0, startDate: startDate, endDate: endDate,
+                currentNutrition: results.1
             )
             
-        } catch {
-            errorMessage = "Analysis failed: \(error.localizedDescription)"
             isLoading = false
-            print("❌ Analysis error: \(error)")
+            
+        } catch {
+            print("❌ Analysis failed: \(error.localizedDescription)")
+            self.errorMessage = "Analysis failed: \(error.localizedDescription)"
+            isLoading = false
         }
     }
     

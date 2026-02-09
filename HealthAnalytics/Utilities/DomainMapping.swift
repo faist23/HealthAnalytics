@@ -57,3 +57,19 @@ extension StoredNutrition {
         )
     }
 }
+
+extension Date {
+    static var now: Date { Date() }
+    
+    static func daysAgo(_ days: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+    }
+    
+    static func monthsAgo(_ months: Int) -> Date {
+        Calendar.current.date(byAdding: .month, value: -months, to: Date()) ?? Date()
+    }
+    
+    static func yearsAgo(_ years: Int) -> Date {
+        Calendar.current.date(byAdding: .year, value: -years, to: Date()) ?? Date()
+    }
+}

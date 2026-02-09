@@ -162,7 +162,7 @@ struct WorkoutMatcher {
     }
 
     // helper to compare two HKWorkoutActivityTypes directly
-    private static func activityTypesMatch(hkType: HKWorkoutActivityType, stravaType: HKWorkoutActivityType) -> Bool {
+    nonisolated private static func activityTypesMatch(hkType: HKWorkoutActivityType, stravaType: HKWorkoutActivityType) -> Bool {
         return hkType == stravaType
     }
 }

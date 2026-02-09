@@ -11,15 +11,28 @@ import Charts
 struct ContentView: View {
     @StateObject private var viewModel = DashboardViewModel()
     @Environment(\.colorScheme) var colorScheme
-
+    @ObservedObject var syncManager = SyncManager.shared
+    
     var body: some View {
         ScrollView {
             // Use LazyVStack with pinned headers
             LazyVStack(spacing: 20, pinnedViews: [.sectionHeaders]) {
                 
                 Section {
-                    // Dashboard Content
-                    if viewModel.isLoading {
+                    if syncManager.isBackfillingHistory {
+                        VStack(spacing: 20) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text("Establishing 10-Year Baseline...")
+                                .font(.headline)
+                            Text("Synchronizing historical HealthKit data to calculate aging and recovery trends.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding()
+                        .padding(.top, 60)
+                    } else if viewModel.isLoading {
                         ProgressView("Loading health data...")
                             .padding()
                             .padding(.top, 40) // Add spacing below the pinned header

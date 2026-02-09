@@ -140,18 +140,20 @@ struct PerformancePatternAnalyzer {
     }
     
     /// Sequential workout effects
-    struct WorkoutSequence {
-        let sequence: [String]            // ["Strength", "Rest", "Run"]
-        let resultingPerformance: Double  // Performance metric
-        let comparisonToBaseline: Double  // % difference from average
+    struct WorkoutSequence: Hashable, Identifiable {
+        let id = UUID() // Guaranteed uniqueness for SwiftUI
+        
+        let sequence: [String]
+        let resultingPerformance: Double
+        let comparisonToBaseline: Double
         let sampleSize: Int
         
         var description: String {
             let seq = sequence.joined(separator: " → ")
             let diff = String(format: "%.0f", abs(comparisonToBaseline))
             let direction = comparisonToBaseline > 0 ? "better" : "worse"
-            
-            return "\(seq) sequence yields \(diff)% \(direction) performance"
+            // Show sample size so the athlete knows how reliable the data is
+            return "\(seq) (\(sampleSize)x) yields \(diff)% \(direction) performance"
         }
     }
     
@@ -239,52 +241,60 @@ struct PerformancePatternAnalyzer {
         workouts: [WorkoutData],
         activities: [StravaActivity]
     ) -> [WorkoutSequence] {
-        
         print("🔄 Analyzing Workout Sequences...")
         
-        var sequences: [WorkoutSequence] = []
         let allActivities = combineActivities(workouts: workouts, activities: activities)
             .sorted { $0.startDate < $1.startDate }
         
-        // Look for 3-day sequences
+        // 1. Temporary storage to group sequences by their pattern
+        // Key: "Run-Ride-Ride", Value: Array of performance differences
+        var groupedDifferences: [String: [Double]] = [:]
+        var sequenceMap: [String: [String]] = [:]
+        
         for i in 0..<(allActivities.count - 2) {
             let day1 = allActivities[i]
-            let day2Index = findNextDayActivity(after: i, in: allActivities)
-            guard let day2Idx = day2Index else { continue }
-            
-            let day3Index = findNextDayActivity(after: day2Idx, in: allActivities)
-            guard let day3Idx = day3Index else { continue }
+            guard let day2Idx = findNextDayActivity(after: i, in: allActivities),
+                  let day3Idx = findNextDayActivity(after: day2Idx, in: allActivities) else { continue }
             
             let day2 = allActivities[day2Idx]
             let day3 = allActivities[day3Idx]
             
-            // Check if day3 has performance data
             guard let performance = extractPerformance(from: day3) else { continue }
             
-            let sequence = [day1.activityType, day2.activityType, day3.activityType]
+            let pattern = [day1.activityType, day2.activityType, day3.activityType]
+            let patternKey = pattern.joined(separator: "-")
             
-            // Compare to baseline for day3 type
-            let baseline = calculateBaseline(
-                for: day3.activityType,
-                in: allActivities
-            )
+            let baseline = calculateBaseline(for: day3.activityType, in: allActivities)
+            guard baseline > 0 else { continue }
             
             let difference = ((performance - baseline) / baseline) * 100
             
-            // Only keep significant patterns (>5% difference)
-            if abs(difference) > 5 {
-                sequences.append(WorkoutSequence(
-                    sequence: sequence,
-                    resultingPerformance: performance,
-                    comparisonToBaseline: difference,
-                    sampleSize: 1 // Would need more sophisticated grouping
+            // Group the data
+            groupedDifferences[patternKey, default: []].append(difference)
+            sequenceMap[patternKey] = pattern
+        }
+        
+        // 2. Convert groups into unique WorkoutSequence objects
+        var finalSequences: [WorkoutSequence] = []
+        
+        for (key, diffs) in groupedDifferences {
+            let averageDiff = diffs.reduce(0, +) / Double(diffs.count)
+            
+            // Only keep patterns with enough data and significant impact
+            if diffs.count >= 2 && abs(averageDiff) > 5 {
+                finalSequences.append(WorkoutSequence(
+                    sequence: sequenceMap[key] ?? [],
+                    resultingPerformance: 0, // Not used for the summary trend
+                    comparisonToBaseline: averageDiff,
+                    sampleSize: diffs.count
                 ))
             }
         }
         
-        print("   ✅ Found \(sequences.count) sequence patterns")
+        print("   ✅ Found \(finalSequences.count) unique sequence patterns")
         
-        return sequences.sorted { abs($0.comparisonToBaseline) > abs($1.comparisonToBaseline) }
+        // Sort by impact (highest absolute percentage first)
+        return finalSequences.sorted { abs($0.comparisonToBaseline) > abs($1.comparisonToBaseline) }
     }
     
     // MARK: - Pattern Analysis Helpers

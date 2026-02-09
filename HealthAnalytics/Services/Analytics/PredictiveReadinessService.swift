@@ -142,7 +142,7 @@ struct PredictiveReadinessService {
         case .dangerZone: return "Significant fatigue spike. Prioritize recovery today."
         }
     }
- 
+    
     struct ACWRDay: Identifiable {
         let id = UUID()
         let date: Date
@@ -171,4 +171,69 @@ struct PredictiveReadinessService {
         
         return trend
     }
+    
+    struct AgingInsight {
+        let recoveryShiftDays: Double
+        let intensityThresholdChange: Double // % change in what is considered 'High Intensity'
     }
+
+    func calculateAgingContext(allWorkouts: [StoredWorkout]) -> AgingInsight? {
+        // Filter workouts to compare 'Early Decade' (2016-2018) vs 'Current' (2024-2026)
+        let historicalWorkouts = allWorkouts.filter { $0.startDate < .yearsAgo(5) }
+        let recentWorkouts = allWorkouts.filter { $0.startDate > .monthsAgo(6) }
+        
+        // Calculate the average recovery time needed after a 'High Load' day
+        let historicalRecovery = calculateAvgRecovery(for: historicalWorkouts)
+        let currentRecovery = calculateAvgRecovery(for: recentWorkouts)
+        
+        return AgingInsight(
+            recoveryShiftDays: currentRecovery - historicalRecovery,
+            intensityThresholdChange: calculateThresholdShift(old: historicalWorkouts, new: recentWorkouts)
+        )
+    }
+    
+    func generateAgingInsight(allWorkouts: [StoredWorkout]) -> AgingInsight? {
+        // 1. Establish the "Youth Baseline" (First 2 years of data)
+        let earliestDate = allWorkouts.map { $0.startDate }.min() ?? .now
+        let youthWorkouts = allWorkouts.filter { $0.startDate < earliestDate.addingTimeInterval(63072000) } // 2 years
+        
+        // 2. Establish "Current Reality" (Last 6 months)
+        let currentWorkouts = allWorkouts.filter { $0.startDate > .monthsAgo(6) }
+        
+        guard youthWorkouts.count > 10, currentWorkouts.count > 10 else { return nil }
+        
+        // 3. Compare Average Recovery (Gaps between high-intensity efforts)
+        let historicalRecovery = calculateAvgRecovery(for: youthWorkouts.filter { ($0.averagePower ?? 0) > 150 })
+        let currentRecovery = calculateAvgRecovery(for: currentWorkouts.filter { ($0.averagePower ?? 0) > 150 })
+        
+        let shift = currentRecovery - historicalRecovery
+        
+        // Only return if there is a significant shift (e.g., > 0.5 days extra recovery needed)
+        return AgingInsight(
+            recoveryShiftDays: shift,
+            intensityThresholdChange: calculateThresholdShift(old: youthWorkouts, new: currentWorkouts)
+        )
+    }
+
+    private func calculateAvgRecovery(for workouts: [StoredWorkout]) -> Double {
+        guard workouts.count > 1 else { return 0 }
+        let sorted = workouts.sorted { $0.startDate < $1.startDate }
+        var gaps: [TimeInterval] = []
+        
+        for i in 1..<sorted.count {
+            let gap = sorted[i].startDate.timeIntervalSince(sorted[i-1].startDate)
+            gaps.append(gap)
+        }
+        
+        // Returns average gap in days
+        return (gaps.reduce(0, +) / Double(gaps.count)) / 86400.0
+    }
+
+    private func calculateThresholdShift(old: [StoredWorkout], new: [StoredWorkout]) -> Double {
+        let oldAvg = old.compactMap { $0.averagePower }.reduce(0, +) / Double(max(1, old.count))
+        let newAvg = new.compactMap { $0.averagePower }.reduce(0, +) / Double(max(1, new.count))
+        
+        guard oldAvg > 0 else { return 0 }
+        return ((newAvg - oldAvg) / oldAvg) * 100
+    }
+}
