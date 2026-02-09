@@ -152,9 +152,15 @@ class ReadinessViewModel: ObservableObject {
         workouts:         [WorkoutData],
         startDate:        Date,
         endDate:          Date,
-        currentNutrition: [DailyNutrition] // This matches the call site in analyze()
+        currentNutrition: [DailyNutrition]
     ) async {
         let cache = PredictionCache.shared
+        
+        // 1. Data Minimum Check
+        guard sleep.count >= 7, hrv.count >= 7, restingHR.count >= 7 else {
+            self.mlError = "Establishing baseline... (Need 7 days of heart metrics)"
+            return
+        }
         
         let fp = PredictionCache.fingerprint(
             workoutCount: workouts.count,
@@ -163,15 +169,16 @@ class ReadinessViewModel: ObservableObject {
             rhrCount:     restingHR.count
         )
         
+        // 2. Training Phase
         if !cache.isUpToDate(fingerprint: fp) {
             do {
-                // Pass unified workouts and mapped nutrition
+                print("🤖 Training ML models on \(workouts.count) activities...")
                 let models = try await PerformancePredictor.train(
                     sleepData:         sleep,
                     hrvData:           hrv,
                     restingHRData:     restingHR,
                     healthKitWorkouts: workouts,
-                    stravaActivities:  [], // Unified in workouts
+                    stravaActivities:  [],
                     nutritionData:     currentNutrition,
                     readinessService:  predictiveReadinessService
                 )
@@ -179,16 +186,19 @@ class ReadinessViewModel: ObservableObject {
                 if let instruction = self.dailyInstruction {
                     cache.store(models: models, fingerprint: fp, instruction: instruction)
                 }
+                print("✅ ML Models trained successfully.")
             } catch {
-                mlError = error.localizedDescription
+                print("❌ ML Training Error: \(error.localizedDescription)")
+                mlError = "Training failed: \(error.localizedDescription)"
                 return
             }
         }
         
+        // 3. Prediction Phase
         guard let lastSleep = sleep.last?.value,
               let lastHRV   = hrv.last?.value,
               let lastRHR   = restingHR.last?.value else {
-            mlError = "Need sleep, HRV, and resting HR data to predict"
+            mlError = "Incomplete metrics for today's prediction."
             return
         }
         
@@ -197,24 +207,27 @@ class ReadinessViewModel: ObservableObject {
             healthKitWorkouts: workouts
         )
         
-        // FIXED: Use 'currentNutrition' parameter instead of undefined 'nutrition'
         let currentCarbs = currentNutrition.last?.totalCarbs ?? 0
         
-        let activityTypes = ["Run", "Ride"]
+        // Try to predict for the athlete's primary sports
+        let activityTypes = ["Ride", "Run"] // Put Ride first if you're a cyclist
+        var predictionFound = false
+        
         for activityType in activityTypes {
             do {
                 let prediction = try PerformancePredictor.predict(
                     models:       cache.models,
                     activityType: activityType,
                     sleepHours:   lastSleep,
-                    hrvMs:        lastHRV,
+                    hrvMs:         lastHRV,
                     restingHR:    lastRHR,
                     acwr:         currentAssessment.acwr,
                     carbs:        currentCarbs
                 )
                 
+                // If we successfully predict one, we show it
                 self.mlPrediction     = prediction
-                self.mlFeatureWeights = cache.models.first?.featureWeights
+                self.mlFeatureWeights = cache.models.first(where: { $0.activityType == activityType })?.featureWeights
                 self.mlError          = nil
                 cache.storePrediction(prediction)
                 
@@ -228,10 +241,17 @@ class ReadinessViewModel: ObservableObject {
                     acwr: currentAssessment.acwr,
                     carbs: currentCarbs
                 )
-                return
-            } catch { continue }
+                predictionFound = true
+                break // Exit loop after first successful prediction
+            } catch {
+                print("ℹ️ No prediction available for \(activityType): \(error.localizedDescription)")
+                continue
+            }
         }
-        mlError = "No trained model available"
+        
+        if !predictionFound {
+            mlError = "Not enough \(activityTypes.joined(separator: "/")) data to predict output."
+        }
     }
     
     private func generateFormIndicator(

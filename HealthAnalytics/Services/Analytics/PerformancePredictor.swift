@@ -113,97 +113,54 @@ struct PerformancePredictor {
         hrvData:              [HealthDataPoint],
         restingHRData:        [HealthDataPoint],
         healthKitWorkouts:    [WorkoutData],
-        stravaActivities:     [StravaActivity],
-        nutritionData:        [DailyNutrition],     // NEW
-        readinessService:     PredictiveReadinessService // NEW
+        stravaActivities:     [StravaActivity], // Still here for signature, but unused
+        nutritionData:        [DailyNutrition],
+        readinessService:     PredictiveReadinessService
     ) async throws -> [TrainedModel] {
         
         let calendar = Calendar.current
-        
-        // ── 1. Build date-keyed lookups ──
         let sleepByDate  = buildDayLookup(sleepData,      calendar: calendar)
         let hrvByDate    = buildDayLookup(hrvData,        calendar: calendar)
         let rhrByDate    = buildDayLookup(restingHRData,  calendar: calendar)
         let carbsByDate  = buildNutritionLookup(nutritionData, calendar: calendar)
         
-        // ── 2. Deduplicate workouts so we don't double-count ──
-        let (hkOnly, stravaOnly, matched) =
-        WorkoutMatcher.deduplicateWorkouts(
-            healthKitWorkouts: healthKitWorkouts,
-            stravaActivities:  stravaActivities
-        )
-        
-        // ── 3. Assemble training rows ──
         var rows: [TrainingRow] = []
         
-        // Strava-only
-        for activity in stravaOnly {
-            if let row = rowFrom(stravaActivity: activity,
-                                 sleepByDate: sleepByDate,
-                                 hrvByDate: hrvByDate,
-                                 rhrByDate: rhrByDate,
-                                 carbsByDate: carbsByDate,
-                                 stravaActivities: stravaActivities,
-                                 healthKitWorkouts: healthKitWorkouts,
-                                 readinessService: readinessService,
-                                 calendar: calendar) {
+        print("🤖 PerformancePredictor: Starting training on \(healthKitWorkouts.count) total workouts...")
+
+        // ── 1. USE THE MERGED WORKOUTS DIRECTLY ──
+        for workout in healthKitWorkouts {
+            // Map the internal type to the "Ride"/"Run" strings the predictor expects
+            let activityType: String
+            switch workout.workoutType {
+            case .cycling: activityType = "Ride"
+            case .running: activityType = "Run"
+            default: continue // Skip walking/other
+            }
+
+            if let row = rowFrom(
+                workout: workout,
+                activityType: activityType,
+                sleepByDate: sleepByDate,
+                hrvByDate: hrvByDate,
+                rhrByDate: rhrByDate,
+                carbsByDate: carbsByDate,
+                healthKitWorkouts: healthKitWorkouts, // Pass the full array for ACWR calc
+                readinessService: readinessService,
+                calendar: calendar
+            ) {
                 rows.append(row)
             }
         }
         
-        // HealthKit-only
-        for workout in hkOnly {
-            if let row = rowFrom(hkWorkout: workout,
-                                 sleepByDate: sleepByDate,
-                                 hrvByDate: hrvByDate,
-                                 rhrByDate: rhrByDate,
-                                 carbsByDate: carbsByDate,
-                                 stravaActivities: stravaActivities,
-                                 healthKitWorkouts: healthKitWorkouts,
-                                 readinessService: readinessService,
-                                 calendar: calendar) {
-                rows.append(row)
-            }
-        }
+        print("📊 PerformancePredictor: Assembled \(rows.count) training rows")
         
-        // Matched pairs — prefer the richer source
-        for matchedPair in matched {
-            let best = WorkoutMatcher.selectBestWorkout(from: matchedPair)
-            switch best {
-            case .healthKit(let workout):
-                if let row = rowFrom(hkWorkout: workout,
-                                     sleepByDate: sleepByDate,
-                                     hrvByDate: hrvByDate,
-                                     rhrByDate: rhrByDate,
-                                     carbsByDate: carbsByDate,
-                                     stravaActivities: stravaActivities,
-                                     healthKitWorkouts: healthKitWorkouts,
-                                     readinessService: readinessService,
-                                     calendar: calendar) {
-                    rows.append(row)
-                }
-            case .strava(let activity):
-                if let row = rowFrom(stravaActivity: activity,
-                                     sleepByDate: sleepByDate,
-                                     hrvByDate: hrvByDate,
-                                     rhrByDate: rhrByDate,
-                                     carbsByDate: carbsByDate,
-                                     stravaActivities: stravaActivities,
-                                     healthKitWorkouts: healthKitWorkouts,
-                                     readinessService: readinessService,
-                                     calendar: calendar) {
-                    rows.append(row)
-                }
-            }
-        }
-        
-        print("📊 PerformancePredictor: assembled \(rows.count) training rows")
-        
-        // ── 4. Train models (Ride / Run) ──
+        // ── 2. Train models (Ride / Run) ──
         let runRows  = rows.filter { $0.activityType == "Run"  }
         let rideRows = rows.filter { $0.activityType == "Ride" }
         
         var models: [TrainedModel] = []
+        let minSamples = 10 // Ensure this is low enough for your historical data
         
         if runRows.count >= minSamples {
             let m = try await trainModel(rows: runRows, activityType: "Run")
@@ -213,6 +170,10 @@ struct PerformancePredictor {
         if rideRows.count >= minSamples {
             let m = try await trainModel(rows: rideRows, activityType: "Ride")
             models.append(m)
+        }
+        
+        if models.isEmpty {
+            print("⚠️ No models created. Check if Sleep/HRV/RHR overlap with workout dates.")
         }
         
         return models
@@ -295,108 +256,48 @@ struct PerformancePredictor {
         return lookup
     }
     
-    /// Converts a StravaActivity into a TrainingRow, or nil if data is missing.
     private static func rowFrom(
-        stravaActivity activity: StravaActivity,
-        sleepByDate:  [Date: Double],
-        hrvByDate:    [Date: Double],
-        rhrByDate:    [Date: Double],
-        carbsByDate:  [Date: Double],
-        stravaActivities: [StravaActivity],
+        workout: WorkoutData,
+        activityType: String,
+        sleepByDate: [Date: Double],
+        hrvByDate: [Date: Double],
+        rhrByDate: [Date: Double],
+        carbsByDate: [Date: Double],
         healthKitWorkouts: [WorkoutData],
         readinessService: PredictiveReadinessService,
-        calendar:     Calendar
+        calendar: Calendar
     ) -> TrainingRow? {
-        guard let date = activity.startDateFormatted else { return nil }
-        guard activity.type == "Run" || activity.type == "Ride" else { return nil }
-        guard let speed = activity.averageSpeed, speed > 0 else { return nil }
+        let workoutDate = workout.startDate
+        let workoutDay = calendar.startOfDay(for: workoutDate)
+        let prevDay = calendar.date(byAdding: .day, value: -1, to: workoutDay)!
         
-        let workoutDay = calendar.startOfDay(for: date)
-        let prevDay    = calendar.date(byAdding: .day, value: -1, to: workoutDay)!
-        
-        // 1. Fetch Sleep, HRV, and RHR
-        guard let sleep  = sleepByDate[prevDay],
-              let hrv    = hrvByDate[workoutDay],
-              let rhr    = rhrByDate[workoutDay] else { return nil }
-        
-        // 2. NEW: Calculate historical ACWR at the time of this workout
-        let historicalStrava = stravaActivities.filter { ($0.startDateFormatted ?? Date()) < date }
-        let historicalHK = healthKitWorkouts.filter { $0.startDate < date }
-        let assessment = readinessService.calculateReadiness(
-            stravaActivities: historicalStrava,
-            healthKitWorkouts: historicalHK
-        )
-        
-        // 3. NEW: Get Carbs from the previous day
-        let fallbackCarbs = getAverageCarbs(carbsByDate)
-        let carbs = carbsByDate[prevDay] ?? fallbackCarbs // Use actual or fallback
-        
-        let perf: Double
-        if activity.type == "Run" {
-            perf = speed * 2.23694   // m/s → mph
-        } else {
-            perf = activity.averageWatts ?? (speed * 2.23694)
-        }
-        
-        return TrainingRow(
-            sleepHours:   sleep,
-            hrvMs:        hrv,
-            restingHR:    rhr,
-            acwr:         assessment.acwr,
-            carbs:        carbs,
-            performance:  perf,
-            activityType: activity.type
-        )
-    }
-    
-    /// Converts a HealthKit WorkoutData into a TrainingRow, or nil if data is missing.
-    private static func rowFrom(
-        hkWorkout workout: WorkoutData,
-        sleepByDate:  [Date: Double],
-        hrvByDate:    [Date: Double],
-        rhrByDate:    [Date: Double],
-        carbsByDate:  [Date: Double],
-        stravaActivities: [StravaActivity],
-        healthKitWorkouts: [WorkoutData],
-        readinessService: PredictiveReadinessService,
-        calendar:     Calendar
-    ) -> TrainingRow? {
-        let cardioTypes: [HKWorkoutActivityType] = [.running, .cycling]
-        guard cardioTypes.contains(workout.workoutType) else { return nil }
-        guard let distance = workout.totalDistance, distance > 0,
-              workout.duration > 0 else { return nil }
-
-        let workoutDay = calendar.startOfDay(for: workout.startDate)
-        let prevDay    = calendar.date(byAdding: .day, value: -1, to: workoutDay)!
-
-        // 1. Fetch Sleep, HRV, and RHR
+        // Check for metrics.
+        // If this fails, the workout is ignored by the ML trainer.
         guard let sleep = sleepByDate[prevDay],
               let hrv   = hrvByDate[workoutDay],
-              let rhr   = rhrByDate[workoutDay] else { return nil }
-
-        // 2. NEW: Calculate historical ACWR at the time of this workout
-        let historicalStrava = stravaActivities.filter { ($0.startDateFormatted ?? Date()) < workout.startDate }
-        let historicalHK = healthKitWorkouts.filter { $0.startDate < workout.startDate }
+              let rhr   = rhrByDate[workoutDay] else {
+            return nil
+        }
+        
+        // FIX: Corrected parentheses for speed calculation
+        let performanceMetric: Double
+        if workout.workoutType == .cycling {
+            performanceMetric = workout.averagePower ?? ((workout.totalDistance ?? 0) / workout.duration * 2.23694)
+        } else {
+            performanceMetric = ((workout.totalDistance ?? 0) / workout.duration * 2.23694)
+        }
+        
+        // Ensure we don't divide by zero or use empty workouts
+        guard performanceMetric > 0, workout.duration > 0 else { return nil }
+        
+        let historicalHK = healthKitWorkouts.filter { $0.startDate < workoutDate }
         let assessment = readinessService.calculateReadiness(
-            stravaActivities: historicalStrava,
+            stravaActivities: [],
             healthKitWorkouts: historicalHK
         )
-
-        // 3. NEW: Get Carbs from the previous day
+        
         let fallbackCarbs = getAverageCarbs(carbsByDate)
-        let carbs = carbsByDate[prevDay] ?? fallbackCarbs // Use actual or fallback
-
-        let speedMPH = (distance / workout.duration) * 2.23694
-
-        let perf: Double
-        let activityType: String
-        if workout.workoutType == .cycling {
-            perf = workout.averagePower ?? speedMPH
-            activityType = "Ride"
-        } else {
-            perf = speedMPH
-            activityType = "Run"
-        }
+        let carbs = carbsByDate[prevDay] ?? fallbackCarbs
 
         return TrainingRow(
             sleepHours:   sleep,
@@ -404,7 +305,7 @@ struct PerformancePredictor {
             restingHR:    rhr,
             acwr:         assessment.acwr,
             carbs:        carbs,
-            performance:  perf,
+            performance:  performanceMetric,
             activityType: activityType
         )
     }
