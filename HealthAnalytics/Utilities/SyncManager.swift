@@ -1,8 +1,9 @@
 //
-//  SyncManager.swift
+//  SyncManager.swift (MIGRATION-AWARE VERSION)
 //  HealthAnalytics
 //
-//  Created by Craig Faist.
+//  Handles both old metric names (lowercase) and new (capitalized)
+//  This allows smooth migration without losing existing data
 //
 
 import Foundation
@@ -14,7 +15,10 @@ import Combine
 @MainActor
 class SyncManager: ObservableObject {
     static let shared = SyncManager()
+    
     @AppStorage("lastSyncDate") private var lastSyncTimestamp: Double = 0
+    @AppStorage("hasCompletedHistoricalBackfill") private var hasCompletedHistoricalBackfill: Bool = false
+    @AppStorage("hasMigratedMetricNames") private var hasMigratedMetricNames: Bool = false
     
     var lastSyncDate: Date? {
         get { lastSyncTimestamp == 0 ? nil : Date(timeIntervalSince1970: lastSyncTimestamp) }
@@ -22,144 +26,289 @@ class SyncManager: ObservableObject {
     }
     
     @Published var isSyncing = false
-    @Published var syncProgress: String = "" // For athlete transparency
+    @Published var syncProgress: String = ""
     @Published var isBackfillingHistory: Bool = false
+    @Published var backfillProgress: Double = 0
     
     private let healthKitManager = HealthKitManager.shared
     private let stravaManager = StravaManager.shared
     
     private init() {}
     
-    func performGlobalSync() async {
-        // Check if we synced recently (e.g., within last 6 hours / 21600 seconds)
-        if let last = lastSyncDate, Date().timeIntervalSince(last) < 21600 {
-            print("🛡️ Sync Guard: Data is fresh (last sync \(Int(Date().timeIntervalSince(last)/60))m ago). Skipping API calls.")
+    // MARK: - Smart Sync Entry Point
+    
+    /// Intelligently syncs only what's needed
+    func performSmartSync() async {
+        // Prevent redundant syncs
+        if let last = lastSyncDate, Date().timeIntervalSince(last) < 3600 {
+            print("🛡️ Sync Guard: Synced \(Int(Date().timeIntervalSince(last)/60))m ago. Skipping.")
             return
         }
         
-        guard !isSyncing else { return }
+        guard !isSyncing else {
+            print("⚠️ Sync already in progress")
+            return
+        }
+        
         isSyncing = true
         
         let container = HealthDataContainer.shared
         let dataHandler = DataPersistenceActor(modelContainer: container)
         
         do {
-            // --- PHASE 1: RECENT YEAR & STRAVA (UI UPDATES PERMITTED) ---
+            // MIGRATION: Update old metric type names to new standardized names
+            if !hasMigratedMetricNames {
+                await migrateMetricNames(dataHandler: dataHandler)
+                hasMigratedMetricNames = true
+            }
+            
+            // STEP 1: Determine what we need to sync
+            let syncPlan = await determineSyncPlan(dataHandler: dataHandler)
+            
+            print("📋 Sync Plan:")
+            print("   Historical backfill needed: \(syncPlan.needsHistoricalBackfill)")
+            print("   Years to backfill: \(syncPlan.yearsToBackfill)")
+            print("   Last data: \(syncPlan.mostRecentDataDate?.formatted() ?? "none")")
+            
+            // STEP 2: Sync recent data (always - this is fast)
+            await syncRecentData(dataHandler: dataHandler)
+            
+            // STEP 3: Historical backfill (only if needed)
+            if syncPlan.needsHistoricalBackfill && !hasCompletedHistoricalBackfill {
+                await performHistoricalBackfill(years: syncPlan.yearsToBackfill, dataHandler: dataHandler)
+                hasCompletedHistoricalBackfill = true
+            }
+            
+            lastSyncDate = Date()
+            print("✅ Smart Sync Complete")
+            
+        } catch {
+            print("❌ Sync Failed: \(error.localizedDescription)")
+        }
+        
+        isSyncing = false
+    }
+    
+    // MARK: - Metric Name Migration
+    
+    private func migrateMetricNames(dataHandler: DataPersistenceActor) async {
+        print("🔄 Migrating metric type names to standardized format...")
+        
+        await dataHandler.migrateMetricNames(
+            oldToNew: [
+                "sleep": "Sleep",
+                "hrv": "HRV",
+                "restingHR": "RHR",
+                "steps": "Steps",
+                "bodyMass": "Weight",
+                "BodyMass": "Weight"
+            ]
+        )
+        
+        print("   ✅ Metric names migrated")
+    }
+    
+    // MARK: - Sync Plan
+    
+    private struct SyncPlan {
+        let needsHistoricalBackfill: Bool
+        let yearsToBackfill: Int
+        let mostRecentDataDate: Date?
+        let oldestDataDate: Date?
+    }
+    
+    private func determineSyncPlan(dataHandler: DataPersistenceActor) async -> SyncPlan {
+        // Check what data we have
+        let summary = await dataHandler.getDataSummary()
+        
+        print("📊 Current Data Summary:")
+        print("   Workouts: \(summary.workoutCount)")
+        print("   Sleep days: \(summary.sleepDays)")
+        print("   Date range: \(summary.oldestDate?.formatted() ?? "none") to \(summary.newestDate?.formatted() ?? "none")")
+        
+        // Determine if we need historical backfill
+        let needsBackfill: Bool
+        let yearsToBackfill: Int
+        
+        if summary.workoutCount == 0 {
+            needsBackfill = true
+            yearsToBackfill = 10
+        } else if let oldest = summary.oldestDate {
             let calendar = Calendar.current
-            let endDate = Date()
-            let startDate = calendar.date(byAdding: .day, value: -365, to: endDate)!
+            let yearsOfData = calendar.dateComponents([.year], from: oldest, to: Date()).year ?? 0
             
-            print("🌐 Phase 1: Syncing recent year and Strava...")
+            if yearsOfData < 10 {
+                needsBackfill = true
+                yearsToBackfill = max(1, 10 - yearsOfData)
+                print("   Need \(yearsToBackfill) more years of backfill")
+            } else {
+                needsBackfill = false
+                yearsToBackfill = 0
+            }
+        } else {
+            needsBackfill = true
+            yearsToBackfill = 10
+        }
+        
+        return SyncPlan(
+            needsHistoricalBackfill: needsBackfill,
+            yearsToBackfill: yearsToBackfill,
+            mostRecentDataDate: summary.newestDate,
+            oldestDataDate: summary.oldestDate
+        )
+    }
+    
+    // MARK: - Recent Data Sync
+    
+    private func syncRecentData(dataHandler: DataPersistenceActor) async {
+        let calendar = Calendar.current
+        let endDate = Date()
+        let startDate = calendar.date(byAdding: .day, value: -30, to: endDate)!
+        
+        print("🔄 Syncing recent data (last 30 days)...")
+        syncProgress = "Updating recent data..."
+        
+        do {
+            async let rhr = healthKitManager.fetchRestingHeartRate(startDate: startDate, endDate: endDate)
+            async let hrv = healthKitManager.fetchHeartRateVariability(startDate: startDate, endDate: endDate)
+            async let sleep = healthKitManager.fetchSleepDuration(startDate: startDate, endDate: endDate)
+            async let workouts = healthKitManager.fetchWorkouts(startDate: startDate, endDate: endDate)
+            async let steps = healthKitManager.fetchSteps(startDate: startDate, endDate: endDate)
+            async let weight = healthKitManager.fetchBodyMass(startDate: startDate, endDate: endDate)
+            async let nutrition = healthKitManager.fetchNutrition(startDate: startDate, endDate: endDate)
             
-            // Concurrent fetches
-            async let rhrTask = healthKitManager.fetchRestingHeartRate(startDate: startDate, endDate: endDate)
-            async let hrvTask = healthKitManager.fetchHeartRateVariability(startDate: startDate, endDate: endDate)
-            async let sleepTask = healthKitManager.fetchSleepDuration(startDate: startDate, endDate: endDate)
-            async let workoutsTask = healthKitManager.fetchWorkouts(startDate: startDate, endDate: endDate)
-            async let stepsTask = healthKitManager.fetchSteps(startDate: startDate, endDate: endDate)
-            async let weightTask = healthKitManager.fetchBodyMass(startDate: startDate, endDate: endDate)
-            async let nutritionTask = healthKitManager.fetchNutrition(startDate: startDate, endDate: endDate)
-            
-            // Paginated Strava Fetch
-            var allStravaActivities: [StravaActivity] = []
+            var stravaActivities: [StravaImportData] = []
             if stravaManager.isAuthenticated {
-                var page = 1
-                var hasMore = true
-                while hasMore {
-                    print("🚴 Fetching Strava page \(page)...")
-                    if let activities = try? await stravaManager.fetchActivities(page: page, perPage: 100), !activities.isEmpty {
-                        allStravaActivities.append(contentsOf: activities)
-                        page += 1
-                        try? await Task.sleep(nanoseconds: 50_000_000)
-                    } else {
-                        hasMore = false
-                    }
-                    if page > 50 { hasMore = false }
+                if let activities = try? await stravaManager.fetchActivities(page: 1, perPage: 100) {
+                    stravaActivities = activities.compactMap { mapStravaActivity($0) }
                 }
             }
             
-            let stravaSafeData: [StravaImportData] = allStravaActivities.compactMap { activity in
-                guard let date = activity.startDateFormatted else { return nil }
-                var energy = activity.calories ?? 0
-                if energy == 0, let kj = activity.kilojoules, kj > 0 { energy = kj }
-                return StravaImportData(
-                    id: String(activity.id),
-                    title: activity.name,
-                    workoutType: mapStravaType(activity.type),
-                    startDate: date,
-                    duration: Double(activity.elapsedTime),
-                    distance: activity.distance,
-                    power: activity.averageWatts,
-                    energy: energy,
-                    averageHeartRate: activity.averageHeartrate
-                )
-            }
-            
-            // Await HealthKit
-            let fetchedRHR = (try? await rhrTask) ?? []
-            let fetchedHRV = (try? await hrvTask) ?? []
-            let fetchedSleep = (try? await sleepTask) ?? []
-            let fetchedWorkouts = (try? await workoutsTask) ?? []
-            let fetchedSteps = await stepsTask
-            let fetchedWeight = (try? await weightTask) ?? []
-            let fetchedNutrition = await nutritionTask
-            
-            // Save current year (This updates the UI)
-            await dataHandler.saveBatch(
-                workouts: fetchedWorkouts,
-                strava: stravaSafeData,
-                sleep: fetchedSleep,
-                hrv: fetchedHRV,
-                rhr: fetchedRHR,
-                steps: fetchedSteps,
-                weight: fetchedWeight,
-                nutrition: fetchedNutrition
+            let data = try await (
+                rhr: rhr,
+                hrv: hrv,
+                sleep: sleep,
+                workouts: workouts,
+                steps: steps,
+                weight: weight,
+                nutrition: nutrition
             )
             
-            // --- PHASE 2: 10-YEAR DEEP BACKFILL (UI UPDATES SILENCED) ---
-            print("🕰️ Phase 2: Starting background historical backfill...")
+            await dataHandler.upsertRecentData(
+                workouts: data.workouts,
+                strava: stravaActivities,
+                sleep: data.sleep,
+                hrv: data.hrv,
+                rhr: data.rhr,
+                steps: data.steps,
+                weight: data.weight,
+                nutrition: data.nutrition
+            )
             
-            // TRIGGER SILENCE: Set this to true so Views can stop querying
-            // to avoid the PermanentID remapping errors.
-            await MainActor.run { self.isBackfillingHistory = true }
+            print("   ✅ Recent data synced")
             
-            let currentYear = calendar.component(.year, from: Date())
-            for year in (currentYear-10..<currentYear-1).reversed() {
-                print("⏳ Processing year \(year)...")
-                let yearlyData = try await healthKitManager.fetchYearlySnapshot(year: year)
-                
-                // Append and obtainPermanentIDs (from the previous step's appendBatch fix)
-                await dataHandler.appendBatch(
-                    workouts: yearlyData.workouts,
-                    sleep: yearlyData.sleep,
-                    hrv: yearlyData.hrv,
-                    rhr: yearlyData.rhr,
-                    nutrition: yearlyData.nutrition
-                )
-                
-                // Critical pause to allow Main thread to catch up and WAL to checkpoint
-                try? await Task.sleep(nanoseconds: 300_000_000)
-            }
-            
-            // END SILENCE
-            await MainActor.run {
-                self.isBackfillingHistory = false 
-                self.lastSyncDate = Date() // CRITICAL: Save the date so it doesn't run again immediately
-            }
-            
-            print("✅ Global 10-Year Sync Complete")
         } catch {
-            print("❌ Global Sync Failed: \(error.localizedDescription)")
-            await MainActor.run { self.isBackfillingHistory = false }
-        }
-        
-        await MainActor.run {
-            self.lastSyncDate = Date()
-            self.isSyncing = false
+            print("   ❌ Recent sync failed: \(error)")
         }
     }
     
-    // Helper for cleaner mapping
+    // MARK: - Historical Backfill
+    
+    private func performHistoricalBackfill(years: Int, dataHandler: DataPersistenceActor) async {
+        print("🕰️ Starting \(years)-year historical backfill...")
+        
+        isBackfillingHistory = true
+        backfillProgress = 0
+        syncProgress = "Building historical baseline..."
+        
+        let calendar = Calendar.current
+        let currentYear = calendar.component(.year, from: Date())
+        let startYear = currentYear - years
+        
+        for yearOffset in 0..<years {
+            let year = startYear + yearOffset
+            
+            print("   📅 Backfilling year \(year)...")
+            backfillProgress = Double(yearOffset) / Double(years)
+            syncProgress = "Processing \(year)..."
+            
+            do {
+                let snapshot = try await healthKitManager.fetchYearlySnapshot(year: year)
+                
+                await dataHandler.appendHistoricalBatch(
+                    workouts: snapshot.workouts,
+                    sleep: snapshot.sleep,
+                    hrv: snapshot.hrv,
+                    rhr: snapshot.rhr,
+                    nutrition: snapshot.nutrition
+                )
+                
+                print("      ✅ Year \(year) complete")
+                
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                
+            } catch {
+                print("      ❌ Year \(year) failed: \(error)")
+            }
+        }
+        
+        isBackfillingHistory = false
+        backfillProgress = 1.0
+        print("   ✅ Historical backfill complete")
+    }
+    
+    // MARK: - Manual Operations
+    
+    func performFullResync() async {
+        print("🔄 Forcing full resync...")
+        
+        hasCompletedHistoricalBackfill = false
+        lastSyncDate = nil
+        
+        let container = HealthDataContainer.shared
+        let dataHandler = DataPersistenceActor(modelContainer: container)
+        
+        await dataHandler.deleteAll()
+        await performSmartSync()
+    }
+    
+    func resetAllData() async {
+        print("🗑️ Resetting all data...")
+        
+        let container = HealthDataContainer.shared
+        let dataHandler = DataPersistenceActor(modelContainer: container)
+        
+        hasCompletedHistoricalBackfill = false
+        hasMigratedMetricNames = false
+        lastSyncDate = nil
+        
+        await dataHandler.deleteAll()
+        await performSmartSync()
+    }
+    
+    // MARK: - Helper
+    
+    private func mapStravaActivity(_ activity: StravaActivity) -> StravaImportData? {
+        guard let date = activity.startDateFormatted else { return nil }
+        
+        var energy = activity.calories ?? 0
+        if energy == 0, let kj = activity.kilojoules, kj > 0 {
+            energy = kj
+        }
+        
+        return StravaImportData(
+            id: String(activity.id),
+            title: activity.name,
+            workoutType: mapStravaType(activity.type),
+            startDate: date,
+            duration: Double(activity.elapsedTime),
+            distance: activity.distance,
+            power: activity.averageWatts,
+            energy: energy,
+            averageHeartRate: activity.averageHeartrate
+        )
+    }
+    
     private func mapStravaType(_ type: String) -> HKWorkoutActivityType {
         switch type {
         case "Run": return .running
@@ -168,76 +317,101 @@ class SyncManager: ObservableObject {
         default: return .other
         }
     }
-        
-    func performFullHistorySync() async {
-        // Phase 1: Immediate Sync (Last 30 Days)
-        // This ensures your current Readiness and Dashboards update instantly.
-        await syncRange(from: .daysAgo(30), to: .now)
-        
-        // Phase 2: Historical Backfill (The last 10 years)
-        // We process this in yearly chunks to manage memory and SwiftData performance.
-        let currentYear = Calendar.current.component(.year, from: Date())
-        for year in (currentYear-10..<currentYear).reversed() {
-            await syncYearlyBatch(year: year)
-            // Allow the UI to breathe between batches
-            try? await Task.sleep(nanoseconds: 500_000_000)
-        }
-    }
-
-    func resetAllData() async {
-        let container = HealthDataContainer.shared
-        let dataHandler = DataPersistenceActor(modelContainer: container)
-
-        self.lastSyncDate = nil
-        await dataHandler.deleteAll()
-        
-        print("🗑️ All data deleted. Starting fresh sync...")
-        await performGlobalSync()
-    }
-    
-    private func syncRange(from: Date, to: Date) async {
-        // This wraps your existing fetch logic for a specific window
-        do {
-            let workouts = try await healthKitManager.fetchWorkouts(startDate: from, endDate: to)
-            let sleep = try await healthKitManager.fetchSleepDuration(startDate: from, endDate: to)
-            let hrv = try await healthKitManager.fetchHeartRateVariability(startDate: from, endDate: to)
-            let rhr = try await healthKitManager.fetchRestingHeartRate(startDate: from, endDate: to)
-            
-            let dataHandler = DataPersistenceActor(modelContainer: HealthDataContainer.shared)
-            await dataHandler.appendBatch(workouts: workouts, sleep: sleep, hrv: hrv, rhr: rhr, nutrition: [])
-        } catch {
-            print("Range sync error: \(error)")
-        }
-    }
-
-    private func syncYearlyBatch(year: Int) async {
-        do {
-            let data = try await healthKitManager.fetchYearlySnapshot(year: year)
-            let dataHandler = DataPersistenceActor(modelContainer: HealthDataContainer.shared)
-            await dataHandler.appendBatch(
-                workouts: data.workouts,
-                sleep: data.sleep,
-                hrv: data.hrv,
-                rhr: data.rhr,
-                nutrition: data.nutrition
-            )
-        } catch {
-            print("Yearly batch error for \(year): \(error)")
-        }
-    }
 }
+
+// MARK: - Data Persistence Actor
 
 @ModelActor
 actor DataPersistenceActor {
+    
+    // MARK: - Metric Name Migration
+    
+    func migrateMetricNames(oldToNew: [String: String]) {
+        for (oldName, newName) in oldToNew {
+            let descriptor = FetchDescriptor<StoredHealthMetric>(
+                predicate: #Predicate { $0.type == oldName }
+            )
+            
+            if let metrics = try? modelContext.fetch(descriptor) {
+                print("   Migrating \(metrics.count) '\(oldName)' metrics to '\(newName)'")
+                
+                for metric in metrics {
+                    metric.type = newName
+                    
+                    // Update uniqueKey too
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "yyyy-MM-dd"
+                    metric.uniqueKey = "\(newName)_\(formatter.string(from: metric.date))"
+                }
+            }
+        }
+        
+        if modelContext.hasChanges {
+            try? modelContext.save()
+        }
+    }
+    
+    // MARK: - Data Summary
+    
+    struct DataSummary {
+        let workoutCount: Int
+        let sleepDays: Int
+        let hrvDays: Int
+        let rhrDays: Int
+        let oldestDate: Date?
+        let newestDate: Date?
+    }
+    
+    func getDataSummary() -> DataSummary {
+        let workoutCount = (try? modelContext.fetchCount(FetchDescriptor<StoredWorkout>())) ?? 0
+        
+        // ✅ Check BOTH old and new metric names
+        let sleepCount = (try? modelContext.fetchCount(
+            FetchDescriptor<StoredHealthMetric>(predicate: #Predicate {
+                $0.type == "Sleep" || $0.type == "sleep"
+            })
+        )) ?? 0
+        
+        let hrvCount = (try? modelContext.fetchCount(
+            FetchDescriptor<StoredHealthMetric>(predicate: #Predicate {
+                $0.type == "HRV" || $0.type == "hrv"
+            })
+        )) ?? 0
+        
+        let rhrCount = (try? modelContext.fetchCount(
+            FetchDescriptor<StoredHealthMetric>(predicate: #Predicate {
+                $0.type == "RHR" || $0.type == "restingHR"
+            })
+        )) ?? 0
+        
+        let workoutDescriptor = FetchDescriptor<StoredWorkout>(
+            sortBy: [SortDescriptor(\.startDate)]
+        )
+        let workouts = (try? modelContext.fetch(workoutDescriptor)) ?? []
+        
+        return DataSummary(
+            workoutCount: workoutCount,
+            sleepDays: sleepCount,
+            hrvDays: hrvCount,
+            rhrDays: rhrCount,
+            oldestDate: workouts.first?.startDate,
+            newestDate: workouts.last?.startDate
+        )
+    }
+    
+    // MARK: - Delete All
     
     func deleteAll() {
         try? modelContext.delete(model: StoredWorkout.self)
         try? modelContext.delete(model: StoredHealthMetric.self)
         try? modelContext.delete(model: StoredNutrition.self)
         try? modelContext.save()
+        print("🗑️ All data deleted")
     }
     
-    func saveBatch(
+    // MARK: - Upsert Recent Data
+    
+    func upsertRecentData(
         workouts: [WorkoutData],
         strava: [StravaImportData],
         sleep: [HealthDataPoint],
@@ -247,42 +421,13 @@ actor DataPersistenceActor {
         weight: [HealthDataPoint],
         nutrition: [DailyNutrition]
     ) {
-        deleteAll()
-        
-        // 1. Metrics (Added Weight to the list)
-        let metrics = [
-            (hrv, "HRV"),
-            (rhr, "RHR"),
-            (sleep, "Sleep"),
-            (steps, "Steps"),
-            (weight, "Weight") 
-        ]
-        
-        for (points, type) in metrics {
-            for point in points {
-                modelContext.insert(StoredHealthMetric(type: type, date: point.date, value: point.value))
-            }
-        }
-        
-        // 2. Nutrition
-        for entry in nutrition {
-            modelContext.insert(StoredNutrition(
-                date: entry.date,
-                calories: entry.totalCalories,
-                protein: entry.totalProtein,
-                carbs: entry.totalCarbs,
-                fat: entry.totalFat
-            ))
-        }
-        
-        // Track which Strava IDs we've used so we don't save them twice
         var matchedStravaIds = Set<String>()
         
         for hkWorkout in workouts {
-            // Use the Matcher!
+            let workoutID = hkWorkout.id.uuidString
+            
             if let match = WorkoutMatcher.findMatch(for: hkWorkout, in: strava) {
-                // MATCH FOUND: Save the Strava version (better metadata/titles)
-                modelContext.insert(StoredWorkout(
+                upsertWorkout(
                     id: match.id,
                     title: match.title,
                     type: match.workoutType,
@@ -293,12 +438,11 @@ actor DataPersistenceActor {
                     energy: match.energy,
                     hr: match.averageHeartRate,
                     source: "Strava"
-                ))
+                )
                 matchedStravaIds.insert(match.id)
             } else {
-                // NO MATCH: Save the Apple Health version
-                modelContext.insert(StoredWorkout(
-                    id: hkWorkout.id.uuidString,
+                upsertWorkout(
+                    id: workoutID,
                     title: nil,
                     type: hkWorkout.workoutType,
                     startDate: hkWorkout.startDate,
@@ -308,13 +452,12 @@ actor DataPersistenceActor {
                     energy: hkWorkout.totalEnergyBurned,
                     hr: hkWorkout.averageHeartRate,
                     source: hkWorkout.source.rawValue
-                ))
+                )
             }
         }
         
-        // Finally, save Strava activities that had no Apple Health counterpart
         for activity in strava where !matchedStravaIds.contains(activity.id) {
-            modelContext.insert(StoredWorkout(
+            upsertWorkout(
                 id: activity.id,
                 title: activity.title,
                 type: activity.workoutType,
@@ -325,33 +468,49 @@ actor DataPersistenceActor {
                 energy: activity.energy,
                 hr: activity.averageHeartRate,
                 source: "Strava"
-            ))
+            )
         }
         
-        try? modelContext.save()
-        print("💾 Batch save completed successfully.")
+        // ✅ Use NEW standardized names
+        for (points, type) in [(hrv, "HRV"), (rhr, "RHR"), (sleep, "Sleep"), (steps, "Steps"), (weight, "Weight")] {
+            for point in points {
+                upsertMetric(type: type, date: point.date, value: point.value)
+            }
+        }
+        
+        for entry in nutrition {
+            upsertNutrition(date: entry.date, entry: entry)
+        }
+        
+        if modelContext.hasChanges {
+            try? modelContext.save()
+            modelContext.processPendingChanges()
+            
+            Task { @MainActor in
+                HealthDataContainer.shared.mainContext.processPendingChanges()
+            }
+        }
+        
+        print("💾 Recent data upserted")
     }
     
-    func appendBatch(
+    // MARK: - Append Historical Batch
+    
+    func appendHistoricalBatch(
         workouts: [WorkoutData],
         sleep: [HealthDataPoint],
         hrv: [HealthDataPoint],
         rhr: [HealthDataPoint],
         nutrition: [DailyNutrition]
     ) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-
-        // 1. Upsert Workouts
         for workout in workouts {
             let workoutID = workout.id.uuidString
-            let descriptor = FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.id == workoutID })
             
-            if let existing = try? modelContext.fetch(descriptor).first {
-                existing.averagePower = workout.averagePower
-                existing.averageHeartRate = workout.averageHeartRate
-                existing.totalEnergyBurned = workout.totalEnergyBurned
-            } else {
+            let descriptor = FetchDescriptor<StoredWorkout>(
+                predicate: #Predicate { $0.id == workoutID }
+            )
+            
+            if (try? modelContext.fetch(descriptor).first) == nil {
                 modelContext.insert(StoredWorkout(
                     id: workoutID,
                     title: nil,
@@ -367,61 +526,110 @@ actor DataPersistenceActor {
             }
         }
         
-        // 2. Upsert Metrics (HRV, RHR, Sleep)
-        let metrics = [(hrv, "HRV"), (rhr, "RHR"), (sleep, "Sleep")]
-        for (points, type) in metrics {
+        // ✅ Use NEW standardized names
+        for (points, type) in [(hrv, "HRV"), (rhr, "RHR"), (sleep, "Sleep")] {
             for point in points {
-                let key = "\(type)_\(formatter.string(from: point.date))"
-                let metricDescriptor = FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.uniqueKey == key })
-                
-                if let existingMetric = try? modelContext.fetch(metricDescriptor).first {
-                    existingMetric.value = point.value
-                } else {
-                    modelContext.insert(StoredHealthMetric(type: type, date: point.date, value: point.value))
-                }
+                upsertMetric(type: type, date: point.date, value: point.value)
             }
         }
         
-        // 3. Upsert Nutrition
         for entry in nutrition {
-            let dateString = formatter.string(from: entry.date)
-            let nutritionDescriptor = FetchDescriptor<StoredNutrition>(predicate: #Predicate { $0.dateString == dateString })
-            
-            if let existingNutrition = try? modelContext.fetch(nutritionDescriptor).first {
-                existingNutrition.calories = entry.totalCalories
-                existingNutrition.carbs = entry.totalCarbs
-                existingNutrition.protein = entry.totalProtein
-                existingNutrition.fat = entry.totalFat
-            } else {
-                modelContext.insert(StoredNutrition(
-                    date: entry.date,
-                    calories: entry.totalCalories,
-                    protein: entry.totalProtein,
-                    carbs: entry.totalCarbs,
-                    fat: entry.totalFat
-                ))
-            }
+            upsertNutrition(date: entry.date, entry: entry)
         }
         
-        // 4. THE STABILITY FIX: Save and Sync Contexts
         if modelContext.hasChanges {
-            do {
-                // First: Save on background thread to establish permanent IDs in the store
-                try modelContext.save()
-                
-                // Second: Clear the background context memory for this batch
-                modelContext.processPendingChanges()
-                
-                // Third: Signal the Main Actor to reconcile its own IDs.
-                // This prevents the "remapped to temporary identifier" error in the UI.
-                Task { @MainActor in
-                    HealthDataContainer.shared.mainContext.processPendingChanges()
-                }
-                
-                print("💾 Batch processed: Saved and synchronized to Main Context.")
-            } catch {
-                print("⚠️ SwiftData Batch Save Error: \(error.localizedDescription)")
+            try? modelContext.save()
+            modelContext.processPendingChanges()
+            
+            Task { @MainActor in
+                HealthDataContainer.shared.mainContext.processPendingChanges()
             }
+        }
+    }
+    
+    // MARK: - Private Helpers
+    
+    private func upsertWorkout(
+        id: String,
+        title: String?,
+        type: HKWorkoutActivityType,
+        startDate: Date,
+        duration: TimeInterval,
+        distance: Double?,
+        power: Double?,
+        energy: Double?,
+        hr: Double?,
+        source: String
+    ) {
+        let descriptor = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate { $0.id == id }
+        )
+        
+        if let existing = try? modelContext.fetch(descriptor).first {
+            existing.title = title
+            existing.duration = duration
+            existing.distance = distance
+            existing.averagePower = power
+            existing.totalEnergyBurned = energy
+            existing.averageHeartRate = hr
+        } else {
+            modelContext.insert(StoredWorkout(
+                id: id,
+                title: title,
+                type: type,
+                startDate: startDate,
+                duration: duration,
+                distance: distance,
+                power: power,
+                energy: energy,
+                hr: hr,
+                source: source
+            ))
+        }
+    }
+    
+    private func upsertMetric(type: String, date: Date, value: Double) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let key = "\(type)_\(formatter.string(from: date))"
+        
+        let descriptor = FetchDescriptor<StoredHealthMetric>(
+            predicate: #Predicate { $0.uniqueKey == key }
+        )
+        
+        if let existing = try? modelContext.fetch(descriptor).first {
+            existing.value = value
+        } else {
+            modelContext.insert(StoredHealthMetric(
+                type: type,
+                date: date,
+                value: value
+            ))
+        }
+    }
+    
+    private func upsertNutrition(date: Date, entry: DailyNutrition) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateString = formatter.string(from: date)
+        
+        let descriptor = FetchDescriptor<StoredNutrition>(
+            predicate: #Predicate { $0.dateString == dateString }
+        )
+        
+        if let existing = try? modelContext.fetch(descriptor).first {
+            existing.calories = entry.totalCalories
+            existing.protein = entry.totalProtein
+            existing.carbs = entry.totalCarbs
+            existing.fat = entry.totalFat
+        } else {
+            modelContext.insert(StoredNutrition(
+                date: date,
+                calories: entry.totalCalories,
+                protein: entry.totalProtein,
+                carbs: entry.totalCarbs,
+                fat: entry.totalFat
+            ))
         }
     }
 }

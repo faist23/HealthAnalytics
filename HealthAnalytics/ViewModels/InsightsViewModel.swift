@@ -99,7 +99,7 @@ class InsightsViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        await SyncManager.shared.performGlobalSync()
+        await SyncManager.shared.performSmartSync()
         
         do {
             print("📈 Calculating Insights from SwiftData...")

@@ -23,20 +23,20 @@ struct HealthAnalyticsApp: App {
                         handleIncomingURL(url)
                     }
                     .task {
-                        // Trigger sync on first launch
-                        await SyncManager.shared.performGlobalSync()
+                        // ✅ CHANGED: Use smart sync instead of global sync
+                        await SyncManager.shared.performSmartSync()
                     }
             } else {
                 OnboardingView(isOnboardingComplete: $isOnboardingComplete)
             }
         }
-        // Use the shared container from your HealthDataContainer.swift file
         .modelContainer(HealthDataContainer.shared)
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active && isOnboardingComplete {
                 Task {
-                    print("🔄 App became active, triggering sync...")
-                    await SyncManager.shared.performGlobalSync()
+                    print("🔄 App became active, triggering smart sync...")
+                    // ✅ CHANGED: Use smart sync instead of global sync
+                    await SyncManager.shared.performSmartSync()
                 }
             }
         }
@@ -53,6 +53,9 @@ struct HealthAnalyticsApp: App {
                 do {
                     try await StravaManager.shared.handleOAuthCallback(url: url)
                     print("✅ Successfully handled Strava callback")
+                    
+                    // After successful Strava auth, sync to get Strava activities
+                    await SyncManager.shared.performSmartSync()
                 } catch {
                     print("❌ Error handling Strava callback: \(error)")
                 }

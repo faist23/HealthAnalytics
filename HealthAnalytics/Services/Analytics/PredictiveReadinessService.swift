@@ -2,6 +2,144 @@
 //  PredictiveReadinessService.swift
 //  HealthAnalytics
 //
+//  Provides ACWR and readiness calculations for ML training
+//
+
+import Foundation
+import HealthKit
+
+class PredictiveReadinessService {
+    
+    struct ReadinessAssessment {
+        let acwr: Double              // Acute:Chronic Workload Ratio
+        let chronicLoad: Double       // 28-day average
+        let acuteLoad: Double         // 7-day average
+        let trend: Trend
+        
+        enum Trend {
+            case building    // ACWR > 1.3
+            case optimal     // 0.8-1.3
+            case detraining  // < 0.8
+        }
+    }
+    
+    /// Calculate readiness metrics from workout history
+    func calculateReadiness(
+        stravaActivities: [StravaActivity],
+        healthKitWorkouts: [WorkoutData]
+    ) -> ReadinessAssessment {
+        
+        // Combine all workouts
+        let allWorkouts = healthKitWorkouts
+        
+        // Sort by date
+        let sorted = allWorkouts.sorted { $0.startDate > $1.startDate }
+        
+        // Calculate training loads
+        let chronicLoad = calculateChronicLoad(workouts: sorted)
+        let acuteLoad = calculateAcuteLoad(workouts: sorted)
+        
+        // Calculate ratio
+        let acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1.0
+        
+        // Determine trend
+        let trend: ReadinessAssessment.Trend
+        if acwr > 1.3 {
+            trend = .building
+        } else if acwr < 0.8 {
+            trend = .detraining
+        } else {
+            trend = .optimal
+        }
+        
+        return ReadinessAssessment(
+            acwr: acwr,
+            chronicLoad: chronicLoad,
+            acuteLoad: acuteLoad,
+            trend: trend
+        )
+    }
+    
+    // MARK: - Load Calculations
+    
+    /// Calculate chronic load (28-day rolling average)
+    private func calculateChronicLoad(workouts: [WorkoutData]) -> Double {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        guard let twentyEightDaysAgo = calendar.date(byAdding: .day, value: -28, to: now) else {
+            return 0
+        }
+        
+        let recentWorkouts = workouts.filter { $0.startDate >= twentyEightDaysAgo }
+        
+        guard !recentWorkouts.isEmpty else { return 0 }
+        
+        let totalLoad = recentWorkouts.reduce(0.0) { sum, workout in
+            sum + calculateWorkoutLoad(workout)
+        }
+        
+        // Daily average over 28 days
+        return totalLoad / 28.0
+    }
+    
+    /// Calculate acute load (7-day rolling average)
+    private func calculateAcuteLoad(workouts: [WorkoutData]) -> Double {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        guard let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: now) else {
+            return 0
+        }
+        
+        let recentWorkouts = workouts.filter { $0.startDate >= sevenDaysAgo }
+        
+        guard !recentWorkouts.isEmpty else { return 0 }
+        
+        let totalLoad = recentWorkouts.reduce(0.0) { sum, workout in
+            sum + calculateWorkoutLoad(workout)
+        }
+        
+        // Daily average over 7 days
+        return totalLoad / 7.0
+    }
+    
+    /// Calculate training load for a single workout
+    private func calculateWorkoutLoad(_ workout: WorkoutData) -> Double {
+        // Simple duration-based load (in hours)
+        // Can be enhanced with intensity factors later
+        let durationHours = workout.duration / 3600.0
+        
+        // Apply sport-specific multipliers
+        let multiplier = sportMultiplier(for: workout.workoutType)
+        
+        return durationHours * multiplier
+    }
+    
+    /// Sport-specific intensity multipliers
+    private func sportMultiplier(for type: HKWorkoutActivityType) -> Double {
+        switch type {
+        case .running:
+            return 1.2  // Running is more taxing per hour
+        case .cycling:
+            return 1.0  // Baseline
+        case .swimming:
+            return 1.3  // Very demanding
+        case .functionalStrengthTraining, .traditionalStrengthTraining:
+            return 1.1  // Moderate impact
+        case .walking:
+            return 0.5  // Low intensity
+        default:
+            return 1.0  // Default
+        }
+    }
+}
+
+/*
+//
+//  PredictiveReadinessService.swift
+//  HealthAnalytics
+//
 //  Created by Craig Faist on 2/1/26.
 //
 
@@ -236,4 +374,4 @@ struct PredictiveReadinessService {
         guard oldAvg > 0 else { return 0 }
         return ((newAvg - oldAvg) / oldAvg) * 100
     }
-}
+}*/

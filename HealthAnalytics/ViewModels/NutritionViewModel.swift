@@ -43,8 +43,8 @@ class NutritionViewModel: ObservableObject {
         errorMessage = nil
         
         // 1. Ensure Global Sync has run to backfill missing days
-        await SyncManager.shared.performGlobalSync()
-        
+        await SyncManager.shared.performSmartSync()
+
         do {
             print("🍎 Loading Nutrition from SwiftData...")
             
