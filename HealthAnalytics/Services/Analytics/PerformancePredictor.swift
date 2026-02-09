@@ -129,6 +129,9 @@ struct PerformancePredictor {
         print("🤖 PerformancePredictor: Starting training on \(healthKitWorkouts.count) total workouts...")
 
         // ── 1. USE THE MERGED WORKOUTS DIRECTLY ──
+        var rejectedNoMetrics = 0
+        var rejectedNoPerformance = 0
+
         for workout in healthKitWorkouts {
             // Map the internal type to the "Ride"/"Run" strings the predictor expects
             let activityType: String
@@ -137,7 +140,18 @@ struct PerformancePredictor {
             case .running: activityType = "Run"
             default: continue // Skip walking/other
             }
-
+            
+            // Define the dates here so they are in scope for the guard and the function call
+            let workoutDay = calendar.startOfDay(for: workout.startDate)
+            let prevDay = calendar.date(byAdding: .day, value: -1, to: workoutDay)!
+            
+            // Pre-check for metrics here to avoid calling rowFrom unnecessarily
+            guard sleepByDate[prevDay] != nil,
+                  hrvByDate[workoutDay] != nil,
+                  rhrByDate[workoutDay] != nil else {
+                continue
+            }
+            
             if let row = rowFrom(
                 workout: workout,
                 activityType: activityType,
@@ -150,8 +164,18 @@ struct PerformancePredictor {
                 calendar: calendar
             ) {
                 rows.append(row)
+            } else {
+                rejectedNoPerformance += 1
             }
         }
+        
+        print("-----------------------------------------")
+        print("🤖 ML TRAINING DEBUG:")
+        print("   Initial Workouts: \(healthKitWorkouts.count)")
+        print("   Rejected (Missing Sleep/HRV/RHR): \(rejectedNoMetrics)")
+        print("   Rejected (No Power/Speed data): \(rejectedNoPerformance)")
+        print("   Final Assembled Rows: \(rows.count)")
+        print("-----------------------------------------")
         
         print("📊 PerformancePredictor: Assembled \(rows.count) training rows")
         
@@ -160,7 +184,7 @@ struct PerformancePredictor {
         let rideRows = rows.filter { $0.activityType == "Ride" }
         
         var models: [TrainedModel] = []
-        let minSamples = 10 // Ensure this is low enough for your historical data
+        let minSamples = 5 // Ensure this is low enough for your historical data
         
         if runRows.count >= minSamples {
             let m = try await trainModel(rows: runRows, activityType: "Run")

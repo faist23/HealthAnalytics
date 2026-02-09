@@ -67,45 +67,21 @@ class CorrelationEngine {
     func analyzeSleepVsPerformanceByActivityType(
         sleepData: [HealthDataPoint],
         healthKitWorkouts: [WorkoutData],
-        stravaActivities: [StravaActivity]
+        stravaActivities: [StravaActivity] // Keep signature to avoid breaking callers
     ) -> [ActivityTypeInsight] {
         
-        // Deduplicate workouts
-        let (hkOnly, stravaOnly, matched) = WorkoutMatcher.deduplicateWorkouts(
-            healthKitWorkouts: healthKitWorkouts,
-            stravaActivities: stravaActivities
-        )
-        
-        // Create a dictionary of sleep by date
+        // 1. Dictionary of sleep by date
         var sleepByDate: [Date: Double] = [:]
         let calendar = Calendar.current
-        
         for sleep in sleepData {
             let dayStart = calendar.startOfDay(for: sleep.date)
             sleepByDate[dayStart] = sleep.value
         }
         
-        // Group performance by activity type
+        // 2. Group performance by activity type using the unified workouts
         var performanceByType: [String: (good: [Double], poor: [Double])] = [:]
         
-        // Process Strava-only activities
-        for activity in stravaOnly {
-            if let metric = processStravaActivity(activity, sleepByDate: sleepByDate, calendar: calendar) {
-                let type = activity.type
-                if performanceByType[type] == nil {
-                    performanceByType[type] = (good: [], poor: [])
-                }
-                
-                if metric.sleepHours >= 7.0 {
-                    performanceByType[type]?.good.append(metric.performance)
-                } else {
-                    performanceByType[type]?.poor.append(metric.performance)
-                }
-            }
-        }
-        
-        // Process HealthKit-only workouts
-        for workout in hkOnly {
+        for workout in healthKitWorkouts {
             if let metric = processHealthKitWorkout(workout, sleepByDate: sleepByDate, calendar: calendar) {
                 let type = workout.workoutType.name
                 if performanceByType[type] == nil {
@@ -120,44 +96,8 @@ class CorrelationEngine {
             }
         }
         
-        // Process matched workouts (prefer workout with power data)
-        for matchedPair in matched {
-            let bestWorkout = WorkoutMatcher.selectBestWorkout(from: matchedPair)
-            
-            switch bestWorkout {
-            case .healthKit(let workout):
-                if let metric = processHealthKitWorkout(workout, sleepByDate: sleepByDate, calendar: calendar) {
-                    let type = workout.workoutType.name
-                    if performanceByType[type] == nil {
-                        performanceByType[type] = (good: [], poor: [])
-                    }
-                    
-                    if metric.sleepHours >= 7.0 {
-                        performanceByType[type]?.good.append(metric.performance)
-                    } else {
-                        performanceByType[type]?.poor.append(metric.performance)
-                    }
-                }
-                
-            case .strava(let stravaActivity):
-                if let metric = processStravaActivity(stravaActivity, sleepByDate: sleepByDate, calendar: calendar) {
-                    let type = stravaActivity.type
-                    if performanceByType[type] == nil {
-                        performanceByType[type] = (good: [], poor: [])
-                    }
-                    
-                    if metric.sleepHours >= 7.0 {
-                        performanceByType[type]?.good.append(metric.performance)
-                    } else {
-                        performanceByType[type]?.poor.append(metric.performance)
-                    }
-                }
-            }
-        }
-        
-        // Calculate insights for each activity type
+        // 3. Calculate insights... (rest of your existing calculation logic)
         var insights: [ActivityTypeInsight] = []
-        
         for (type, data) in performanceByType {
             let totalSamples = data.good.count + data.poor.count
             
@@ -166,35 +106,23 @@ class CorrelationEngine {
             print("   Poor sleep: \(data.poor.count) workouts")
             print("   Total: \(totalSamples)")
             
-            // Need at least 5 total samples AND at least 2 in each category
-            guard totalSamples >= 5, data.good.count >= 2, data.poor.count >= 2 else {
-                print("   ⚠️ Not enough data for meaningful analysis")
-                continue
-            }
+            guard totalSamples >= 5, data.good.count >= 2, data.poor.count >= 2 else { continue }
             
             let avgGood = data.good.reduce(0, +) / Double(data.good.count)
             let avgPoor = data.poor.reduce(0, +) / Double(data.poor.count)
-            
             let baseline = max(avgGood, avgPoor)
             let percentDiff = baseline > 0 ? ((avgGood - avgPoor) / baseline) * 100 : 0
             
-            // Only include if difference is meaningful (>5%)
             if abs(percentDiff) >= 5.0 {
                 insights.append(ActivityTypeInsight(
                     activityType: type,
                     goodSleepAvg: avgGood,
                     poorSleepAvg: avgPoor,
                     percentDifference: percentDiff,
-                    sampleSize: data.good.count + data.poor.count
+                    sampleSize: totalSamples
                 ))
-                
-                print("📊 \(type) Sleep Analysis:")
-                print("   Good sleep: \(data.good.count) workouts, avg \(String(format: "%.1f", avgGood))")
-                print("   Poor sleep: \(data.poor.count) workouts, avg \(String(format: "%.1f", avgPoor))")
-                print("   Difference: \(String(format: "%.1f", percentDiff))%")
             }
         }
-        
         return insights.sorted { abs($0.percentDifference) > abs($1.percentDifference) }
     }
     
@@ -406,14 +334,8 @@ class CorrelationEngine {
         stravaActivities: [StravaActivity]
     ) -> [(activityType: String, goodSleep: Int, poorSleep: Int)] {
         
-        let (hkOnly, stravaOnly, matched) = WorkoutMatcher.deduplicateWorkouts(
-            healthKitWorkouts: healthKitWorkouts,
-            stravaActivities: stravaActivities
-        )
-        
         var sleepByDate: [Date: Double] = [:]
         let calendar = Calendar.current
-        
         for sleep in sleepData {
             let dayStart = calendar.startOfDay(for: sleep.date)
             sleepByDate[dayStart] = sleep.value
@@ -421,24 +343,16 @@ class CorrelationEngine {
         
         var countsByType: [String: (good: Int, poor: Int)] = [:]
         
-        // Process all workouts
-        let allWorkouts = stravaOnly.compactMap { activity -> (String, Double)? in
-            guard let metric = processStravaActivity(activity, sleepByDate: sleepByDate, calendar: calendar) else { return nil }
-            return (activity.type, metric.sleepHours)
-        } + hkOnly.compactMap { workout -> (String, Double)? in
-            guard let metric = processHealthKitWorkout(workout, sleepByDate: sleepByDate, calendar: calendar) else { return nil }
-            return (workout.workoutType.name, metric.sleepHours)
-        } + matched.compactMap { (_, activity) -> (String, Double)? in
-            guard let metric = processStravaActivity(activity, sleepByDate: sleepByDate, calendar: calendar) else { return nil }
-            return (activity.type, metric.sleepHours)
-        }
-        
-        for (type, sleepHours) in allWorkouts {
+        // Process unified workouts directly
+        for workout in healthKitWorkouts {
+            guard let metric = processHealthKitWorkout(workout, sleepByDate: sleepByDate, calendar: calendar) else { continue }
+            let type = workout.workoutType.name
+            
             if countsByType[type] == nil {
                 countsByType[type] = (good: 0, poor: 0)
             }
             
-            if sleepHours >= 7.0 {
+            if metric.sleepHours >= 7.0 {
                 countsByType[type]?.good += 1
             } else {
                 countsByType[type]?.poor += 1

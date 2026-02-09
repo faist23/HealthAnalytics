@@ -76,6 +76,16 @@ class ReadinessViewModel: ObservableObject {
                 let rhr = storedMetrics.filter { $0.type == "RHR" }.map { $0.toHealthDataPoint() }
                 let sleep = storedMetrics.filter { $0.type == "Sleep" }.map { $0.toHealthDataPoint() }
                 
+                // ADD THESE PRINT STATEMENTS HERE
+                    print("-----------------------------------------")
+                    print("📈 DATABASE METRIC SUMMARY:")
+                    print("   Total Workouts: \(workouts.count)")
+                    print("   Sleep Samples:  \(sleep.count)")
+                    print("   HRV Samples:    \(hrv.count)")
+                    print("   RHR Samples:    \(rhr.count)")
+                    print("   Nutrition Days: \(nutrition.count)")
+                    print("-----------------------------------------")
+
                 return (workouts, nutrition, hrv, rhr, sleep)
             }.value
             
