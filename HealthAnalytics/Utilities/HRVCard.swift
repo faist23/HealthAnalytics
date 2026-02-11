@@ -2,14 +2,6 @@
 //  HRVCard.swift
 //  HealthAnalytics
 //
-//  Created by Craig Faist on 1/31/26.
-//
-
-
-//
-//  HRVCard.swift
-//  HealthAnalytics
-//
 //  Replaces the existing HRVCard. Aggregates raw HRV samples down to
 //  one value per day (morning-window strategy) before charting, so the
 //  graph is a clean daily line instead of a spike forest.

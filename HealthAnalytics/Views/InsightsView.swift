@@ -6,11 +6,13 @@
 //
 
 import SwiftUI
+import SwiftData
 import Charts
 
 struct InsightsView: View {
     @StateObject private var viewModel = InsightsViewModel()
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.modelContext) private var modelContext
     @State private var showACWRInfo = false
     
     var body: some View {
@@ -46,11 +48,25 @@ struct InsightsView: View {
                 .disabled(viewModel.isLoading)
             }
         }
-        .task {
-            await viewModel.analyzeData()
+        .onAppear {
+            // Configure on appear
+            configureViewModel()
+        }
+        .onChange(of: modelContext) { _, _ in
+            // Reconfigure if context changes
+            configureViewModel()
         }
     }
     
+    private func configureViewModel() {
+        if viewModel.modelContainer == nil {
+            viewModel.configure(container: modelContext.container)
+            Task {
+                await viewModel.analyzeData()
+            }
+        }
+    }
+
     // MARK: - Sub-View Groups
     // Breaking the body into these groups solves the "Expression too complex" error
     
@@ -114,9 +130,10 @@ struct InsightsView: View {
                             }
                         }
                         
-                        Text(assessment.state.label)
+                        // FIX: Use .trend instead of .state
+                        Text(trendLabel(for: assessment.trend))
                             .font(.title).bold()
-                            .foregroundColor(assessment.state.color)
+                            .foregroundColor(trendColor(for: assessment.trend))
                     }
                     Spacer()
                     Text(String(format: "%.2f", assessment.acwr))
@@ -124,7 +141,7 @@ struct InsightsView: View {
                 }
             }
             .sheet(isPresented: $showACWRInfo) {
-                ACWRInfoSheet()
+                ACWRExplainerSheet()  // Note: renamed from ACWRInfoSheet
             }
             .padding()
             .cardStyle(for: .recovery)
@@ -133,56 +150,13 @@ struct InsightsView: View {
     
     @ViewBuilder
     private var acwrTrendSection: some View {
-        if !viewModel.acwrTrend.isEmpty {
-            VStack(alignment: .leading) {
-                Text("7-DAY ACWR TREND")
-                    .font(.caption).bold().foregroundColor(.secondary)
-                    .padding(.top)
-                
-                Chart {
-                    RectangleMark(
-                        xStart: .value("Start", viewModel.acwrTrend.first?.date ?? Date()),
-                        xEnd: .value("End", viewModel.acwrTrend.last?.date ?? Date()),
-                        yStart: .value("Low", 0.8),
-                        yEnd: .value("High", 1.3)
-                    )
-                    .foregroundStyle(.green.opacity(0.2))
-                    .annotation(position: .overlay, alignment: .trailing) {
-                        Text("Sweet Spot")
-                            .font(.caption2)
-                            .foregroundColor(.green.opacity(0.8))
-                            .padding(.trailing, 4)
-                    }
-                    
-                    RuleMark(y: .value("Baseline", 1.0))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5]))
-                        .foregroundStyle(.gray)
-                    
-                    ForEach(viewModel.acwrTrend) { day in
-                        LineMark(
-                            x: .value("Date", day.date, unit: .day),
-                            y: .value("Ratio", day.value)
-                        )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(viewModel.readinessAssessment?.state.color ?? .blue)
-                        
-                        PointMark(
-                            x: .value("Date", day.date, unit: .day),
-                            y: .value("Ratio", day.value)
-                        )
-                        .foregroundStyle(viewModel.readinessAssessment?.state.color ?? .blue)
-                    }
-                }
-                .frame(height: 150)
-                .chartYScale(domain: 0.5...2.0)
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: .day)) { _ in
-                        AxisGridLine()
-                        AxisValueLabel(format: .dateTime.weekday(.abbreviated))
-                    }
-                }
-            }
-            .padding()
+        if let assessment = viewModel.readinessAssessment,
+           !viewModel.acwrTrend.isEmpty {
+            ACWRTrendCard(
+                trend: viewModel.acwrTrend,
+                currentAssessment: assessment,
+                primaryActivity: viewModel.primaryActivity
+            )
             .cardStyle(for: .recovery)
         }
     }
@@ -345,6 +319,22 @@ struct InsightsView: View {
     private var dataCollectionSection: some View {
         if !viewModel.dataSummary.isEmpty && viewModel.activityTypeInsights.isEmpty {
             DataCollectionCard(summary: viewModel.dataSummary)
+        }
+    }
+    
+    private func trendLabel(for trend: PredictiveReadinessService.ReadinessAssessment.Trend) -> String {
+        switch trend {
+        case .building: return "Building"
+        case .optimal: return "Optimal"
+        case .detraining: return "Detraining"
+        }
+    }
+
+    private func trendColor(for trend: PredictiveReadinessService.ReadinessAssessment.Trend) -> Color {
+        switch trend {
+        case .building: return .orange
+        case .optimal: return .green
+        case .detraining: return .blue
         }
     }
 }

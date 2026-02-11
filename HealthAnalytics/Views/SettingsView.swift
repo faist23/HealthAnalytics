@@ -96,7 +96,7 @@ struct SettingsView: View {
                                 await SyncManager.shared.resetAllData()
                             }
                         } label: {
-                            Label("Reset Workout Data", systemImage: "arrow.counterclockwise")
+                            Label("Reset Workout & Wellness Data", systemImage: "arrow.counterclockwise")
                         }
                         Text("Deletes all duplicate workouts and re-syncs from scratch.")
                             .font(.caption)

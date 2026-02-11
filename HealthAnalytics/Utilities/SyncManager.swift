@@ -503,6 +503,10 @@ actor DataPersistenceActor {
         rhr: [HealthDataPoint],
         nutrition: [DailyNutrition]
     ) {
+        print("   💾 BATCH SAVE DEBUG:")
+        print("      Input counts: Sleep=\(sleep.count), HRV=\(hrv.count), RHR=\(rhr.count)")
+        
+        // Save workouts (this is working)
         for workout in workouts {
             let workoutID = workout.id.uuidString
             
@@ -526,24 +530,82 @@ actor DataPersistenceActor {
             }
         }
         
-        // ✅ Use NEW standardized names
+        // Save metrics with detailed logging
+        print("   🔍 Processing health metrics:")
+        
         for (points, type) in [(hrv, "HRV"), (rhr, "RHR"), (sleep, "Sleep")] {
+            print("   📊 Processing \(type): \(points.count) points")
+            
+            if points.isEmpty {
+                print("      ⚠️ No points to save!")
+                continue
+            }
+            
+            // Show first few samples
+            for (index, point) in points.prefix(3).enumerated() {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                print("      Sample \(index+1): date=\(formatter.string(from: point.date)), value=\(point.value)")
+            }
+            
+            var savedCount = 0
             for point in points {
                 upsertMetric(type: type, date: point.date, value: point.value)
+                savedCount += 1
+                
+                // Progress indicator
+                if savedCount % 50 == 0 {
+                    print("      ... processed \(savedCount)/\(points.count)")
+                }
             }
+            print("      ✅ Processed \(savedCount) \(type) points")
         }
         
+        // Nutrition
         for entry in nutrition {
             upsertNutrition(date: entry.date, entry: entry)
         }
         
+        // CRITICAL: Save with error handling
+        print("   💾 Attempting to save...")
+        print("      Context has changes: \(modelContext.hasChanges)")
+        
         if modelContext.hasChanges {
-            try? modelContext.save()
+            do {
+                print("      🔄 Calling save()...")
+                try modelContext.save()
+                print("      ✅ SAVE SUCCESSFUL!")
+                
+                // Verify what was saved
+                let sleepCount = (try? modelContext.fetchCount(
+                    FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "Sleep" })
+                )) ?? 0
+                let hrvCount = (try? modelContext.fetchCount(
+                    FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "HRV" })
+                )) ?? 0
+                let rhrCount = (try? modelContext.fetchCount(
+                    FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "RHR" })
+                )) ?? 0
+                
+                print("      📊 Verification counts:")
+                print("         Sleep: \(sleepCount)")
+                print("         HRV: \(hrvCount)")
+                print("         RHR: \(rhrCount)")
+                
+            } catch {
+                print("      ❌ SAVE FAILED: \(error)")
+                print("      Error details: \(error.localizedDescription)")
+            }
+            
             modelContext.processPendingChanges()
             
             Task { @MainActor in
                 HealthDataContainer.shared.mainContext.processPendingChanges()
             }
+        } else {
+            print("      ⚠️ No changes to save (this is the problem!)")
+            print("      Inserted items count: \(modelContext.insertedModelsArray.count)")
+            print("      Updated items count: \(modelContext.changedModelsArray.count)")
         }
     }
     
@@ -591,20 +653,45 @@ actor DataPersistenceActor {
     private func upsertMetric(type: String, date: Date, value: Double) {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        let key = "\(type)_\(formatter.string(from: date))"
+        formatter.timeZone = TimeZone.current
+        let dateString = formatter.string(from: date)
+        let key = "\(type)_\(dateString)"
         
+        print("      🔍 Processing \(type): date=\(dateString), value=\(value), key=\(key)")
+        
+        // Try to fetch existing
         let descriptor = FetchDescriptor<StoredHealthMetric>(
             predicate: #Predicate { $0.uniqueKey == key }
         )
         
-        if let existing = try? modelContext.fetch(descriptor).first {
-            existing.value = value
-        } else {
-            modelContext.insert(StoredHealthMetric(
+        do {
+            let existing = try modelContext.fetch(descriptor)
+            
+            if let found = existing.first {
+                print("         ✏️ Updating existing: \(key)")
+                found.value = value
+            } else {
+                print("         ➕ Creating new: \(key)")
+                let metric = StoredHealthMetric(
+                    type: type,
+                    date: date,
+                    value: value
+                )
+                modelContext.insert(metric)
+                print("         ✅ Inserted successfully")
+            }
+        } catch {
+            print("         ❌ FETCH ERROR: \(error)")
+            
+            // Try direct insert as fallback
+            print("         🔄 Attempting direct insert...")
+            let metric = StoredHealthMetric(
                 type: type,
                 date: date,
                 value: value
-            ))
+            )
+            modelContext.insert(metric)
+            print("         ✅ Direct insert complete")
         }
     }
     

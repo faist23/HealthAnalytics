@@ -118,6 +118,7 @@ class HealthKitManager: ObservableObject {
     }
     
     /// Fetch heart rate variability (HRV) data for the specified date range
+    /// Returns ONE value per day - the morning HRV reading (best for recovery tracking)
     func fetchHeartRateVariability(startDate: Date, endDate: Date) async throws -> [HealthDataPoint] {
         guard let hrvType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else {
             throw HealthKitError.dataTypeNotAvailable
@@ -138,14 +139,30 @@ class HealthKitManager: ObservableObject {
                     return
                 }
                 
-                let dataPoints = samples.map { sample in
-                    HealthDataPoint(
-                        date: sample.startDate,
-                        value: sample.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
-                    )
+                // ✅ NEW: Filter to one HRV value per day (morning reading)
+                let calendar = Calendar.current
+                let grouped = Dictionary(grouping: samples) { sample in
+                    calendar.startOfDay(for: sample.startDate)
                 }
                 
-                continuation.resume(returning: dataPoints)
+                var dataPoints: [HealthDataPoint] = []
+                
+                for (day, daySamples) in grouped {
+                    // Take the FIRST reading of the day (typically the morning baseline)
+                    // This is the most reliable HRV for recovery tracking
+                    if let morningReading = daySamples.first {
+                        dataPoints.append(HealthDataPoint(
+                            date: day,  // Use start of day for consistency
+                            value: morningReading.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
+                        ))
+                    }
+                }
+                
+                let sorted = dataPoints.sorted { $0.date < $1.date }
+                
+                print("   📊 HRV: Filtered \(samples.count) samples down to \(sorted.count) daily readings")
+                
+                continuation.resume(returning: sorted)
             }
             
             healthStore.execute(query)

@@ -129,7 +129,7 @@ struct PerformancePredictor {
         print("🤖 PerformancePredictor: Starting training on \(healthKitWorkouts.count) total workouts...")
 
         // ── 1. USE THE MERGED WORKOUTS DIRECTLY ──
-        var rejectedNoMetrics = 0
+        let rejectedNoMetrics = 0  // Never mutated, kept for future debugging
         var rejectedNoPerformance = 0
 
         for workout in healthKitWorkouts {

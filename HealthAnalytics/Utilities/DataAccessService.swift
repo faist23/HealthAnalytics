@@ -1,9 +1,8 @@
 //
-//  DataAccessService.swift
+//  DataAccessService.swift (FIXED)
 //  HealthAnalytics
 //
-//  Centralizes all SwiftData access patterns
-//  Created by Craig Faist on 2/9/26.
+//  CRITICAL FIX: Use mainContext instead of creating new contexts
 //
 
 import Foundation
@@ -13,6 +12,11 @@ import SwiftData
 class DataAccessService {
     private let modelContainer: ModelContainer
     
+    // ✅ ADD: Computed property for main context
+    private var context: ModelContext {
+        modelContainer.mainContext
+    }
+    
     init(container: ModelContainer) {
         self.modelContainer = container
     }
@@ -21,8 +25,7 @@ class DataAccessService {
     
     /// Fetch all workouts within a date range
     func fetchWorkouts(from startDate: Date, to endDate: Date) throws -> [WorkoutData] {
-        let context = ModelContext(modelContainer)
-        
+        // ✅ CHANGED: Use mainContext instead of creating new one
         let descriptor = FetchDescriptor<StoredWorkout>(
             predicate: #Predicate { workout in
                 workout.startDate >= startDate && workout.startDate <= endDate
@@ -36,8 +39,6 @@ class DataAccessService {
     
     /// Fetch all workouts (for ML training)
     func fetchAllWorkouts() throws -> [WorkoutData] {
-        let context = ModelContext(modelContainer)
-        
         let descriptor = FetchDescriptor<StoredWorkout>(
             sortBy: [SortDescriptor(\.startDate, order: .reverse)]
         )
@@ -48,8 +49,6 @@ class DataAccessService {
     
     /// Fetch workouts of a specific type
     func fetchWorkouts(ofType typeInt: Int) throws -> [WorkoutData] {
-        let context = ModelContext(modelContainer)
-        
         let descriptor = FetchDescriptor<StoredWorkout>(
             predicate: #Predicate { $0.workoutTypeInt == typeInt },
             sortBy: [SortDescriptor(\.startDate, order: .reverse)]
@@ -63,8 +62,6 @@ class DataAccessService {
     
     /// Fetch health metrics of a specific type
     func fetchHealthMetrics(type: String, from startDate: Date? = nil, to endDate: Date? = nil) throws -> [HealthDataPoint] {
-        let context = ModelContext(modelContainer)
-        
         var descriptor: FetchDescriptor<StoredHealthMetric>
         
         if let start = startDate, let end = endDate {
@@ -95,8 +92,6 @@ class DataAccessService {
     
     /// Fetch nutrition data for a date range
     func fetchNutrition(from startDate: Date, to endDate: Date) throws -> [DailyNutrition] {
-        let context = ModelContext(modelContainer)
-        
         let descriptor = FetchDescriptor<StoredNutrition>(
             predicate: #Predicate { nutrition in
                 nutrition.date >= startDate && nutrition.date <= endDate
@@ -110,8 +105,6 @@ class DataAccessService {
     
     /// Fetch all nutrition data
     func fetchAllNutrition() throws -> [DailyNutrition] {
-        let context = ModelContext(modelContainer)
-        
         let descriptor = FetchDescriptor<StoredNutrition>(
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
@@ -122,12 +115,12 @@ class DataAccessService {
     
     /// Get nutrition for a specific date
     func getNutrition(for date: Date) throws -> DailyNutrition? {
-        let context = ModelContext(modelContainer)
         let calendar = Calendar.current
         let dayStart = calendar.startOfDay(for: date)
         
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current  // ✅ ADDED: Explicit timezone
         let dateString = formatter.string(from: dayStart)
         
         let descriptor = FetchDescriptor<StoredNutrition>(
@@ -145,17 +138,17 @@ class DataAccessService {
     
     /// Get data availability summary
     func getDataSummary() throws -> DataSummary {
-        let context = ModelContext(modelContainer)
-        
         let workoutCount = try context.fetchCount(FetchDescriptor<StoredWorkout>())
+        
+        // ✅ CHANGED: Use capitalized type names to match what SyncManager saves
         let sleepCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(
-            predicate: #Predicate { $0.type == "sleep" }
+            predicate: #Predicate { $0.type == "Sleep" }  // Was "sleep"
         ))
         let hrvCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(
-            predicate: #Predicate { $0.type == "hrv" }
+            predicate: #Predicate { $0.type == "HRV" }  // Was "hrv"
         ))
         let rhrCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(
-            predicate: #Predicate { $0.type == "restingHR" }
+            predicate: #Predicate { $0.type == "RHR" }  // Was "restingHR"
         ))
         let nutritionCount = try context.fetchCount(FetchDescriptor<StoredNutrition>())
         

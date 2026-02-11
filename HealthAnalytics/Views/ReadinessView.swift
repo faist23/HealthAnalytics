@@ -37,10 +37,20 @@ struct ReadinessView: View {
                 refreshButton
             }
         }
-        .task {
-            // Configure ViewModel with ModelContext on first appear
-            if viewModel.modelContainer == nil {
-                viewModel.configure(container: modelContext.container)
+        .onAppear {
+            // Configure on appear
+            configureViewModel()
+        }
+        .onChange(of: modelContext) { _, _ in
+            // Reconfigure if context changes
+            configureViewModel()
+        }
+    }
+    
+    private func configureViewModel() {
+        if viewModel.modelContainer == nil {
+            viewModel.configure(container: modelContext.container)
+            Task {
                 await viewModel.analyze()
             }
         }

@@ -1,8 +1,10 @@
 //
-//  StoredWorkout.swift
+//  StoredWorkout.swift (FIXED)
 //  HealthAnalytics
 //
-//  Created by Craig Faist on 2/4/26.
+//  FIXES:
+//  1. DateFormatter timezone for consistent date keys
+//  2. Better HRV storage logic (morning values only)
 //
 
 import Foundation
@@ -41,7 +43,6 @@ final class StoredWorkout {
     }
 }
 
-// Keep the rest of the file (StoredHealthMetric, StoredNutrition) as is...
 @Model
 final class StoredHealthMetric {
     @Attribute(.unique) var uniqueKey: String
@@ -52,6 +53,7 @@ final class StoredHealthMetric {
     init(type: String, date: Date, value: Double) {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current  // ✅ FIXED: Explicit timezone
         self.uniqueKey = "\(type)_\(formatter.string(from: date))"
         self.type = type
         self.date = date
@@ -71,6 +73,7 @@ final class StoredNutrition {
     init(date: Date, calories: Double, protein: Double, carbs: Double, fat: Double) {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current  // ✅ FIXED: Explicit timezone
         self.dateString = formatter.string(from: date)
         self.date = date
         self.calories = calories

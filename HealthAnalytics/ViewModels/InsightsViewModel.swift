@@ -1,364 +1,314 @@
 //
-//  InsightsViewModel.swift
+//  InsightsViewModel.swift (FIXED)
 //  HealthAnalytics
-//
-//  Created by Craig Faist on 1/25/26.
-//  Fixed: Corrected TrainingLoadCalculator.TrainingLoadSummary.LoadStatus type access.
 //
 
 import Foundation
-import SwiftData
 import SwiftUI
+import SwiftData
 import HealthKit
 import Combine
 
 @MainActor
 class InsightsViewModel: ObservableObject {
     
-    // MARK: - UI State
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-    @Published var selectedTrendDuration: Int = 90
-    
-    // MARK: - Data Properties for View
-    
-    // Recommendations
-    @Published var recommendations: [ActionableRecommendations.Recommendation] = []
-    
-    // ACWR & Readiness
-    struct ReadinessAssessment {
-        let state: (label: String, color: Color)
-        let acwr: Double
-    }
-    @Published var readinessAssessment: ReadinessAssessment?
-    @Published var acwrTrend: [TrendPoint] = []
-    
-    // Insight Arrays
+    // MARK: - Published Properties
+    @Published var sleepPerformanceInsight: CorrelationEngine.SleepPerformanceInsight?
+    @Published var activityTypeInsights: [CorrelationEngine.ActivityTypeInsight] = []
+    @Published var dataSummary: [(activityType: String, goodSleep: Int, poorSleep: Int)] = []
     @Published var simpleInsights: [CorrelationEngine.SimpleInsight] = []
     @Published var recoveryInsights: [CorrelationEngine.RecoveryInsight] = []
-    @Published var metricTrends: [MetricTrend] = []
     @Published var hrvPerformanceInsights: [CorrelationEngine.HRVPerformanceInsight] = []
-    @Published var activityTypeInsights: [CorrelationEngine.ActivityTypeInsight] = []
-    
-    // Nutrition Specific
+    @Published var trainingLoadSummary: TrainingLoadCalculator.TrainingLoadSummary?
+    @Published var metricTrends: [MetricTrend] = []
+    @Published var recommendations: [ActionableRecommendations.Recommendation] = []
+    @Published var readinessAssessment: PredictiveReadinessService.ReadinessAssessment?
+    @Published var acwrTrend: [ACWRDataPoint] = []
     @Published var proteinRecoveryInsight: NutritionCorrelationEngine.ProteinRecoveryInsight?
     @Published var proteinPerformanceInsights: [NutritionCorrelationEngine.ProteinPerformanceInsight] = []
     @Published var carbPerformanceInsights: [NutritionCorrelationEngine.CarbPerformanceInsight] = []
-    @Published var nutritionCorrelations: [NutritionCorrelation] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var primaryActivity: String = "Ride"
     
-    // Charts
-    @Published var sleepVsPowerData: [CorrelationPoint] = []
-    @Published var weeklyTrends: [TrendPoint] = []
+    // SwiftData
+    var modelContainer: ModelContainer?
     
-    @Published var trainingLoadSummary: TrainingLoadCalculator.TrainingLoadSummary?
-    @Published var dataSummary: [(activityType: String, goodSleep: Int, poorSleep: Int)] = []
-
-    // MARK: - Internal Structs
-    struct CorrelationPoint: Identifiable {
-        let id = UUID()
-        let xValue: Double
-        let yValue: Double
-        let date: Date
-        let category: String
+    // MARK: - Configuration
+    
+    func configure(container: ModelContainer) {
+        self.modelContainer = container
     }
     
-    struct NutritionCorrelation: Identifiable {
-        let id = UUID()
-        let nutrient: String
-        let correlationScore: Double
-        let insight: String
-    }
-    
-    struct TrendPoint: Identifiable {
-        let id = UUID()
-        let date: Date
-        let value: Double
-        let metric1: Double?
-        let metric2: Double?
-    }
-
-    // MARK: - Engines
-    private let correlationEngine = CorrelationEngine()
-    private let nutritionEngine = NutritionCorrelationEngine()
-    private let trainingLoadCalc = TrainingLoadCalculator()
-    private let trendDetector = TrendDetector()
-    private let recommendationEngine = ActionableRecommendations()
-
-    // MARK: - Main Actions
+    // MARK: - Main Analysis
     
     func analyzeData() async {
-        await loadInsights()
-    }
-    
-    func updateTimeRange(_ days: Int) async {
-        selectedTrendDuration = days
-        await loadInsights()
-    }
-    
-    func loadInsights() async {
+        guard let container = modelContainer else {
+            errorMessage = "Database not configured"
+            return
+        }
+        
         isLoading = true
         errorMessage = nil
         
-        await SyncManager.shared.performSmartSync()
-        
         do {
-            print("📈 Calculating Insights from SwiftData...")
-            let context = HealthDataContainer.shared.mainContext
-            let endDate = Date()
-            guard let startDate = Calendar.current.date(byAdding: .day, value: -365, to: endDate) else { return }
+            let context = container.mainContext
             
-            // 1. Fetch Data
-            let storedWorkouts = try context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.startDate >= startDate }, sortBy: [SortDescriptor(\.startDate)]))
-            let storedMetrics = try context.fetch(FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.date >= startDate }, sortBy: [SortDescriptor(\.date)]))
-            let storedNutrition = try context.fetch(FetchDescriptor<StoredNutrition>(predicate: #Predicate { $0.date >= startDate }, sortBy: [SortDescriptor(\.date)]))
+            // Fetch all data
+            let storedWorkouts = try context.fetch(FetchDescriptor<StoredWorkout>())
+            let storedHealthMetrics = try context.fetch(FetchDescriptor<StoredHealthMetric>())
+            let storedNutrition = try context.fetch(FetchDescriptor<StoredNutrition>())
             
-            // 2. Map to Domain Models
-            let workouts = storedWorkouts.map { $0.toWorkoutData() }
-            let nutrition = storedNutrition.map { $0.toDailyNutrition() }
-            let hrv = storedMetrics.filter { $0.type == "HRV" }.map { $0.toHealthDataPoint() }
-            let rhr = storedMetrics.filter { $0.type == "RHR" }.map { $0.toHealthDataPoint() }
-            let sleep = storedMetrics.filter { $0.type == "Sleep" }.map { $0.toHealthDataPoint() }
-            let steps = storedMetrics.filter { $0.type == "Steps" }.map { $0.toHealthDataPoint() }
-            let weight = storedMetrics.filter { $0.type == "BodyMass" }.map { $0.toHealthDataPoint() }
+            // Convert to working models
+            let workouts = storedWorkouts.map { WorkoutData(from: $0) }
+            let nutrition = storedNutrition.map { DailyNutrition(from: $0) }
             
-            // 3. Run Internal Analysis Logic
-            calculateACWR(workouts: workouts)
+            // Convert health metrics - check what properties your StoredHealthMetric actually has
+            let sleepData = storedHealthMetrics.filter { $0.type == "Sleep" }
+                .map { HealthDataPoint(date: $0.date, value: $0.value) }
+            let hrvData = storedHealthMetrics.filter { $0.type == "HRV" }
+                .map { HealthDataPoint(date: $0.date, value: $0.value) }
+            let rhrData = storedHealthMetrics.filter { $0.type == "RHR" }
+                .map { HealthDataPoint(date: $0.date, value: $0.value) }
+            let stepData = storedHealthMetrics.filter { $0.type == "Steps" }
+                .map { HealthDataPoint(date: $0.date, value: $0.value) }
+            let weightData = storedHealthMetrics.filter { $0.type == "Weight" }
+                .map { HealthDataPoint(date: $0.date, value: $0.value) }
             
-            // Call external engines
-            self.simpleInsights = correlationEngine.generateSimpleInsights(
-                sleepData: sleep,
+            // Determine primary activity
+            primaryActivity = determinePrimaryActivity(from: workouts)
+            print("🎯 Primary Activity: \(primaryActivity)")
+            
+            // Run all analyses
+            let correlationEngine = CorrelationEngine()
+            let nutritionEngine = NutritionCorrelationEngine()
+            let loadCalculator = TrainingLoadCalculator()
+            let trendDetector = TrendDetector()
+            
+            // Sleep & Performance
+            sleepPerformanceInsight = correlationEngine.analyzeSleepVsPerformanceCombined(
+                sleepData: sleepData,
+                healthKitWorkouts: workouts,
+                stravaActivities: []
+            )
+            
+            activityTypeInsights = correlationEngine.analyzeSleepVsPerformanceByActivityType(
+                sleepData: sleepData,
+                healthKitWorkouts: workouts,
+                stravaActivities: []
+            )
+            
+            dataSummary = correlationEngine.getDataSummary(
+                sleepData: sleepData,
+                healthKitWorkouts: workouts,
+                stravaActivities: []
+            )
+            
+            // Simple insights
+            simpleInsights = correlationEngine.generateSimpleInsights(
+                sleepData: sleepData,
                 healthKitWorkouts: workouts,
                 stravaActivities: [],
-                restingHRData: rhr,
-                hrvData: hrv
+                restingHRData: rhrData,
+                hrvData: hrvData
             )
             
-            self.recoveryInsights = correlationEngine.analyzeRecoveryStatus(
-                restingHRData: rhr,
-                hrvData: hrv
+            // Recovery status
+            recoveryInsights = correlationEngine.analyzeRecoveryStatus(
+                restingHRData: rhrData,
+                hrvData: hrvData
             )
             
-            self.activityTypeInsights = correlationEngine.analyzeSleepVsPerformanceByActivityType(
-                sleepData: sleep,
+            // HRV vs Performance
+            hrvPerformanceInsights = correlationEngine.analyzeHRVVsPerformance(
+                hrvData: hrvData,
                 healthKitWorkouts: workouts,
                 stravaActivities: []
             )
             
-            self.hrvPerformanceInsights = correlationEngine.analyzeHRVVsPerformance(
-                hrvData: hrv,
+            // Training load
+            trainingLoadSummary = loadCalculator.calculateTrainingLoad(
                 healthKitWorkouts: workouts,
-                stravaActivities: []
+                stravaActivities: [],
+                stepData: stepData
             )
             
-            // Nutrition engines
-            self.proteinRecoveryInsight = nutritionEngine.analyzeProteinVsRecovery(
-                nutritionData: nutrition,
-                restingHRData: rhr,
-                hrvData: hrv
-            )
-            
-            self.carbPerformanceInsights = nutritionEngine.analyzeCarbsVsPerformance(
-                nutritionData: nutrition,
-                healthKitWorkouts: workouts,
-                stravaActivities: []
-            )
-            
-            self.proteinPerformanceInsights = nutritionEngine.analyzeProteinVsPerformance(
-                nutritionData: nutrition,
-                healthKitWorkouts: workouts,
-                stravaActivities: []
-            )
-            
-            // Trends & Recs
-            self.metricTrends = trendDetector.detectTrends(
-                restingHRData: rhr,
-                hrvData: hrv,
-                sleepData: sleep,
-                stepData: steps,
-                weightData: weight,
+            // Trends
+            metricTrends = trendDetector.detectTrends(
+                restingHRData: rhrData,
+                hrvData: hrvData,
+                sleepData: sleepData,
+                stepData: stepData,
+                weightData: weightData,
                 workouts: workouts
             )
             
-            self.recommendations = recommendationEngine.generateRecommendations(
-                trainingLoad: self.trainingLoadSummary,
-                recoveryInsights: self.recoveryInsights,
-                trends: self.metricTrends,
-                injuryRisk: nil
+            // Nutrition
+            proteinRecoveryInsight = nutritionEngine.analyzeProteinVsRecovery(
+                nutritionData: nutrition,
+                restingHRData: rhrData,
+                hrvData: hrvData
             )
             
-            // Internal chart helpers
-            generateSleepVsPower(workouts: workouts, sleep: sleep)
-            generateNutritionCorrelations(workouts: workouts, nutrition: nutrition)
-            generateRecoveryTrends(hrv: hrv, rhr: rhr)
-            
-            self.dataSummary = correlationEngine.getDataSummary(
-                sleepData: sleep,
+            proteinPerformanceInsights = nutritionEngine.analyzeProteinVsPerformance(
+                nutritionData: nutrition,
                 healthKitWorkouts: workouts,
                 stravaActivities: []
             )
             
-            isLoading = false
-            print("✅ Full Insights Generated")
+            carbPerformanceInsights = nutritionEngine.analyzeCarbsVsPerformance(
+                nutritionData: nutrition,
+                healthKitWorkouts: workouts,
+                stravaActivities: []
+            )
+            
+            // IMPROVED ACWR Calculation
+            let readinessService = PredictiveReadinessService()
+            readinessAssessment = readinessService.calculateReadiness(
+                stravaActivities: [],
+                healthKitWorkouts: workouts
+            )
+            
+            acwrTrend = calculateImprovedACWRTrend(
+                workouts: workouts,
+                readinessService: readinessService
+            )
+            
+            // Recommendations
+            let injuryRisk = InjuryRiskCalculator().assessInjuryRisk(
+                trainingLoad: trainingLoadSummary,
+                recoveryStatus: recoveryInsights,
+                trends: metricTrends
+            )
+            
+            recommendations = ActionableRecommendations().generateRecommendations(
+                trainingLoad: trainingLoadSummary,
+                recoveryInsights: recoveryInsights,
+                trends: metricTrends,
+                injuryRisk: injuryRisk
+            )
             
         } catch {
-            errorMessage = "Analysis error: \(error.localizedDescription)"
-            isLoading = false
-            print("❌ Insights error: \(error)")
+            errorMessage = "Failed to analyze data: \(error.localizedDescription)"
+            print("❌ Analysis error: \(error)")
         }
+        
+        isLoading = false
     }
     
-    // MARK: - Internal Logic Implementation
+    // MARK: - Primary Activity Detection
     
-    private func calculateACWR(workouts: [WorkoutData]) {
-        let today = Date()
-        guard let acuteDate = Calendar.current.date(byAdding: .day, value: -7, to: today),
-              let chronicDate = Calendar.current.date(byAdding: .day, value: -28, to: today) else { return }
-        
-        var acuteLoad = 0.0
-        var chronicLoad = 0.0
-        
-        for w in workouts {
-            // Simplified Load = Duration (mins) * Intensity Factor (0.8)
-            let load = (w.duration / 60.0) * 50.0
-            if w.startDate >= acuteDate { acuteLoad += load }
-            if w.startDate >= chronicDate { chronicLoad += load }
+    private func determinePrimaryActivity(from workouts: [WorkoutData]) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        guard let ninetyDaysAgo = calendar.date(byAdding: .day, value: -90, to: now) else {
+            return "Ride"
         }
         
-        let acuteAvg = acuteLoad / 7.0
-        let chronicAvg = chronicLoad / 28.0
-        let ratio = chronicAvg > 0 ? acuteAvg / chronicAvg : 0.0
+        let recentWorkouts = workouts.filter { $0.startDate >= ninetyDaysAgo }
         
-        // FIXED: Use correct enum Type
-        let status: TrainingLoadCalculator.TrainingLoadSummary.LoadStatus
-        let label: String
-        let color: Color
-        
-        // Determine status based on ratio ranges matching TrainingLoadCalculator.swift
-        if ratio < 0.8 {
-            status = .fresh
-            label = "Fresh"
-            color = .blue
-        } else if ratio <= 1.3 {
-            status = .optimal
-            label = "Optimal"
-            color = .green
-        } else if ratio <= 1.5 {
-            status = .fatigued
-            label = "Fatigued"
-            color = .orange
-        } else {
-            status = .overreaching
-            label = "Overreaching"
-            color = .red
-        }
-        
-        // Update Published Properties
-        self.readinessAssessment = ReadinessAssessment(state: (label, color), acwr: ratio)
-        
-        self.trainingLoadSummary = TrainingLoadCalculator.TrainingLoadSummary(
-            acuteLoad: acuteAvg,
-            chronicLoad: chronicAvg,
-            acuteChronicRatio: ratio,
-            status: status,
-            recommendation: "Maintain current volume."
-        )
-        
-        // Build flat trend for chart
-        self.acwrTrend = (0..<7).compactMap { i in
-            Calendar.current.date(byAdding: .day, value: -i, to: today).map {
-                TrendPoint(date: $0, value: ratio, metric1: nil as Double?, metric2: nil as Double?)
+        var counts: [String: Int] = [:]
+        for workout in recentWorkouts {
+            let activityType: String
+            switch workout.workoutType {
+            case .cycling:
+                activityType = "Ride"
+            case .running:
+                activityType = "Run"
+            case .swimming:
+                activityType = "Swim"
+            default:
+                continue
             }
-        }.reversed()
-    }
-    
-    private func generateRecoveryTrends(hrv: [HealthDataPoint], rhr: [HealthDataPoint]) {
-        let daysToSubtract = -selectedTrendDuration
-        guard let cutoffDate = Calendar.current.date(byAdding: .day, value: daysToSubtract, to: Date()) else { return }
-        
-        var validHRV: [HealthDataPoint] = []
-        for p in hrv {
-            if p.date >= cutoffDate { validHRV.append(p) }
+            counts[activityType, default: 0] += 1
         }
         
-        var trends: [TrendPoint] = []
-        for p in validHRV {
-            var rhrVal = 0.0
-            for r in rhr {
-                if Calendar.current.isDate(r.date, inSameDayAs: p.date) {
-                    rhrVal = r.value
-                    break
-                }
+        print("📊 Activity Breakdown (90 days):")
+        for (type, count) in counts.sorted(by: { $0.value > $1.value }) {
+            print("   \(type): \(count)")
+        }
+        
+        return counts.max(by: { $0.value < $1.value })?.key ?? "Ride"
+    }
+    
+    // MARK: - IMPROVED ACWR Trend Calculation
+    
+    private func calculateImprovedACWRTrend(
+        workouts: [WorkoutData],
+        readinessService: PredictiveReadinessService
+    ) -> [ACWRDataPoint] {
+        
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var trend: [ACWRDataPoint] = []
+        
+        // Calculate daily training loads
+        var dailyLoads: [Date: Double] = [:]
+        for workout in workouts {
+            let day = calendar.startOfDay(for: workout.startDate)
+            let load = calculateWorkoutLoad(workout)
+            dailyLoads[day, default: 0] += load
+        }
+        
+        // Calculate ACWR for each of the last 7 days
+        for dayOffset in (0...6).reversed() {
+            guard let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) else {
+                continue
             }
             
-            trends.append(TrendPoint(
-                date: p.date,
-                value: p.value,
-                metric1: p.value,
-                metric2: rhrVal
-            ))
-        }
-        self.weeklyTrends = trends
-    }
-    
-    private func generateSleepVsPower(workouts: [WorkoutData], sleep: [HealthDataPoint]) {
-        var points: [CorrelationPoint] = []
-        for w in workouts {
-            let wDate = Calendar.current.startOfDay(for: w.startDate)
-            
-            // Explicit loop for finding sleep
-            var matchedSleep: HealthDataPoint?
-            for s in sleep {
-                if Calendar.current.isDate(s.date, inSameDayAs: wDate) {
-                    matchedSleep = s
-                    break
+            // Calculate acute load (7 days before target)
+            var acuteSum: Double = 0
+            for i in 0..<7 {
+                if let day = calendar.date(byAdding: .day, value: -i, to: targetDate) {
+                    acuteSum += dailyLoads[day] ?? 0
                 }
             }
+            let acuteLoad = acuteSum / 7.0
             
-            if let s = matchedSleep {
-                // Unwrap optional values safely
-                let sleepVal = s.value
-                let powerVal = w.averagePower ?? 0
-                
-                if powerVal > 0 {
-                    points.append(CorrelationPoint(xValue: sleepVal, yValue: powerVal, date: w.startDate, category: w.workoutType == .cycling ? "Ride" : "Run"))
+            // Calculate chronic load (28 days before target)
+            var chronicSum: Double = 0
+            for i in 0..<28 {
+                if let day = calendar.date(byAdding: .day, value: -i, to: targetDate) {
+                    chronicSum += dailyLoads[day] ?? 0
                 }
             }
+            let chronicLoad = chronicSum / 28.0
+            
+            // Calculate ratio
+            let acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 0
+            
+            trend.append(ACWRDataPoint(date: targetDate, value: acwr))
         }
-        self.sleepVsPowerData = points
+        
+        print("📊 ACWR Trend (7 days):")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "E"
+        for day in trend {
+            print("   \(formatter.string(from: day.date)): \(String(format: "%.2f", day.value))")
+        }
+        
+        return trend
     }
     
-    private func generateNutritionCorrelations(workouts: [WorkoutData], nutrition: [DailyNutrition]) {
-        var highCarbDates: Set<Date> = []
+    private func calculateWorkoutLoad(_ workout: WorkoutData) -> Double {
+        let durationHours = workout.duration / 3600.0
         
-        for entry in nutrition {
-            // totalCarbs is Double (non-optional based on previous logs)
-            if entry.totalCarbs > 300.0 {
-                highCarbDates.insert(Calendar.current.startOfDay(for: entry.date))
-            }
+        let baseLoad: Double
+        switch workout.workoutType {
+        case .running:
+            baseLoad = durationHours * 65
+        case .cycling:
+            baseLoad = durationHours * 75
+        case .swimming:
+            baseLoad = durationHours * 70
+        case .hiking, .walking:
+            baseLoad = durationHours * 30
+        case .functionalStrengthTraining, .traditionalStrengthTraining:
+            baseLoad = durationHours * 50
+        default:
+            baseLoad = durationHours * 50
         }
         
-        var highCarbWorkouts: [WorkoutData] = []
-        for w in workouts {
-            let wDate = Calendar.current.startOfDay(for: w.startDate)
-            if highCarbDates.contains(wDate) {
-                highCarbWorkouts.append(w)
-            }
-        }
-        
-        var totalPower = 0.0
-        for w in highCarbWorkouts {
-            totalPower += (w.averagePower ?? 0)
-        }
-        
-        let count = Double(highCarbWorkouts.count)
-        let avg = count > 0 ? totalPower / count : 0
-        
-        if avg > 0 {
-            self.nutritionCorrelations = [
-                NutritionCorrelation(nutrient: "Carbohydrates", correlationScore: 0.8, insight: "High carb days avg \(Int(avg))W power")
-            ]
-        } else {
-            self.nutritionCorrelations = []
-        }
+        return baseLoad
     }
 }
