@@ -163,7 +163,11 @@ class SyncManager: ObservableObject {
     private func syncRecentData(dataHandler: DataPersistenceActor) async {
         let calendar = Calendar.current
         let endDate = Date()
-        let startDate = calendar.date(byAdding: .day, value: -30, to: endDate)!
+
+        // Start from Jan 1st of current year to bridge the gap with historical backfill
+        let currentYear = calendar.component(.year, from: endDate)
+        let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1))!
+        let startDate = startOfYear
         
         print("🔄 Syncing recent data (last 30 days)...")
         syncProgress = "Updating recent data..."
@@ -240,6 +244,8 @@ class SyncManager: ObservableObject {
                     sleep: snapshot.sleep,
                     hrv: snapshot.hrv,
                     rhr: snapshot.rhr,
+                    steps: snapshot.steps,
+                    weight: snapshot.weight,
                     nutrition: snapshot.nutrition
                 )
                 
@@ -501,10 +507,12 @@ actor DataPersistenceActor {
         sleep: [HealthDataPoint],
         hrv: [HealthDataPoint],
         rhr: [HealthDataPoint],
+        steps: [HealthDataPoint],
+        weight: [HealthDataPoint],
         nutrition: [DailyNutrition]
     ) {
         print("   💾 BATCH SAVE DEBUG:")
-        print("      Input counts: Sleep=\(sleep.count), HRV=\(hrv.count), RHR=\(rhr.count)")
+        print("      Input counts: Sleep=\(sleep.count), HRV=\(hrv.count), Steps=\(steps.count), Weight=\(weight.count)")
         
         // Save workouts (this is working)
         for workout in workouts {
@@ -533,7 +541,7 @@ actor DataPersistenceActor {
         // Save metrics with detailed logging
         print("   🔍 Processing health metrics:")
         
-        for (points, type) in [(hrv, "HRV"), (rhr, "RHR"), (sleep, "Sleep")] {
+        for (points, type) in [(hrv, "HRV"), (rhr, "RHR"), (sleep, "Sleep"), (steps, "Steps"), (weight, "Weight")] {
             print("   📊 Processing \(type): \(points.count) points")
             
             if points.isEmpty {
@@ -586,12 +594,19 @@ actor DataPersistenceActor {
                 let rhrCount = (try? modelContext.fetchCount(
                     FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "RHR" })
                 )) ?? 0
-                
+                let stepsCount = (try? modelContext.fetchCount(
+                    FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "Steps" })
+                )) ?? 0
+                let weightCount = (try? modelContext.fetchCount(
+                    FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "Weight" })
+                )) ?? 0
+
                 print("      📊 Verification counts:")
                 print("         Sleep: \(sleepCount)")
                 print("         HRV: \(hrvCount)")
-                print("         RHR: \(rhrCount)")
-                
+                print("         Steps: \(stepsCount)")
+                print("         Weight: \(weightCount)")
+
             } catch {
                 print("      ❌ SAVE FAILED: \(error)")
                 print("      Error details: \(error.localizedDescription)")

@@ -622,12 +622,12 @@ class HealthKitManager: ObservableObject {
     }
     
     /// Fetches all relevant health metrics for a specific calendar year
-    func fetchYearlySnapshot(year: Int) async throws -> (rhr: [HealthDataPoint], hrv: [HealthDataPoint], sleep: [HealthDataPoint], workouts: [WorkoutData], nutrition: [DailyNutrition]) {
+    func fetchYearlySnapshot(year: Int) async throws -> (rhr: [HealthDataPoint], hrv: [HealthDataPoint], sleep: [HealthDataPoint], steps: [HealthDataPoint], weight: [HealthDataPoint], workouts: [WorkoutData], nutrition: [DailyNutrition]) {
         let calendar = Calendar.current
         let components = DateComponents(year: year, month: 1, day: 1)
         guard let startDate = calendar.date(from: components),
               let endDate = calendar.date(byAdding: .year, value: 1, to: startDate) else {
-            return ([], [], [], [], [])
+            return ([], [], [], [], [], [], [])
         }
         
         print("📅 Fetching HealthKit snapshot for year \(year)...")
@@ -636,10 +636,12 @@ class HealthKitManager: ObservableObject {
         async let rhr = fetchRestingHeartRate(startDate: startDate, endDate: endDate)
         async let hrv = fetchHeartRateVariability(startDate: startDate, endDate: endDate)
         async let sleep = fetchSleepDuration(startDate: startDate, endDate: endDate)
+        async let steps = fetchStepCount(startDate: startDate, endDate: endDate)
+        async let weight = fetchWeight(startDate: startDate, endDate: endDate)
         async let workouts = fetchWorkouts(startDate: startDate, endDate: endDate)
         async let nutrition = fetchNutrition(startDate: startDate, endDate: endDate)
         
-        return try await (rhr, hrv, sleep, workouts, nutrition)
+        return try await (rhr, hrv, sleep, steps, weight, workouts, nutrition)
     }
 
     // MARK: - Power Data Fetching

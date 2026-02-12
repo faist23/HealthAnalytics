@@ -118,12 +118,22 @@ struct HRVCard: View {
                         AxisGridLine().foregroundStyle(.gray.opacity(0.12))
                     }
                 }
+                // Use consistent smart axis logic matching other charts
                 .chartXAxis {
-                    AxisMarks { value in
+                    AxisMarks(values: .stride(by: period.xAxisStride.component, count: period.xAxisStride.count)) { value in
+                        AxisGridLine()
                         if let date = value.as(Date.self) {
                             AxisValueLabel {
-                                Text(date, format: .dateTime.month(.abbreviated).day())
-                                    .font(.caption2)
+                                switch period {
+                                case .week:
+                                    Text(date, format: .dateTime.weekday(.abbreviated))
+                                case .month, .quarter:
+                                    Text(date, format: .dateTime.month(.abbreviated).day())
+                                case .sixMonths, .year:
+                                    Text(date, format: .dateTime.month(.abbreviated))
+                                case .all:
+                                    Text(date, format: .dateTime.year())
+                                }
                             }
                         }
                     }

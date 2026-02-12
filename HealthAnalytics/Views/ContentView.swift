@@ -8,6 +8,21 @@
 import SwiftUI
 import Charts
 
+// MARK: - Smart Axis Logic
+// Extension to centralize x-axis logic for all charts
+extension TimePeriod {
+    var xAxisStride: (component: Calendar.Component, count: Int) {
+        switch self {
+        case .week:      return (.day, 1)
+        case .month:     return (.day, 7)
+        case .quarter:   return (.day, 14) // Every 2 weeks
+        case .sixMonths: return (.month, 1)
+        case .year:      return (.month, 2)
+        case .all:       return (.year, 1)
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var viewModel = DashboardViewModel()
     @Environment(\.colorScheme) var colorScheme
@@ -75,7 +90,7 @@ struct ContentView: View {
                             
                             if !viewModel.weightData.isEmpty {
                                 WeightCard(data: viewModel.weightData, period: viewModel.selectedPeriod)
-                                    .cardStyle(for: .nutrition) // Optional styling
+                                    .cardStyle(for: .nutrition)
                             }
                             
                             if !viewModel.workouts.isEmpty {
@@ -193,11 +208,20 @@ struct RestingHeartRateCard: View {
             .frame(height: 200)
             .chartYScale(domain: .automatic(includesZero: false))
             .chartXAxis {
-                AxisMarks { value in
+                AxisMarks(values: .stride(by: period.xAxisStride.component, count: period.xAxisStride.count)) { value in
+                    AxisGridLine()
                     if let date = value.as(Date.self) {
                         AxisValueLabel {
-                            Text(date, format: .dateTime.month(.abbreviated).day())
-                                .font(.caption2)
+                            switch period {
+                            case .week:
+                                Text(date, format: .dateTime.weekday(.abbreviated))
+                            case .month, .quarter:
+                                Text(date, format: .dateTime.month(.abbreviated).day())
+                            case .sixMonths, .year:
+                                Text(date, format: .dateTime.month(.abbreviated))
+                            case .all:
+                                Text(date, format: .dateTime.year())
+                            }
                         }
                     }
                 }
@@ -303,11 +327,11 @@ struct SleepCard: View {
                 )
                 .foregroundStyle(.blue.gradient)
                 
-                RuleMark(y: .value("Target", 7.0))
+                RuleMark(y: .value("Target", 7.5))
                     .foregroundStyle(.green)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                     .annotation(position: .top, alignment: .trailing) {
-                        Text("7h goal")
+                        Text("7.5h goal")
                             .font(.caption2)
                             .foregroundStyle(.green)
                     }
@@ -315,11 +339,20 @@ struct SleepCard: View {
             .frame(height: 200)
             .chartYScale(domain: 0...10)
             .chartXAxis {
-                AxisMarks(values: .stride(by: period == .week ? .day : .day, count: period == .week ? 1 : period == .month ? 5 : 15)) { value in
+                AxisMarks(values: .stride(by: period.xAxisStride.component, count: period.xAxisStride.count)) { value in
+                    AxisGridLine()
                     if let date = value.as(Date.self) {
                         AxisValueLabel {
-                            Text(date, format: period == .week ? .dateTime.month(.abbreviated).day() : .dateTime.month(.abbreviated))
-                                .font(.caption)
+                            switch period {
+                            case .week:
+                                Text(date, format: .dateTime.weekday(.abbreviated))
+                            case .month, .quarter:
+                                Text(date, format: .dateTime.month(.abbreviated).day())
+                            case .sixMonths, .year:
+                                Text(date, format: .dateTime.month(.abbreviated))
+                            case .all:
+                                Text(date, format: .dateTime.year())
+                            }
                         }
                     }
                 }
@@ -373,11 +406,11 @@ struct StepCountCard: View {
                 )
                 .foregroundStyle(.orange.gradient)
                 
-                RuleMark(y: .value("Goal", 10000))
+                RuleMark(y: .value("Goal", 7000))
                     .foregroundStyle(.green)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                     .annotation(position: .top, alignment: .trailing) {
-                        Text("10k goal")
+                        Text("7k goal")
                             .font(.caption2)
                             .foregroundStyle(.green)
                     }
@@ -385,11 +418,20 @@ struct StepCountCard: View {
             .frame(height: 200)
             .chartYScale(domain: 0...20000)
             .chartXAxis {
-                AxisMarks(values: .stride(by: period == .week ? .day : .day, count: period == .week ? 1 : period == .month ? 5 : 15)) { value in
+                AxisMarks(values: .stride(by: period.xAxisStride.component, count: period.xAxisStride.count)) { value in
+                    AxisGridLine()
                     if let date = value.as(Date.self) {
                         AxisValueLabel {
-                            Text(date, format: period == .week ? .dateTime.month(.abbreviated).day() : .dateTime.month(.abbreviated))
-                                .font(.caption)
+                            switch period {
+                            case .week:
+                                Text(date, format: .dateTime.weekday(.abbreviated))
+                            case .month, .quarter:
+                                Text(date, format: .dateTime.month(.abbreviated).day())
+                            case .sixMonths, .year:
+                                Text(date, format: .dateTime.month(.abbreviated))
+                            case .all:
+                                Text(date, format: .dateTime.year())
+                            }
                         }
                     }
                 }
@@ -673,14 +715,22 @@ struct WeightCard: View {
                 // Smart Scale: Zoom to data range, but give 5lb padding
                 .chartYScale(domain: .automatic(includesZero: false))
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day, count: period == .week ? 1 : period == .month ? 7 : 30)) { value in
-                         if let date = value.as(Date.self) {
-                             AxisValueLabel {
-                                 Text(date, format: period == .week ? .dateTime.weekday() : .dateTime.month(.abbreviated).day())
-                                     .font(.caption2)
-                             }
-                         }
+                    AxisMarks(values: .stride(by: period.xAxisStride.component, count: period.xAxisStride.count)) { value in
                         AxisGridLine()
+                        if let date = value.as(Date.self) {
+                            AxisValueLabel {
+                                switch period {
+                                case .week:
+                                    Text(date, format: .dateTime.weekday(.abbreviated))
+                                case .month, .quarter:
+                                    Text(date, format: .dateTime.month(.abbreviated).day())
+                                case .sixMonths, .year:
+                                    Text(date, format: .dateTime.month(.abbreviated))
+                                case .all:
+                                    Text(date, format: .dateTime.year())
+                                }
+                            }
+                        }
                     }
                 }
             }
