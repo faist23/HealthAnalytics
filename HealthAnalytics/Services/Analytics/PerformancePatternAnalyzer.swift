@@ -54,10 +54,6 @@ struct PerformancePatternAnalyzer {
         }
         
         var readableDescription: String {
-            let days = optimalWindow.lowerBound == optimalWindow.upperBound
-                ? "\(optimalWindow.lowerBound) day"
-                : "\(optimalWindow.lowerBound)-\(optimalWindow.upperBound) days"
-            
             // Format the metric name more clearly
             let metricDisplay: String
             if performanceMetric == "Performance" {
@@ -72,12 +68,27 @@ struct PerformancePatternAnalyzer {
                 metricDisplay = performanceMetric.lowercased()
             }
             
-            // Cap percentage at reasonable value for display
-            let cappedBoost = min(abs(averageBoost), 50)
-            let boost = String(format: "%.0f", cappedBoost)
             let direction = averageBoost > 0 ? "improves" : "decreases"
+                        
+            let timingDescription: String
             
-            return "Your \(metricDisplay) \(direction) by \(boost)% when done \(days) after \(trigger.description)"
+            if optimalWindow.lowerBound == 0 && optimalWindow.upperBound == 0 {
+                // It's the same day / immediate effect
+                // e.g., "after 7+ hours of sleep"
+                timingDescription = "after \(trigger.description)"
+            } else if optimalWindow.lowerBound == 1 && optimalWindow.upperBound == 1 {
+                // Next day effect
+                // e.g., "the day after a rest day"
+                timingDescription = "the day after \(trigger.description)"
+            } else {
+                // Range
+                let days = optimalWindow.lowerBound == optimalWindow.upperBound
+                ? "\(optimalWindow.lowerBound) days"
+                : "\(optimalWindow.lowerBound)-\(optimalWindow.upperBound) days"
+                timingDescription = "\(days) after \(trigger.description)"
+            }
+            
+            return "Your \(metricDisplay) \(direction) \(timingDescription)"
         }
     }
     
