@@ -1,8 +1,8 @@
 //
-//  ReadinessView.swift (UPDATED - Uses existing PredictionInsightCard.swift)
+//  ReadinessView.swift
 //  HealthAnalytics
 //
-//  Properly integrated with SwiftData and your existing components
+//  Properly integrated with SwiftData and intent-aware readiness
 //
 
 import SwiftUI
@@ -14,7 +14,8 @@ struct ReadinessView: View {
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
     @ObservedObject var syncManager = SyncManager.shared
-    
+    @Query private var intentLabels: [StoredIntentLabel]
+
     var body: some View {
         ZStack {
             TabBackgroundColor.recovery(for: colorScheme)
@@ -38,11 +39,9 @@ struct ReadinessView: View {
             }
         }
         .onAppear {
-            // Configure on appear
             configureViewModel()
         }
         .onChange(of: modelContext) { _, _ in
-            // Reconfigure if context changes
             configureViewModel()
         }
     }
@@ -51,7 +50,7 @@ struct ReadinessView: View {
         if viewModel.modelContainer == nil {
             viewModel.configure(container: modelContext.container)
             Task {
-                await viewModel.analyze()
+                await viewModel.analyze(modelContext: modelContext)
             }
         }
     }
@@ -84,11 +83,16 @@ struct ReadinessView: View {
                             .cardStyle(for: .recovery)
                     }
                     
+                    // Intent-Aware Readiness - Shows what you're ready for TODAY
+                    if let assessment = viewModel.intentAwareAssessment {
+                        EnhancedIntentReadinessCard(assessment: assessment)
+                    }
+                    
                     // Score Breakdown
                     ScoreBreakdownCard(breakdown: readiness.breakdown)
                         .cardStyle(for: .recovery)
                     
-                    // ML Prediction - Uses your existing PredictionInsightCard.swift
+                    // ML Prediction
                     if let prediction = viewModel.mlPrediction,
                        let weights = viewModel.mlFeatureWeights {
                         PredictionInsightCard(
@@ -155,7 +159,7 @@ struct ReadinessView: View {
     private var refreshButton: some View {
         Button {
             Task {
-                await viewModel.analyze()
+                await viewModel.analyze(modelContext: modelContext)
             }
         } label: {
             Image(systemName: "arrow.clockwise")
@@ -236,7 +240,7 @@ struct DailyInstructionCard: View {
     }
 }
 
-// MARK: - Hero Readiness Score (Keep from original)
+// MARK: - Hero Readiness Score
 
 struct ReadinessScoreHero: View {
     let readiness: ReadinessAnalyzer.ReadinessScore
@@ -252,12 +256,10 @@ struct ReadinessScoreHero: View {
         VStack(spacing: 20) {
             // Main Score Circle
             ZStack {
-                // Background ring
                 Circle()
                     .stroke(scoreColor.opacity(0.2), lineWidth: 20)
                     .frame(width: 200, height: 200)
                 
-                // Progress ring
                 Circle()
                     .trim(from: 0, to: CGFloat(readiness.score) / 100.0)
                     .stroke(
@@ -268,7 +270,6 @@ struct ReadinessScoreHero: View {
                     .rotationEffect(.degrees(-90))
                     .animation(.spring(duration: 1.0), value: readiness.score)
                 
-                // Score text
                 VStack(spacing: 4) {
                     Text("\(readiness.score)")
                         .font(.system(size: 72, weight: .bold, design: .rounded))
@@ -356,7 +357,7 @@ struct ReadinessScoreHero: View {
     }
 }
 
-// MARK: - Form Indicator Card (Keep from original)
+// MARK: - Form Indicator Card
 
 struct FormIndicatorCard: View {
     let form: ReadinessAnalyzer.FormIndicator
@@ -439,7 +440,7 @@ struct FormIndicatorCard: View {
     }
 }
 
-// MARK: - Score Breakdown Card (Keep from original)
+// MARK: - Score Breakdown Card
 
 struct ScoreBreakdownCard: View {
     let breakdown: ReadinessAnalyzer.ScoreBreakdown
@@ -527,7 +528,7 @@ struct BreakdownRow: View {
     }
 }
 
-// MARK: - Performance Window Card (Keep from original)
+// MARK: - Performance Window Card
 
 struct PerformanceWindowCard: View {
     let window: PerformancePatternAnalyzer.PerformanceWindow
@@ -575,7 +576,7 @@ struct PerformanceWindowCard: View {
     }
 }
 
-// MARK: - Optimal Timing Card (Keep from original)
+// MARK: - Optimal Timing Card
 
 struct OptimalTimingCard: View {
     let timing: PerformancePatternAnalyzer.OptimalTiming
@@ -607,7 +608,7 @@ struct OptimalTimingCard: View {
     }
 }
 
-// MARK: - Workout Sequence Card (Keep from original)
+// MARK: - Workout Sequence Card
 
 struct WorkoutSequenceCard: View {
     let sequence: PerformancePatternAnalyzer.WorkoutSequence
@@ -643,7 +644,7 @@ struct WorkoutSequenceCard: View {
     }
 }
 
-// MARK: - Section Header (Keep from original)
+// MARK: - Section Header
 
 struct SectionHeader: View {
     let title: String
@@ -664,7 +665,7 @@ struct SectionHeader: View {
     }
 }
 
-// MARK: - Empty State (Keep from original)
+// MARK: - Empty State
 
 struct EmptyReadinessView: View {
     var body: some View {
@@ -695,6 +696,6 @@ struct EmptyReadinessView: View {
 #Preview {
     NavigationStack {
         ReadinessView()
-            .modelContainer(for: [StoredWorkout.self, StoredHealthMetric.self, StoredNutrition.self])
+            .modelContainer(for: [StoredWorkout.self, StoredHealthMetric.self, StoredNutrition.self, StoredIntentLabel.self])
     }
 }

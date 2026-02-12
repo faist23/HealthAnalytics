@@ -101,6 +101,13 @@ struct SettingsView: View {
                         Text("Deletes all duplicate workouts and re-syncs from scratch.")
                             .font(.caption)
                         .foregroundStyle(.secondary)                    }
+ 
+                    NavigationLink {
+                        ActivityIntentLabelerView()
+                    } label: {
+                        Label("Label Workouts for ML", systemImage: "brain.head.profile")
+                    }
+                    
                     .padding()
                     .cardStyle(for: .info)
                     

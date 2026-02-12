@@ -17,7 +17,8 @@ public enum HealthDataContainer {
             CachedAnalysis.self,
             StoredWorkout.self,
             StoredHealthMetric.self,
-            StoredNutrition.self
+            StoredNutrition.self,
+            StoredIntentLabel.self
         ])
         
 /*        let appGroupID = "group.com.ridepro.HealthAnalytics"

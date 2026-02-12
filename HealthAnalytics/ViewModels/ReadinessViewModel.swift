@@ -24,7 +24,9 @@ class ReadinessViewModel: ObservableObject {
     @Published var mlError: String?
     @Published var isLoading = false
     @Published var errorMessage: String?
-    
+    @Published var intentAwareAssessment: IntentAwareReadinessService.EnhancedReadinessAssessment?
+    private let intentAwareService = IntentAwareReadinessService()
+
     // ML Training State
     private var trainedModels: [PerformancePredictor.TrainedModel] = []
     
@@ -40,7 +42,7 @@ class ReadinessViewModel: ObservableObject {
     // MARK: - Main Analysis
     
     @MainActor
-    func analyze() async {
+    func analyze(modelContext: ModelContext) async {
         guard let container = modelContainer else {
             errorMessage = "Database not configured"
             return
@@ -161,6 +163,17 @@ class ReadinessViewModel: ObservableObject {
                 formIndicator = generateFormIndicator(from: readiness)
             }
             
+            // Fetch intent labels
+            let intentLabels = try await fetchIntentLabels(modelContext: modelContext)
+            
+            // Calculate intent-aware readiness
+            calculateIntentAwareReadiness(
+                workouts: storedWorkouts,
+                labels: intentLabels,
+                sleep: sleepData,
+                hrv: hrvData
+            )
+
             // Pattern analysis
             let patternAnalyzer = PerformancePatternAnalyzer()
             performanceWindows = patternAnalyzer.discoverPerformanceWindows(
@@ -212,6 +225,32 @@ class ReadinessViewModel: ObservableObject {
         }
         
         isLoading = false
+    }
+    
+    func calculateIntentAwareReadiness(
+        workouts: [StoredWorkout],
+        labels: [StoredIntentLabel],
+        sleep: [HealthDataPoint],
+        hrv: [HealthDataPoint]
+    ) {
+        // Only calculate if we have labeled workouts
+        guard !labels.isEmpty else {
+            intentAwareAssessment = nil
+            return
+        }
+        
+        intentAwareAssessment = intentAwareService.calculateEnhancedReadiness(
+            workouts: workouts,
+            labels: labels,
+            sleep: sleep,
+            hrv: hrv
+        )
+    }
+    
+    // Helper to fetch labels
+    private func fetchIntentLabels(modelContext: ModelContext) async throws -> [StoredIntentLabel] {
+        let descriptor = FetchDescriptor<StoredIntentLabel>()
+        return try modelContext.fetch(descriptor)
     }
     
     // MARK: - Smart Activity Detection

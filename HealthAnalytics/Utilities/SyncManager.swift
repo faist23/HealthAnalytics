@@ -411,6 +411,7 @@ actor DataPersistenceActor {
         try? modelContext.delete(model: StoredWorkout.self)
         try? modelContext.delete(model: StoredHealthMetric.self)
         try? modelContext.delete(model: StoredNutrition.self)
+        try? modelContext.delete(model: StoredIntentLabel.self)
         try? modelContext.save()
         print("🗑️ All data deleted")
     }
