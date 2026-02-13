@@ -183,9 +183,26 @@ class SyncManager: ObservableObject {
             
             var stravaActivities: [StravaImportData] = []
             if stravaManager.isAuthenticated {
-                if let activities = try? await stravaManager.fetchActivities(page: 1, perPage: 100) {
-                    stravaActivities = activities.compactMap { mapStravaActivity($0) }
+                var allActivities: [StravaActivity] = []
+                var page = 1
+                var keepFetching = true
+                
+                while keepFetching {
+                    if let batch = try? await stravaManager.fetchActivities(page: page, perPage: 200) {
+                        if batch.isEmpty {
+                            keepFetching = false
+                        } else {
+                            allActivities.append(contentsOf: batch)
+                            print("   📥 Fetched page \(page): \(batch.count) activities (total: \(allActivities.count))")
+                            page += 1
+                        }
+                    } else {
+                        keepFetching = false
+                    }
                 }
+                
+                stravaActivities = allActivities.compactMap { mapStravaActivity($0) }
+                print("   ✅ Total Strava activities fetched: \(stravaActivities.count)")
             }
             
             let data = try await (
@@ -233,28 +250,25 @@ class SyncManager: ObservableObject {
             let year = startYear + yearOffset
             
             print("   📅 Backfilling year \(year)...")
-            backfillProgress = Double(yearOffset) / Double(years)
-            syncProgress = "Processing \(year)..."
             
-            do {
-                let snapshot = try await healthKitManager.fetchYearlySnapshot(year: year)
-                
-                await dataHandler.appendHistoricalBatch(
-                    workouts: snapshot.workouts,
-                    sleep: snapshot.sleep,
-                    hrv: snapshot.hrv,
-                    rhr: snapshot.rhr,
-                    steps: snapshot.steps,
-                    weight: snapshot.weight,
-                    nutrition: snapshot.nutrition
-                )
-                
-                print("      ✅ Year \(year) complete")
-                
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                
-            } catch {
-                print("      ❌ Year \(year) failed: \(error)")
+            // Add detailed Strava logging
+            if stravaManager.isAuthenticated {
+                do {
+                    let activities = try await stravaManager.fetchActivities(page: 1, perPage: 200)
+                    let yearActivities = activities.filter { activity in
+                        guard let date = activity.startDateFormatted else { return false }
+                        return Calendar.current.component(.year, from: date) == year
+                    }
+                    print("      🚴 Strava activities in \(year): \(yearActivities.count)")
+                    
+                    if !yearActivities.isEmpty {
+                        let withHR = yearActivities.filter { $0.averageHeartrate != nil }
+                        let withPower = yearActivities.filter { $0.averageWatts != nil }
+                        print("         With HR: \(withHR.count), With Power: \(withPower.count)")
+                    }
+                } catch {
+                    print("      ❌ Strava fetch failed for \(year): \(error)")
+                }
             }
         }
         

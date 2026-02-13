@@ -328,7 +328,101 @@ struct TemporalModelingService {
     // MARK: - Longitudinal Analysis
     
     private func analyzeLongitudinal(workouts: [WorkoutData]) -> TemporalAnalysis.LongitudinalAnalysis {
-        let sortedWorkouts = workouts.sorted { $0.startDate < $1.startDate }
+        // Determine primary metric type
+        let hasPower = workouts.contains { $0.averagePower != nil && $0.averagePower! > 0 }
+        
+        let relevantWorkouts: [WorkoutData]
+        let metricType: String
+        
+        if hasPower {
+            // Get all workouts with power AND heart rate
+            let powerHRWorkouts = workouts.filter { workout in
+                guard let power = workout.averagePower, power > 0 else { return false }
+                guard let hr = workout.averageHeartRate, hr > 0 else { return false }
+                return true
+            }
+            
+            // Calculate athlete's typical HR distribution
+            let heartRates = powerHRWorkouts.compactMap { $0.averageHeartRate }
+            
+            if heartRates.isEmpty {
+                // Fallback if no HR data - use all power workouts
+                relevantWorkouts = workouts.filter { $0.averagePower != nil && $0.averagePower! > 0 }
+                metricType = "Power (W)"
+                print("\n🔍 LONGITUDINAL DEBUG:")
+                print("   Total workouts: \(workouts.count)")
+                print("   Metric type: \(metricType)")
+                print("   Relevant workouts: \(relevantWorkouts.count)")
+                print("   ⚠️ No HR data - using all power workouts")
+            } else {
+                // Find 60th percentile HR - focuses on harder efforts
+                let sortedHRs = heartRates.sorted()
+                let percentile60Index = Int(Double(sortedHRs.count) * 0.60)
+                let hrThreshold = sortedHRs[percentile60Index]
+                
+                // Only analyze workouts above 60th percentile HR
+                // This automatically filters out easy rides while adapting to athlete
+                relevantWorkouts = powerHRWorkouts.filter { workout in
+                    guard let hr = workout.averageHeartRate else { return false }
+                    return hr >= hrThreshold
+                }
+                
+                metricType = "Power (W)"
+                
+                print("\n🔍 LONGITUDINAL DEBUG:")
+                print("   Total workouts: \(workouts.count)")
+                print("   Workouts with Power + HR: \(powerHRWorkouts.count)")
+                print("   60th percentile HR: \(Int(hrThreshold)) bpm")
+                print("   Metric type: \(metricType)")
+                print("   Relevant workouts (≥60th %ile HR): \(relevantWorkouts.count)")
+            }
+            
+        } else {
+            // Speed-based for runners/swimmers - also filter by HR if available
+            let speedHRWorkouts = workouts.filter { workout in
+                guard let dist = workout.totalDistance, dist > 0, workout.duration > 0 else { return false }
+                guard let hr = workout.averageHeartRate, hr > 0 else { return false }
+                return true
+            }
+            
+            if !speedHRWorkouts.isEmpty {
+                // Apply same 60th percentile HR filter for runners/swimmers
+                let heartRates = speedHRWorkouts.compactMap { $0.averageHeartRate }
+                let sortedHRs = heartRates.sorted()
+                let percentile60Index = Int(Double(sortedHRs.count) * 0.60)
+                let hrThreshold = sortedHRs[percentile60Index]
+                
+                relevantWorkouts = speedHRWorkouts.filter { workout in
+                    guard let hr = workout.averageHeartRate else { return false }
+                    return hr >= hrThreshold
+                }
+                
+                metricType = "Speed (mph)"
+                
+                print("\n🔍 LONGITUDINAL DEBUG:")
+                print("   Total workouts: \(workouts.count)")
+                print("   Workouts with Speed + HR: \(speedHRWorkouts.count)")
+                print("   60th percentile HR: \(Int(hrThreshold)) bpm")
+                print("   Metric type: \(metricType)")
+                print("   Relevant workouts (≥60th %ile HR): \(relevantWorkouts.count)")
+            } else {
+                // Fallback - use all workouts with speed
+                relevantWorkouts = workouts.filter { workout in
+                    guard let dist = workout.totalDistance, dist > 0, workout.duration > 0 else { return false }
+                    return true
+                }
+                
+                metricType = "Speed (mph)"
+                
+                print("\n🔍 LONGITUDINAL DEBUG:")
+                print("   Total workouts: \(workouts.count)")
+                print("   Metric type: \(metricType)")
+                print("   Relevant workouts: \(relevantWorkouts.count)")
+                print("   ⚠️ No HR data - using all workouts")
+            }
+        }
+        
+        let sortedWorkouts = relevantWorkouts.sorted { $0.startDate < $1.startDate }
         
         guard let firstDate = sortedWorkouts.first?.startDate,
               let lastDate = sortedWorkouts.last?.startDate else {
@@ -346,23 +440,50 @@ struct TemporalModelingService {
         print("📈 Longitudinal Analysis:")
         print("   Timespan: \(years) years")
         
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        print("   First workout: \(formatter.string(from: firstDate))")
+        print("   Last workout: \(formatter.string(from: lastDate))")
+        
         // Split into early vs late periods
         let midpoint = firstDate.addingTimeInterval(lastDate.timeIntervalSince(firstDate) / 2)
         
         let earlyWorkouts = sortedWorkouts.filter { $0.startDate < midpoint }
         let lateWorkouts = sortedWorkouts.filter { $0.startDate >= midpoint }
         
+        print("\n   Early period workouts: \(earlyWorkouts.count)")
+        print("   Late period workouts: \(lateWorkouts.count)")
+        
         let earlyPerf = extractPerformanceMetrics(from: earlyWorkouts)
         let latePerf = extractPerformanceMetrics(from: lateWorkouts)
+        
+        // DEBUG: Show what we're comparing
+        print("\n   EARLY PERIOD METRICS:")
+        if let power = earlyPerf.power {
+            print("      Power: \(String(format: "%.1fW", power))")
+        }
+        if let speed = earlyPerf.speed {
+            print("      Speed: \(String(format: "%.1f mph", speed))")
+        }
+        print("      Primary metric: \(earlyPerf.primary != nil ? String(format: "%.1f", earlyPerf.primary!) : "none")")
+        
+        print("\n   LATE PERIOD METRICS:")
+        if let power = latePerf.power {
+            print("      Power: \(String(format: "%.1fW", power))")
+        }
+        if let speed = latePerf.speed {
+            print("      Speed: \(String(format: "%.1f mph", speed))")
+        }
+        print("      Primary metric: \(latePerf.primary != nil ? String(format: "%.1f", latePerf.primary!) : "none")")
         
         // Calculate overall trend (only if comparing same metric type)
         let trend: TemporalAnalysis.LongitudinalAnalysis.LongTermTrend
         let growthRate: Double
-
+        
         // Only compare if we have the same metric type in both periods
         let canCompare = (earlyPerf.power != nil && latePerf.power != nil) ||
                          (earlyPerf.power == nil && latePerf.power == nil)
-
+        
         if canCompare,
            let early = earlyPerf.primary,
            let late = latePerf.primary,
@@ -373,10 +494,12 @@ struct TemporalModelingService {
             let cappedChange = min(max(totalChange, -90), 200)
             growthRate = cappedChange / Double(years)
             
-            print("   Early avg: \(String(format: "%.1f", early))")
-            print("   Late avg: \(String(format: "%.1f", late))")
-            print("   Total change: \(String(format: "%+.1f%%", totalChange))")
-            print("   Annual growth: \(String(format: "%+.1f%%", growthRate))")
+            print("\n   COMPARISON:")
+            print("      Early avg: \(String(format: "%.1f", early))")
+            print("      Late avg: \(String(format: "%.1f", late))")
+            print("      Total change: \(String(format: "%+.1f%%", totalChange))")
+            print("      Capped change: \(String(format: "%+.1f%%", cappedChange))")
+            print("      Annual growth: \(String(format: "%+.1f%%", growthRate))")
             
             if cappedChange > 10 {
                 trend = .strengthening(percentChange: cappedChange)
@@ -386,7 +509,7 @@ struct TemporalModelingService {
                 trend = .plateaued
             }
         } else {
-            print("   ⚠️ Cannot compare - metric type changed over time")
+            print("\n   ⚠️ Cannot compare - metric type changed over time")
             trend = .plateaued
             growthRate = 0
         }
@@ -394,9 +517,6 @@ struct TemporalModelingService {
         // Find peak periods (rolling 90-day windows)
         let peakPeriods = findPeakPeriods(workouts: sortedWorkouts)
         print("   Peak periods found: \(peakPeriods.count)")
-        
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
         
         return TemporalAnalysis.LongitudinalAnalysis(
             overallTrend: trend,

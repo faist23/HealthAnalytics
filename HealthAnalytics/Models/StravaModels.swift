@@ -115,4 +115,50 @@ struct StravaActivity: Codable, Identifiable {
         let formatter = ISO8601DateFormatter()
         return formatter.date(from: startDate)
     }
+    
+    func withAverageHR(_ hr: Double) -> StravaActivity {
+        // Create new instance with updated HR
+        // This is a workaround since StravaActivity is immutable
+        return StravaActivity(
+            id: id,
+            name: name,
+            type: type,
+            startDate: startDate,
+            distance: distance,
+            movingTime: movingTime,
+            elapsedTime: elapsedTime,
+            totalElevationGain: totalElevationGain,
+            averageSpeed: averageSpeed,
+            maxSpeed: maxSpeed,
+            averageHeartrate: hr,  // ← Updated
+            maxHeartrate: maxHeartrate,
+            kilojoules: kilojoules,
+            calories: calories,
+            averageWatts: averageWatts,
+            maxWatts: maxWatts,
+            sufferScore: sufferScore
+        )
+    }
+
+    func withAveragePower(_ power: Double) -> StravaActivity {
+        return StravaActivity(
+            id: id,
+            name: name,
+            type: type,
+            startDate: startDate,
+            distance: distance,
+            movingTime: movingTime,
+            elapsedTime: elapsedTime,
+            totalElevationGain: totalElevationGain,
+            averageSpeed: averageSpeed,
+            maxSpeed: maxSpeed,
+            averageHeartrate: averageHeartrate,
+            maxHeartrate: maxHeartrate,
+            kilojoules: kilojoules,
+            calories: calories,
+            averageWatts: power,
+            maxWatts: maxWatts,
+            sufferScore: sufferScore
+        )
+    }
 }

@@ -242,6 +242,57 @@ class StravaManager: ObservableObject {
         
         saveTokensToKeychain()
     }
+    
+    /// Fetch detailed activity with streams (HR, power, etc.)
+    func fetchActivityDetails(activityId: Int) async throws -> StravaActivityDetail {
+        try await refreshTokenIfNeeded()
+        
+        guard let accessToken = accessToken else {
+            throw StravaError.notAuthenticated
+        }
+        
+        // Fetch activity summary
+        let activityURL = URL(string: "\(StravaConfig.apiBaseURL)/activities/\(activityId)")!
+        var activityRequest = URLRequest(url: activityURL)
+        activityRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        
+        let (activityData, _) = try await URLSession.shared.data(for: activityRequest)
+        var activity = try JSONDecoder().decode(StravaActivity.self, from: activityData)
+        
+        // If summary doesn't have HR/power, fetch streams
+        if activity.averageHeartrate == nil || activity.averageWatts == nil {
+            let streamsURL = URL(string: "\(StravaConfig.apiBaseURL)/activities/\(activityId)/streams?keys=heartrate,watts&key_by_type=true")!
+            var streamsRequest = URLRequest(url: streamsURL)
+            streamsRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            
+            let (streamsData, _) = try await URLSession.shared.data(for: streamsRequest)
+            let streams = try JSONDecoder().decode(StravaStreams.self, from: streamsData)
+            
+            // Calculate averages from streams if missing
+            if activity.averageHeartrate == nil, let hrData = streams.heartrate?.data, !hrData.isEmpty {
+                activity = activity.withAverageHR(hrData.reduce(0, +) / Double(hrData.count))
+            }
+            
+            if activity.averageWatts == nil, let powerData = streams.watts?.data, !powerData.isEmpty {
+                activity = activity.withAveragePower(powerData.reduce(0, +) / Double(powerData.count))
+            }
+        }
+        
+        return StravaActivityDetail(activity: activity)
+    }
+
+    struct StravaStreams: Codable {
+        let heartrate: StreamData?
+        let watts: StreamData?
+        
+        struct StreamData: Codable {
+            let data: [Double]
+        }
+    }
+
+    struct StravaActivityDetail {
+        let activity: StravaActivity
+    }
 }
 
 enum StravaError: Error, LocalizedError {

@@ -89,6 +89,26 @@ class ReadinessViewModel: ObservableObject {
             
             print("\n📊 Data loaded: \(workouts.count) workouts, \(sleepData.count) sleep, \(hrvData.count) HRV\n")
             
+            // RIGHT AFTER "Data loaded" print statement, add:
+            print("\n🔍 HR DATA AUDIT:")
+            let ridesWithHR = workouts.filter { workout in
+                workout.workoutType == .cycling && workout.averageHeartRate != nil && workout.averageHeartRate! > 0
+            }
+            print("   Total cycling workouts: \(workouts.filter { $0.workoutType == .cycling }.count)")
+            print("   Rides WITH HR: \(ridesWithHR.count)")
+
+            // Show date range of rides with HR
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            if let earliest = ridesWithHR.min(by: { $0.startDate < $1.startDate }) {
+                print("   Earliest ride with HR: \(formatter.string(from: earliest.startDate))")
+            }
+            if let latest = ridesWithHR.max(by: { $0.startDate < $1.startDate }) {
+                print("   Latest ride with HR: \(formatter.string(from: latest.startDate))")
+            }
+
+
+
             let primaryActivity = determinePrimaryActivity(from: workouts)
             
             // PROFILE: Readiness Analysis
