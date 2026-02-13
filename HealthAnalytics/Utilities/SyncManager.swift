@@ -39,6 +39,13 @@ class SyncManager: ObservableObject {
     
     /// Intelligently syncs only what's needed
     func performSmartSync() async {
+        print("🔍 SYNC DEBUG:")
+        print("   lastSyncDate: \(lastSyncDate?.formatted() ?? "nil")")
+        if let last = lastSyncDate {
+            print("   Time since last: \(Date().timeIntervalSince(last)) seconds")
+            print("   Should skip: \(Date().timeIntervalSince(last) < 3600)")
+        }
+        
         // Prevent redundant syncs
         if let last = lastSyncDate, Date().timeIntervalSince(last) < 3600 {
             print("🛡️ Sync Guard: Synced \(Int(Date().timeIntervalSince(last)/60))m ago. Skipping.")

@@ -26,10 +26,11 @@ class ReadinessViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
     @Published var temporalAnalysis: TemporalModelingService.TemporalAnalysis?
-    private let intentAwareService = EnhancedIntentAwareReadinessService()
+    @Published var loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
 
     // ML Training State
     private var trainedModels: [PerformancePredictor.TrainedModel] = []
+    private let intentAwareService = EnhancedIntentAwareReadinessService()
     private var cachedPatterns: [PerformancePatternAnalyzer.PerformanceWindow]?
     private var lastPatternDiscovery: Date?
     private var lastMLTraining: Date?
@@ -106,8 +107,6 @@ class ReadinessViewModel: ObservableObject {
             if let latest = ridesWithHR.max(by: { $0.startDate < $1.startDate }) {
                 print("   Latest ride with HR: \(formatter.string(from: latest.startDate))")
             }
-
-
 
             let primaryActivity = determinePrimaryActivity(from: workouts)
             
@@ -222,6 +221,26 @@ class ReadinessViewModel: ObservableObject {
                 )
             }
 
+            // PROFILE: Training Load Visualization
+            PerformanceProfiler.measure("📊 Load Visualization") {
+                let loadService = TrainingLoadVisualizationService()
+                loadVisualization = loadService.generateLoadVisualization(
+                    workouts: workouts,
+                    labels: intentLabels,
+                    daysBack: 90
+                )
+            }
+            
+            // PROFILE: Training Load Visualization
+            PerformanceProfiler.measure("📊 Load Visualization") {
+                let loadService = TrainingLoadVisualizationService()
+                loadVisualization = loadService.generateLoadVisualization(
+                    workouts: workouts,
+                    labels: intentLabels,
+                    daysBack: 90
+                )
+            }
+            
             // PROFILE: Daily Instruction
             PerformanceProfiler.measure("📝 Daily Instruction") {
                 generateDailyInstruction(

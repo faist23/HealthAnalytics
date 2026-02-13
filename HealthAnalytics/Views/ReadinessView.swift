@@ -101,6 +101,17 @@ struct ReadinessView: View {
                     if let temporal = viewModel.temporalAnalysis {
                         TemporalInsightsCard(analysis: temporal)
                     }
+
+                    // Training Load Visualization
+                    if let loadViz = viewModel.loadVisualization {
+                        NavigationLink {
+                            TrainingLoadVisualizationView(data: loadViz)
+                        } label: {
+                            TrainingLoadPreviewCard(summary: loadViz.summary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     // Score Breakdown
                     ScoreBreakdownCard(breakdown: readiness.breakdown)
                         .cardStyle(for: .recovery)
@@ -705,6 +716,104 @@ struct EmptyReadinessView: View {
         .padding()
     }
 }
+
+// MARK: - Training Load Preview Card
+
+struct TrainingLoadPreviewCard: View {
+    let summary: TrainingLoadVisualizationService.LoadVisualizationData.LoadSummary
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Training Load")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    Text("Last 90 days")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.secondary)
+            }
+            
+            Divider()
+            
+            HStack(spacing: 20) {
+                // Current ACWR
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("ACWR")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    HStack(spacing: 4) {
+                        Text(String(format: "%.2f", summary.currentACWR))
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(statusColor)
+                        
+                        Text(statusEmoji)
+                            .font(.title3)
+                    }
+                }
+                
+                Spacer()
+                
+                // Current status
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("Status")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(summary.currentStatus)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(statusColor)
+                }
+            }
+            
+            // Quick recommendation
+            HStack(spacing: 8) {
+                Image(systemName: "lightbulb.fill")
+                    .font(.caption)
+                    .foregroundStyle(.yellow)
+                
+                Text(summary.recommendation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(20)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private var statusColor: Color {
+        switch summary.currentStatus {
+        case "Optimal": return .green
+        case "Building": return .orange
+        case "Overreaching": return .red
+        case "Detraining": return .blue
+        default: return .gray
+        }
+    }
+    
+    private var statusEmoji: String {
+        switch summary.currentStatus {
+        case "Optimal": return "✅"
+        case "Building": return "⚠️"
+        case "Overreaching": return "🚨"
+        case "Detraining": return "📉"
+        default: return "➖"
+        }
+    }
+}
+
 
 #Preview {
     NavigationStack {
