@@ -171,13 +171,13 @@ class SyncManager: ObservableObject {
         let calendar = Calendar.current
         let endDate = Date()
 
-        // Start from Jan 1st of current year to bridge the gap with historical backfill
-        let currentYear = calendar.component(.year, from: endDate)
-        let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1))!
-        let startDate = startOfYear
+        // Use data window cutoff date if set, otherwise use current year
+        let startDate = DataWindowManager.getDataSyncStartDate()
         
-        print("🔄 Syncing recent data (last 30 days)...")
-        syncProgress = "Updating recent data..."
+        let yearsBack = DataWindowManager.getYearsToBackfill()
+        let windowDescription = yearsBack == 10 ? "all historical data" : "last \(yearsBack) years"
+        print("🔄 Syncing \(windowDescription)...")
+        syncProgress = "Updating \(windowDescription)..."
         
         do {
             async let rhr = healthKitManager.fetchRestingHeartRate(startDate: startDate, endDate: endDate)
@@ -258,25 +258,9 @@ class SyncManager: ObservableObject {
             
             print("   📅 Backfilling year \(year)...")
             
-            // Add detailed Strava logging
-            if stravaManager.isAuthenticated {
-                do {
-                    let activities = try await stravaManager.fetchActivities(page: 1, perPage: 200)
-                    let yearActivities = activities.filter { activity in
-                        guard let date = activity.startDateFormatted else { return false }
-                        return Calendar.current.component(.year, from: date) == year
-                    }
-                    print("      🚴 Strava activities in \(year): \(yearActivities.count)")
-                    
-                    if !yearActivities.isEmpty {
-                        let withHR = yearActivities.filter { $0.averageHeartrate != nil }
-                        let withPower = yearActivities.filter { $0.averageWatts != nil }
-                        print("         With HR: \(withHR.count), With Power: \(withPower.count)")
-                    }
-                } catch {
-                    print("      ❌ Strava fetch failed for \(year): \(error)")
-                }
-            }
+            // Note: Historical backfill is intentionally minimal
+            // All HealthKit data is already fetched in syncRecentData which pulls from current year start
+            // This stub exists for future expansion if needed
         }
         
         isBackfillingHistory = false

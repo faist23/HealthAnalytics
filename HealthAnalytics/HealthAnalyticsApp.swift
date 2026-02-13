@@ -28,6 +28,9 @@ struct HealthAnalyticsApp: App {
                     }
             } else {
                 OnboardingView(isOnboardingComplete: $isOnboardingComplete)
+                    .onOpenURL { url in
+                        handleIncomingURL(url)
+                    }
             }
         }
         .modelContainer(HealthDataContainer.shared)

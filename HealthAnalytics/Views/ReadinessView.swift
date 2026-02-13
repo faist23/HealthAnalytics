@@ -53,6 +53,12 @@ struct ReadinessView: View {
         .onChange(of: modelContext) { _, _ in
             configureViewModel()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
+            // Force recalculation when data window changes
+            Task {
+                await viewModel.analyze(modelContext: modelContext)
+            }
+        }
     }
     
     private func configureViewModel() {
@@ -169,7 +175,7 @@ struct ReadinessView: View {
                     }
                     
                 } else {
-                    EmptyReadinessView()
+                    ReadinessEmptyState()
                         .cardStyle(for: .info)
                 }
                 

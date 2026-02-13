@@ -54,10 +54,37 @@ class InsightsViewModel: ObservableObject {
         do {
             let context = container.mainContext
             
-            // Fetch all data
-            let storedWorkouts = try context.fetch(FetchDescriptor<StoredWorkout>())
-            let storedHealthMetrics = try context.fetch(FetchDescriptor<StoredHealthMetric>())
-            let storedNutrition = try context.fetch(FetchDescriptor<StoredNutrition>())
+            // Fetch all data (respecting data window)
+            var workoutDescriptor: FetchDescriptor<StoredWorkout>
+            var metricDescriptor: FetchDescriptor<StoredHealthMetric>
+            var nutritionDescriptor: FetchDescriptor<StoredNutrition>
+            
+            // Apply data window filter if set
+            if let cutoffDate = DataWindowManager.getCutoffDate() {
+                workoutDescriptor = FetchDescriptor<StoredWorkout>(
+                    predicate: #Predicate { workout in
+                        workout.startDate >= cutoffDate
+                    }
+                )
+                metricDescriptor = FetchDescriptor<StoredHealthMetric>(
+                    predicate: #Predicate { metric in
+                        metric.date >= cutoffDate
+                    }
+                )
+                nutritionDescriptor = FetchDescriptor<StoredNutrition>(
+                    predicate: #Predicate { nutrition in
+                        nutrition.date >= cutoffDate
+                    }
+                )
+            } else {
+                workoutDescriptor = FetchDescriptor<StoredWorkout>()
+                metricDescriptor = FetchDescriptor<StoredHealthMetric>()
+                nutritionDescriptor = FetchDescriptor<StoredNutrition>()
+            }
+            
+            let storedWorkouts = try context.fetch(workoutDescriptor)
+            let storedHealthMetrics = try context.fetch(metricDescriptor)
+            let storedNutrition = try context.fetch(nutritionDescriptor)
             
             // Convert to working models
             let workouts = storedWorkouts.map { WorkoutData(from: $0) }

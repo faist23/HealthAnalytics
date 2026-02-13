@@ -34,12 +34,8 @@ struct NutritionView: View {
                         ProgressView("Loading data...")
                             .padding()
                     } else if viewModel.dailyNutrition.isEmpty {
-                        ContentUnavailableView(
-                            "No Nutrition Data",
-                            systemImage: "fork.knife",
-                            description: Text("Log food in MyFitnessPal or Apple Health to see insights.")
-                        )
-                        .padding(.top, 40)
+                        NutritionEmptyState()
+                            .padding(.top, 40)
                     } else {
                         // MARK: - Summary Cards
                         NutritionSummaryGrid(viewModel: viewModel)
@@ -92,6 +88,12 @@ struct NutritionView: View {
             .task {
                 // Ensure data is loaded when view appears
                 await viewModel.loadNutritionData()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
+                // Force reload when data window changes
+                Task {
+                    await viewModel.loadNutritionData()
+                }
             }
         }
     }

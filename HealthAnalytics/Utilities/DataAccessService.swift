@@ -39,9 +39,21 @@ class DataAccessService {
     
     /// Fetch all workouts (for ML training)
     func fetchAllWorkouts() throws -> [WorkoutData] {
-        let descriptor = FetchDescriptor<StoredWorkout>(
-            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
-        )
+        let descriptor: FetchDescriptor<StoredWorkout>
+        
+        // Apply data window filter if set
+        if let cutoffDate = DataWindowManager.getCutoffDate() {
+            descriptor = FetchDescriptor<StoredWorkout>(
+                predicate: #Predicate { workout in
+                    workout.startDate >= cutoffDate
+                },
+                sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+            )
+        } else {
+            descriptor = FetchDescriptor<StoredWorkout>(
+                sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+            )
+        }
         
         let stored = try context.fetch(descriptor)
         return stored.map { convertToWorkoutData($0) }
@@ -64,10 +76,27 @@ class DataAccessService {
     func fetchHealthMetrics(type: String, from startDate: Date? = nil, to endDate: Date? = nil) throws -> [HealthDataPoint] {
         var descriptor: FetchDescriptor<StoredHealthMetric>
         
-        if let start = startDate, let end = endDate {
+        // Determine effective start date (use cutoff if no start provided)
+        let effectiveStart = startDate ?? DataWindowManager.getCutoffDate()
+        
+        if let start = effectiveStart, let end = endDate {
             descriptor = FetchDescriptor<StoredHealthMetric>(
                 predicate: #Predicate { metric in
                     metric.type == type && metric.date >= start && metric.date <= end
+                },
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            )
+        } else if let start = effectiveStart {
+            descriptor = FetchDescriptor<StoredHealthMetric>(
+                predicate: #Predicate { metric in
+                    metric.type == type && metric.date >= start
+                },
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            )
+        } else if let end = endDate {
+            descriptor = FetchDescriptor<StoredHealthMetric>(
+                predicate: #Predicate { metric in
+                    metric.type == type && metric.date <= end
                 },
                 sortBy: [SortDescriptor(\.date, order: .reverse)]
             )
@@ -105,9 +134,21 @@ class DataAccessService {
     
     /// Fetch all nutrition data
     func fetchAllNutrition() throws -> [DailyNutrition] {
-        let descriptor = FetchDescriptor<StoredNutrition>(
-            sortBy: [SortDescriptor(\.date, order: .reverse)]
-        )
+        let descriptor: FetchDescriptor<StoredNutrition>
+        
+        // Apply data window filter if set
+        if let cutoffDate = DataWindowManager.getCutoffDate() {
+            descriptor = FetchDescriptor<StoredNutrition>(
+                predicate: #Predicate { nutrition in
+                    nutrition.date >= cutoffDate
+                },
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            )
+        } else {
+            descriptor = FetchDescriptor<StoredNutrition>(
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            )
+        }
         
         let stored = try context.fetch(descriptor)
         return stored.map { convertToDailyNutrition($0) }

@@ -103,7 +103,7 @@ struct ContentView: View {
                                 viewModel.sleepData.isEmpty &&
                                 viewModel.stepCountData.isEmpty &&
                                 viewModel.workouts.isEmpty {
-                                EmptyStateView()
+                                DashboardEmptyState()
                                     .cardStyle(for: .info)
                             }
                         }
@@ -146,6 +146,12 @@ struct ContentView: View {
             }
         }
         .task { await viewModel.loadData() }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
+            // Force reload when data window changes
+            Task {
+                await viewModel.loadData()
+            }
+        }
     }
 }
 
@@ -240,27 +246,6 @@ struct RestingHeartRateCard: View {
             }
         }
         .padding(20)
-    }
-}
-
-struct EmptyStateView: View {
-    var body: some View {
-        VStack(spacing: 15) {
-            Image(systemName: "heart.slash")
-                .font(.system(size: 60))
-                .foregroundStyle(.secondary)
-            
-            Text("No Data Available")
-                .font(.title3)
-                .fontWeight(.semibold)
-            
-            Text("Make sure you have resting heart rate data in the Health app")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-        }
-        .padding()
     }
 }
 

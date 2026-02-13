@@ -56,6 +56,12 @@ struct InsightsView: View {
             // Reconfigure if context changes
             configureViewModel()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
+            // Force recalculation when data window changes
+            Task {
+                await viewModel.analyzeData()
+            }
+        }
     }
     
     private func configureViewModel() {

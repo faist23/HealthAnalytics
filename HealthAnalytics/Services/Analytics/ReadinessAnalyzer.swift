@@ -257,10 +257,13 @@ struct ReadinessAnalyzer {
         // HRV Analysis (0-15 points)
         if !hrv.isEmpty {
             let recent7Days = Array(hrv.suffix(7))
-            let baseline28Days = Array(hrv.prefix(max(hrv.count - 7, 7)))
+            // Baseline should be the 28 days BEFORE the recent 7 days, not the oldest data
+            let baselineStart = max(0, hrv.count - 35)
+            let baselineEnd = max(0, hrv.count - 7)
+            let baseline28Days = Array(hrv[baselineStart..<baselineEnd])
             
             let recentAvg = recent7Days.map(\.value).reduce(0, +) / Double(recent7Days.count)
-            let baselineAvg = baseline28Days.map(\.value).reduce(0, +) / Double(baseline28Days.count)
+            let baselineAvg = baseline28Days.isEmpty ? recentAvg : baseline28Days.map(\.value).reduce(0, +) / Double(baseline28Days.count)
             
             let hrvChange = ((recentAvg - baselineAvg) / baselineAvg) * 100
             
@@ -282,10 +285,13 @@ struct ReadinessAnalyzer {
         // RHR Analysis (0-15 points)
         if !rhr.isEmpty {
             let recent7Days = Array(rhr.suffix(7))
-            let baseline28Days = Array(rhr.prefix(max(rhr.count - 7, 7)))
+            // Baseline should be the 28 days BEFORE the recent 7 days, not the oldest data
+            let baselineStart = max(0, rhr.count - 35)
+            let baselineEnd = max(0, rhr.count - 7)
+            let baseline28Days = Array(rhr[baselineStart..<baselineEnd])
             
             let recentAvg = recent7Days.map(\.value).reduce(0, +) / Double(recent7Days.count)
-            let baselineAvg = baseline28Days.map(\.value).reduce(0, +) / Double(baseline28Days.count)
+            let baselineAvg = baseline28Days.isEmpty ? recentAvg : baseline28Days.map(\.value).reduce(0, +) / Double(baseline28Days.count)
             
             let rhrChange = recentAvg - baselineAvg
             
