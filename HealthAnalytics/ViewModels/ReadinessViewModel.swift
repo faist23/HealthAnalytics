@@ -24,8 +24,8 @@ class ReadinessViewModel: ObservableObject {
     @Published var mlError: String?
     @Published var isLoading = false
     @Published var errorMessage: String?
-    @Published var intentAwareAssessment: IntentAwareReadinessService.EnhancedReadinessAssessment?
-    private let intentAwareService = IntentAwareReadinessService()
+    @Published var intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
+    private let intentAwareService = EnhancedIntentAwareReadinessService()
 
     // ML Training State
     private var trainedModels: [PerformancePredictor.TrainedModel] = []

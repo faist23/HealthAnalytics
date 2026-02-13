@@ -9,7 +9,7 @@
 import SwiftUI
 
 struct IntentAwareReadinessCard: View {
-    let assessment: IntentAwareReadinessService.EnhancedReadinessAssessment
+    let assessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -27,7 +27,7 @@ struct IntentAwareReadinessCard: View {
                 
                 // ACWR Badge
                 VStack(spacing: 2) {
-                    Text(String(format: "%.2f", assessment.acwr))
+                    Text(String(format: "%.2f", assessment.acwr.value))
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundStyle(acwrColor)
@@ -55,7 +55,7 @@ struct IntentAwareReadinessCard: View {
                         if let readiness = assessment.performanceReadiness[intent] {
                             IntentReadinessRow(
                                 intent: intent,
-                                readiness: readiness,
+                                readiness: readiness.level,
                                 isRecommended: true
                             )
                         }
@@ -77,7 +77,7 @@ struct IntentAwareReadinessCard: View {
                         if let readiness = assessment.performanceReadiness[intent] {
                             IntentReadinessRow(
                                 intent: intent,
-                                readiness: readiness,
+                                readiness: readiness.level,
                                 isRecommended: false
                             )
                         }
@@ -109,7 +109,7 @@ struct IntentAwareReadinessCard: View {
     // MARK: - Computed Properties
     
     private var acwrColor: Color {
-        switch assessment.acwr {
+        switch assessment.acwr.value {
         case 0..<0.8: return .blue
         case 0.8...1.3: return .green
         case 1.3...1.5: return .orange
@@ -149,7 +149,7 @@ struct IntentAwareReadinessCard: View {
 
 struct IntentReadinessRow: View {
     let intent: ActivityIntent
-    let readiness: IntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessLevel
+    let readiness: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence.ReadinessLevel
     let isRecommended: Bool
     
     var body: some View {
@@ -206,20 +206,38 @@ struct IntentReadinessRow: View {
 #Preview {
     ScrollView {
         IntentAwareReadinessCard(
-            assessment: IntentAwareReadinessService.EnhancedReadinessAssessment(
-                acwr: 1.15,
+            assessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment(
+                acwr: StatisticalResult(
+                    value: 1.15,
+                    confidenceInterval: (lower: 1.05, upper: 1.25),
+                    sampleSize: 25,
+                    confidence: .medium
+                ),
                 chronicLoad: 45.0,
                 acuteLoad: 52.0,
                 trend: .optimal,
                 performanceReadiness: [
-                    .easy: .excellent,
-                    .tempo: .good,
-                    .long: .good,
-                    .intervals: .fair,
-                    .race: .poor
+                    .easy: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .excellent, confidence: .high, sampleSize: 35),
+                    .tempo: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .good, confidence: .medium, sampleSize: 10),
+                    .long: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .good, confidence: .medium, sampleSize: 12),
+                    .intervals: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .fair, confidence: .low, sampleSize: 6),
+                    .race: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .poor, confidence: .medium, sampleSize: 8)
                 ],
                 recommendedIntents: [.easy, .tempo, .long],
-                shouldAvoidIntents: [.race, .intervals]
+                shouldAvoidIntents: [.race, .intervals],
+                sampleValidation: SampleSizeValidator.ValidationResult(
+                    isValid: true,
+                    sampleSize: 25,
+                    required: 10,
+                    confidence: .medium,
+                    message: "Good sample size for analysis"
+                ),
+                dataQuality: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.DataQuality(
+                    hasAdequateSleep: true,
+                    hasAdequateHRV: true,
+                    hasAdequateWorkouts: true,
+                    overallQuality: .good
+                )
             )
         )
         .padding()

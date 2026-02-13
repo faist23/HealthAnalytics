@@ -9,7 +9,7 @@
 import SwiftUI
 
 struct EnhancedIntentReadinessCard: View {
-    let assessment: IntentAwareReadinessService.EnhancedReadinessAssessment
+    let assessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment
     @State private var expandedIntents: Set<ActivityIntent> = []
     
     var body: some View {
@@ -30,7 +30,7 @@ struct EnhancedIntentReadinessCard: View {
                 
                 // ACWR Badge with color coding
                 VStack(spacing: 4) {
-                    Text(String(format: "%.2f", assessment.acwr))
+                    Text(String(format: "%.2f", assessment.acwr.value))
                         .font(.system(size: 32, weight: .bold, design: .rounded))
                         .foregroundStyle(acwrColor)
                     
@@ -65,7 +65,7 @@ struct EnhancedIntentReadinessCard: View {
                         if let readiness = assessment.performanceReadiness[intent] {
                             ExpandableIntentRow(
                                 intent: intent,
-                                readiness: readiness,
+                                readiness: readiness.level,
                                 assessment: assessment,
                                 isExpanded: expandedIntents.contains(intent),
                                 color: .green,
@@ -109,7 +109,7 @@ struct EnhancedIntentReadinessCard: View {
                         if let readiness = assessment.performanceReadiness[intent] {
                             ExpandableIntentRow(
                                 intent: intent,
-                                readiness: readiness,
+                                readiness: readiness.level,
                                 assessment: assessment,
                                 isExpanded: expandedIntents.contains(intent),
                                 color: .orange,
@@ -145,7 +145,7 @@ struct EnhancedIntentReadinessCard: View {
                         if let readiness = assessment.performanceReadiness[intent] {
                             ExpandableIntentRow(
                                 intent: intent,
-                                readiness: readiness,
+                                readiness: readiness.level,
                                 assessment: assessment,
                                 isExpanded: expandedIntents.contains(intent),
                                 color: .red,
@@ -172,7 +172,7 @@ struct EnhancedIntentReadinessCard: View {
     // MARK: - Computed Properties
     
     private var acwrColor: Color {
-        switch assessment.acwr {
+        switch assessment.acwr.value {
         case 0..<0.8: return .blue
         case 0.8...1.3: return .green
         case 1.3...1.5: return .orange
@@ -181,7 +181,7 @@ struct EnhancedIntentReadinessCard: View {
     }
     
     private var acwrLabel: String {
-        switch assessment.acwr {
+        switch assessment.acwr.value {
         case 0..<0.8: return "Low Load"
         case 0.8...1.3: return "Optimal"
         case 1.3...1.5: return "Building"
@@ -205,8 +205,8 @@ struct EnhancedIntentReadinessCard: View {
 
 struct ExpandableIntentRow: View {
     let intent: ActivityIntent
-    let readiness: IntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessLevel
-    let assessment: IntentAwareReadinessService.EnhancedReadinessAssessment
+    let readiness: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence.ReadinessLevel
+    let assessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment
     let isExpanded: Bool
     let color: Color
     let onTap: () -> Void
@@ -301,12 +301,12 @@ struct ExpandableIntentRow: View {
         var reasons: [Reason] = []
         
         // ACWR reasoning
-        if assessment.acwr <= 1.2 {
-            reasons.append(Reason(text: "Training load is optimal (\(String(format: "%.2f", assessment.acwr)))", isPositive: true))
-        } else if assessment.acwr <= 1.4 {
-            reasons.append(Reason(text: "Load is building (\(String(format: "%.2f", assessment.acwr)))", isPositive: intent == .easy || intent == .casualWalk))
+        if assessment.acwr.value <= 1.2 {
+            reasons.append(Reason(text: "Training load is optimal (\(String(format: "%.2f", assessment.acwr.value)))", isPositive: true))
+        } else if assessment.acwr.value <= 1.4 {
+            reasons.append(Reason(text: "Load is building (\(String(format: "%.2f", assessment.acwr.value)))", isPositive: intent == .easy || intent == .casualWalk))
         } else {
-            reasons.append(Reason(text: "Load is high (\(String(format: "%.2f", assessment.acwr))) - injury risk", isPositive: false))
+            reasons.append(Reason(text: "Load is high (\(String(format: "%.2f", assessment.acwr.value))) - injury risk", isPositive: false))
         }
         
         // Intent-specific reasoning
@@ -333,14 +333,14 @@ struct ExpandableIntentRow: View {
             }
             
         case .easy:
-            if assessment.acwr > 1.3 {
+            if assessment.acwr.value > 1.3 {
                 reasons.append(Reason(text: "Easy pace aids recovery when fatigued", isPositive: true))
             } else {
                 reasons.append(Reason(text: "Always safe for active recovery", isPositive: true))
             }
             
         case .long:
-            if assessment.acwr <= 1.3 {
+            if assessment.acwr.value <= 1.3 {
                 reasons.append(Reason(text: "Good base fitness for volume work", isPositive: true))
             } else {
                 reasons.append(Reason(text: "High load - adding volume increases injury risk", isPositive: false))
@@ -367,23 +367,41 @@ struct ExpandableIntentRow: View {
 #Preview {
     ScrollView {
         EnhancedIntentReadinessCard(
-            assessment: IntentAwareReadinessService.EnhancedReadinessAssessment(
-                acwr: 1.15,
+            assessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment(
+                acwr: StatisticalResult(
+                    value: 1.15,
+                    confidenceInterval: (lower: 1.05, upper: 1.25),
+                    sampleSize: 25,
+                    confidence: .medium
+                ),
                 chronicLoad: 250,
                 acuteLoad: 290,
                 trend: .optimal,
                 performanceReadiness: [
-                    .race: .good,
-                    .tempo: .excellent,
-                    .intervals: .good,
-                    .easy: .excellent,
-                    .long: .excellent,
-                    .casualWalk: .excellent,
-                    .strength: .fair,
-                    .other: .good
+                    .race: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .good, confidence: .medium, sampleSize: 8),
+                    .tempo: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .excellent, confidence: .medium, sampleSize: 10),
+                    .intervals: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .good, confidence: .medium, sampleSize: 7),
+                    .easy: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .excellent, confidence: .high, sampleSize: 35),
+                    .long: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .excellent, confidence: .medium, sampleSize: 12),
+                    .casualWalk: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .excellent, confidence: .high, sampleSize: 40),
+                    .strength: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .fair, confidence: .low, sampleSize: 6),
+                    .other: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence(level: .good, confidence: .medium, sampleSize: 15)
                 ],
                 recommendedIntents: [.easy, .long, .tempo],
-                shouldAvoidIntents: [.race, .intervals]
+                shouldAvoidIntents: [.race, .intervals],
+                sampleValidation: SampleSizeValidator.ValidationResult(
+                    isValid: true,
+                    sampleSize: 25,
+                    required: 10,
+                    confidence: .medium,
+                    message: "Good sample size for analysis"
+                ),
+                dataQuality: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.DataQuality(
+                    hasAdequateSleep: true,
+                    hasAdequateHRV: true,
+                    hasAdequateWorkouts: true,
+                    overallQuality: .good
+                )
             )
         )
         .padding()

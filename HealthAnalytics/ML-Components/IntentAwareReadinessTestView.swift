@@ -14,7 +14,7 @@ struct IntentAwareReadinessTestView: View {
     @Query private var workouts: [StoredWorkout]
     @Query private var intentLabels: [StoredIntentLabel]
     
-    @State private var assessment: IntentAwareReadinessService.EnhancedReadinessAssessment?
+    @State private var assessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
     @State private var isLoading = false
     @State private var sleepData: [HealthDataPoint] = []
     @State private var hrvData: [HealthDataPoint] = []
@@ -71,7 +71,7 @@ struct IntentAwareReadinessTestView: View {
                             .font(.headline)
                         
                         VStack(alignment: .leading, spacing: 8) {
-                            DebugRow(label: "ACWR", value: String(format: "%.2f", assessment.acwr))
+                            DebugRow(label: "ACWR", value: String(format: "%.2f", assessment.acwr.value))
                             DebugRow(label: "Chronic Load", value: String(format: "%.0f", assessment.chronicLoad))
                             DebugRow(label: "Acute Load", value: String(format: "%.0f", assessment.acuteLoad))
                             DebugRow(label: "Trend", value: String(describing: assessment.trend))
@@ -97,8 +97,8 @@ struct IntentAwareReadinessTestView: View {
                                     Text(intent.rawValue)
                                         .font(.subheadline)
                                     Spacer()
-                                    Text(readiness.emoji)
-                                    Text(String(describing: readiness))
+                                    Text(readiness.level.emoji)
+                                    Text(String(describing: readiness.level))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -161,7 +161,7 @@ struct IntentAwareReadinessTestView: View {
         isLoading = true
         
         Task {
-            let service = IntentAwareReadinessService()
+            let service = EnhancedIntentAwareReadinessService()
             let result = service.calculateEnhancedReadiness(
                 workouts: Array(workouts),
                 labels: Array(intentLabels),
