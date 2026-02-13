@@ -25,10 +25,14 @@ class ReadinessViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
+    @Published var temporalAnalysis: TemporalModelingService.TemporalAnalysis?
     private let intentAwareService = EnhancedIntentAwareReadinessService()
 
     // ML Training State
     private var trainedModels: [PerformancePredictor.TrainedModel] = []
+    private var cachedPatterns: [PerformancePatternAnalyzer.PerformanceWindow]?
+    private var lastPatternDiscovery: Date?
+    private var lastMLTraining: Date?
     
     // SwiftData
     var modelContainer: ModelContainer?
@@ -55,169 +59,158 @@ class ReadinessViewModel: ObservableObject {
         do {
             let context = container.mainContext
             
-            // Fetch all data
-            let storedWorkouts = try context.fetch(FetchDescriptor<StoredWorkout>())
-            let storedHealthMetrics = try context.fetch(FetchDescriptor<StoredHealthMetric>())
-            let storedNutrition = try context.fetch(FetchDescriptor<StoredNutrition>())
-            
-            // Convert to working models
-            let workouts = storedWorkouts.map { WorkoutData(from: $0) }
-            let nutrition = storedNutrition.map { DailyNutrition(from: $0) }
-            
-            // Convert health metrics - using 'type' property
-            let sleepData = storedHealthMetrics
-                .filter { $0.type == "Sleep" }
-                .map { HealthDataPoint(date: $0.date, value: $0.value) }
-            
-            let hrvData = storedHealthMetrics
-                .filter { $0.type == "HRV" }
-                .map { HealthDataPoint(date: $0.date, value: $0.value) }
-            
-            let rhrData = storedHealthMetrics
-                .filter { $0.type == "RHR" }
-                .map { HealthDataPoint(date: $0.date, value: $0.value) }
-            
-            // DEBUG: Check data availability
-            print("\n🔍 DATA AVAILABILITY DEBUG:")
-            print(String(repeating: "=", count: 50))
-            print("Workouts: \(workouts.count)")
-            print("Sleep points: \(sleepData.count)")
-            print("HRV points: \(hrvData.count)")
-            print("RHR points: \(rhrData.count)")
-            
-            if let firstWorkout = workouts.sorted(by: { $0.startDate > $1.startDate }).first {
-                print("\n📅 MOST RECENT WORKOUT:")
-                let formatter = DateFormatter()
-                formatter.dateStyle = .short
-                formatter.timeStyle = .short
-                print("   Date: \(formatter.string(from: firstWorkout.startDate))")
-                print("   Type: \(firstWorkout.workoutName)")
-                
-                let calendar = Calendar.current
-                let workoutDay = calendar.startOfDay(for: firstWorkout.startDate)
-                let prevDay = calendar.date(byAdding: .day, value: -1, to: workoutDay)!
-                
-                print("\n🔍 LOOKING FOR METRICS:")
-                print("   Workout day (normalized): \(formatter.string(from: workoutDay))")
-                print("   Previous day (for sleep): \(formatter.string(from: prevDay))")
-                
-                // Check sleep
-                let sleepMatches = sleepData.filter {
-                    calendar.isDate($0.date, inSameDayAs: prevDay)
-                }
-                print("\n💤 Sleep matches: \(sleepMatches.count)")
-                if sleepMatches.isEmpty && !sleepData.isEmpty {
-                    print("   ⚠️ No match! Sample sleep dates:")
-                    for sleep in sleepData.prefix(3) {
-                        print("      \(formatter.string(from: sleep.date)) = \(sleep.value)h")
-                    }
-                } else if let sleep = sleepMatches.first {
-                    print("   ✅ Found: \(sleep.value)h on \(formatter.string(from: sleep.date))")
-                }
-                
-                // Check HRV
-                let hrvMatches = hrvData.filter {
-                    calendar.isDate($0.date, inSameDayAs: workoutDay)
-                }
-                print("\n💚 HRV matches: \(hrvMatches.count)")
-                if hrvMatches.isEmpty && !hrvData.isEmpty {
-                    print("   ⚠️ No match! Sample HRV dates:")
-                    for hrv in hrvData.prefix(3) {
-                        print("      \(formatter.string(from: hrv.date)) = \(hrv.value)ms")
-                    }
-                } else if let hrv = hrvMatches.first {
-                    print("   ✅ Found: \(hrv.value)ms on \(formatter.string(from: hrv.date))")
-                }
-                
-                // Check RHR
-                let rhrMatches = rhrData.filter {
-                    calendar.isDate($0.date, inSameDayAs: workoutDay)
-                }
-                print("\n❤️ RHR matches: \(rhrMatches.count)")
-                if rhrMatches.isEmpty && !rhrData.isEmpty {
-                    print("   ⚠️ No match! Sample RHR dates:")
-                    for rhr in rhrData.prefix(3) {
-                        print("      \(formatter.string(from: rhr.date)) = \(rhr.value)bpm")
-                    }
-                } else if let rhr = rhrMatches.first {
-                    print("   ✅ Found: \(rhr.value)bpm on \(formatter.string(from: rhr.date))")
-                }
+            // PROFILE: Data Fetching
+            let (storedWorkouts, storedHealthMetrics, storedNutrition) = try await PerformanceProfiler.measureAsync("📊 Data Fetch") {
+                let workouts = try context.fetch(FetchDescriptor<StoredWorkout>())
+                let metrics = try context.fetch(FetchDescriptor<StoredHealthMetric>())
+                let nutrition = try context.fetch(FetchDescriptor<StoredNutrition>())
+                return (workouts, metrics, nutrition)
             }
-            print(String(repeating: "=", count: 50) + "\n")
             
-            // Determine primary activity
+            // PROFILE: Data Conversion
+            let (workouts, nutrition, sleepData, hrvData, rhrData) = PerformanceProfiler.measure("🔄 Data Conversion") {
+                let workouts = storedWorkouts.map { WorkoutData(from: $0) }
+                let nutrition = storedNutrition.map { DailyNutrition(from: $0) }
+                
+                let sleepData = storedHealthMetrics
+                    .filter { $0.type == "Sleep" }
+                    .map { HealthDataPoint(date: $0.date, value: $0.value) }
+                
+                let hrvData = storedHealthMetrics
+                    .filter { $0.type == "HRV" }
+                    .map { HealthDataPoint(date: $0.date, value: $0.value) }
+                
+                let rhrData = storedHealthMetrics
+                    .filter { $0.type == "RHR" }
+                    .map { HealthDataPoint(date: $0.date, value: $0.value) }
+                
+                return (workouts, nutrition, sleepData, hrvData, rhrData)
+            }
+            
+            print("\n📊 Data loaded: \(workouts.count) workouts, \(sleepData.count) sleep, \(hrvData.count) HRV\n")
+            
             let primaryActivity = determinePrimaryActivity(from: workouts)
-            print("🎯 Primary Activity Detected: \(primaryActivity)")
             
-            // Analyze readiness
-            let analyzer = ReadinessAnalyzer()
-            if let readiness = analyzer.analyzeReadiness(
-                restingHR: rhrData,
-                hrv: hrvData,
-                sleep: sleepData,
-                workouts: workouts,
-                stravaActivities: [],
-                nutrition: nutrition
-            ) {
-                readinessScore = readiness
-                formIndicator = generateFormIndicator(from: readiness)
+            // PROFILE: Readiness Analysis
+            PerformanceProfiler.measure("🎯 Readiness Analysis") {
+                let analyzer = ReadinessAnalyzer()
+                if let readiness = analyzer.analyzeReadiness(
+                    restingHR: rhrData,
+                    hrv: hrvData,
+                    sleep: sleepData,
+                    workouts: workouts,
+                    stravaActivities: [],
+                    nutrition: nutrition
+                ) {
+                    readinessScore = readiness
+                    formIndicator = generateFormIndicator(from: readiness)
+                }
             }
             
-            // Fetch intent labels
-            let intentLabels = try await fetchIntentLabels(modelContext: modelContext)
+            // PROFILE: Intent Labels Fetch
+            let intentLabels = try await PerformanceProfiler.measureAsync("🏷️ Intent Labels Fetch") {
+                try await fetchIntentLabels(modelContext: modelContext)
+            }
             
-            // Calculate intent-aware readiness
-            calculateIntentAwareReadiness(
-                workouts: storedWorkouts,
-                labels: intentLabels,
-                sleep: sleepData,
-                hrv: hrvData
-            )
+            // PROFILE: Intent-Aware Readiness
+            PerformanceProfiler.measure("💡 Intent-Aware Readiness") {
+                calculateIntentAwareReadiness(
+                    workouts: storedWorkouts,
+                    labels: intentLabels,
+                    sleep: sleepData,
+                    hrv: hrvData
+                )
+            }
+            
+            // PROFILE: Pattern Discovery (sample recent data only)
+            PerformanceProfiler.measure("🔍 Pattern Discovery") {
+                let shouldRediscover = cachedPatterns == nil ||
+                    lastPatternDiscovery == nil ||
+                    Date().timeIntervalSince(lastPatternDiscovery!) > 86400
+                
+                if shouldRediscover {
+                    print("🔬 Discovering patterns from recent workouts only...")
+                    
+                    // Only analyze last 365 days of data
+                    let calendar = Calendar.current
+                    let oneYearAgo = calendar.date(byAdding: .day, value: -365, to: Date())!
+                    let recentWorkouts = workouts.filter { $0.startDate >= oneYearAgo }
+                    let recentSleep = sleepData.filter { $0.date >= oneYearAgo }
+                    let recentNutrition = nutrition.filter { $0.date >= oneYearAgo }
+                    
+                    print("   Analyzing \(recentWorkouts.count) recent workouts (vs \(workouts.count) total)")
+                    
+                    let statPatternAnalyzer = StatisticalPerformancePatternAnalyzer()
+                    let validatedWindows = statPatternAnalyzer.discoverValidatedPatterns(
+                        workouts: recentWorkouts,
+                        activities: [],
+                        sleep: recentSleep,
+                        nutrition: recentNutrition
+                    )
+                    cachedPatterns = validatedWindows.map { $0.pattern }
+                    lastPatternDiscovery = Date()
+                    print("   Cached \(cachedPatterns?.count ?? 0) new patterns")
+                } else {
+                    print("   ✅ Using cached patterns from \(lastPatternDiscovery!)")
+                }
+                
+                performanceWindows = cachedPatterns ?? []
+                optimalTimings = []
+                workoutSequences = []
+            }
+            
+            // PROFILE: ML Training (cache models)
+            await PerformanceProfiler.measureAsync("🤖 ML Training") {
+                // Only retrain once per week
+                let shouldRetrain = trainedModels.isEmpty ||
+                    lastMLTraining == nil ||
+                    Date().timeIntervalSince(lastMLTraining!) > 604800 // 7 days
+                
+                if shouldRetrain {
+                    print("🤖 Training ML models...")
+                    await trainMLModelsIfNeeded(
+                        sleepData: sleepData,
+                        hrvData: hrvData,
+                        rhrData: rhrData,
+                        workouts: workouts,
+                        nutrition: nutrition
+                    )
+                    lastMLTraining = Date()
+                } else {
+                    print("✅ ML models already trained (\(trainedModels.count) models)")
+                }
+            }
+            
+            // PROFILE: ML Prediction
+            PerformanceProfiler.measure("🔮 ML Prediction") {
+                makePredictionWithUncertainty(
+                    activityType: primaryActivity,
+                    sleepData: sleepData,
+                    hrvData: hrvData,
+                    rhrData: rhrData,
+                    workouts: workouts,
+                    nutrition: nutrition
+                )
+            }
+            
+            // PROFILE: Temporal Analysis
+            PerformanceProfiler.measure("🕐 Temporal Analysis") {
+                let temporalService = TemporalModelingService()
+                temporalAnalysis = temporalService.analyzeTemporalPatterns(
+                    workouts: workouts,
+                    activityType: primaryActivity
+                )
+            }
 
-            // Pattern analysis
-            let patternAnalyzer = PerformancePatternAnalyzer()
-            performanceWindows = patternAnalyzer.discoverPerformanceWindows(
-                workouts: workouts,
-                activities: [],
-                sleep: sleepData,
-                nutrition: nutrition
-            )
-            
-            optimalTimings = patternAnalyzer.discoverOptimalTiming(
-                workouts: workouts,
-                activities: []
-            )
-            
-            workoutSequences = patternAnalyzer.discoverWorkoutSequences(
-                workouts: workouts,
-                activities: []
-            )
-            
-            // ML Prediction
-            await trainMLModelsIfNeeded(
-                sleepData: sleepData,
-                hrvData: hrvData,
-                rhrData: rhrData,
-                workouts: workouts,
-                nutrition: nutrition
-            )
-            
-            makePrediction(
-                activityType: primaryActivity,
-                sleepData: sleepData,
-                hrvData: hrvData,
-                rhrData: rhrData,
-                workouts: workouts,
-                nutrition: nutrition
-            )
-            
-            // Generate daily instruction
-            generateDailyInstruction(
-                primaryActivity: primaryActivity,
-                workouts: workouts,
-                hrvData: hrvData,
-                rhrData: rhrData
-            )
+            // PROFILE: Daily Instruction
+            PerformanceProfiler.measure("📝 Daily Instruction") {
+                generateDailyInstruction(
+                    primaryActivity: primaryActivity,
+                    workouts: workouts,
+                    hrvData: hrvData,
+                    rhrData: rhrData
+                )
+            }
             
         } catch {
             errorMessage = "Failed to analyze readiness: \(error.localizedDescription)"
@@ -328,7 +321,7 @@ class ReadinessViewModel: ObservableObject {
         }
     }
     
-    private func makePrediction(
+    private func makePredictionWithUncertainty(
         activityType: String,
         sleepData: [HealthDataPoint],
         hrvData: [HealthDataPoint],
@@ -364,7 +357,8 @@ class ReadinessViewModel: ObservableObject {
         let recentCarbs = nutrition.first(where: { calendar.isDate($0.date, inSameDayAs: yesterday) })?.totalCarbs ?? 250.0
         
         do {
-            let prediction = try PerformancePredictor.predict(
+            // Get prediction with uncertainty
+            let predictionWithUncertainty = try PerformancePredictor.predictWithUncertainty(
                 models: trainedModels,
                 activityType: activityType,
                 sleepHours: sleep,
@@ -374,13 +368,19 @@ class ReadinessViewModel: ObservableObject {
                 carbs: recentCarbs
             )
             
-            mlPrediction = prediction
+            mlPrediction = predictionWithUncertainty.prediction
             
-            if let usedModel = trainedModels.first(where: { $0.activityType == prediction.activityType }) {
+            if let usedModel = trainedModels.first(where: { $0.activityType == predictionWithUncertainty.prediction.activityType }) {
                 mlFeatureWeights = usedModel.featureWeights
             }
             
-            print("✅ ML Prediction: \(String(format: "%.1f", prediction.predictedPerformance)) \(prediction.unit) for \(prediction.activityType)")
+            // Log the uncertainty
+            if let interval = predictionWithUncertainty.predictionInterval {
+                print("✅ ML Prediction: \(predictionWithUncertainty.formattedPrediction)")
+                print("   Uncertainty: \(predictionWithUncertainty.modelUncertainty.description)")
+            } else {
+                print("✅ ML Prediction: \(String(format: "%.1f", predictionWithUncertainty.prediction.predictedPerformance)) \(predictionWithUncertainty.prediction.unit)")
+            }
             
         } catch {
             mlError = error.localizedDescription

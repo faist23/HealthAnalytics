@@ -35,9 +35,18 @@ struct ReadinessView: View {
         .navigationTitle("Readiness")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                refreshButton
+                NavigationLink {
+                    StatisticalDashboardView()
+                } label: {
+                    Image(systemName: "chart.bar.doc.horizontal")
+                }
             }
         }
+        /*      .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                refreshButton
+            }
+        } */
         .onAppear {
             configureViewModel()
         }
@@ -88,6 +97,10 @@ struct ReadinessView: View {
                         EnhancedIntentReadinessCard(assessment: assessment)
                     }
                     
+                    // Temporal Analysis - Multi-timescale insights
+                    if let temporal = viewModel.temporalAnalysis {
+                        TemporalInsightsCard(analysis: temporal)
+                    }
                     // Score Breakdown
                     ScoreBreakdownCard(breakdown: readiness.breakdown)
                         .cardStyle(for: .recovery)
@@ -112,7 +125,7 @@ struct ReadinessView: View {
                             subtitle: "Discovered from YOUR data"
                         )
                         
-                        ForEach(viewModel.performanceWindows.prefix(3), id: \.activityType) { window in
+                        ForEach(Array(viewModel.performanceWindows.prefix(3).enumerated()), id: \.offset) { index, window in
                             PerformanceWindowCard(window: window)
                                 .cardStyle(for: .recovery)
                         }
@@ -125,7 +138,7 @@ struct ReadinessView: View {
                             subtitle: "When you perform best"
                         )
                         
-                        ForEach(viewModel.optimalTimings.prefix(2), id: \.activityType) { timing in
+                        ForEach(Array(viewModel.optimalTimings.prefix(2).enumerated()), id: \.offset) { index, timing in
                             OptimalTimingCard(timing: timing)
                                 .cardStyle(for: .recovery)
                         }

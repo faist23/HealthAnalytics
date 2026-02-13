@@ -2,8 +2,8 @@
 //  EnhancedIntentReadinessCard.swift
 //  HealthAnalytics
 //
-//  Enhanced version with detailed reasoning for each recommendation
-//  Shows ACWR, sleep, HRV, and recovery metrics that inform each decision
+//  Enhanced with statistical confidence displays
+//  Shows ACWR with CI, sample sizes, and data quality warnings
 //
 
 import SwiftUI
@@ -15,7 +15,12 @@ struct EnhancedIntentReadinessCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             
-            // Header with ACWR
+            // Data Quality Warning (if needed)
+            if assessment.dataQuality.overallQuality == .poor || assessment.dataQuality.overallQuality == .fair {
+                DataQualityBanner(dataQuality: assessment.dataQuality)
+            }
+            
+            // Header with ACWR + Confidence
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Today's Readiness")
@@ -28,20 +33,33 @@ struct EnhancedIntentReadinessCard: View {
                 
                 Spacer()
                 
-                // ACWR Badge with color coding
+                // ACWR Badge with confidence interval
                 VStack(spacing: 4) {
                     Text(String(format: "%.2f", assessment.acwr.value))
                         .font(.system(size: 32, weight: .bold, design: .rounded))
                         .foregroundStyle(acwrColor)
                     
+                    // Show ±margin if we have CI
+                    if let ci = assessment.acwr.confidenceInterval {
+                        Text("±\(String(format: "%.2f", (ci.upper - ci.lower) / 2))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    
                     Text("Load Ratio")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     
-                    Text(acwrLabel)
-                        .font(.caption2)
-                        .fontWeight(.medium)
-                        .foregroundStyle(acwrColor)
+                    HStack(spacing: 4) {
+                        Text(acwrLabel)
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundStyle(acwrColor)
+                        
+                        // Confidence emoji
+                        Text(assessment.acwr.confidence.emoji)
+                            .font(.caption2)
+                    }
                 }
                 .padding(12)
                 .background(acwrColor.opacity(0.1))
@@ -62,10 +80,10 @@ struct EnhancedIntentReadinessCard: View {
                         .foregroundStyle(.secondary)
                     
                     ForEach(assessment.recommendedIntents, id: \.self) { intent in
-                        if let readiness = assessment.performanceReadiness[intent] {
+                        if let readinessData = assessment.performanceReadiness[intent] {
                             ExpandableIntentRow(
                                 intent: intent,
-                                readiness: readiness.level,
+                                readinessData: readinessData,
                                 assessment: assessment,
                                 isExpanded: expandedIntents.contains(intent),
                                 color: .green,
@@ -106,10 +124,10 @@ struct EnhancedIntentReadinessCard: View {
                         .foregroundStyle(.secondary)
                     
                     ForEach(maybeIntents, id: \.self) { intent in
-                        if let readiness = assessment.performanceReadiness[intent] {
+                        if let readinessData = assessment.performanceReadiness[intent] {
                             ExpandableIntentRow(
                                 intent: intent,
-                                readiness: readiness.level,
+                                readinessData: readinessData,
                                 assessment: assessment,
                                 isExpanded: expandedIntents.contains(intent),
                                 color: .orange,
@@ -142,10 +160,10 @@ struct EnhancedIntentReadinessCard: View {
                         .foregroundStyle(.secondary)
                     
                     ForEach(assessment.shouldAvoidIntents, id: \.self) { intent in
-                        if let readiness = assessment.performanceReadiness[intent] {
+                        if let readinessData = assessment.performanceReadiness[intent] {
                             ExpandableIntentRow(
                                 intent: intent,
-                                readiness: readiness.level,
+                                readinessData: readinessData,
                                 assessment: assessment,
                                 isExpanded: expandedIntents.contains(intent),
                                 color: .red,
@@ -201,11 +219,47 @@ struct EnhancedIntentReadinessCard: View {
     }
 }
 
+// MARK: - Data Quality Banner
+
+struct DataQualityBanner: View {
+    let dataQuality: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.DataQuality
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "info.circle.fill")
+                .foregroundStyle(bannerColor)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Limited Data")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                
+                Text(dataQuality.overallQuality.description)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+        }
+        .padding(12)
+        .background(bannerColor.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+    
+    private var bannerColor: Color {
+        switch dataQuality.overallQuality {
+        case .excellent, .good: return .green
+        case .fair: return .orange
+        case .poor: return .red
+        }
+    }
+}
+
 // MARK: - Expandable Intent Row
 
 struct ExpandableIntentRow: View {
     let intent: ActivityIntent
-    let readiness: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence.ReadinessLevel
+    let readinessData: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment.ReadinessWithConfidence
     let assessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment
     let isExpanded: Bool
     let color: Color
@@ -236,9 +290,17 @@ struct ExpandableIntentRow: View {
                     
                     Spacer()
                     
-                    // Readiness indicator
-                    Text(readiness.emoji)
-                        .font(.title3)
+                    // Confidence badge
+                    HStack(spacing: 4) {
+                        Text(readinessData.level.emoji)
+                            .font(.title3)
+                        
+                        // Show confidence for non-excellent data
+                        if readinessData.confidence != .high {
+                            Text(readinessData.confidence.emoji)
+                                .font(.caption)
+                        }
+                    }
                     
                     // Expand chevron
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
@@ -273,6 +335,20 @@ struct ExpandableIntentRow: View {
                                 .foregroundStyle(.primary)
                         }
                     }
+                    
+                    // Statistical confidence footer
+                    Divider()
+                        .padding(.vertical, 4)
+                    
+                    HStack {
+                        Image(systemName: "chart.bar.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        
+                        Text("Based on \(readinessData.sampleSize) examples • \(readinessData.confidence.description)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
@@ -284,7 +360,7 @@ struct ExpandableIntentRow: View {
     }
     
     private var reasoningVerb: String {
-        switch readiness {
+        switch readinessData.level {
         case .excellent: return "you're ready"
         case .good: return "you can do this"
         case .fair: return "proceed with caution"
@@ -300,33 +376,41 @@ struct ExpandableIntentRow: View {
     private var reasons: [Reason] {
         var reasons: [Reason] = []
         
-        // ACWR reasoning
-        if assessment.acwr.value <= 1.2 {
-            reasons.append(Reason(text: "Training load is optimal (\(String(format: "%.2f", assessment.acwr.value)))", isPositive: true))
-        } else if assessment.acwr.value <= 1.4 {
-            reasons.append(Reason(text: "Load is building (\(String(format: "%.2f", assessment.acwr.value)))", isPositive: intent == .easy || intent == .casualWalk))
+        // ACWR reasoning with confidence interval
+        let acwrText: String
+        if let ci = assessment.acwr.confidenceInterval {
+            acwrText = String(format: "%.2f (%.2f-%.2f)",
+                            assessment.acwr.value, ci.lower, ci.upper)
         } else {
-            reasons.append(Reason(text: "Load is high (\(String(format: "%.2f", assessment.acwr.value))) - injury risk", isPositive: false))
+            acwrText = String(format: "%.2f", assessment.acwr.value)
+        }
+        
+        if assessment.acwr.value <= 1.2 {
+            reasons.append(Reason(text: "Training load is optimal (\(acwrText))", isPositive: true))
+        } else if assessment.acwr.value <= 1.4 {
+            reasons.append(Reason(text: "Load is building (\(acwrText))", isPositive: intent == .easy || intent == .casualWalk))
+        } else {
+            reasons.append(Reason(text: "Load is high (\(acwrText)) - injury risk", isPositive: false))
         }
         
         // Intent-specific reasoning
         switch intent {
         case .race:
-            if readiness == .excellent {
+            if readinessData.level == .excellent {
                 reasons.append(Reason(text: "Perfect recovery conditions for peak effort", isPositive: true))
-            } else if readiness == .poor {
+            } else if readinessData.level == .poor {
                 reasons.append(Reason(text: "Not enough recovery for race intensity", isPositive: false))
             }
             
         case .tempo:
-            if readiness == .excellent || readiness == .good {
+            if readinessData.level == .excellent || readinessData.level == .good {
                 reasons.append(Reason(text: "Good for sustained hard effort", isPositive: true))
             } else {
                 reasons.append(Reason(text: "Too fatigued for threshold work", isPositive: false))
             }
             
         case .intervals:
-            if readiness == .excellent {
+            if readinessData.level == .excellent {
                 reasons.append(Reason(text: "Fresh enough for high-intensity intervals", isPositive: true))
             } else {
                 reasons.append(Reason(text: "Need more recovery for max efforts", isPositive: false))
@@ -350,7 +434,7 @@ struct ExpandableIntentRow: View {
             reasons.append(Reason(text: "Always safe for movement and recovery", isPositive: true))
             
         case .strength:
-            if readiness == .good || readiness == .excellent {
+            if readinessData.level == .good || readinessData.level == .excellent {
                 reasons.append(Reason(text: "Fresh enough for resistance training", isPositive: true))
             } else {
                 reasons.append(Reason(text: "Consider lighter weights or mobility work", isPositive: false))

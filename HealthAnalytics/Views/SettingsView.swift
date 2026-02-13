@@ -101,28 +101,9 @@ struct SettingsView: View {
                         Text("Deletes all duplicate workouts and re-syncs from scratch.")
                             .font(.caption)
                         .foregroundStyle(.secondary)                    }
- 
-                    NavigationLink {
-                        ActivityIntentLabelerView()
-                    } label: {
-                        Label("Label Workouts for ML", systemImage: "brain.head.profile")
-                    }
-                    
+                   
                     .padding()
                     .cardStyle(for: .info)
-                    
-/*                    // MARK: - Permissions
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Permissions")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                        
-                        Text("Tap “Re-authorize HealthKit” to grant access to nutrition data.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
-                    .cardStyle(for: .info) */
                 }
                 .padding(.horizontal)
                 .padding(.top, 12)
