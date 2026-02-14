@@ -43,11 +43,11 @@ class SyncManager: ObservableObject {
         print("   lastSyncDate: \(lastSyncDate?.formatted() ?? "nil")")
         if let last = lastSyncDate {
             print("   Time since last: \(Date().timeIntervalSince(last)) seconds")
-            print("   Should skip: \(Date().timeIntervalSince(last) < 3600)")
+            print("   Should skip: \(Date().timeIntervalSince(last) < 1800)")
         }
         
-        // Prevent redundant syncs
-        if let last = lastSyncDate, Date().timeIntervalSince(last) < 3600 {
+        // Prevent redundant syncs - only sync if 30+ minutes have passed
+        if let last = lastSyncDate, Date().timeIntervalSince(last) < 1800 {
             print("🛡️ Sync Guard: Synced \(Int(Date().timeIntervalSince(last)/60))m ago. Skipping.")
             return
         }
@@ -171,13 +171,37 @@ class SyncManager: ObservableObject {
         let calendar = Calendar.current
         let endDate = Date()
 
-        // Use data window cutoff date if set, otherwise use current year
-        let startDate = DataWindowManager.getDataSyncStartDate()
-        
-        let yearsBack = DataWindowManager.getYearsToBackfill()
-        let windowDescription = yearsBack == 10 ? "all historical data" : "last \(yearsBack) years"
-        print("🔄 Syncing \(windowDescription)...")
-        syncProgress = "Updating \(windowDescription)..."
+        // INCREMENTAL SYNC: Only fetch data since last successful sync
+        let startDate: Date
+        if let lastSync = lastSyncDate {
+            // Add 1 day buffer to avoid missing data at boundaries
+            startDate = calendar.date(byAdding: .day, value: -1, to: lastSync) ?? lastSync
+            let daysSinceLastSync = calendar.dateComponents([.day], from: lastSync, to: endDate).day ?? 0
+            
+            // Better time display for recent syncs
+            let timeSinceLastSync = endDate.timeIntervalSince(lastSync)
+            let timeDescription: String
+            if timeSinceLastSync < 3600 { // Less than 1 hour
+                let minutes = Int(timeSinceLastSync / 60)
+                timeDescription = "\(minutes) minute\(minutes == 1 ? "" : "s")"
+            } else if timeSinceLastSync < 86400 { // Less than 1 day
+                let hours = Int(timeSinceLastSync / 3600)
+                timeDescription = "\(hours) hour\(hours == 1 ? "" : "s")"
+            } else if daysSinceLastSync <= 7 {
+                timeDescription = "\(daysSinceLastSync) day\(daysSinceLastSync == 1 ? "" : "s")"
+            } else {
+                let weeks = daysSinceLastSync / 7
+                timeDescription = "\(weeks) week\(weeks == 1 ? "" : "s")"
+            }
+            
+            print("🔄 Syncing data since last sync (\(timeDescription) ago)...")
+            syncProgress = "Updating last \(timeDescription)..."
+        } else {
+            // First sync ever - get last 30 days as initial data
+            startDate = calendar.date(byAdding: .day, value: -30, to: endDate) ?? endDate
+            print("🔄 Initial sync: fetching last 30 days...")
+            syncProgress = "Fetching initial data..."
+        }
         
         do {
             async let rhr = healthKitManager.fetchRestingHeartRate(startDate: startDate, endDate: endDate)
@@ -193,15 +217,32 @@ class SyncManager: ObservableObject {
                 var allActivities: [StravaActivity] = []
                 var page = 1
                 var keepFetching = true
+                let startDateTimestamp = Int(startDate.timeIntervalSince1970)
                 
                 while keepFetching {
                     if let batch = try? await stravaManager.fetchActivities(page: page, perPage: 200) {
                         if batch.isEmpty {
                             keepFetching = false
                         } else {
-                            allActivities.append(contentsOf: batch)
-                            print("   📥 Fetched page \(page): \(batch.count) activities (total: \(allActivities.count))")
-                            page += 1
+                            // Filter activities to only those after startDate
+                            let recentActivities = batch.filter { activity in
+                                let formatter = ISO8601DateFormatter()
+                                if let date = formatter.date(from: activity.startDate) {
+                                    return date >= startDate
+                                }
+                                return true // Include if we can't parse date (safer)
+                            }
+                            
+                            allActivities.append(contentsOf: recentActivities)
+                            print("   📥 Fetched page \(page): \(recentActivities.count)/\(batch.count) activities since \(startDate.formatted(date: .abbreviated, time: .omitted)) (total: \(allActivities.count))")
+                            
+                            // Stop fetching if we got fewer activities than requested (means we've reached older data)
+                            if recentActivities.count < batch.count {
+                                print("   ⏹️ Reached activities older than sync window, stopping pagination")
+                                keepFetching = false
+                            } else {
+                                page += 1
+                            }
                         }
                     } else {
                         keepFetching = false

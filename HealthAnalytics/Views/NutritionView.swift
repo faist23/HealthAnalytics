@@ -13,27 +13,25 @@ struct NutritionView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    
-                    // MARK: - Time Range Picker
-                    Picker("Time Range", selection: $viewModel.selectedTimeRange) {
-                        ForEach(NutritionViewModel.TimeRange.allCases, id: \.self) { range in
-                            Text(range.rawValue).tag(range)
+            ZStack {
+                ScrollView {
+                    VStack(spacing: 20) {
+                        
+                        // MARK: - Time Range Picker
+                        Picker("Time Range", selection: $viewModel.selectedTimeRange) {
+                            ForEach(NutritionViewModel.TimeRange.allCases, id: \.self) { range in
+                                Text(range.rawValue).tag(range)
+                            }
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    .onChange(of: viewModel.selectedTimeRange) { _, newRange in
-                        Task {
-                            await viewModel.loadNutritionData()
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
+                        .onChange(of: viewModel.selectedTimeRange) { _, newRange in
+                            Task {
+                                await viewModel.loadNutritionData()
+                            }
                         }
-                    }
-                    
-                    if viewModel.isLoading {
-                        ProgressView("Loading data...")
-                            .padding()
-                    } else if viewModel.dailyNutrition.isEmpty {
+                        
+                        if viewModel.dailyNutrition.isEmpty && !viewModel.isLoading {
                         NutritionEmptyState()
                             .padding(.top, 40)
                     } else {
@@ -84,15 +82,21 @@ struct NutritionView: View {
                 .padding(.vertical)
             }
             .navigationTitle("Nutrition")
-            .background(Color(uiColor: .systemGroupedBackground))
-            .task {
-                // Ensure data is loaded when view appears
-                await viewModel.loadNutritionData()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
-                // Force reload when data window changes
-                Task {
+                .background(Color(uiColor: .systemGroupedBackground))
+                .task {
+                    // Ensure data is loaded when view appears
                     await viewModel.loadNutritionData()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
+                    // Force reload when data window changes
+                    Task {
+                        await viewModel.loadNutritionData()
+                    }
+                }
+                
+                // Loading overlay
+                if viewModel.isLoading {
+                    LoadingOverlay(message: "Loading nutrition data...")
                 }
             }
         }

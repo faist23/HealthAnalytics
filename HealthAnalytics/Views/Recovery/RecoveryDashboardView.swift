@@ -79,7 +79,7 @@ struct RecoveryDashboardView: View {
         }
         .overlay {
             if viewModel.isLoading {
-                LoadingOverlay()
+                LoadingOverlay(message: "Loading recovery data...")
             }
         }
     }
@@ -693,31 +693,7 @@ struct WeeklySummaryCard: View {
     }
 }
 
-// MARK: - Loading Overlay
-
-struct LoadingOverlay: View {
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.2)
-                .ignoresSafeArea()
-            
-            VStack(spacing: 16) {
-                ProgressView()
-                    .scaleEffect(1.2)
-                
-                Text("Loading Recovery Data...")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(32)
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.ultraThickMaterial)
-                    .shadow(radius: 30)
-            )
-        }
-    }
-}
+// MARK: - Loading Overlay (using shared component from LoadingIndicators.swift)
 
 #Preview {
     NavigationStack {

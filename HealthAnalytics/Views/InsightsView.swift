@@ -11,30 +11,37 @@ import Charts
 
 struct InsightsView: View {
     @StateObject private var viewModel = InsightsViewModel()
+    @State private var isFirstLoad = true
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
     @State private var showACWRInfo = false
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // 1. Handle Loading & Error States
-                if viewModel.isLoading {
-                    ProgressView("Analyzing your data...")
-                        .padding()
-                } else if let error = viewModel.errorMessage {
-                    ErrorView(message: error)
-                        .cardStyle(for: .error)
-                } else {
-                    // 2. Main Dashboard Content (Broken into groups to fix compiler timeout)
-                    dashboardContent
+        ZStack {
+            TabBackgroundColor.insights(for: colorScheme)
+                .ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 20) {
+                    // 1. Handle Error States
+                    if let error = viewModel.errorMessage {
+                        ErrorView(message: error)
+                            .cardStyle(for: .error)
+                    } else if !viewModel.isLoading && !isFirstLoad {
+                        // 2. Main Dashboard Content (Broken into groups to fix compiler timeout)
+                        dashboardContent
+                    }
+                    
+                    Spacer()
                 }
-                
-                Spacer()
+                .padding()
             }
-            .padding()
+            
+            // Loading overlay
+            if viewModel.isLoading || isFirstLoad {
+                LoadingOverlay(message: "Analyzing your data...")
+            }
         }
-        .background(TabBackgroundColor.insights(for: colorScheme))
         .navigationTitle("Insights")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -48,25 +55,23 @@ struct InsightsView: View {
                 .disabled(viewModel.isLoading)
             }
         }
-        .onAppear {
-            // Configure on appear
-            configureViewModel()
+        .task {
+            // Configure on first appearance
+            if viewModel.modelContainer == nil {
+                viewModel.configure(container: modelContext.container)
+            }
+            // Always analyze when tab appears
+            await viewModel.analyzeData()
+            // Mark first load as complete
+            isFirstLoad = false
         }
         .onChange(of: modelContext) { _, _ in
-            // Reconfigure if context changes
-            configureViewModel()
+            if viewModel.modelContainer == nil {
+                viewModel.configure(container: modelContext.container)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
             // Force recalculation when data window changes
-            Task {
-                await viewModel.analyzeData()
-            }
-        }
-    }
-    
-    private func configureViewModel() {
-        if viewModel.modelContainer == nil {
-            viewModel.configure(container: modelContext.container)
             Task {
                 await viewModel.analyzeData()
             }

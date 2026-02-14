@@ -9,10 +9,12 @@ import SwiftUI
 
 struct MainTabView: View {
     @State private var selectedTab = 0
+    @ObservedObject var syncManager = SyncManager.shared
     @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
-        TabView(selection: $selectedTab) {
+        ZStack {
+            TabView(selection: $selectedTab) {
             NavigationStack {
                 ContentView()
             }
@@ -58,6 +60,12 @@ struct MainTabView: View {
                 Label("Settings", systemImage: "gearshape")
             }
             .tag(4)
+            }
+            
+            // Global sync indicator
+            if syncManager.isSyncing {
+                LoadingOverlay(message: syncManager.syncProgress)
+            }
         }
     }
 }

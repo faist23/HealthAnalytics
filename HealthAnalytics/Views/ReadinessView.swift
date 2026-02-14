@@ -11,6 +11,7 @@ import Charts
 
 struct ReadinessView: View {
     @StateObject private var viewModel = ReadinessViewModel()
+    @State private var isFirstLoad = true
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
     @ObservedObject var syncManager = SyncManager.shared
@@ -47,11 +48,20 @@ struct ReadinessView: View {
                 refreshButton
             }
         } */
-        .onAppear {
-            configureViewModel()
+        .task {
+            // Configure on first appearance
+            if viewModel.modelContainer == nil {
+                viewModel.configure(container: modelContext.container)
+            }
+            // Always analyze when tab appears
+            await viewModel.analyze(modelContext: modelContext)
+            // Mark first load as complete
+            isFirstLoad = false
         }
         .onChange(of: modelContext) { _, _ in
-            configureViewModel()
+            if viewModel.modelContainer == nil {
+                viewModel.configure(container: modelContext.container)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
             // Force recalculation when data window changes
@@ -61,34 +71,34 @@ struct ReadinessView: View {
         }
     }
     
-    private func configureViewModel() {
-        if viewModel.modelContainer == nil {
-            viewModel.configure(container: modelContext.container)
-            Task {
-                await viewModel.analyze(modelContext: modelContext)
-            }
-        }
-    }
-    
     // MARK: - Subviews
     
     private var readinessContent: some View {
-        ScrollView {
-            VStack(spacing: 24) {
+        ZStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    
+                    if let error = viewModel.errorMessage {
+                        ErrorView(message: error)
+                            .cardStyle(for: .error)
+                    }
                 
-                if viewModel.isLoading {
-                    ProgressView("Analyzing your readiness...")
-                        .padding()
-                } else if let error = viewModel.errorMessage {
-                    ErrorView(message: error)
-                        .cardStyle(for: .error)
-                } else if let instruction = viewModel.dailyInstruction {
-                    DailyInstructionCard(instruction: instruction)
-                        .cardStyle(for: .info)
-                }
-                
-                // HERO: Readiness Score
-                if let readiness = viewModel.readinessScore {
+                // Don't show content if loading OR first load - loading overlay will appear
+                if !viewModel.isLoading && !isFirstLoad {
+                    // HRV-Guided Daily Recommendation (HERO)
+                    if let recommendation = viewModel.dailyRecommendation {
+                        DailyRecommendationCard(recommendation: recommendation)
+                            .cardStyle(for: .info)
+                    }
+                    
+                    // Legacy daily instruction (fallback)
+                    if viewModel.dailyRecommendation == nil, let instruction = viewModel.dailyInstruction {
+                        DailyInstructionCard(instruction: instruction)
+                            .cardStyle(for: .info)
+                    }
+                    
+                    // HERO: Readiness Score
+                    if let readiness = viewModel.readinessScore {
                     ReadinessScoreHero(readiness: readiness)
                         .cardStyle(for: .recovery)
                     
@@ -174,16 +184,24 @@ struct ReadinessView: View {
                         }
                     }
                     
-                } else {
-                    ReadinessEmptyState()
-                        .cardStyle(for: .info)
-                }
+                    } else {
+                        // Show empty state only when not loading and no data
+                        ReadinessEmptyState()
+                            .cardStyle(for: .info)
+                    }
+                } // End of !viewModel.isLoading check
                 
                 Spacer()
+                }
+                .padding()
             }
-            .padding()
+            .scrollContentBackground(.hidden)
+            
+            // Loading overlay - must be AFTER ScrollView to appear on top
+            if viewModel.isLoading || isFirstLoad {
+                LoadingOverlay(message: "Analyzing your readiness...")
+            }
         }
-        .scrollContentBackground(.hidden)
     }
     
     private var refreshButton: some View {

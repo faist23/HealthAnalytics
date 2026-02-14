@@ -64,7 +64,7 @@ struct TimelineView: View {
         }
         .overlay {
             if viewModel.isLoading {
-                LoadingOverlay()
+                LoadingOverlay(message: "Loading timeline...")
             }
         }
     }

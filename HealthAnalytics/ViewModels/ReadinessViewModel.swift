@@ -27,6 +27,7 @@ class ReadinessViewModel: ObservableObject {
     @Published var intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
     @Published var temporalAnalysis: TemporalModelingService.TemporalAnalysis?
     @Published var loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
+    @Published var dailyRecommendation: DailyRecommendationService.DailyRecommendation?
 
     // ML Training State
     private var trainedModels: [PerformancePredictor.TrainedModel] = []
@@ -280,6 +281,16 @@ class ReadinessViewModel: ObservableObject {
                     workouts: workouts,
                     hrvData: hrvData,
                     rhrData: rhrData
+                )
+            }
+            
+            // PROFILE: Daily Recommendation (HRV-Guided)
+            PerformanceProfiler.measure("🎯 Daily Recommendation") {
+                generateDailyRecommendation(
+                    hrvData: hrvData,
+                    sleepData: sleepData,
+                    rhrData: rhrData,
+                    workouts: workouts
                 )
             }
             
@@ -542,6 +553,25 @@ class ReadinessViewModel: ObservableObject {
             daysInStatus: 1,
             optimalActionWindow: actionWindow,
             riskLevel: risk
+        )
+    }
+    
+    // MARK: - Daily Recommendation (HRV-Guided)
+    
+    private func generateDailyRecommendation(
+        hrvData: [HealthDataPoint],
+        sleepData: [HealthDataPoint],
+        rhrData: [HealthDataPoint],
+        workouts: [WorkoutData]
+    ) {
+        let service = DailyRecommendationService()
+        
+        dailyRecommendation = service.generateDailyRecommendation(
+            hrvData: hrvData,
+            sleepData: sleepData,
+            rhrData: rhrData,
+            workouts: workouts,
+            readinessScore: readinessScore?.score
         )
     }
     

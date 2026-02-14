@@ -10,9 +10,12 @@ import SwiftUI
 
 struct SettingsView: View {
     @StateObject private var healthKitManager = HealthKitManager.shared
+    @ObservedObject var syncManager = SyncManager.shared
     @State private var isRequestingAuth = false
     @State private var showingClearConfirmation = false
     @State private var showingDataWindowAlert = false
+    @State private var isResettingData = false
+    @State private var isClearingCache = false
     @AppStorage("historicalDataWindowYears") private var historicalDataWindowYears: Int = 0
     @Environment(\.colorScheme) var colorScheme
     
@@ -21,6 +24,7 @@ struct SettingsView: View {
             // 🔹 Tab background color (same system as other tabs)
             TabBackgroundColor.settings(for: colorScheme)
                 .ignoresSafeArea()
+            
             ScrollView {
                 VStack(spacing: 16) {
                     
@@ -133,12 +137,23 @@ struct SettingsView: View {
 
                         Button(role: .destructive) {
                             // Trigger reset
+                            isResettingData = true
                             Task {
                                 await SyncManager.shared.resetAllData()
+                                isResettingData = false
                             }
                         } label: {
-                            Label("Reset Workout & Wellness Data", systemImage: "arrow.counterclockwise")
+                            HStack {
+                                Label("Reset Workout & Wellness Data", systemImage: "arrow.counterclockwise")
+                                Spacer()
+                                if isResettingData {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                }
+                            }
                         }
+                        .disabled(isResettingData || syncManager.isSyncing)
+                        
                         Text("Deletes all duplicate workouts and re-syncs from scratch.")
                             .font(.caption)
                         .foregroundStyle(.secondary)                    }
@@ -149,6 +164,19 @@ struct SettingsView: View {
                 .padding(.horizontal)
                 .padding(.top, 12)
             }
+            
+            // Loading overlay when syncing or resetting
+            if syncManager.isSyncing || isResettingData {
+                if syncManager.isSyncing {
+                    LoadingOverlay(
+                        message: syncManager.syncProgress,
+                        showProgress: syncManager.syncProgress.contains("Sync complete"),
+                        progress: nil
+                    )
+                } else if isResettingData {
+                    LoadingOverlay(message: "Resetting data...")
+                }
+            }
         }
         .navigationTitle("Settings")
         .confirmationDialog(
@@ -157,8 +185,11 @@ struct SettingsView: View {
             titleVisibility: .visible
         ) {
             Button("Clear All Cached Data", role: .destructive) {
+                isClearingCache = true
                 Task {
                     PredictionCache.shared.invalidate()
+                    try? await Task.sleep(nanoseconds: 500_000_000) // Brief delay for UX
+                    isClearingCache = false
                 }
             }
             Button("Cancel", role: .cancel) {}
