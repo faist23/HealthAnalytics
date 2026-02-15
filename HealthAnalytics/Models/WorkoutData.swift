@@ -8,6 +8,7 @@
 
 import Foundation
 import HealthKit
+import SwiftUI
 
 enum WorkoutSource: String {
     case appleWatch = "Apple Watch"
@@ -22,11 +23,11 @@ enum WorkoutSource: String {
         }
     }
     
-    var color: String {
+    var color: Color {
         switch self {
-        case .appleWatch: return "blue"
-        case .strava: return "orange"
-        case .other: return "gray"
+        case .appleWatch: return .blue
+        case .strava: return .orange
+        case .other: return .gray
         }
     }
 }

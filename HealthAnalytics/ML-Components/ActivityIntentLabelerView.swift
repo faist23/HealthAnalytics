@@ -476,11 +476,11 @@ struct IntentButton: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 100)
-            .background(Color(intent.color).opacity(0.15))
+            .background(intent.color.opacity(0.15))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay {
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color(intent.color).opacity(0.3), lineWidth: 1)
+                    .stroke(intent.color.opacity(0.3), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)

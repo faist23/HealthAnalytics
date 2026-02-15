@@ -8,6 +8,7 @@
 
 import Foundation
 import SwiftData
+import SwiftUI
 
 /// The primary intent categories for workouts
 enum ActivityIntent: String, Codable, CaseIterable {
@@ -33,16 +34,16 @@ enum ActivityIntent: String, Codable, CaseIterable {
         }
     }
     
-    var color: String {
+    var color: Color {
         switch self {
-        case .race: return "red"
-        case .tempo: return "orange"
-        case .intervals: return "purple"
-        case .easy: return "green"
-        case .long: return "blue"
-        case .casualWalk: return "gray"
-        case .strength: return "brown"
-        case .other: return "secondary"
+        case .race: return .red
+        case .tempo: return .orange
+        case .intervals: return .purple
+        case .easy: return .green
+        case .long: return .blue
+        case .casualWalk: return .gray
+        case .strength: return .brown
+        case .other: return .secondary
         }
     }
     

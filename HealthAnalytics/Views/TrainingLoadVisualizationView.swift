@@ -359,16 +359,7 @@ struct IntentLoadRow: View {
     }
     
     private func intentColor(for intent: ActivityIntent) -> Color {
-        switch intent.color {
-        case "red": return .red
-        case "orange": return .orange
-        case "purple": return .purple
-        case "green": return .green
-        case "blue": return .blue
-        case "gray": return .gray
-        case "brown": return .brown
-        default: return .secondary
-        }
+        return intent.color
     }
 }
 

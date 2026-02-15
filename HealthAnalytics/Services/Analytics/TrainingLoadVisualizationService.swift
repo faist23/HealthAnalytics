@@ -186,6 +186,10 @@ struct TrainingLoadVisualizationService {
         
         var currentDate = calendar.startOfDay(for: startDate)
         
+        // Sample every 3 days to reduce calculations while maintaining chart smoothness
+        // For 90-day window: ~30 data points instead of 90
+        let samplingInterval = 3
+        
         while currentDate <= endDate {
             // Calculate loads for this day
             let acuteEnd = currentDate
@@ -226,7 +230,47 @@ struct TrainingLoadVisualizationService {
                 status: status
             ))
             
-            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+            currentDate = calendar.date(byAdding: .day, value: samplingInterval, to: currentDate)!
+        }
+        
+        // Always include the most recent day (today) if not already included
+        let lastPoint = dataPoints.last?.date ?? startDate
+        let today = calendar.startOfDay(for: endDate)
+        if !calendar.isDate(lastPoint, inSameDayAs: today) {
+            let acuteStart = calendar.date(byAdding: .day, value: -7, to: today)!
+            let chronicStart = calendar.date(byAdding: .day, value: -28, to: today)!
+            
+            let acuteWorkouts = workouts.filter {
+                $0.startDate >= acuteStart && $0.startDate < today
+            }
+            
+            let chronicWorkouts = workouts.filter {
+                $0.startDate >= chronicStart && $0.startDate < today
+            }
+            
+            let acuteLoad = calculateLoad(workouts: acuteWorkouts) / 7.0
+            let chronicLoad = calculateLoad(workouts: chronicWorkouts) / 28.0
+            let acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1.0
+            
+            let status: LoadVisualizationData.LoadDataPoint.LoadStatus
+            switch acwr {
+            case 0..<0.8:
+                status = .detraining
+            case 0.8...1.3:
+                status = .optimal
+            case 1.3...1.5:
+                status = .building
+            default:
+                status = .danger
+            }
+            
+            dataPoints.append(LoadVisualizationData.LoadDataPoint(
+                date: today,
+                acuteLoad: acuteLoad,
+                chronicLoad: chronicLoad,
+                acwr: acwr,
+                status: status
+            ))
         }
         
         return dataPoints

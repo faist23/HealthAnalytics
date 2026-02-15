@@ -7,6 +7,7 @@
 
 
 import Foundation
+import SwiftUI
 import HealthKit
 
 struct TrainingLoadCalculator {
@@ -20,18 +21,28 @@ struct TrainingLoadCalculator {
         let status: LoadStatus
         let recommendation: String
         
+        // Enhanced EWMA-based metrics
+        let ewmaAcuteLoad: Double      // EWMA with 7-day time constant
+        let ewmaChronicLoad: Double    // EWMA with 42-day time constant
+        let ewmaRatio: Double          // EWMA-based acute:chronic ratio
+        
+        // Advanced injury risk indicators
+        let monotony: Double           // Training variety (lower = more variety)
+        let strain: Double             // Load × Monotony
+        let weeklyLoadChange: Double   // % change from previous week
+        
         enum LoadStatus {
             case fresh          // ACR < 0.8
             case optimal        // ACR 0.8-1.3
             case fatigued       // ACR 1.3-1.5
             case overreaching   // ACR > 1.5
             
-            var color: String {
+            var color: Color {
                 switch self {
-                case .fresh: return "blue"
-                case .optimal: return "green"
-                case .fatigued: return "orange"
-                case .overreaching: return "red"
+                case .fresh: return .blue
+                case .optimal: return .green
+                case .fatigued: return .orange
+                case .overreaching: return .red
                 }
             }
             
@@ -120,17 +131,30 @@ struct TrainingLoadCalculator {
         // Calculate acute:chronic ratio
         let acr = acuteLoad / chronicLoad
         
-        // Determine status and recommendation
+        // ENHANCED: Calculate EWMA-based loads
+        let (ewmaAcute, ewmaChronic) = calculateEWMALoads(dailyLoads: dailyLoads, today: today)
+        let ewmaRatio = ewmaChronic > 0 ? ewmaAcute / ewmaChronic : acr
+        
+        // ENHANCED: Calculate monotony and strain
+        let monotony = calculateMonotony(dailyLoads: dailyLoads, days: 7, today: today)
+        let strain = acuteLoad * monotony
+        
+        // ENHANCED: Calculate week-over-week load change
+        let weeklyLoadChange = calculateWeeklyLoadChange(dailyLoads: dailyLoads, today: today)
+        
+        // Determine status and recommendation (prioritize EWMA ratio)
         let status: TrainingLoadSummary.LoadStatus
         let recommendation: String
         
-        if acr < 0.8 {
+        let primaryRatio = ewmaRatio // Use EWMA ratio as primary indicator
+        
+        if primaryRatio < 0.8 {
             status = .fresh
             recommendation = "You're well-rested. Good time for hard training or racing."
-        } else if acr <= 1.3 {
+        } else if primaryRatio <= 1.3 {
             status = .optimal
             recommendation = "Training load is in the optimal range. Keep up the good work!"
-        } else if acr <= 1.5 {
+        } else if primaryRatio <= 1.5 {
             status = .fatigued
             recommendation = "Training load is high. Consider adding recovery days."
         } else {
@@ -139,9 +163,15 @@ struct TrainingLoadCalculator {
         }
         
         print("📊 Training Load Analysis:")
-        print("   Acute Load (7d): \(String(format: "%.1f", acuteLoad))")
-        print("   Chronic Load (28d): \(String(format: "%.1f", chronicLoad))")
+        print("   Acute Load (7d avg): \(String(format: "%.1f", acuteLoad))")
+        print("   Chronic Load (28d avg): \(String(format: "%.1f", chronicLoad))")
         print("   ACR: \(String(format: "%.2f", acr))")
+        print("   EWMA Acute: \(String(format: "%.1f", ewmaAcute))")
+        print("   EWMA Chronic: \(String(format: "%.1f", ewmaChronic))")
+        print("   EWMA Ratio: \(String(format: "%.2f", ewmaRatio))")
+        print("   Monotony: \(String(format: "%.2f", monotony))")
+        print("   Strain: \(String(format: "%.1f", strain))")
+        print("   Weekly Change: \(String(format: "%.1f", weeklyLoadChange))%")
         print("   Status: \(status)")
         
         return TrainingLoadSummary(
@@ -149,7 +179,13 @@ struct TrainingLoadCalculator {
             chronicLoad: chronicLoad,
             acuteChronicRatio: acr,
             status: status,
-            recommendation: recommendation
+            recommendation: recommendation,
+            ewmaAcuteLoad: ewmaAcute,
+            ewmaChronicLoad: ewmaChronic,
+            ewmaRatio: ewmaRatio,
+            monotony: monotony,
+            strain: strain,
+            weeklyLoadChange: weeklyLoadChange
         )
     }
     
@@ -242,5 +278,87 @@ struct TrainingLoadCalculator {
         }
         
         return durationMinutes * 0.5 // Default
+    }
+    
+    // MARK: - Enhanced Load Calculation Methods
+    
+    /// Calculates EWMA-based acute and chronic training loads
+    /// EWMA is more responsive to recent changes than simple rolling averages
+    private func calculateEWMALoads(dailyLoads: [Date: Double], today: Date) -> (acute: Double, chronic: Double) {
+        let calendar = Calendar.current
+        
+        // Time constants: 7 days for acute, 42 days for chronic (6 weeks)
+        let acuteTimeConstant = 7.0
+        let chronicTimeConstant = 42.0
+        
+        var ewmaAcute: Double = 0
+        var ewmaChronic: Double = 0
+        
+        // Calculate EWMA going backwards from today
+        // We need at least 42 days of data for meaningful chronic load
+        for i in 0..<42 {
+            guard let day = calendar.date(byAdding: .day, value: -i, to: today) else { continue }
+            let load = dailyLoads[day] ?? 0
+            
+            // Update acute EWMA (last 7 days weighted)
+            if i < 7 {
+                let alpha = 2.0 / (acuteTimeConstant + 1.0)
+                ewmaAcute = (load * alpha) + (ewmaAcute * (1.0 - alpha))
+            }
+            
+            // Update chronic EWMA (all 42 days weighted)
+            let alphaC = 2.0 / (chronicTimeConstant + 1.0)
+            ewmaChronic = (load * alphaC) + (ewmaChronic * (1.0 - alphaC))
+        }
+        
+        return (ewmaAcute, ewmaChronic)
+    }
+    
+    /// Calculates training monotony - lack of variety in training load
+    /// Monotony = average load / standard deviation
+    /// High monotony (>2.0) + high load = high injury risk
+    private func calculateMonotony(dailyLoads: [Date: Double], days: Int, today: Date) -> Double {
+        let calendar = Calendar.current
+        var loads: [Double] = []
+        
+        for i in 0..<days {
+            guard let day = calendar.date(byAdding: .day, value: -i, to: today) else { continue }
+            loads.append(dailyLoads[day] ?? 0)
+        }
+        
+        guard loads.count > 1 else { return 1.0 }
+        
+        let mean = loads.reduce(0, +) / Double(loads.count)
+        let variance = loads.map { pow($0 - mean, 2) }.reduce(0, +) / Double(loads.count)
+        let stdDev = sqrt(variance)
+        
+        // Avoid division by zero
+        guard stdDev > 0 else { return 1.0 }
+        
+        return mean / stdDev
+    }
+    
+    /// Calculates week-over-week load change percentage
+    /// Rapid increases (>20%) are associated with higher injury risk
+    private func calculateWeeklyLoadChange(dailyLoads: [Date: Double], today: Date) -> Double {
+        let calendar = Calendar.current
+        
+        // Current week (last 7 days)
+        var currentWeekLoad: Double = 0
+        for i in 0..<7 {
+            guard let day = calendar.date(byAdding: .day, value: -i, to: today) else { continue }
+            currentWeekLoad += dailyLoads[day] ?? 0
+        }
+        
+        // Previous week (days 7-13)
+        var previousWeekLoad: Double = 0
+        for i in 7..<14 {
+            guard let day = calendar.date(byAdding: .day, value: -i, to: today) else { continue }
+            previousWeekLoad += dailyLoads[day] ?? 0
+        }
+        
+        guard previousWeekLoad > 0 else { return 0 }
+        
+        return ((currentWeekLoad - previousWeekLoad) / previousWeekLoad) * 100
     }
 }

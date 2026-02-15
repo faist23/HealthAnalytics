@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import SwiftUI
 import HealthKit
 
 struct ReadinessAnalyzer {
@@ -55,13 +56,13 @@ struct ReadinessAnalyzer {
                 }
             }
             
-            var color: String {
+            var color: Color {
                 switch self {
-                case .improving: return "green"
-                case .maintaining: return "blue"
-                case .declining: return "orange"
-                case .peaking: return "purple"
-                case .recovering: return "yellow"
+                case .improving: return .green
+                case .maintaining: return .blue
+                case .declining: return .orange
+                case .peaking: return .purple
+                case .recovering: return .yellow
                 }
             }
         }

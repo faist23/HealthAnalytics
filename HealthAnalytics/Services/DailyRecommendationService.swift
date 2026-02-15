@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 struct DailyRecommendationService {
     
@@ -37,13 +38,13 @@ struct DailyRecommendationService {
                 }
             }
             
-            var color: String {
+            var color: Color {
                 switch self {
-                case .goHard: return "purple"
-                case .quality: return "green"
-                case .moderate: return "blue"
-                case .easy: return "orange"
-                case .rest: return "red"
+                case .goHard: return .purple
+                case .quality: return .green
+                case .moderate: return .blue
+                case .easy: return .orange
+                case .rest: return .red
                 }
             }
         }
@@ -172,11 +173,19 @@ struct DailyRecommendationService {
         guard !sleepData.isEmpty else { return nil }
         
         // Get last night's sleep
+        // Sleep data is stored with the wake-up day as the date
+        // So for today's readiness, we want today's sleep entry (last night's sleep)
         let calendar = Calendar.current
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: Date())!
+        let today = calendar.startOfDay(for: Date())
         
-        let recentSleep = sleepData.first { calendar.isDate($0.date, inSameDayAs: yesterday) }
-        return recentSleep?.value
+        // First try to find today's sleep (most recent night)
+        if let todaySleep = sleepData.first(where: { calendar.isDate($0.date, inSameDayAs: today) }) {
+            return todaySleep.value
+        }
+        
+        // Fallback: get the most recent sleep entry
+        let sortedSleep = sleepData.sorted { $0.date > $1.date }
+        return sortedSleep.first?.value
     }
     
     // MARK: - Training Load Assessment

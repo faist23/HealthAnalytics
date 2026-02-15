@@ -28,6 +28,9 @@ class ReadinessViewModel: ObservableObject {
     @Published var temporalAnalysis: TemporalModelingService.TemporalAnalysis?
     @Published var loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
     @Published var dailyRecommendation: DailyRecommendationService.DailyRecommendation?
+    @Published var injuryRiskAssessment: InjuryRiskCalculator.InjuryRiskAssessment?
+    @Published var zoneAnalysis: TrainingZoneAnalyzer.ZoneAnalysis?
+    @Published var fitnessAnalysis: FitnessTrendAnalyzer.FitnessAnalysis?
 
     // ML Training State
     private var trainedModels: [PerformancePredictor.TrainedModel] = []
@@ -102,7 +105,7 @@ class ReadinessViewModel: ObservableObject {
             }
             
             // PROFILE: Data Conversion
-            let (workouts, nutrition, sleepData, hrvData, rhrData) = PerformanceProfiler.measure("🔄 Data Conversion") {
+            let (workouts, nutrition, sleepData, hrvData, rhrData, vo2maxData) = PerformanceProfiler.measure("🔄 Data Conversion") {
                 let workouts = storedWorkouts.map { WorkoutData(from: $0) }
                 let nutrition = storedNutrition.map { DailyNutrition(from: $0) }
                 
@@ -118,7 +121,11 @@ class ReadinessViewModel: ObservableObject {
                     .filter { $0.type == "RHR" }
                     .map { HealthDataPoint(date: $0.date, value: $0.value) }
                 
-                return (workouts, nutrition, sleepData, hrvData, rhrData)
+                let vo2maxData = storedHealthMetrics
+                    .filter { $0.type == "VO2max" }
+                    .map { HealthDataPoint(date: $0.date, value: $0.value) }
+                
+                return (workouts, nutrition, sleepData, hrvData, rhrData, vo2maxData)
             }
             
             print("\n📊 Data loaded: \(workouts.count) workouts, \(sleepData.count) sleep, \(hrvData.count) HRV\n")
@@ -264,16 +271,6 @@ class ReadinessViewModel: ObservableObject {
                 )
             }
             
-            // PROFILE: Training Load Visualization
-            PerformanceProfiler.measure("📊 Load Visualization") {
-                let loadService = TrainingLoadVisualizationService()
-                loadVisualization = loadService.generateLoadVisualization(
-                    workouts: workouts,
-                    labels: intentLabels,
-                    daysBack: 90
-                )
-            }
-            
             // PROFILE: Daily Instruction
             PerformanceProfiler.measure("📝 Daily Instruction") {
                 generateDailyInstruction(
@@ -291,6 +288,30 @@ class ReadinessViewModel: ObservableObject {
                     sleepData: sleepData,
                     rhrData: rhrData,
                     workouts: workouts
+                )
+            }
+            
+            // PROFILE: Injury Risk Assessment
+            PerformanceProfiler.measure("🏥 Injury Risk") {
+                calculateInjuryRisk(
+                    workouts: workouts,
+                    hrvData: hrvData,
+                    rhrData: rhrData
+                )
+            }
+            
+            // PROFILE: Training Zone Analysis
+            PerformanceProfiler.measure("🎯 Training Zones") {
+                calculateTrainingZones(workouts: workouts)
+            }
+            
+            // PROFILE: Fitness Trend Analysis
+            PerformanceProfiler.measure("📊 Fitness Trends") {
+                calculateFitnessTrends(
+                    vo2maxData: vo2maxData,
+                    workouts: workouts,
+                    hrvData: hrvData,
+                    rhrData: rhrData
                 )
             }
             
@@ -572,6 +593,79 @@ class ReadinessViewModel: ObservableObject {
             rhrData: rhrData,
             workouts: workouts,
             readinessScore: readinessScore?.score
+        )
+    }
+    
+    // MARK: - Injury Risk Assessment
+    
+    private func calculateInjuryRisk(
+        workouts: [WorkoutData],
+        hrvData: [HealthDataPoint],
+        rhrData: [HealthDataPoint]
+    ) {
+        // Calculate training load with enhanced EWMA metrics
+        let calculator = TrainingLoadCalculator()
+        let trainingLoad = calculator.calculateTrainingLoad(
+            healthKitWorkouts: workouts,
+            stravaActivities: [],
+            stepData: []
+        )
+        
+        // Get recovery status from correlation engine
+        let correlationEngine = CorrelationEngine()
+        let recoveryInsights = correlationEngine.analyzeRecoveryStatus(
+            restingHRData: rhrData,
+            hrvData: hrvData
+        )
+        
+        // Generate trends for the past 14 days
+        let trendDetector = TrendDetector()
+        let trends = trendDetector.detectTrends(
+            restingHRData: rhrData,
+            hrvData: hrvData,
+            sleepData: [],
+            stepData: [],
+            weightData: [],
+            workouts: workouts
+        )
+        
+        // Calculate injury risk
+        let riskCalculator = InjuryRiskCalculator()
+        injuryRiskAssessment = riskCalculator.assessInjuryRisk(
+            trainingLoad: trainingLoad,
+            recoveryStatus: recoveryInsights,
+            trends: trends
+        )
+    }
+    
+    // MARK: - Training Zone Analysis
+    
+    private func calculateTrainingZones(workouts: [WorkoutData]) {
+        let analyzer = TrainingZoneAnalyzer()
+        zoneAnalysis = analyzer.analyzeTrainingZones(workouts: workouts)
+    }
+    
+    // MARK: - Fitness Trend Analysis
+    
+    private func calculateFitnessTrends(
+        vo2maxData: [HealthDataPoint],
+        workouts: [WorkoutData],
+        hrvData: [HealthDataPoint],
+        rhrData: [HealthDataPoint]
+    ) {
+        // Get user age and biological sex from HealthKit
+        let healthKitManager = HealthKitManager.shared
+        let userAge = healthKitManager.getUserAge() ?? 35  // Fallback to 35 if not available
+        let userGender = healthKitManager.getUserBiologicalSex()
+        
+        let analyzer = FitnessTrendAnalyzer()
+        fitnessAnalysis = analyzer.analyzeFitnessTrends(
+            vo2maxData: vo2maxData,
+            workouts: workouts,
+            hrvData: hrvData,
+            rhrData: rhrData,
+            userAge: userAge,
+            userGender: userGender
         )
     }
     

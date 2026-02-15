@@ -89,6 +89,9 @@ class SyncManager: ObservableObject {
             lastSyncDate = Date()
             print("✅ Smart Sync Complete")
             
+            // Notify views that new data is available
+            NotificationCenter.default.post(name: NSNotification.Name("DataSyncCompleted"), object: nil)
+            
         } catch {
             print("❌ Sync Failed: \(error.localizedDescription)")
         }
@@ -211,6 +214,7 @@ class SyncManager: ObservableObject {
             async let steps = healthKitManager.fetchSteps(startDate: startDate, endDate: endDate)
             async let weight = healthKitManager.fetchBodyMass(startDate: startDate, endDate: endDate)
             async let nutrition = healthKitManager.fetchNutrition(startDate: startDate, endDate: endDate)
+            async let vo2max = healthKitManager.fetchVO2Max(startDate: startDate, endDate: endDate)
             
             var stravaActivities: [StravaImportData] = []
             if stravaManager.isAuthenticated {
@@ -260,7 +264,8 @@ class SyncManager: ObservableObject {
                 workouts: workouts,
                 steps: steps,
                 weight: weight,
-                nutrition: nutrition
+                nutrition: nutrition,
+                vo2max: vo2max
             )
             
             await dataHandler.upsertRecentData(
@@ -271,7 +276,8 @@ class SyncManager: ObservableObject {
                 rhr: data.rhr,
                 steps: data.steps,
                 weight: data.weight,
-                nutrition: data.nutrition
+                nutrition: data.nutrition,
+                vo2max: data.vo2max
             )
             
             print("   ✅ Recent data synced")
@@ -309,6 +315,93 @@ class SyncManager: ObservableObject {
         print("   ✅ Historical backfill complete")
     }
     
+    // MARK: - Sync All Historical Data
+    
+    private func syncAllHistoricalData(dataHandler: DataPersistenceActor) async {
+        print("📚 Fetching ALL historical data (10 years)...")
+        
+        syncProgress = "Fetching all historical data..."
+        
+        let calendar = Calendar.current
+        let endDate = Date()
+        let startDate = calendar.date(byAdding: .year, value: -10, to: endDate) ?? endDate
+        
+        print("   📅 Date range: \(startDate.formatted(date: .abbreviated, time: .omitted)) to \(endDate.formatted(date: .abbreviated, time: .omitted))")
+        
+        do {
+            async let rhr = healthKitManager.fetchRestingHeartRate(startDate: startDate, endDate: endDate)
+            async let hrv = healthKitManager.fetchHeartRateVariability(startDate: startDate, endDate: endDate)
+            async let sleep = healthKitManager.fetchSleepDuration(startDate: startDate, endDate: endDate)
+            async let workouts = healthKitManager.fetchWorkouts(startDate: startDate, endDate: endDate)
+            async let steps = healthKitManager.fetchSteps(startDate: startDate, endDate: endDate)
+            async let weight = healthKitManager.fetchBodyMass(startDate: startDate, endDate: endDate)
+            async let nutrition = healthKitManager.fetchNutrition(startDate: startDate, endDate: endDate)
+            async let vo2max = healthKitManager.fetchVO2Max(startDate: startDate, endDate: endDate)
+            
+            // Fetch all Strava activities
+            var stravaActivities: [StravaImportData] = []
+            if stravaManager.isAuthenticated {
+                print("   🚴 Fetching all Strava activities...")
+                var allActivities: [StravaActivity] = []
+                var page = 1
+                var keepFetching = true
+                
+                while keepFetching {
+                    if let batch = try? await stravaManager.fetchActivities(page: page, perPage: 200) {
+                        if batch.isEmpty {
+                            keepFetching = false
+                        } else {
+                            allActivities.append(contentsOf: batch)
+                            print("   📥 Fetched page \(page): \(batch.count) activities (total: \(allActivities.count))")
+                            page += 1
+                            
+                            // Safety: Stop after 50 pages (10,000 activities)
+                            if page > 50 {
+                                print("   ⚠️ Reached page limit, stopping")
+                                keepFetching = false
+                            }
+                        }
+                    } else {
+                        keepFetching = false
+                    }
+                }
+                
+                stravaActivities = allActivities.compactMap { mapStravaActivity($0) }
+                print("   ✅ Total Strava activities: \(stravaActivities.count)")
+            }
+            
+            let data = try await (
+                rhr: rhr,
+                hrv: hrv,
+                sleep: sleep,
+                workouts: workouts,
+                steps: steps,
+                weight: weight,
+                nutrition: nutrition,
+                vo2max: vo2max
+            )
+            
+            print("   📊 Fetched: \(data.workouts.count) workouts, \(data.hrv.count) HRV, \(data.rhr.count) RHR, \(data.sleep.count) sleep, \(data.vo2max.count) VO2max")
+            
+            await dataHandler.upsertRecentData(
+                workouts: data.workouts,
+                strava: stravaActivities,
+                sleep: data.sleep,
+                hrv: data.hrv,
+                rhr: data.rhr,
+                steps: data.steps,
+                weight: data.weight,
+                nutrition: data.nutrition,
+                vo2max: data.vo2max
+            )
+            
+            print("   ✅ All historical data saved")
+            
+        } catch {
+            print("   ❌ Failed to fetch historical data: \(error.localizedDescription)")
+        }
+    }
+    
     // MARK: - Manual Operations
     
     func performFullResync() async {
@@ -327,6 +420,13 @@ class SyncManager: ObservableObject {
     func resetAllData() async {
         print("🗑️ Resetting all data...")
         
+        guard !isSyncing else {
+            print("⚠️ Sync already in progress")
+            return
+        }
+        
+        isSyncing = true
+        
         let container = HealthDataContainer.shared
         let dataHandler = DataPersistenceActor(modelContainer: container)
         
@@ -335,7 +435,19 @@ class SyncManager: ObservableObject {
         lastSyncDate = nil
         
         await dataHandler.deleteAll()
-        await performSmartSync()
+        
+        // Fetch ALL historical data (10 years back)
+        await syncAllHistoricalData(dataHandler: dataHandler)
+        
+        lastSyncDate = Date()
+        hasCompletedHistoricalBackfill = true
+        
+        print("✅ Reset Complete - All historical data restored")
+        
+        // Notify views that new data is available
+        NotificationCenter.default.post(name: NSNotification.Name("DataSyncCompleted"), object: nil)
+        
+        isSyncing = false
     }
     
     // MARK: - Helper
@@ -472,7 +584,8 @@ actor DataPersistenceActor {
         rhr: [HealthDataPoint],
         steps: [HealthDataPoint],
         weight: [HealthDataPoint],
-        nutrition: [DailyNutrition]
+        nutrition: [DailyNutrition],
+        vo2max: [HealthDataPoint]
     ) {
         var matchedStravaIds = Set<String>()
         
@@ -525,7 +638,7 @@ actor DataPersistenceActor {
         }
         
         // ✅ Use NEW standardized names
-        for (points, type) in [(hrv, "HRV"), (rhr, "RHR"), (sleep, "Sleep"), (steps, "Steps"), (weight, "Weight")] {
+        for (points, type) in [(hrv, "HRV"), (rhr, "RHR"), (sleep, "Sleep"), (steps, "Steps"), (weight, "Weight"), (vo2max, "VO2max")] {
             for point in points {
                 upsertMetric(type: type, date: point.date, value: point.value)
             }

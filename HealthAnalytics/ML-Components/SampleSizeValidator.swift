@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 struct SampleSizeValidator {
     
@@ -178,12 +179,12 @@ struct SampleSizeValidator {
                 }
             }
             
-            var color: String {
+            var color: Color {
                 switch self {
-                case .high: return "green"
-                case .medium: return "yellow"
-                case .low: return "orange"
-                case .insufficient: return "red"
+                case .high: return .green
+                case .medium: return .yellow
+                case .low: return .orange
+                case .insufficient: return .red
                 }
             }
         }

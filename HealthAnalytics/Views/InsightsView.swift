@@ -76,6 +76,12 @@ struct InsightsView: View {
                 await viewModel.analyzeData()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
+            // Refresh when new data is synced
+            Task {
+                await viewModel.analyzeData()
+            }
+        }
     }
 
     // MARK: - Sub-View Groups
@@ -653,13 +659,7 @@ struct TrainingLoadCard: View {
     let summary: TrainingLoadCalculator.TrainingLoadSummary
     
     var statusColor: Color {
-        switch summary.status.color {
-        case "blue": return .blue
-        case "green": return .green
-        case "orange": return .orange
-        case "red": return .red
-        default: return .gray
-        }
+        return summary.status.color
     }
     
     var body: some View {

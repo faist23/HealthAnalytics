@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import SwiftUI
 
 @MainActor
 class RecoveryViewModel: ObservableObject {
@@ -260,12 +261,12 @@ enum ReadinessLevel: String {
         }
     }
     
-    var color: String {
+    var color: Color {
         switch self {
-        case .excellent: return "green"
-        case .good: return "blue"
-        case .moderate: return "orange"
-        case .poor: return "red"
+        case .excellent: return .green
+        case .good: return .blue
+        case .moderate: return .orange
+        case .poor: return .red
         }
     }
     

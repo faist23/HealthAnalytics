@@ -90,6 +90,19 @@ class InsightsViewModel: ObservableObject {
             let workouts = storedWorkouts.map { WorkoutData(from: $0) }
             let nutrition = storedNutrition.map { DailyNutrition(from: $0) }
             
+            // DEBUG: Check if today's workout is included
+            let calendar = Calendar.current
+            let today = calendar.startOfDay(for: Date())
+            let todaysWorkouts = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
+            print("📊 DEBUG - Workouts Analysis:")
+            print("   Total workouts: \(workouts.count)")
+            print("   Today's workouts: \(todaysWorkouts.count)")
+            if !todaysWorkouts.isEmpty {
+                for workout in todaysWorkouts {
+                    print("   - \(workout.workoutType): \(workout.duration/3600)h at \(workout.startDate.formatted(date: .omitted, time: .shortened))")
+                }
+            }
+            
             // Convert health metrics - check what properties your StoredHealthMetric actually has
             let sleepData = storedHealthMetrics.filter { $0.type == "Sleep" }
                 .map { HealthDataPoint(date: $0.date, value: $0.value) }

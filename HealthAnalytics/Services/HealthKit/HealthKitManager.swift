@@ -40,7 +40,11 @@ class HealthKitManager: ObservableObject {
         HKObjectType.quantityType(forIdentifier: .dietaryFatTotal)!,
         HKObjectType.quantityType(forIdentifier: .dietaryFiber)!,
         HKObjectType.quantityType(forIdentifier: .dietarySugar)!,
-        HKObjectType.quantityType(forIdentifier: .dietaryWater)!
+        HKObjectType.quantityType(forIdentifier: .dietaryWater)!,
+        
+        // Characteristic types (for age and biological sex)
+        HKObjectType.characteristicType(forIdentifier: .dateOfBirth)!,
+        HKObjectType.characteristicType(forIdentifier: .biologicalSex)!
     ]
     
     private init() {
@@ -163,6 +167,43 @@ class HealthKitManager: ObservableObject {
                 print("   📊 HRV: Filtered \(samples.count) samples down to \(sorted.count) daily readings")
                 
                 continuation.resume(returning: sorted)
+            }
+            
+            healthStore.execute(query)
+        }
+    }
+    
+    /// Fetch VO2max measurements for the specified date range
+    func fetchVO2Max(startDate: Date, endDate: Date) async throws -> [HealthDataPoint] {
+        guard let vo2MaxType = HKQuantityType.quantityType(forIdentifier: .vo2Max) else {
+            throw HealthKitError.dataTypeNotAvailable
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(sampleType: vo2MaxType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { _, samples, error in
+                
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                guard let samples = samples as? [HKQuantitySample] else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                
+                let dataPoints = samples.map { sample in
+                    HealthDataPoint(
+                        date: sample.startDate,
+                        value: sample.quantity.doubleValue(for: HKUnit(from: "ml/kg*min"))
+                    )
+                }
+                
+                print("   📊 VO2max: Fetched \\(dataPoints.count) measurements")
+                
+                continuation.resume(returning: dataPoints)
             }
             
             healthStore.execute(query)
@@ -880,6 +921,82 @@ class HealthKitManager: ObservableObject {
                 continuation.resume(returning: dataPoints)
             }
             healthStore.execute(query)
+        }
+    }
+    
+    // MARK: - User Profile Data
+    
+    /// Gets the user's current age from HealthKit date of birth
+    /// Note: Date of birth access requires HealthKit entitlement and user must have set it in Health app
+    func getUserAge() -> Int? {
+        // Check if we have basic HealthKit authorization first
+        guard HKHealthStore.isHealthDataAvailable() else {
+            print("⚠️ HealthKit not available on this device")
+            return nil
+        }
+        
+        do {
+            let dateOfBirthComponents = try healthStore.dateOfBirthComponents()
+            let calendar = Calendar.current
+            let now = Date()
+            
+            // Create a full date from the components
+            guard let birthDate = calendar.date(from: dateOfBirthComponents) else {
+                print("⚠️ Could not create date from birth components")
+                return nil
+            }
+            
+            let ageComponents = calendar.dateComponents([.year], from: birthDate, to: now)
+            
+            if let age = ageComponents.year {
+                print("✅ Retrieved age from HealthKit: \(age)")
+                return age
+            }
+            return nil
+        } catch {
+            // HKError code 5 = authorization not determined
+            // This can happen if HealthKit permission sheet hasn't been shown yet
+            // OR if the user hasn't entered their date of birth in the Health app
+            print("⚠️ Could not read date of birth from HealthKit")
+            print("   Make sure your date of birth is set in: Health app > Profile > Health Details")
+            print("   Error: \(error.localizedDescription)")
+            return nil
+        }
+    }
+    
+    /// Gets the user's biological sex from HealthKit
+    /// Note: Biological sex access requires HealthKit entitlement and user must have set it in Health app
+    func getUserBiologicalSex() -> String {
+        // Check if we have basic HealthKit authorization first
+        guard HKHealthStore.isHealthDataAvailable() else {
+            print("⚠️ HealthKit not available on this device")
+            return "male"
+        }
+        
+        do {
+            let biologicalSex = try healthStore.biologicalSex()
+            let sex: String
+            switch biologicalSex.biologicalSex {
+            case .female:
+                sex = "female"
+            case .male:
+                sex = "male"
+            case .other:
+                sex = "other"
+            case .notSet:
+                print("⚠️ Biological sex not set in Health app. Using 'male' as default.")
+                return "male"
+            @unknown default:
+                return "male"
+            }
+            print("✅ Retrieved biological sex from HealthKit: \(sex)")
+            return sex
+        } catch {
+            print("⚠️ Could not read biological sex from HealthKit")
+            print("   Make sure your biological sex is set in: Health app > Profile > Health Details")
+            print("   Error: \(error.localizedDescription)")
+            print("   Using 'male' as default.")
+            return "male"
         }
     }
     
