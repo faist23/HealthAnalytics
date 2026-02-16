@@ -231,13 +231,13 @@ struct DateRangePicker: View {
     let onApply: () -> Void
     
     @State private var showingCustomRange = false
-    @State private var selectedQuickRange: String? = "90D" // Default to match initial ViewModel state
+    @State private var selectedQuickRange: String? = "42D" // Default to match initial ViewModel state
     
     var body: some View {
         VStack(spacing: 12) {
             HStack {
                 Text("Date Range")
-                    .font(.headline)
+                    .font(.subheadline)
                 
                 Spacer()
                 
@@ -286,6 +286,11 @@ struct DateRangePicker: View {
                         // 30 Days
                         QuickRangeButton(title: "30D", isSelected: selectedQuickRange == "30D") {
                             updateRange(days: -30, title: "30D")
+                        }
+                        
+                        // 42 Days
+                        QuickRangeButton(title: "42D", isSelected: selectedQuickRange == "42D") {
+                            updateRange(days: -42, title: "42D")
                         }
                         
                         // 90 Days
@@ -337,9 +342,9 @@ struct QuickRangeButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.subheadline)
+                .font(.caption)
                 .fontWeight(isSelected ? .bold : .medium)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 15)
                 .padding(.vertical, 8)
                 .foregroundStyle(isSelected ? .white : .primary)
                 .background(

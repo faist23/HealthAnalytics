@@ -31,6 +31,13 @@ struct TrainingLoadCalculator {
         let strain: Double             // Load × Monotony
         let weeklyLoadChange: Double   // % change from previous week
         
+        // TSS (Training Stress Score) metrics - what athletes actually understand
+        let yesterdayTSS: Double       // Most recent day's TSS
+        let weeklyTSS: Double          // Sum of last 7 days
+        let atl: Double                // Acute Training Load (7-day TSS total)
+        let ctl: Double                // Chronic Training Load (28-day TSS total)
+        let sixWeekTSS: Double         // 6-week (42-day) TSS total
+        
         enum LoadStatus {
             case fresh          // ACR < 0.8
             case optimal        // ACR 0.8-1.3
@@ -69,7 +76,8 @@ struct TrainingLoadCalculator {
     func calculateTrainingLoad(
         healthKitWorkouts: [WorkoutData],
         stravaActivities: [StravaActivity],
-        stepData: [HealthDataPoint]
+        stepData: [HealthDataPoint],
+        recoveryInsights: [CorrelationEngine.RecoveryInsight] = []
     ) -> TrainingLoadSummary? {
         
         let calendar = Calendar.current
@@ -142,24 +150,51 @@ struct TrainingLoadCalculator {
         // ENHANCED: Calculate week-over-week load change
         let weeklyLoadChange = calculateWeeklyLoadChange(dailyLoads: dailyLoads, today: today)
         
-        // Determine status and recommendation (prioritize EWMA ratio)
+        // Calculate TSS metrics (what athletes actually understand)
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+        let yesterdayTSS = dailyLoads[yesterday] ?? 0
+        let weeklyTSS = acuteLoadSum  // This is already the sum of 7 days
+        let atl = weeklyTSS  // Acute Training Load = 7-day sum
+        let ctl = chronicLoadSum  // Chronic Training Load = 28-day sum
+        
+        // Calculate 6-week (42-day) TSS total
+        var sixWeekSum: Double = 0
+        for i in 0..<42 {
+            if let date = calendar.date(byAdding: .day, value: -i, to: today) {
+                sixWeekSum += dailyLoads[date] ?? 0
+            }
+        }
+        let sixWeekTSS = sixWeekSum
+        
+        // Determine status and recommendation (prioritize EWMA ratio + recovery state)
         let status: TrainingLoadSummary.LoadStatus
         let recommendation: String
         
         let primaryRatio = ewmaRatio // Use EWMA ratio as primary indicator
         
+        // Check recovery status
+        let isRecovered = checkRecoveryStatus(recoveryInsights: recoveryInsights)
+        
         if primaryRatio < 0.8 {
             status = .fresh
-            recommendation = "You're well-rested. Good time for hard training or racing."
+            if isRecovered {
+                recommendation = "Low training load + good recovery. Good time for hard training."
+            } else {
+                recommendation = "Low training load but recovery markers are down. Focus on easy training and recovery."
+            }
         } else if primaryRatio <= 1.3 {
             status = .optimal
-            recommendation = "Training load is in the optimal range. Keep up the good work!"
+            if isRecovered {
+                recommendation = "Training load is optimal and recovery is good. Maintain current training."
+            } else {
+                recommendation = "Training load is optimal but recovery needs attention. Consider lighter week."
+            }
         } else if primaryRatio <= 1.5 {
             status = .fatigued
-            recommendation = "Training load is high. Consider adding recovery days."
+            recommendation = "Training load is high. Add recovery days regardless of how you feel."
         } else {
             status = .overreaching
-            recommendation = "High risk of overtraining. Prioritize rest and recovery."
+            recommendation = "High risk of overtraining. Prioritize rest and recovery immediately."
         }
         
         print("📊 Training Load Analysis:")
@@ -185,13 +220,32 @@ struct TrainingLoadCalculator {
             ewmaRatio: ewmaRatio,
             monotony: monotony,
             strain: strain,
-            weeklyLoadChange: weeklyLoadChange
+            weeklyLoadChange: weeklyLoadChange,
+            yesterdayTSS: yesterdayTSS,
+            weeklyTSS: weeklyTSS,
+            atl: atl,
+            ctl: ctl,
+            sixWeekTSS: sixWeekTSS
         )
     }
     
     // MARK: - Helper Methods
     
-    private func calculateWorkoutLoad(_ workout: WorkoutData) -> Double {
+    /// Check if user is actually recovered based on HRV, sleep, RHR
+    private func checkRecoveryStatus(recoveryInsights: [CorrelationEngine.RecoveryInsight]) -> Bool {
+        // If no recovery data, assume recovered (don't block training)
+        guard !recoveryInsights.isEmpty else { return true }
+        
+        // Check if any key metrics show fatigue
+        let fatigueMarkers = recoveryInsights.filter { insight in
+            insight.trend == .fatigued || insight.trend == .recovering
+        }
+        
+        // If more than half the metrics show fatigue, not recovered
+        return fatigueMarkers.count < (recoveryInsights.count / 2)
+    }
+    
+    func calculateWorkoutLoad(_ workout: WorkoutData) -> Double {
         // Training Stress Score (TSS) estimation
         let durationHours = workout.duration / 3600.0
         

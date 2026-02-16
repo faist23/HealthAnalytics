@@ -52,11 +52,7 @@ class PredictiveReadinessService {
             trend = .optimal
         }
         
-        print("📊 ACWR FINAL RESULT:")
-        print("   Acute Load: \(acuteLoad)")
-        print("   Chronic Load: \(chronicLoad)")
-        print("   ACWR: \(acwr)")
-        print("   Trend: \(trend)")
+        // Debug logging removed to prevent console spam during Extended Analysis
         
         return ReadinessAssessment(
             acwr: acwr,
@@ -85,14 +81,7 @@ class PredictiveReadinessService {
             sum + calculateWorkoutLoad(workout)
         }
         
-        // DEBUG: Log chronic load calculation
-        let today = calendar.startOfDay(for: Date())
-        let todaysWorkouts = recentWorkouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
-        print("📊 ACWR DEBUG - Chronic Load (28 days):")
-        print("   Workouts in window: \(recentWorkouts.count)")
-        print("   Today's workouts in chronic: \(todaysWorkouts.count)")
-        print("   Total load: \(totalLoad)")
-        print("   Daily average: \(totalLoad / 28.0)")
+        // Debug logging removed to prevent console spam during Extended Analysis
         
         // Daily average over 28 days
         return totalLoad / 28.0
@@ -115,14 +104,7 @@ class PredictiveReadinessService {
             sum + calculateWorkoutLoad(workout)
         }
         
-        // DEBUG: Log acute load calculation
-        let today = calendar.startOfDay(for: Date())
-        let todaysWorkouts = recentWorkouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
-        print("📊 ACWR DEBUG - Acute Load (7 days):")
-        print("   Workouts in window: \(recentWorkouts.count)")
-        print("   Today's workouts in acute: \(todaysWorkouts.count)")
-        print("   Total load: \(totalLoad)")
-        print("   Daily average: \(totalLoad / 7.0)")
+        // Debug logging removed to prevent console spam during Extended Analysis
         
         // Daily average over 7 days
         return totalLoad / 7.0

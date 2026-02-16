@@ -11,60 +11,95 @@ struct MainTabView: View {
     @State private var selectedTab = 0
     @ObservedObject var syncManager = SyncManager.shared
     @Environment(\.colorScheme) var colorScheme
+    @State private var showSettings = false
     
     var body: some View {
         ZStack {
             TabView(selection: $selectedTab) {
             NavigationStack {
                 ContentView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showSettings = true
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                        }
+                    }
             }
             .tabItem {
-                Label("Dashboard", systemImage: "chart.line.uptrend.xyaxis")
+                Label("Today", systemImage: "calendar.circle.fill")
             }
             .tag(0)
             
             NavigationStack {
                 NutritionView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showSettings = true
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                        }
+                    }
             }
             .tabItem {
                 Label("Nutrition", systemImage: "fork.knife")
             }
             .tag(1)
             
-/*            RecoveryTabView()
-                .tabItem {
-                    Label("Recovery", systemImage: "heart.circle.fill")
-                }
-                .tag(2)
- */
             NavigationStack {
                 ReadinessView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showSettings = true
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                        }
+                    }
             }
             .tabItem {
-                Label("Readiness", systemImage: "bolt.circle.fill")
+                Label("Training", systemImage: "bolt.circle.fill")
             }
             .tag(2)
-
+            
             NavigationStack {
                 InsightsView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showSettings = true
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                        }
+                    }
             }
             .tabItem {
                 Label("Insights", systemImage: "lightbulb.fill")
             }
             .tag(3)
-            
-            NavigationStack {
-                SettingsView()
-            }
-            .tabItem {
-                Label("Settings", systemImage: "gearshape")
-            }
-            .tag(4)
             }
             
             // Global sync indicator
             if syncManager.isSyncing {
                 LoadingOverlay(message: syncManager.syncProgress)
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                SettingsView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                showSettings = false
+                            }
+                        }
+                    }
             }
         }
     }

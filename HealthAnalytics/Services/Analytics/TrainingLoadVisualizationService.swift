@@ -186,9 +186,8 @@ struct TrainingLoadVisualizationService {
         
         var currentDate = calendar.startOfDay(for: startDate)
         
-        // Sample every 3 days to reduce calculations while maintaining chart smoothness
-        // For 90-day window: ~30 data points instead of 90
-        let samplingInterval = 3
+        // Calculate daily for complete data coverage
+        let samplingInterval = 1
         
         while currentDate <= endDate {
             // Calculate loads for this day

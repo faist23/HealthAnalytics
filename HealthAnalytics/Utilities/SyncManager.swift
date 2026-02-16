@@ -657,6 +657,9 @@ actor DataPersistenceActor {
             }
         }
         
+        // Auto-classify workout intents using heuristic classifier
+        autoClassifyWorkoutIntents()
+        
         print("💾 Recent data upserted")
     }
     
@@ -892,6 +895,51 @@ actor DataPersistenceActor {
                 carbs: entry.totalCarbs,
                 fat: entry.totalFat
             ))
+        }
+    }
+    
+    // MARK: - Auto-Classification
+    
+    /// Automatically classify workout intents using heuristic rules
+    func autoClassifyWorkoutIntents() {
+        print("🧠 Auto-classifying workout intents...")
+        
+        // Fetch all workouts
+        let workoutDescriptor = FetchDescriptor<StoredWorkout>()
+        guard let allWorkouts = try? modelContext.fetch(workoutDescriptor) else {
+            print("   ⚠️ Failed to fetch workouts")
+            return
+        }
+        
+        // Fetch existing labels
+        let labelDescriptor = FetchDescriptor<StoredIntentLabel>()
+        let existingLabels = (try? modelContext.fetch(labelDescriptor)) ?? []
+        let existingLabelIds = Set(existingLabels.map { $0.workoutId })
+        
+        // Classify unlabeled workouts
+        let results = HeuristicIntentClassifier.classifyAll(
+            workouts: allWorkouts,
+            existingLabels: existingLabelIds
+        )
+        
+        // Save new labels
+        var newLabelsCount = 0
+        for (workoutId, intent, confidence) in results {
+            let label = StoredIntentLabel(
+                workoutId: workoutId,
+                intent: intent,
+                confidence: confidence,
+                source: .heuristic
+            )
+            modelContext.insert(label)
+            newLabelsCount += 1
+        }
+        
+        if modelContext.hasChanges {
+            try? modelContext.save()
+            print("   ✅ Auto-classified \(newLabelsCount) workouts")
+        } else {
+            print("   ℹ️ No new workouts to classify")
         }
     }
 }

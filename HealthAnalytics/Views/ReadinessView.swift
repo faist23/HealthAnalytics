@@ -34,14 +34,38 @@ struct ReadinessView: View {
                 }
             }
         }
-        .navigationTitle("Readiness")
+        .navigationTitle("Training")
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Time Period", selection: $viewModel.selectedPeriod) {
+                        ForEach(TimePeriod.allCases) { period in
+                            Text(period.displayName).tag(period)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(viewModel.selectedPeriod.displayName)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Image(systemName: "chevron.down")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.blue)
+                }
+            }
+            
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink {
                     StatisticalDashboardView()
                 } label: {
                     Image(systemName: "chart.bar.doc.horizontal")
                 }
+            }
+        }
+        .onChange(of: viewModel.selectedPeriod) { _, _ in
+            Task {
+                await viewModel.analyze(modelContext: modelContext)
             }
         }
         /*      .toolbar {
@@ -104,113 +128,38 @@ struct ReadinessView: View {
                             .cardStyle(for: .info)
                     }
                     
-                    // HERO: Readiness Score
-                    if let readiness = viewModel.readinessScore {
-                    ReadinessScoreHero(readiness: readiness)
-                        .cardStyle(for: .recovery)
-                    
-                    // Form Indicator
-                    if let form = viewModel.formIndicator {
-                        FormIndicatorCard(form: form)
-                            .cardStyle(for: .recovery)
+                    // Training Load
+                    if let assessment = viewModel.readinessAssessment,
+                       !viewModel.acwrTrend.isEmpty {
+                        UnifiedTrainingLoadCard(
+                            assessment: assessment,
+                            trend: viewModel.acwrTrend,
+                            summary: viewModel.trainingLoadSummary,
+                            primaryActivity: viewModel.primaryActivity,
+                            extendedData: viewModel.loadVisualization
+                        )
+                        .cardStyle(for: .workouts)
                     }
                     
-                    // Injury Risk Assessment
+                    // TSS Chart
+                    if !viewModel.dailyTSSData.isEmpty {
+                        TSSChartCard(
+                            dailyTSS: viewModel.dailyTSSData,
+                            period: viewModel.selectedPeriod
+                        )
+                        .cardStyle(for: .workouts)
+                    }
+                    
+                    // Injury Risk Assessment (training-related)
                     if let injuryRisk = viewModel.injuryRiskAssessment {
                         InjuryRiskCard(assessment: injuryRisk)
                             .cardStyle(for: .recovery)
                     }
                     
-                    // Training Zone Analysis
-                    if let zoneAnalysis = viewModel.zoneAnalysis {
-                        TrainingZoneCard(analysis: zoneAnalysis)
-                            .cardStyle(for: .recovery)
-                    }
-                    
-                    // Fitness Trend Analysis
-                    if let fitnessAnalysis = viewModel.fitnessAnalysis {
-                        FitnessTrendCard(analysis: fitnessAnalysis)
-                            .cardStyle(for: .recovery)
-                    }
-                    
-                    // Intent-Aware Readiness - Shows what you're ready for TODAY
-                    if let assessment = viewModel.intentAwareAssessment {
-                        EnhancedIntentReadinessCard(assessment: assessment)
-                    }
-                    
-                    // Temporal Analysis - Multi-timescale insights
-                    if let temporal = viewModel.temporalAnalysis {
-                        TemporalInsightsCard(analysis: temporal)
-                    }
-
-                    // Training Load Visualization
-                    if let loadViz = viewModel.loadVisualization {
-                        NavigationLink {
-                            TrainingLoadVisualizationView(data: loadViz)
-                        } label: {
-                            TrainingLoadPreviewCard(summary: loadViz.summary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    // Score Breakdown
-                    ScoreBreakdownCard(breakdown: readiness.breakdown)
-                        .cardStyle(for: .recovery)
-                    
-                    // ML Prediction
-                    if let prediction = viewModel.mlPrediction,
-                       let weights = viewModel.mlFeatureWeights {
-                        PredictionInsightCard(
-                            prediction: prediction,
-                            weights: weights
-                        )
-                        .cardStyle(for: .recovery)
-                    } else if let mlError = viewModel.mlError {
-                        PredictionUnavailableCard(reason: mlError)
-                            .cardStyle(for: .error)
-                    }
-                    
-                    // Performance Windows Section
-                    if !viewModel.performanceWindows.isEmpty {
-                        SectionHeader(
-                            title: "Your Performance Windows",
-                            subtitle: "Discovered from YOUR data"
-                        )
-                        
-                        ForEach(Array(viewModel.performanceWindows.prefix(3).enumerated()), id: \.offset) { index, window in
-                            PerformanceWindowCard(window: window)
-                                .cardStyle(for: .recovery)
-                        }
-                    }
-                    
-                    // Optimal Timing Section
-                    if !viewModel.optimalTimings.isEmpty {
-                        SectionHeader(
-                            title: "Optimal Timing",
-                            subtitle: "When you perform best"
-                        )
-                        
-                        ForEach(Array(viewModel.optimalTimings.prefix(2).enumerated()), id: \.offset) { index, timing in
-                            OptimalTimingCard(timing: timing)
-                                .cardStyle(for: .recovery)
-                        }
-                    }
-                    
-                    // Workout Sequences
-                    if !viewModel.workoutSequences.isEmpty {
-                        SectionHeader(
-                            title: "Effective Sequences",
-                            subtitle: "Workout combinations that work"
-                        )
-                        
-                        ForEach(viewModel.workoutSequences.prefix(3)) { sequence in
-                            WorkoutSequenceCard(sequence: sequence)
-                                .cardStyle(for: .workouts)
-                        }
-                    }
-                    
-                    } else {
-                        // Show empty state only when not loading and no data
+                    // Empty state
+                    if viewModel.dailyRecommendation == nil && 
+                       viewModel.dailyInstruction == nil &&
+                       viewModel.readinessAssessment == nil {
                         ReadinessEmptyState()
                             .cardStyle(for: .info)
                     }

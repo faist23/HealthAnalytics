@@ -14,7 +14,6 @@ struct InsightsView: View {
     @State private var isFirstLoad = true
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
-    @State private var showACWRInfo = false
     
     var body: some View {
         ZStack {
@@ -42,7 +41,7 @@ struct InsightsView: View {
                 LoadingOverlay(message: "Analyzing your data...")
             }
         }
-        .navigationTitle("Insights")
+        .navigationTitle("Analysis")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -91,14 +90,10 @@ struct InsightsView: View {
     private var dashboardContent: some View {
         Group {
             recommendationsSection
-            readinessSection
-            acwrTrendSection
         }
         
         Group {
             simpleInsightsSection
-            recoveryStatusSection
-            trainingLoadSection
             metricTrendsSection
         }
         
@@ -129,52 +124,17 @@ struct InsightsView: View {
     }
     
     @ViewBuilder
-    private var readinessSection: some View {
-        if let assessment = viewModel.readinessAssessment {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading) {
-                        HStack(spacing: 4) {
-                            Text("TRAINING STATUS")
-                                .font(.caption).bold().foregroundColor(.secondary)
-                            
-                            Button {
-                                showACWRInfo = true
-                            } label: {
-                                Image(systemName: "info.circle")
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                        
-                        // FIX: Use .trend instead of .state
-                        Text(trendLabel(for: assessment.trend))
-                            .font(.title).bold()
-                            .foregroundColor(trendColor(for: assessment.trend))
-                    }
-                    Spacer()
-                    Text(String(format: "%.2f", assessment.acwr))
-                        .font(.system(size: 34, weight: .black, design: .monospaced))
-                }
-            }
-            .sheet(isPresented: $showACWRInfo) {
-                ACWRExplainerSheet()  // Note: renamed from ACWRInfoSheet
-            }
-            .padding()
-            .cardStyle(for: .recovery)
-        }
-    }
-    
-    @ViewBuilder
-    private var acwrTrendSection: some View {
+    private var trainingLoadSection: some View {
         if let assessment = viewModel.readinessAssessment,
            !viewModel.acwrTrend.isEmpty {
-            ACWRTrendCard(
+            UnifiedTrainingLoadCard(
+                assessment: assessment,
                 trend: viewModel.acwrTrend,
-                currentAssessment: assessment,
-                primaryActivity: viewModel.primaryActivity
+                summary: viewModel.trainingLoadSummary,
+                primaryActivity: viewModel.primaryActivity,
+                extendedData: viewModel.loadVisualization
             )
-            .cardStyle(for: .recovery)
+            .cardStyle(for: .workouts)
         }
     }
     
@@ -192,36 +152,7 @@ struct InsightsView: View {
         }
     }
     
-    @ViewBuilder
-    private var recoveryStatusSection: some View {
-        if !viewModel.recoveryInsights.isEmpty {
-            Divider().padding(.vertical)
-            
-            Text("Recovery Status")
-                .font(.title2)
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            ForEach(viewModel.recoveryInsights, id: \.metric) { insight in
-                RecoveryInsightCard(insight: insight)
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private var trainingLoadSection: some View {
-        if let trainingLoad = viewModel.trainingLoadSummary {
-            Divider().padding(.vertical)
-            
-            Text("Training Load")
-                .font(.title2)
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            TrainingLoadCard(summary: trainingLoad)
-        }
-    }
-    
+
     @ViewBuilder
     private var metricTrendsSection: some View {
         if !viewModel.metricTrends.isEmpty {

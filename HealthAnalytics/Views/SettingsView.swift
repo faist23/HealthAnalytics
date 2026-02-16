@@ -7,6 +7,7 @@
 
 
 import SwiftUI
+import SwiftData
 
 struct SettingsView: View {
     @StateObject private var healthKitManager = HealthKitManager.shared
@@ -16,8 +17,10 @@ struct SettingsView: View {
     @State private var showingDataWindowAlert = false
     @State private var isResettingData = false
     @State private var isClearingCache = false
+    @State private var isClassifyingWorkouts = false
     @AppStorage("historicalDataWindowYears") private var historicalDataWindowYears: Int = 0
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.modelContext) private var modelContext
     
     var body: some View {
         ZStack {
@@ -111,6 +114,35 @@ struct SettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                    }
+                    .padding()
+                    .cardStyle(for: .info)
+                    
+                    // MARK: - Machine Learning
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Machine Learning")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                        
+                        Button {
+                            Task {
+                                await classifyAllWorkouts()
+                            }
+                        } label: {
+                            HStack {
+                                Label("Auto-Classify Workouts", systemImage: "brain")
+                                Spacer()
+                                if isClassifyingWorkouts {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                }
+                            }
+                        }
+                        .disabled(isClassifyingWorkouts)
+                        
+                        Text("Automatically assigns intent labels (Race, Tempo, Easy, etc.) to all workouts based on heart rate and other metrics. Labels are used for training load analysis and recommendations.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     .padding()
                     .cardStyle(for: .info)
@@ -222,6 +254,22 @@ struct SettingsView: View {
         if oldValue != years {
             showingDataWindowAlert = true
         }
+    }
+    
+    @MainActor
+    private func classifyAllWorkouts() async {
+        isClassifyingWorkouts = true
+        
+        // Run classification in background actor
+        let container = HealthDataContainer.shared
+        let actor = DataPersistenceActor(modelContainer: container)
+        
+        await actor.autoClassifyWorkoutIntents()
+        
+        // Notify that data changed
+        NotificationCenter.default.post(name: NSNotification.Name("DataSyncCompleted"), object: nil)
+        
+        isClassifyingWorkouts = false
     }
 }
 

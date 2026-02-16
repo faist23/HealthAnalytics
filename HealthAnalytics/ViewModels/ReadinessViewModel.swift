@@ -26,11 +26,19 @@ class ReadinessViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
     @Published var temporalAnalysis: TemporalModelingService.TemporalAnalysis?
-    @Published var loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
     @Published var dailyRecommendation: DailyRecommendationService.DailyRecommendation?
     @Published var injuryRiskAssessment: InjuryRiskCalculator.InjuryRiskAssessment?
     @Published var zoneAnalysis: TrainingZoneAnalyzer.ZoneAnalysis?
     @Published var fitnessAnalysis: FitnessTrendAnalyzer.FitnessAnalysis?
+    
+    // Training Load (moved from InsightsViewModel)
+    @Published var trainingLoadSummary: TrainingLoadCalculator.TrainingLoadSummary?
+    @Published var readinessAssessment: PredictiveReadinessService.ReadinessAssessment?
+    @Published var acwrTrend: [ACWRDataPoint] = []
+    @Published var loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
+    @Published var primaryActivity: String = "Ride"
+    @Published var dailyTSSData: [DailyTSSData] = []
+    @Published var selectedPeriod: TimePeriod = .quarter
 
     // ML Training State
     private var trainedModels: [PerformancePredictor.TrainedModel] = []
@@ -38,6 +46,9 @@ class ReadinessViewModel: ObservableObject {
     private var cachedPatterns: [PerformancePatternAnalyzer.PerformanceWindow]?
     private var lastPatternDiscovery: Date?
     private var lastMLTraining: Date?
+    
+    // Data fingerprint for cache checking
+    private var lastDataFingerprint: (workouts: Int, sleep: Int, hrv: Int, rhr: Int)?
     
     // SwiftData
     var modelContainer: ModelContainer?
@@ -61,13 +72,61 @@ class ReadinessViewModel: ObservableObject {
         errorMessage = nil
         mlError = nil
         
-        // Clear cached patterns to force rediscovery with new data window
-        cachedPatterns = nil
-        lastPatternDiscovery = nil
-        lastMLTraining = nil
-        
         do {
             let context = container.mainContext
+            
+            // CACHE CHECK: Count records to see if data changed
+            var workoutDescriptor: FetchDescriptor<StoredWorkout>
+            var metricDescriptor: FetchDescriptor<StoredHealthMetric>
+            
+            if let cutoffDate = DataWindowManager.getCutoffDate() {
+                workoutDescriptor = FetchDescriptor<StoredWorkout>(
+                    predicate: #Predicate { workout in
+                        workout.startDate >= cutoffDate
+                    }
+                )
+                metricDescriptor = FetchDescriptor<StoredHealthMetric>(
+                    predicate: #Predicate { metric in
+                        metric.date >= cutoffDate
+                    }
+                )
+            } else {
+                workoutDescriptor = FetchDescriptor<StoredWorkout>()
+                metricDescriptor = FetchDescriptor<StoredHealthMetric>()
+            }
+            
+            let workoutCount = try context.fetchCount(workoutDescriptor)
+            let sleepCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(
+                predicate: #Predicate { $0.type == "Sleep" }
+            ))
+            let hrvCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(
+                predicate: #Predicate { $0.type == "HRV" }
+            ))
+            let rhrCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(
+                predicate: #Predicate { $0.type == "RHR" }
+            ))
+            
+            let currentFingerprint = (workoutCount, sleepCount, hrvCount, rhrCount)
+            
+            // If data hasn't changed AND we have existing results, skip analysis
+            if let lastFingerprint = lastDataFingerprint,
+               lastFingerprint == currentFingerprint,
+               dailyRecommendation != nil || dailyInstruction != nil {
+                print("✅ Data unchanged - using cached analysis results")
+                isLoading = false
+                return
+            }
+            
+            print("🔄 Data changed or no cache - running full analysis")
+            print("   Workouts: \(workoutCount), Sleep: \(sleepCount), HRV: \(hrvCount), RHR: \(rhrCount)")
+            
+            // Store fingerprint for next check
+            lastDataFingerprint = currentFingerprint
+            
+            // Clear pattern cache when data changes, but keep ML models
+            cachedPatterns = nil
+            lastPatternDiscovery = nil
+            // Note: We DON'T clear lastMLTraining - models persist across analyses
             
             // PROFILE: Data Fetching (respecting data window)
             let (storedWorkouts, storedHealthMetrics, storedNutrition) = try await PerformanceProfiler.measureAsync("📊 Data Fetch") {
@@ -261,13 +320,17 @@ class ReadinessViewModel: ObservableObject {
                 )
             }
 
-            // PROFILE: Training Load Visualization
-            PerformanceProfiler.measure("📊 Load Visualization") {
-                let loadService = TrainingLoadVisualizationService()
-                loadVisualization = loadService.generateLoadVisualization(
+            // PROFILE: Training Load (moved from Insights)
+            PerformanceProfiler.measure("📊 Training Load") {
+                let stepData = storedHealthMetrics.filter { $0.type == "Steps" }
+                    .map { HealthDataPoint(date: $0.date, value: $0.value) }
+                
+                calculateTrainingLoad(
                     workouts: workouts,
-                    labels: intentLabels,
-                    daysBack: 90
+                    stepData: stepData,
+                    hrvData: hrvData,
+                    rhrData: rhrData,
+                    intentLabels: intentLabels
                 )
             }
             
@@ -667,6 +730,159 @@ class ReadinessViewModel: ObservableObject {
             userAge: userAge,
             userGender: userGender
         )
+    }
+    
+    // MARK: - Training Load Calculation
+    
+    private func calculateTrainingLoad(
+        workouts: [WorkoutData],
+        stepData: [HealthDataPoint],
+        hrvData: [HealthDataPoint],
+        rhrData: [HealthDataPoint],
+        intentLabels: [StoredIntentLabel]
+    ) {
+        let loadCalculator = TrainingLoadCalculator()
+        let correlationEngine = CorrelationEngine()
+        
+        // Get recovery insights first (needed for training load recommendations)
+        let recoveryInsights = correlationEngine.analyzeRecoveryStatus(
+            restingHRData: rhrData,
+            hrvData: hrvData
+        )
+        
+        // Calculate training load with recovery insights
+        trainingLoadSummary = loadCalculator.calculateTrainingLoad(
+            healthKitWorkouts: workouts,
+            stravaActivities: [],
+            stepData: stepData,
+            recoveryInsights: recoveryInsights
+        )
+        
+        // Calculate readiness assessment
+        let readinessService = PredictiveReadinessService()
+        readinessAssessment = readinessService.calculateReadiness(
+            stravaActivities: [],
+            healthKitWorkouts: workouts
+        )
+        
+        // Calculate ACWR trend
+        acwrTrend = calculateImprovedACWRTrend(
+            workouts: workouts,
+            readinessService: readinessService
+        )
+        
+        // Generate extended visualization data
+        let loadService = TrainingLoadVisualizationService()
+        loadVisualization = loadService.generateLoadVisualization(
+            workouts: workouts,
+            labels: intentLabels,
+            daysBack: 90
+        )
+        
+        // Generate daily TSS data for chart
+        dailyTSSData = calculateDailyTSS(workouts: workouts, stepData: stepData)
+    }
+    
+    private func calculateDailyTSS(workouts: [WorkoutData], stepData: [HealthDataPoint]) -> [DailyTSSData] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        // Determine days back based on selected period
+        let daysBack: Int
+        switch selectedPeriod {
+        case .week: daysBack = 7
+        case .month: daysBack = 30
+        case .quarter: daysBack = 90
+        case .sixMonths: daysBack = 180
+        case .year: daysBack = 365
+        case .all: daysBack = 730 // 2 years max
+        }
+        
+        var dailyData: [DailyTSSData] = []
+        var ctlRunning: Double = 0  // Chronic Training Load (42-day EWMA)
+        var atlRunning: Double = 0  // Acute Training Load (7-day EWMA)
+        
+        let ctlAlpha = 2.0 / 43.0  // 42-day time constant
+        let atlAlpha = 2.0 / 8.0   // 7-day time constant
+        
+        let loadCalculator = TrainingLoadCalculator()
+        
+        for dayOffset in (0..<daysBack).reversed() {
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else {
+                continue
+            }
+            
+            // Get workouts for this day
+            let dayWorkouts = workouts.filter {
+                calendar.isDate($0.startDate, inSameDayAs: date)
+            }
+            
+            // Calculate TSS for this day
+            var dailyTSS: Double = 0
+            for workout in dayWorkouts {
+                dailyTSS += loadCalculator.calculateWorkoutLoad(workout)
+            }
+            
+            // Add light load for high step days if no workout
+            if dailyTSS == 0 {
+                if let stepPoint = stepData.first(where: { calendar.isDate($0.date, inSameDayAs: date) }),
+                   stepPoint.value >= 10000 {
+                    dailyTSS = (stepPoint.value - 10000) / 5000.0
+                }
+            }
+            
+            // Update EWMA values
+            ctlRunning = (dailyTSS * ctlAlpha) + (ctlRunning * (1.0 - ctlAlpha))
+            atlRunning = (dailyTSS * atlAlpha) + (atlRunning * (1.0 - atlAlpha))
+            
+            dailyData.append(DailyTSSData(
+                date: date,
+                tss: dailyTSS,
+                ctl: ctlRunning,
+                atl: atlRunning
+            ))
+        }
+        
+        return dailyData
+    }
+    
+    private func calculateImprovedACWRTrend(
+        workouts: [WorkoutData],
+        readinessService: PredictiveReadinessService
+    ) -> [ACWRDataPoint] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        var dataPoints: [ACWRDataPoint] = []
+        
+        print("🔵 calculateImprovedACWRTrend: Starting calculation for last 7 days")
+        
+        // Calculate ACWR for last 7 days
+        for dayOffset in (0..<7).reversed() {
+            guard let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) else {
+                continue
+            }
+            
+            // Get workouts up to this date
+            let workoutsUpToDate = workouts.filter { $0.startDate <= targetDate }
+            
+            // Calculate readiness for this date
+            let assessment = readinessService.calculateReadiness(
+                stravaActivities: [],
+                healthKitWorkouts: workoutsUpToDate
+            )
+            
+            let dataPoint = ACWRDataPoint(
+                date: targetDate,
+                value: assessment.acwr
+            )
+            dataPoints.append(dataPoint)
+            
+            print("🔵   Day \(dayOffset): \(targetDate) -> ACWR: \(assessment.acwr)")
+        }
+        
+        print("🔵 calculateImprovedACWRTrend: Created \(dataPoints.count) data points")
+        return dataPoints
     }
     
     // MARK: - Daily Instruction Model

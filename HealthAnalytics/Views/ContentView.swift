@@ -57,45 +57,55 @@ struct ContentView: View {
                             .padding(.top, 40)
                     } else {
                         VStack(spacing: 20) {
-                            // ─── Recovery Pattern ─────────
-                            if !viewModel.hrvData.isEmpty && !viewModel.workouts.isEmpty {
-                                RecoveryPatternCard(
-                                    hrvData:   viewModel.hrvData,
-                                    rhrData:   viewModel.restingHeartRateData,
-                                    sleepData: viewModel.sleepData,
-                                    workouts:  viewModel.workouts
-                                )
-                                .cardStyle(for: .recovery)
-                            }
+                            // ─── HERO: Readiness Score (Single Source of Truth) ─────────
+                            HeroReadinessCard(
+                                score: viewModel.readinessScore,
+                                level: viewModel.readinessLevel,
+                                recommendation: viewModel.readinessRecommendation
+                            )
+                            .cardStyle(for: .recovery)
                             
+                            // ─── Date Range Selector (Timeline Style) ─────────
+                            DateRangePicker(
+                                startDate: $viewModel.startDate,
+                                endDate: $viewModel.endDate,
+                                onApply: {
+                                    Task {
+                                        await viewModel.loadData()
+                                    }
+                                }
+                            )
+                            .padding()
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(.ultraThinMaterial)
+                                    .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
+                            )
+                            
+                            // ─── Detailed Wellness Charts (Timeline Style) ─────────
                             if !viewModel.restingHeartRateData.isEmpty {
-                                RestingHeartRateCard(data: viewModel.restingHeartRateData, period: viewModel.selectedPeriod)
+                                DetailedRHRChart(data: viewModel.restingHeartRateData, period: viewModel.selectedPeriod)
                                     .cardStyle(for: .heartRate)
                             }
                             
                             if !viewModel.hrvData.isEmpty {
-                                HRVCard(data: viewModel.hrvData, period: viewModel.selectedPeriod)
+                                DetailedHRVChart(data: viewModel.hrvData, period: viewModel.selectedPeriod)
                                     .cardStyle(for: .hrv)
                             }
                             
                             if !viewModel.sleepData.isEmpty {
-                                SleepCard(data: viewModel.sleepData, period: viewModel.selectedPeriod)
+                                DetailedSleepChart(data: viewModel.sleepData, period: viewModel.selectedPeriod)
                                     .cardStyle(for: .sleep)
                             }
                             
                             if !viewModel.stepCountData.isEmpty {
-                                StepCountCard(data: viewModel.stepCountData, period: viewModel.selectedPeriod)
+                                DetailedStepsChart(data: viewModel.stepCountData, period: viewModel.selectedPeriod)
                                     .cardStyle(for: .steps)
                             }
                             
                             if !viewModel.weightData.isEmpty {
-                                WeightCard(data: viewModel.weightData, period: viewModel.selectedPeriod)
+                                DetailedWeightChart(data: viewModel.weightData, period: viewModel.selectedPeriod)
                                     .cardStyle(for: .nutrition)
-                            }
-                            
-                            if !viewModel.workouts.isEmpty {
-                                WorkoutSummaryCard(workouts: viewModel.workouts, period: viewModel.selectedPeriod)
-                                    //.cardStyle(for: .workouts) // Already styled inside
                             }
                             
                             if viewModel.restingHeartRateData.isEmpty &&
@@ -107,24 +117,7 @@ struct ContentView: View {
                                     .cardStyle(for: .info)
                             }
                         }
-                        .padding(.top, 10) // Spacing between header and first card
-                    }
-                } header: {
-                    // PINNED HEADER: Time Period Picker
-                    VStack {
-                        Picker("Time Period", selection: $viewModel.selectedPeriod) {
-                            ForEach(TimePeriod.allCases) { period in
-                                Text(period.displayName).tag(period)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .padding()
-                        .background(
-                            // Glass background effect
-                            Rectangle()
-                                .fill(.regularMaterial)
-                                .ignoresSafeArea(edges: .top)
-                        )
+                        .padding(.top, 10) // Spacing after navigation title
                     }
                 }
             }
@@ -132,10 +125,7 @@ struct ContentView: View {
             .padding(.bottom)
         }
         .background(TabBackgroundColor.dashboard(for: colorScheme))
-        .navigationTitle("Dashboard")
-        .onChange(of: viewModel.selectedPeriod) { _, _ in
-            Task { await viewModel.loadData() }
-        }
+        .navigationTitle("Today")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

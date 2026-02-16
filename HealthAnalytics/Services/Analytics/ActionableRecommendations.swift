@@ -83,8 +83,11 @@ class ActionableRecommendations {
             }
         }
         
-        // 1. Check for overtraining/fatigue
+        // 1. Check for overtraining/fatigue (integrated with recovery status)
         if let load = trainingLoad {
+            // Check actual recovery status from physiological markers
+            let isRecovered = checkRecoveryStatus(recoveryInsights: recoveryInsights)
+            
             if load.status == .overreaching {
                 recommendations.append(Recommendation(
                     priority: .high,
@@ -110,17 +113,33 @@ class ActionableRecommendations {
                     ]
                 ))
             } else if load.status == .fresh {
-                recommendations.append(Recommendation(
-                    priority: .low,
-                    category: .training,
-                    title: "Well Recovered",
-                    message: "You're well-rested and ready for quality training.",
-                    actionItems: [
-                        "Good time for hard interval sessions",
-                        "Consider scheduling a race or time trial",
-                        "Gradually increase training volume if desired"
-                    ]
-                ))
+                // Only show "Well Recovered" if BOTH low training volume AND good recovery markers
+                if isRecovered {
+                    recommendations.append(Recommendation(
+                        priority: .low,
+                        category: .training,
+                        title: "Well Recovered",
+                        message: "Low training load and good recovery markers. Ready for quality training.",
+                        actionItems: [
+                            "Good time for hard interval sessions",
+                            "Consider scheduling a race or time trial",
+                            "Gradually increase training volume if desired"
+                        ]
+                    ))
+                } else {
+                    // Low volume but poor recovery - don't recommend hard training
+                    recommendations.append(Recommendation(
+                        priority: .medium,
+                        category: .recovery,
+                        title: "Low Volume, Poor Recovery",
+                        message: "Training load is low but recovery markers indicate fatigue. Prioritize recovery over intensity.",
+                        actionItems: [
+                            "Focus on easy, short sessions",
+                            "Prioritize sleep and nutrition",
+                            "Monitor for illness or excessive stress"
+                        ]
+                    ))
+                }
             }
         }
         
@@ -200,5 +219,21 @@ class ActionableRecommendations {
         }
         
         return recommendations.sorted { $0.priority < $1.priority }
+    }
+    
+    // MARK: - Helper Functions
+    
+    /// Checks if user is actually recovered based on physiological markers (HRV, RHR)
+    /// Returns true if recovery markers are good, false if showing signs of fatigue
+    private func checkRecoveryStatus(recoveryInsights: [CorrelationEngine.RecoveryInsight]) -> Bool {
+        guard !recoveryInsights.isEmpty else { return true }
+        
+        // Count how many metrics show fatigue or recovering status
+        let fatigueMarkers = recoveryInsights.filter { insight in
+            insight.trend == .fatigued || insight.trend == .recovering
+        }
+        
+        // If more than half of recovery metrics show fatigue, not truly recovered
+        return fatigueMarkers.count < (recoveryInsights.count / 2)
     }
 }

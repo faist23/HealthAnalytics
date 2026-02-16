@@ -27,6 +27,7 @@ class InsightsViewModel: ObservableObject {
     @Published var proteinRecoveryInsight: NutritionCorrelationEngine.ProteinRecoveryInsight?
     @Published var proteinPerformanceInsights: [NutritionCorrelationEngine.ProteinPerformanceInsight] = []
     @Published var carbPerformanceInsights: [NutritionCorrelationEngine.CarbPerformanceInsight] = []
+    @Published var loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var primaryActivity: String = "Ride"
@@ -85,6 +86,7 @@ class InsightsViewModel: ObservableObject {
             let storedWorkouts = try context.fetch(workoutDescriptor)
             let storedHealthMetrics = try context.fetch(metricDescriptor)
             let storedNutrition = try context.fetch(nutritionDescriptor)
+            let intentLabels = try context.fetch(FetchDescriptor<StoredIntentLabel>())
             
             // Convert to working models
             let workouts = storedWorkouts.map { WorkoutData(from: $0) }
@@ -153,7 +155,7 @@ class InsightsViewModel: ObservableObject {
                 hrvData: hrvData
             )
             
-            // Recovery status
+            // Recovery status (calculate FIRST so it can be used by training load)
             recoveryInsights = correlationEngine.analyzeRecoveryStatus(
                 restingHRData: rhrData,
                 hrvData: hrvData
@@ -166,11 +168,12 @@ class InsightsViewModel: ObservableObject {
                 stravaActivities: []
             )
             
-            // Training load
+            // Training load (NOW with recovery insights)
             trainingLoadSummary = loadCalculator.calculateTrainingLoad(
                 healthKitWorkouts: workouts,
                 stravaActivities: [],
-                stepData: stepData
+                stepData: stepData,
+                recoveryInsights: recoveryInsights
             )
             
             // Trends
@@ -226,6 +229,14 @@ class InsightsViewModel: ObservableObject {
                 recoveryInsights: recoveryInsights,
                 trends: metricTrends,
                 injuryRisk: injuryRisk
+            )
+            
+            // Training Load Visualization (extended data)
+            let loadService = TrainingLoadVisualizationService()
+            loadVisualization = loadService.generateLoadVisualization(
+                workouts: workouts,
+                labels: intentLabels,
+                daysBack: 90
             )
             
         } catch {
