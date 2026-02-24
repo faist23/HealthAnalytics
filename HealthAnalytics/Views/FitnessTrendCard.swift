@@ -619,14 +619,74 @@ struct FitnessTrendInfoSheet: View {
     var body: some View {
         NavigationView {
             List {
+                // IMPORTANT: Research-based context about VO2 max limitations
+                Section(header: Text("⚠️ Important Context")) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("This app shows VO2max data from Apple Watch, but it's important to understand its limitations:")
+                            .fontWeight(.semibold)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.caption)
+                                
+                                Text("Smartwatch VO2max has a mean error of 7-16% and consistently underestimates in fit individuals")
+                                    .font(.caption)
+                            }
+                            
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "chart.bar.fill")
+                                    .foregroundStyle(.blue)
+                                    .font(.caption)
+                                
+                                Text("99% of longevity research uses METs (metabolic equivalents), not VO2max measurements")
+                                    .font(.caption)
+                            }
+                            
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "heart.fill")
+                                    .foregroundStyle(.red)
+                                    .font(.caption)
+                                
+                                Text("This app emphasizes multiple metrics (HRV, training load, recovery, METs) rather than fixating on VO2max alone")
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+                .listRowBackground(Color.orange.opacity(0.1))
+                
                 Section(header: Text("What is VO2max?")) {
-                    Text("VO2max is the maximum amount of oxygen your body can utilize during intense exercise. It's the gold standard measure of cardiorespiratory fitness and a strong predictor of endurance performance and longevity.")
+                    Text("VO2max is the maximum amount of oxygen your body can utilize during intense exercise. While historically considered the gold standard for cardiorespiratory fitness, it's one of many important health metrics.")
+                }
+                
+                Section(header: Text("Apple Watch Measurement")) {
+                    Text("Your Apple Watch estimates VO2max during outdoor walks, runs, and hikes using heart rate and GPS data. This is an algorithmic estimation, not a direct gas exchange measurement.")
+                    
+                    Text("Research shows smartwatch estimates have 7-16% error rates and tend to underestimate in fit individuals while overestimating in less fit individuals.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fontWeight(.semibold)
+                }
+                
+                Section(header: Text("Why We Show Multiple Metrics")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("**MET-minutes:** Based on 750,000+ participant studies. Each MET increase = 14-15% mortality reduction.")
+                        
+                        Text("**Training Balance:** Research shows combining cardiorespiratory fitness AND strength training reduces mortality more than either alone.")
+                        
+                        Text("**HRV & Recovery:** Real-time markers of your body's readiness and adaptation.")
+                        
+                        Text("**Training Load (ACWR):** Proven injury risk predictor.")
+                    }
+                    .font(.caption)
                 }
                 
                 Section(header: Text("Fitness Age")) {
                     Text("Your fitness age compares your VO2max to population norms. A fitness age younger than your chronological age indicates superior cardiovascular health.")
                     
-                    Text("Based on data from the Cooper Institute and ACSM guidelines comparing thousands of athletes.")
+                    Text("Based on data from the Cooper Institute and ACSM guidelines. Remember: This is one data point among many.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -651,9 +711,9 @@ struct FitnessTrendInfoSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 
-                Section(header: Text("Data Source")) {
-                    Text("VO2max measurements come from your Apple Watch, which estimates VO2max during outdoor walks, runs, and hikes using heart rate and GPS data.")
-                        .font(.caption)
+                Section(header: Text("Bottom Line")) {
+                    Text("VO2max is a useful metric but not the complete picture. This app uses a multi-factorial approach based on current research, emphasizing the combination of multiple health markers for a more complete view of your fitness and readiness.")
+                        .fontWeight(.semibold)
                 }
             }
             .navigationTitle("Fitness Trends")

@@ -65,6 +65,11 @@ struct ContentView: View {
                             )
                             .cardStyle(for: .recovery)
                             
+                            // ─── Supporting Health Metrics + Overall Score ─────────
+                            if let metrics = viewModel.holisticMetrics {
+                                SupportingMetricsCard(metrics: metrics)
+                            }
+                            
                             // ─── Date Range Selector (Timeline Style) ─────────
                             DateRangePicker(
                                 startDate: $viewModel.startDate,

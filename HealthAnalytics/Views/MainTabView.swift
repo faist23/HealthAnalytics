@@ -63,9 +63,26 @@ struct MainTabView: View {
                     }
             }
             .tabItem {
-                Label("Training", systemImage: "bolt.circle.fill")
+                Label("Readiness", systemImage: "heart.circle.fill")
             }
             .tag(2)
+            
+            NavigationStack {
+                TrainingView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showSettings = true
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                        }
+                    }
+            }
+            .tabItem {
+                Label("Training", systemImage: "figure.run.circle.fill")
+            }
+            .tag(3)
             
             NavigationStack {
                 InsightsView()
@@ -82,7 +99,7 @@ struct MainTabView: View {
             .tabItem {
                 Label("Insights", systemImage: "lightbulb.fill")
             }
-            .tag(3)
+            .tag(4)
             }
             
             // Global sync indicator

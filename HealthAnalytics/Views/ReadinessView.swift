@@ -34,7 +34,7 @@ struct ReadinessView: View {
                 }
             }
         }
-        .navigationTitle("Training")
+        .navigationTitle("Readiness")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {

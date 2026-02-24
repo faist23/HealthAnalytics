@@ -68,6 +68,14 @@ struct HeroReadinessCard: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
+            
+            // Score calculation explanation
+            Text("Based on Recovery (0-40) + Fitness (0-30) + Fatigue (0-30)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+                .padding(.top, 4)
         }
         .padding(.vertical, 20)
     }

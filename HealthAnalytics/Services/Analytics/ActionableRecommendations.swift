@@ -47,7 +47,9 @@ class ActionableRecommendations {
         trainingLoad: TrainingLoadCalculator.TrainingLoadSummary?,
         recoveryInsights: [CorrelationEngine.RecoveryInsight],
         trends: [MetricTrend],
-        injuryRisk: InjuryRiskCalculator.InjuryRiskAssessment?
+        injuryRisk: InjuryRiskCalculator.InjuryRiskAssessment?,
+        trainingBalance: BalancedTrainingAnalyzer.TrainingBalance? = nil,
+        metSummary: METAnalyzer.METSummary? = nil
     ) -> [Recommendation] {
         
         var recommendations: [Recommendation] = []
@@ -201,7 +203,99 @@ class ActionableRecommendations {
             ))
         }
         
-        // 5. Positive reinforcement (Updated)
+        // 5. Training Balance Analysis
+        if let balance = trainingBalance {
+            switch balance.balance {
+            case .missingStrength:
+                recommendations.append(Recommendation(
+                    priority: .high,
+                    category: .training,
+                    title: "Missing Strength Training",
+                    message: balance.recommendation,
+                    actionItems: [
+                        "Schedule 2 strength sessions this week (30-45 min each)",
+                        "Focus on compound movements (squats, deadlifts, rows)",
+                        "Research shows combining endurance + strength reduces mortality more than either alone",
+                        "Even minimal strength work provides significant benefits"
+                    ]
+                ))
+                
+            case .enduranceDominant:
+                if balance.strengthPercentage < 10 {
+                    recommendations.append(Recommendation(
+                        priority: .medium,
+                        category: .training,
+                        title: "Improve Training Balance",
+                        message: "Add strength training to your routine (\(String(format: "%.0f", balance.strengthPercentage))% currently)",
+                        actionItems: [
+                            "Add 1-2 weekly strength sessions",
+                            "Start with bodyweight exercises if new to strength training",
+                            "Schedule on days between hard endurance sessions",
+                            "Balanced training reduces injury risk and improves long-term performance"
+                        ]
+                    ))
+                }
+                
+            case .needsMobility:
+                if balance.totalMinutes > 300 {
+                    recommendations.append(Recommendation(
+                        priority: .low,
+                        category: .lifestyle,
+                        title: "Add Mobility Work",
+                        message: "Strong training volume but no mobility work detected",
+                        actionItems: [
+                            "Add 20-30 min weekly mobility/yoga",
+                            "Focus on hips, hamstrings, and lower back",
+                            "Schedule after hard workouts for recovery",
+                            "Improves recovery and reduces injury risk"
+                        ]
+                    ))
+                }
+                
+            default:
+                break
+            }
+        }
+        
+        // 6. MET Activity Analysis
+        if let mets = metSummary {
+            switch mets.status {
+            case .insufficient:
+                recommendations.append(Recommendation(
+                    priority: .high,
+                    category: .lifestyle,
+                    title: "Increase Weekly Activity",
+                    message: "Current activity below WHO minimum (\(String(format: "%.0f", mets.weeklyMETMinutes)) MET-min/week)",
+                    actionItems: [
+                        "Target: 600 MET-min/week minimum",
+                        "Start with 150 min brisk walking weekly",
+                        "Each MET increase = 14-15% mortality reduction",
+                        "Gradually build up to 1,500 MET-min/week"
+                    ]
+                ))
+                
+            case .moderate:
+                if mets.vigorousActivityMinutes < 75 {
+                    recommendations.append(Recommendation(
+                        priority: .low,
+                        category: .training,
+                        title: "Add Vigorous Activity",
+                        message: "Meeting WHO minimums but lacking vigorous intensity",
+                        actionItems: [
+                            "Add 1-2 vigorous sessions weekly",
+                            "Vigorous = activities ≥6.0 METs (running, cycling)",
+                            "75 min vigorous = 150 min moderate (WHO equivalent)",
+                            "Greater health benefits at higher intensities"
+                        ]
+                    ))
+                }
+                
+            default:
+                break
+            }
+        }
+        
+        // 7. Positive reinforcement (Updated)
         let improvingTrends = trends.filter { $0.status == .improving }
         if improvingTrends.count >= 2 {
             let metrics = improvingTrends.map { $0.metricName }.joined(separator: ", ")
