@@ -192,11 +192,14 @@ struct DailyRecommendationService {
     
     private func assessRecentTrainingLoad(workouts: [WorkoutData]) -> TrainingLoadStatus {
         let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
         let threeDaysAgo = calendar.date(byAdding: .day, value: -3, to: Date())!
         let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: Date())!
         
         let last3Days = workouts.filter { $0.startDate >= threeDaysAgo }
         let last7Days = workouts.filter { $0.startDate >= sevenDaysAgo }
+        
+        let todayWorkouts = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
         
         let recent3DaysVolume = last3Days.reduce(0.0) { $0 + $1.duration }
         let recent7DaysVolume = last7Days.reduce(0.0) { $0 + $1.duration }
@@ -212,7 +215,8 @@ struct DailyRecommendationService {
             last7DaysCount: last7Days.count,
             recent3DaysVolume: recent3DaysVolume,
             recent7DaysVolume: recent7DaysVolume,
-            hasRecentHardSession: hasRecentHardSession
+            hasRecentHardSession: hasRecentHardSession,
+            todayWorkouts: todayWorkouts
         )
     }
     
@@ -222,6 +226,7 @@ struct DailyRecommendationService {
         let recent3DaysVolume: Double
         let recent7DaysVolume: Double
         let hasRecentHardSession: Bool
+        let todayWorkouts: [WorkoutData]
     }
     
     // MARK: - Recommendation Logic
@@ -237,9 +242,9 @@ struct DailyRecommendationService {
         var reasoning: [String] = []
         
         // Primary decision: HRV status
-        let status: DailyRecommendation.RecommendationStatus
-        let headline: String
-        let guidance: String
+        var status: DailyRecommendation.RecommendationStatus
+        var headline: String
+        var guidance: String
         var targetZones: [String] = []
         var avoidZones: [String] = []
         
@@ -321,9 +326,64 @@ struct DailyRecommendationService {
         
         // Adjust based on readiness score if available
         if let score = readinessScore {
-            if score < 50 && status == .moderate {
+            if score < 50 && (status == .moderate || status == .quality || status == .goHard) {
                 // Readiness says rest even if HRV looks normal
                 reasoning.append("Readiness score low (\(score))")
+                if score < 30 {
+                    status = .rest
+                    headline = "Listen to Readiness: Rest"
+                    guidance = "Despite HRV status, your overall readiness score is critically low. Prioritize complete rest today."
+                }
+            }
+        }
+        
+        // ACKNOWLEDGE TODAY'S WORKOUTS
+        if !trainingLoad.todayWorkouts.isEmpty {
+            let totalTodayDuration = trainingLoad.todayWorkouts.reduce(0.0) { $0 + $1.duration }
+            
+            // Check if ANY workout today was high intensity or long duration
+            let hasHardWork = trainingLoad.todayWorkouts.contains { workout in
+                workout.duration >= 2700 || // 45m+ is rarely a "light" recovery session
+                (workout.averageHeartRate ?? 0) > 145 ||
+                (workout.averagePower ?? 0) > 185
+            }
+            
+            // Get stats from the most intense workout for the reasoning section
+            let maxHR = trainingLoad.todayWorkouts.compactMap { $0.averageHeartRate }.max() ?? 0
+            let maxPower = trainingLoad.todayWorkouts.compactMap { $0.averagePower }.max() ?? 0
+            
+            let workoutNames = trainingLoad.todayWorkouts.map { $0.workoutName }.joined(separator: ", ")
+            
+            headline = "Work Recorded: \(workoutNames)"
+            guidance = "You've already logged \(Int(totalTodayDuration / 60))m of training today. "
+            
+            if status == .goHard || status == .quality {
+                if hasHardWork {
+                    guidance += "Excellent work—you capitalized on your high readiness with a quality session. Focus on immediate recovery now."
+                } else {
+                    guidance += "You've completed some work for today. Since your readiness is high, ensure this provided enough stimulus or prepare for a harder session tomorrow."
+                }
+            } else if status == .easy || status == .rest {
+                if hasHardWork {
+                    guidance += "Careful: your metrics suggested recovery, but you logged a significant or high-intensity session. Prioritize extra sleep and nutrition to avoid overreaching."
+                } else {
+                    guidance += "Good job keeping it light as recommended. Your body will thank you for the recovery window."
+                }
+            } else {
+                guidance += "Solid work today. Monitor how you feel tomorrow to see how your body adapts to this load."
+            }
+            
+            var todayStats = "Today: \(Int(totalTodayDuration / 60))m total"
+            if maxPower > 0 {
+                todayStats += " (Peak Avg: \(Int(maxPower))W)"
+            } else if maxHR > 0 {
+                todayStats += " (Peak HR: \(Int(maxHR)) bpm)"
+            }
+            reasoning.append(todayStats)
+            
+            // Adjust status to reflect that work is done
+            if status == .goHard || status == .quality && hasHardWork {
+                status = .moderate
             }
         }
         

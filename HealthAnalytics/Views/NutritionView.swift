@@ -52,30 +52,7 @@ struct NutritionView: View {
                         
                         // MARK: - Macros Chart
                         ChartSection(title: "Macro Breakdown") {
-                            Chart {
-                                ForEach(viewModel.dailyNutrition) { day in
-                                    BarMark(
-                                        x: .value("Date", day.date, unit: .day),
-                                        y: .value("Protein", day.totalProtein)
-                                    )
-                                    .foregroundStyle(.blue)
-                                    .foregroundStyle(by: .value("Macro", "Protein"))
-                                    
-                                    BarMark(
-                                        x: .value("Date", day.date, unit: .day),
-                                        y: .value("Carbs", day.totalCarbs)
-                                    )
-                                    .foregroundStyle(.green)
-                                    .foregroundStyle(by: .value("Macro", "Carbs"))
-                                    
-                                    BarMark(
-                                        x: .value("Date", day.date, unit: .day),
-                                        y: .value("Fat", day.totalFat)
-                                    )
-                                    .foregroundStyle(.purple)
-                                    .foregroundStyle(by: .value("Macro", "Fat"))
-                                }
-                            }
+                            MacroBreakdownChart(nutritionData: viewModel.dailyNutrition)
                         }
                     }
                 }
@@ -184,6 +161,86 @@ struct ChartSection<Content: View>: View {
         .background(Color(uiColor: .secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal)
+    }
+}
+
+struct MacroBreakdownChart: View {
+    let nutritionData: [DailyNutrition]
+    @State private var selectedDate: Date?
+
+    var body: some View {
+        Chart {
+            ForEach(nutritionData) { day in
+                BarMark(
+                    x: .value("Date", day.date, unit: .day),
+                    y: .value("Protein", day.totalProtein * 4)
+                )
+                .foregroundStyle(by: .value("Macro", "Protein"))
+                
+                BarMark(
+                    x: .value("Date", day.date, unit: .day),
+                    y: .value("Carbs", day.totalCarbs * 4)
+                )
+                .foregroundStyle(by: .value("Macro", "Carbs"))
+                
+                BarMark(
+                    x: .value("Date", day.date, unit: .day),
+                    y: .value("Fat", day.totalFat * 9)
+                )
+                .foregroundStyle(by: .value("Macro", "Fat"))
+            }
+
+            if let selectedDate {
+                RuleMark(
+                    x: .value("Selected Date", selectedDate, unit: .day)
+                )
+                .foregroundStyle(.gray.opacity(0.3))
+                .offset(yStart: -10)
+                .zIndex(-1)
+                .annotation(
+                    position: .top,
+                    spacing: 0,
+                    overflowResolution: .init(
+                        x: .fit(to: .chart),
+                        y: .disabled
+                    )
+                ) {
+                    if let day = nutritionData.first(where: { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }) {
+                        let pCals = day.totalProtein * 4
+                        let cCals = day.totalCarbs * 4
+                        let fCals = day.totalFat * 9
+                        let totalCals = pCals + cCals + fCals
+                        
+                        if totalCals > 0 {
+                            let pPct = Int((pCals / totalCals) * 100)
+                            let cPct = Int((cCals / totalCals) * 100)
+                            let fPct = Int((fCals / totalCals) * 100)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(day.date.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.caption.bold())
+                                HStack(spacing: 8) {
+                                    Text("\(pPct)% P").foregroundStyle(.blue)
+                                    Text("\(cPct)% C").foregroundStyle(.green)
+                                    Text("\(fPct)% F").foregroundStyle(.purple)
+                                }
+                                .font(.caption2.bold())
+                            }
+                            .padding(8)
+                            .background(Color(uiColor: .systemBackground))
+                            .cornerRadius(8)
+                            .shadow(radius: 3)
+                        }
+                    }
+                }
+            }
+        }
+        .chartForegroundStyleScale([
+            "Protein": .blue,
+            "Carbs": .green,
+            "Fat": .purple
+        ])
+        .chartXSelection(value: $selectedDate)
     }
 }
 

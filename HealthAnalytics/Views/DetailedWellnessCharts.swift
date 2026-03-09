@@ -20,10 +20,14 @@ struct DetailedRHRChart: View {
         return data.filter { $0.date >= startDate }
     }
     
+    private var averageValueRaw: Double {
+        guard !filteredData.isEmpty else { return 0 }
+        return filteredData.map { $0.value }.reduce(0, +) / Double(filteredData.count)
+    }
+    
     private var averageValue: String {
         guard !filteredData.isEmpty else { return "No data" }
-        let avg = filteredData.map { $0.value }.reduce(0, +) / Double(filteredData.count)
-        return "Avg: \(Int(avg)) bpm"
+        return "Avg: \(Int(averageValueRaw)) bpm"
     }
     
     var body: some View {
@@ -54,6 +58,12 @@ struct DetailedRHRChart: View {
                         y: .value("BPM", point.value)
                     )
                     .foregroundStyle(Color.red.opacity(0.1).gradient)
+                }
+                
+                if !filteredData.isEmpty {
+                    RuleMark(y: .value("Average", averageValueRaw))
+                        .foregroundStyle(.red.opacity(0.6))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }
             .frame(height: 120)
@@ -94,10 +104,14 @@ struct DetailedHRVChart: View {
         return data.filter { $0.date >= startDate }
     }
     
+    private var averageValueRaw: Double {
+        guard !filteredData.isEmpty else { return 0 }
+        return filteredData.map { $0.value }.reduce(0, +) / Double(filteredData.count)
+    }
+    
     private var averageValue: String {
         guard !filteredData.isEmpty else { return "No data" }
-        let avg = filteredData.map { $0.value }.reduce(0, +) / Double(filteredData.count)
-        return "Avg: \(Int(avg)) ms"
+        return "Avg: \(Int(averageValueRaw)) ms"
     }
     
     var body: some View {
@@ -128,6 +142,12 @@ struct DetailedHRVChart: View {
                         y: .value("HRV", point.value)
                     )
                     .foregroundStyle(Color.green.opacity(0.1).gradient)
+                }
+                
+                if !filteredData.isEmpty {
+                    RuleMark(y: .value("Average", averageValueRaw))
+                        .foregroundStyle(.green.opacity(0.6))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }
             .frame(height: 120)
@@ -168,10 +188,14 @@ struct DetailedSleepChart: View {
         return data.filter { $0.date >= startDate }
     }
     
+    private var averageValueRaw: Double {
+        guard !filteredData.isEmpty else { return 0 }
+        return filteredData.map { $0.value }.reduce(0, +) / Double(filteredData.count)
+    }
+    
     private var averageValue: String {
         guard !filteredData.isEmpty else { return "No data" }
-        let avg = filteredData.map { $0.value }.reduce(0, +) / Double(filteredData.count)
-        return String(format: "Avg: %.1f hrs", avg)
+        return String(format: "Avg: %.1f hrs", averageValueRaw)
     }
     
     var body: some View {
@@ -202,6 +226,12 @@ struct DetailedSleepChart: View {
                         y: .value("Hours", point.value)
                     )
                     .foregroundStyle(Color.purple.opacity(0.1).gradient)
+                }
+                
+                if !filteredData.isEmpty {
+                    RuleMark(y: .value("Average", averageValueRaw))
+                        .foregroundStyle(.purple.opacity(0.6))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }
             .frame(height: 120)
@@ -242,10 +272,14 @@ struct DetailedStepsChart: View {
         return data.filter { $0.date >= startDate }
     }
     
+    private var averageValueRaw: Double {
+        guard !filteredData.isEmpty else { return 0 }
+        return filteredData.map { $0.value }.reduce(0, +) / Double(filteredData.count)
+    }
+    
     private var averageValue: String {
         guard !filteredData.isEmpty else { return "No data" }
-        let avg = filteredData.map { $0.value }.reduce(0, +) / Double(filteredData.count)
-        return "Avg: \(Int(avg / 1000))k steps"
+        return "Avg: \(Int(averageValueRaw)) steps"
     }
     
     var body: some View {
@@ -276,6 +310,12 @@ struct DetailedStepsChart: View {
                         y: .value("Steps", point.value)
                     )
                     .foregroundStyle(Color.orange.opacity(0.1).gradient)
+                }
+                
+                if !filteredData.isEmpty {
+                    RuleMark(y: .value("Average", averageValueRaw))
+                        .foregroundStyle(.orange.opacity(0.6))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }
             .frame(height: 120)
@@ -316,10 +356,14 @@ struct DetailedWeightChart: View {
         return data.filter { $0.date >= startDate }
     }
     
+    private var averageValueRaw: Double {
+        guard !filteredData.isEmpty else { return 0 }
+        return filteredData.map { $0.value }.reduce(0, +) / Double(filteredData.count)
+    }
+    
     private var averageValue: String {
         guard !filteredData.isEmpty else { return "No data" }
-        let avg = filteredData.map { $0.value }.reduce(0, +) / Double(filteredData.count)
-        return String(format: "Avg: %.1f lbs", avg)
+        return String(format: "Avg: %.1f lbs", averageValueRaw)
     }
     
     var body: some View {
@@ -350,6 +394,12 @@ struct DetailedWeightChart: View {
                         y: .value("Weight", point.value)
                     )
                     .foregroundStyle(Color.blue.opacity(0.1).gradient)
+                }
+                
+                if !filteredData.isEmpty {
+                    RuleMark(y: .value("Average", averageValueRaw))
+                        .foregroundStyle(.blue.opacity(0.6))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }
             .frame(height: 120)
