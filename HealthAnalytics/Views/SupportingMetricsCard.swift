@@ -11,6 +11,23 @@ import SwiftUI
 struct SupportingMetricsCard: View {
     let metrics: HealthMetrics
     @State private var showDetailedExplanation = false
+    @State private var selectedMetric: SelectedMetric?
+    
+    enum SelectedMetric: Identifiable {
+        case activity, balance, hrv, load, sleep, readiness
+        var id: Self { self }
+        
+        var title: String {
+            switch self {
+            case .activity: return "MET Activity"
+            case .balance: return "Training Balance"
+            case .hrv: return "Heart Rate Variability"
+            case .load: return "Training Load (ACWR)"
+            case .sleep: return "Sleep Quality"
+            case .readiness: return "Readiness Score"
+            }
+        }
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -22,11 +39,11 @@ struct SupportingMetricsCard: View {
                 
                 Spacer()
                 
-                // Info button
+                // Info button (Readiness Explained)
                 Button {
                     showDetailedExplanation = true
                 } label: {
-                    Image(systemName: "info.circle")
+                    Image(systemName: "questionmark.circle")
                         .font(.title3)
                         .foregroundStyle(.blue)
                 }
@@ -44,7 +61,9 @@ struct SupportingMetricsCard: View {
                     value: "\(Int(metrics.weeklyMETMinutes)) MET-min",
                     status: metrics.metStatus,
                     icon: "figure.run"
-                )
+                ) {
+                    selectedMetric = .activity
+                }
                 
                 // Training Balance
                 MetricTileView(
@@ -52,7 +71,9 @@ struct SupportingMetricsCard: View {
                     value: "\(Int(metrics.strengthPercentage))% strength",
                     status: metrics.trainingBalance,
                     icon: "chart.pie"
-                )
+                ) {
+                    selectedMetric = .balance
+                }
                 
                 // HRV
                 MetricTileView(
@@ -60,7 +81,9 @@ struct SupportingMetricsCard: View {
                     value: "\(Int(metrics.currentHRV)) ms",
                     status: metrics.hrvStatus,
                     icon: "waveform.path.ecg"
-                )
+                ) {
+                    selectedMetric = .hrv
+                }
                 
                 // Load (ACWR)
                 MetricTileView(
@@ -68,7 +91,9 @@ struct SupportingMetricsCard: View {
                     value: String(format: "%.2f", metrics.acwr),
                     status: metrics.loadStatus,
                     icon: "chart.line.uptrend.xyaxis"
-                )
+                ) {
+                    selectedMetric = .load
+                }
                 
                 // Sleep
                 MetricTileView(
@@ -76,7 +101,9 @@ struct SupportingMetricsCard: View {
                     value: String(format: "%.1fh", metrics.averageSleep),
                     status: metrics.sleepStatus,
                     icon: "moon.zzz"
-                )
+                ) {
+                    selectedMetric = .sleep
+                }
                 
                 // Readiness
                 MetricTileView(
@@ -84,7 +111,9 @@ struct SupportingMetricsCard: View {
                     value: "\(metrics.readinessScore)",
                     status: metrics.readinessStatus,
                     icon: "heart.fill"
-                )
+                ) {
+                    selectedMetric = .readiness
+                }
             }
             
             Divider()
@@ -134,6 +163,9 @@ struct SupportingMetricsCard: View {
         )
         .sheet(isPresented: $showDetailedExplanation) {
             DetailedReadinessExplanationView()
+        }
+        .sheet(item: $selectedMetric) { metric in
+            MetricConditionDetailView(metric: metric, metrics: metrics)
         }
     }
     
@@ -188,39 +220,255 @@ private struct MetricTileView: View {
     let value: String
     let status: MetricStatus
     let icon: String
+    var action: () -> Void
     
     var body: some View {
-        VStack(spacing: 8) {
-            // Icon with status color
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundStyle(status.color)
-                .frame(height: 28)
-            
-            // Title
-            Text(title)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundStyle(.secondary)
-            
-            // Value
-            Text(value)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+        Button(action: action) {
+            VStack(spacing: 8) {
+                // Icon with status color
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(status.color)
+                    .frame(height: 28)
+                
+                // Title
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                
+                // Value
+                Text(value)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(status.color.opacity(0.1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(status.color.opacity(0.3), lineWidth: 1)
+            )
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .padding(.horizontal, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(status.color.opacity(0.1))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(status.color.opacity(0.3), lineWidth: 1)
-        )
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Metric Condition Detail View
+
+private struct MetricConditionDetailView: View {
+    let metric: SupportingMetricsCard.SelectedMetric
+    let metrics: HealthMetrics
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // COMPACT HEADER: Icon and Value side-by-side
+                    HStack(spacing: 20) {
+                        Image(systemName: iconName)
+                            .font(.system(size: 44))
+                            .foregroundStyle(status.color)
+                            .frame(width: 60, height: 60)
+                            .background(status.color.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(metric.title)
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                            
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Text(currentValue)
+                                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.primary)
+                                
+                                Text(status.label.uppercased())
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 2)
+                                    .background(status.color.opacity(0.2))
+                                    .foregroundStyle(status.color)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 10)
+                    
+                    // HIGHLIGHT: The "Why" behind the status
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "info.circle.fill")
+                                .font(.caption)
+                            Text("WHY THIS STATUS?")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                        }
+                        .foregroundStyle(status.color)
+                        
+                        Text(conditionReasoning)
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(status.color.opacity(0.05)))
+                    .padding(.horizontal)
+                    
+                    // ACTION: Coach's Guidance
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "bolt.fill")
+                                .font(.caption)
+                            Text("COACH'S GUIDANCE")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                        }
+                        .foregroundStyle(.primary)
+                        
+                        Text(guidanceText)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                    .padding(.horizontal)
+                    
+                    // DETAILED INFO (If applicable)
+                    if let detail = detailedInsight {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 24)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle(metric.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.medium]) // Force medium for better focus
+        .presentationDragIndicator(.visible)
+    }
+    
+    private var detailedInsight: String? {
+        switch metric {
+        case .activity: return "WHO guidelines recommend 600-1500 MET-min/week."
+        case .load: return "The 'Sweet Spot' for building fitness is 0.8 - 1.3."
+        case .sleep: return "Consistency (±30m wake time) is as important as duration."
+        case .hrv: return "HRV is highly sensitive to alcohol, stress, and late meals."
+        default: return nil
+        }
+    }
+    
+    // MARK: - Logic Helpers
+    
+    private var iconName: String {
+        switch metric {
+        case .activity: return "figure.run"
+        case .balance: return "chart.pie.fill"
+        case .hrv: return "waveform.path.ecg"
+        case .load: return "chart.line.uptrend.xyaxis"
+        case .sleep: return "moon.zzz.fill"
+        case .readiness: return "heart.fill"
+        }
+    }
+    
+    private var status: MetricStatus {
+        switch metric {
+        case .activity: return metrics.metStatus
+        case .balance: return metrics.trainingBalance
+        case .hrv: return metrics.hrvStatus
+        case .load: return metrics.loadStatus
+        case .sleep: return metrics.sleepStatus
+        case .readiness: return metrics.readinessStatus
+        }
+    }
+    
+    private var currentValue: String {
+        switch metric {
+        case .activity: return "\(Int(metrics.weeklyMETMinutes))"
+        case .balance: return "\(Int(metrics.strengthPercentage))%"
+        case .hrv: return "\(Int(metrics.currentHRV))ms"
+        case .load: return String(format: "%.2f", metrics.acwr)
+        case .sleep: return String(format: "%.1fh", metrics.averageSleep)
+        case .readiness: return "\(metrics.readinessScore)"
+        }
+    }
+    
+    private var conditionReasoning: String {
+        switch metric {
+        case .activity:
+            switch status {
+            case .excellent, .good: return "Your weekly movement volume is within the optimal range (600-1500 MET-min), which is strongly associated with cardiovascular health and longevity."
+            case .moderate: return "Your activity levels are slightly below target. Maintaining baseline movement is essential for metabolic health."
+            case .needsAttention: return "Weekly MET-minutes are significantly below the WHO minimum of 600. Increasing daily walking or light activity is recommended."
+            }
+        case .balance:
+            switch status {
+            case .excellent, .good: return "Your training mix shows a healthy integration of both strength and endurance work. This dual-stimulus approach is ideal for longevity."
+            case .moderate: return "Your training is currently leaning heavily toward one modality. Adding variety will help prevent imbalances."
+            case .needsAttention: return "Missing one pillar of training (Strength or Endurance). Research shows that combining both types provides superior health outcomes."
+            }
+        case .hrv:
+            switch status {
+            case .excellent: return "Your HRV is currently in its optimal range (within ±5% of your baseline), indicating your autonomic nervous system is well-recovered."
+            case .good: return "Your HRV is stable, showing a healthy balance between training stress and recovery."
+            case .moderate: return "Your HRV is slightly suppressed (5-10% below baseline). Your body is managing stress, but recovery is slightly lagging."
+            case .needsAttention: return "Your HRV is significantly suppressed (>10% below baseline). This is a strong signal of systemic fatigue or impending overreaching."
+            }
+        case .load:
+            switch status {
+            case .excellent, .good: return "Your Acute-to-Chronic Workload Ratio is in the 'Sweet Spot' (0.8-1.3). You are building fitness at a safe and sustainable rate."
+            case .moderate: return "Your training load is currently low (ACR < 0.8), suggesting you are in a recovery phase or detraining."
+            case .needsAttention: return "Warning: Your training load has spiked (ACR > 1.3). This rapid increase in volume or intensity significantly raises your risk of injury."
+            }
+        case .sleep:
+            switch status {
+            case .excellent: return "Your sleep duration is exceptional (8h+). This provides the maximum possible window for hormonal recovery and tissue repair."
+            case .good: return "You are averaging over 7 hours of sleep, which meets the baseline requirement for athletic recovery and cognitive function."
+            case .moderate: return "Sleep is slightly below optimal (6.5-7h). You may notice slight decreases in cognitive focus and physical recovery speed."
+            case .needsAttention: return "Critically low sleep (under 6h). Sleep deprivation impairs your immune system, raises cortisol, and severely hinders recovery from training."
+            }
+        case .readiness:
+            switch status {
+            case .excellent: return "All systems are green. Your biometrics and training load are perfectly aligned for peak performance."
+            case .good: return "Your overall readiness is strong. You have the capacity for quality training efforts today."
+            case .moderate: return "Readiness is tempered. Some metrics suggest you are still adapting to recent stress or training load."
+            case .needsAttention: return "Your body is signaling a need for rest. Multiple recovery markers are suppressed, and the risk of injury or illness is elevated."
+            }
+        }
+    }
+    
+    private var guidanceText: String {
+        switch status {
+        case .excellent: return "You are in an ideal state. Capitalize on this window for your most challenging training sessions or competitive efforts."
+        case .good: return "Proceed with your planned training. You are well-positioned to handle moderate to high-intensity work."
+        case .moderate: return "Listen closely to your body. Consider sticking to Zone 2 endurance work and prioritizing an extra hour of sleep tonight."
+        case .needsAttention: return "Caution advised. We recommend a complete rest day or active recovery (Zone 1) only. Focus on nutrition and stress management."
+        }
     }
 }
 

@@ -26,6 +26,7 @@ class InsightsViewModel: ObservableObject {
     @Published var acwrTrend: [ACWRDataPoint] = []
     @Published var proteinRecoveryInsight: NutritionCorrelationEngine.ProteinRecoveryInsight?
     @Published var proteinPerformanceInsights: [NutritionCorrelationEngine.ProteinPerformanceInsight] = []
+    @Published var agingAssessment: BiologicalAgingService.AgingAssessment?
     @Published var carbPerformanceInsights: [NutritionCorrelationEngine.CarbPerformanceInsight] = []
     @Published var loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
     @Published var isLoading = false
@@ -238,6 +239,10 @@ class InsightsViewModel: ObservableObject {
                 labels: intentLabels,
                 daysBack: 90
             )
+            
+            // Biological Aging Analysis
+            let agingService = BiologicalAgingService()
+            agingAssessment = await agingService.calculateAgingAlpha(modelContext: context)
             
         } catch {
             errorMessage = "Failed to analyze data: \(error.localizedDescription)"

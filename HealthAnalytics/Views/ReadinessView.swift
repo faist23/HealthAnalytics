@@ -118,8 +118,11 @@ struct ReadinessView: View {
                 if !viewModel.isLoading && !isFirstLoad {
                     // HRV-Guided Daily Recommendation (HERO)
                     if let recommendation = viewModel.dailyRecommendation {
-                        DailyRecommendationCard(recommendation: recommendation)
-                            .cardStyle(for: .info)
+                        DailyRecommendationCard(
+                            recommendation: recommendation,
+                            intraDay: viewModel.intraDayReadiness
+                        )
+                        .cardStyle(for: .info)
                     }
                     
                     // Legacy daily instruction (fallback)

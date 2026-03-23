@@ -61,7 +61,8 @@ struct ContentView: View {
                             HeroReadinessCard(
                                 score: viewModel.readinessScore,
                                 level: viewModel.readinessLevel,
-                                recommendation: viewModel.readinessRecommendation
+                                recommendation: viewModel.readinessRecommendation,
+                                intraDay: viewModel.intraDayReadiness
                             )
                             .cardStyle(for: .recovery)
                             

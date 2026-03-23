@@ -9,6 +9,7 @@ import SwiftUI
 
 struct DailyRecommendationCard: View {
     let recommendation: DailyRecommendationService.DailyRecommendation
+    var intraDay: RecoveryDecayService.IntraDayReadiness? = nil
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -30,6 +31,38 @@ struct DailyRecommendationCard: View {
                 }
                 
                 Spacer()
+            }
+            
+            // Dynamic Recovery Banner (for intra-day fatigue)
+            if let intraDay = intraDay, !intraDay.isFullyRecovered {
+                HStack(spacing: 12) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.headline)
+                        .foregroundStyle(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Recovery in progress")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                        
+                        Text("Est. full recovery: \(formatRecoveryTime(intraDay.timeToFullRecovery))")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Text("\(intraDay.currentScore) Readiness")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundStyle(.blue)
+                        .clipShape(Capsule())
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.blue.opacity(0.05)))
             }
             
             // Main guidance
@@ -117,6 +150,17 @@ struct DailyRecommendationCard: View {
         case .moderate: return .blue
         case .easy: return .orange
         case .rest: return .red
+        }
+    }
+    
+    private func formatRecoveryTime(_ interval: TimeInterval) -> String {
+        let hours = Int(interval) / 3600
+        let minutes = (Int(interval) % 3600) / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
         }
     }
 }

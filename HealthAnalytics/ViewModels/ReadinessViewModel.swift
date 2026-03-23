@@ -14,6 +14,7 @@ class ReadinessViewModel: ObservableObject {
     
     // MARK: - Published Properties
     @Published var readinessScore: ReadinessAnalyzer.ReadinessScore?
+    @Published var intraDayReadiness: RecoveryDecayService.IntraDayReadiness?
     @Published var formIndicator: ReadinessAnalyzer.FormIndicator?
     @Published var performanceWindows: [PerformancePatternAnalyzer.PerformanceWindow] = []
     @Published var optimalTimings: [PerformancePatternAnalyzer.OptimalTiming] = []
@@ -30,6 +31,37 @@ class ReadinessViewModel: ObservableObject {
     @Published var injuryRiskAssessment: InjuryRiskCalculator.InjuryRiskAssessment?
     @Published var zoneAnalysis: TrainingZoneAnalyzer.ZoneAnalysis?
     @Published var fitnessAnalysis: FitnessTrendAnalyzer.FitnessAnalysis?
+    
+    private var repositoryCancellable: AnyCancellable?
+
+    init() {
+        setupRepositorySubscription()
+    }
+
+    private func setupRepositorySubscription() {
+        repositoryCancellable = ReadinessRepository.shared.$currentReadiness
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] unified in
+                guard let self = self, let unified = unified else { return }
+                self.updateFromUnifiedReadiness(unified)
+            }
+    }
+
+    private func updateFromUnifiedReadiness(_ unified: ReadinessRepository.UnifiedReadiness) {
+        // Map Repository state to ViewModel properties
+        self.readinessScore = ReadinessAnalyzer.ReadinessScore(
+            score: unified.score,
+            trend: unified.trend,
+            recommendation: unified.coachAdvice,
+            confidence: .high, // Will be refined
+            breakdown: unified.breakdown,
+            trajectory: []
+        )
+        self.intraDayReadiness = unified.intraDay
+        self.dailyRecommendation = unified.recommendation
+        self.injuryRiskAssessment = unified.injuryRisk
+        self.formIndicator = generateFormIndicator(from: self.readinessScore!)
+    }
     
     // Training Load (moved from InsightsViewModel)
     @Published var trainingLoadSummary: TrainingLoadCalculator.TrainingLoadSummary?
@@ -77,7 +109,6 @@ class ReadinessViewModel: ObservableObject {
             
             // CACHE CHECK: Count records to see if data changed
             var workoutDescriptor: FetchDescriptor<StoredWorkout>
-            var metricDescriptor: FetchDescriptor<StoredHealthMetric>
             
             if let cutoffDate = DataWindowManager.getCutoffDate() {
                 workoutDescriptor = FetchDescriptor<StoredWorkout>(
@@ -85,14 +116,8 @@ class ReadinessViewModel: ObservableObject {
                         workout.startDate >= cutoffDate
                     }
                 )
-                metricDescriptor = FetchDescriptor<StoredHealthMetric>(
-                    predicate: #Predicate { metric in
-                        metric.date >= cutoffDate
-                    }
-                )
             } else {
                 workoutDescriptor = FetchDescriptor<StoredWorkout>()
-                metricDescriptor = FetchDescriptor<StoredHealthMetric>()
             }
             
             let workoutCount = try context.fetchCount(workoutDescriptor)
@@ -209,21 +234,8 @@ class ReadinessViewModel: ObservableObject {
 
             let primaryActivity = determinePrimaryActivity(from: workouts)
             
-            // PROFILE: Readiness Analysis
-            PerformanceProfiler.measure("🎯 Readiness Analysis") {
-                let analyzer = ReadinessAnalyzer()
-                if let readiness = analyzer.analyzeReadiness(
-                    restingHR: rhrData,
-                    hrv: hrvData,
-                    sleep: sleepData,
-                    workouts: workouts,
-                    stravaActivities: [],
-                    nutrition: nutrition
-                ) {
-                    readinessScore = readiness
-                    formIndicator = generateFormIndicator(from: readiness)
-                }
-            }
+            // PROFILE: Unified Readiness Analysis (Master Coach)
+            await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
             
             // PROFILE: Intent Labels Fetch
             let intentLabels = try await PerformanceProfiler.measureAsync("🏷️ Intent Labels Fetch") {
@@ -338,25 +350,6 @@ class ReadinessViewModel: ObservableObject {
             PerformanceProfiler.measure("📝 Daily Instruction") {
                 generateDailyInstruction(
                     primaryActivity: primaryActivity,
-                    workouts: workouts,
-                    hrvData: hrvData,
-                    rhrData: rhrData
-                )
-            }
-            
-            // PROFILE: Daily Recommendation (HRV-Guided)
-            PerformanceProfiler.measure("🎯 Daily Recommendation") {
-                generateDailyRecommendation(
-                    hrvData: hrvData,
-                    sleepData: sleepData,
-                    rhrData: rhrData,
-                    workouts: workouts
-                )
-            }
-            
-            // PROFILE: Injury Risk Assessment
-            PerformanceProfiler.measure("🏥 Injury Risk") {
-                calculateInjuryRisk(
                     workouts: workouts,
                     hrvData: hrvData,
                     rhrData: rhrData
@@ -541,7 +534,7 @@ class ReadinessViewModel: ObservableObject {
             }
             
             // Log the uncertainty
-            if let interval = predictionWithUncertainty.predictionInterval {
+            if let _ = predictionWithUncertainty.predictionInterval {
                 print("✅ ML Prediction: \(predictionWithUncertainty.formattedPrediction)")
                 print("   Uncertainty: \(predictionWithUncertainty.modelUncertainty.description)")
             } else {
@@ -562,7 +555,7 @@ class ReadinessViewModel: ObservableObject {
         hrvData: [HealthDataPoint],
         rhrData: [HealthDataPoint]
     ) {
-        guard let readiness = readinessScore else { return }
+        guard let _ = readinessScore else { return }
         
         let service = CoachingService()
         let readinessService = PredictiveReadinessService()
@@ -637,67 +630,6 @@ class ReadinessViewModel: ObservableObject {
             daysInStatus: 1,
             optimalActionWindow: actionWindow,
             riskLevel: risk
-        )
-    }
-    
-    // MARK: - Daily Recommendation (HRV-Guided)
-    
-    private func generateDailyRecommendation(
-        hrvData: [HealthDataPoint],
-        sleepData: [HealthDataPoint],
-        rhrData: [HealthDataPoint],
-        workouts: [WorkoutData]
-    ) {
-        let service = DailyRecommendationService()
-        
-        dailyRecommendation = service.generateDailyRecommendation(
-            hrvData: hrvData,
-            sleepData: sleepData,
-            rhrData: rhrData,
-            workouts: workouts,
-            readinessScore: readinessScore?.score
-        )
-    }
-    
-    // MARK: - Injury Risk Assessment
-    
-    private func calculateInjuryRisk(
-        workouts: [WorkoutData],
-        hrvData: [HealthDataPoint],
-        rhrData: [HealthDataPoint]
-    ) {
-        // Calculate training load with enhanced EWMA metrics
-        let calculator = TrainingLoadCalculator()
-        let trainingLoad = calculator.calculateTrainingLoad(
-            healthKitWorkouts: workouts,
-            stravaActivities: [],
-            stepData: []
-        )
-        
-        // Get recovery status from correlation engine
-        let correlationEngine = CorrelationEngine()
-        let recoveryInsights = correlationEngine.analyzeRecoveryStatus(
-            restingHRData: rhrData,
-            hrvData: hrvData
-        )
-        
-        // Generate trends for the past 14 days
-        let trendDetector = TrendDetector()
-        let trends = trendDetector.detectTrends(
-            restingHRData: rhrData,
-            hrvData: hrvData,
-            sleepData: [],
-            stepData: [],
-            weightData: [],
-            workouts: workouts
-        )
-        
-        // Calculate injury risk
-        let riskCalculator = InjuryRiskCalculator()
-        injuryRiskAssessment = riskCalculator.assessInjuryRisk(
-            trainingLoad: trainingLoad,
-            recoveryStatus: recoveryInsights,
-            trends: trends
         )
     }
     

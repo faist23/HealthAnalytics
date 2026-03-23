@@ -88,6 +88,11 @@ struct InsightsView: View {
     
     @ViewBuilder
     private var dashboardContent: some View {
+        if let aging = viewModel.agingAssessment {
+            AgingAlphaCard(assessment: aging)
+                .padding(.bottom, 10)
+        }
+        
         Group {
             recommendationsSection
         }
