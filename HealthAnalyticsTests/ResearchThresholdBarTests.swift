@@ -117,4 +117,27 @@ final class ResearchThresholdBarTests: XCTestCase {
         let zone = ResearchThresholdBar.zone(for: -20.0, citation: hrvCitation)
         XCTAssertEqual(zone.label, .insufficient)
     }
+
+    // MARK: - Boundary seam tests
+
+    func testACWRExactlyAtUpperBound() {
+        // 1.3 == upper bound → optimal (upper is inclusive: value <= upper)
+        let zone = ResearchThresholdBar.zone(for: 1.3, citation: acwrCitation)
+        XCTAssertEqual(zone.label, .optimal,
+            "ACWR 1.3 is the upper edge of the optimal band — must be optimal, not monitoring")
+    }
+
+    func testSleepAboveUpperBound() {
+        // 10.0h > 9h → monitoring (oversleeping zone, not optimal)
+        let zone = ResearchThresholdBar.zone(for: 10.0, citation: sleepCitation)
+        XCTAssertEqual(zone.label, .monitoring,
+            "Sleep > 9h should be monitoring per Simpson 2017 — not optimal")
+    }
+
+    func testHRVElevatedAboveUpperCaution() {
+        // +20% > +15% caution threshold → monitoring (elevated sympathetic drive)
+        let zone = ResearchThresholdBar.zone(for: 20.0, citation: hrvCitation)
+        XCTAssertEqual(zone.label, .monitoring,
+            "HRV +20% exceeds the ±15% caution band — should be monitoring, not optimal")
+    }
 }
