@@ -57,7 +57,7 @@ struct EmptyStateView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
-                        .background(Color.blue)
+                        .background(Color.accent)
                         .cornerRadius(12)
                 }
                 .padding(.top, 8)
@@ -297,7 +297,7 @@ struct StravaNotConnectedState: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
-                .background(Color.orange)
+                .background(Color.statusWarning)
                 .cornerRadius(12)
             }
             .padding(.top, 8)
@@ -316,7 +316,7 @@ struct QuickTipRow: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.body)
-                .foregroundStyle(.blue)
+                .foregroundStyle(Color.accent)
                 .frame(width: 24)
             
             Text(text)
@@ -358,7 +358,7 @@ struct DataRequirementRow: View {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.body)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accent)
                     .frame(width: 24)
                 
                 Text(title)

@@ -87,7 +87,7 @@ struct RecoverySegmentedControl: View {
                     .background {
                         if selection == section {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.blue.gradient)
+                                .fill(Color.accent.gradient)
                                 .matchedGeometryEffect(id: "selection", in: animation)
                         }
                     }

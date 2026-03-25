@@ -208,7 +208,7 @@ private struct PatternView: View {
                     x: .value("Day", point.label),
                     y: .value("HRV", point.value)
                 )
-                .foregroundStyle(point.isBelowBaseline ? Color.red.opacity(0.6) : Color.green.opacity(0.6))
+                .foregroundStyle(point.isBelowBaseline ? Color.statusWarning.opacity(0.6) : Color.statusOptimal.opacity(0.6))
                 .cornerRadius(4)
             }
         }
@@ -249,7 +249,7 @@ private struct PatternView: View {
             }
             HStack(spacing: 4) {
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.red.opacity(0.6))
+                    .fill(Color.statusWarning.opacity(0.6))
                     .frame(width: 12, height: 10)
                 Text("Below avg")
                     .font(.caption2)
@@ -257,7 +257,7 @@ private struct PatternView: View {
             }
             HStack(spacing: 4) {
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.green.opacity(0.6))
+                    .fill(Color.statusOptimal.opacity(0.6))
                     .frame(width: 12, height: 10)
                 Text("Above avg")
                     .font(.caption2)
@@ -291,9 +291,9 @@ private struct WeeklySnapshotView: View {
             if let l = hrvLastWeek {
                 let pct = ((t - l) / l) * 100
                 if pct > 5 {
-                    result.append(SnapshotLine(icon: "waveform.path.ecg", text: "HRV up \(Int(pct))% to \(Int(t)) ms", color: .green))
+                    result.append(SnapshotLine(icon: "waveform.path.ecg", text: "HRV up \(Int(pct))% to \(Int(t)) ms", color: .statusOptimal))
                 } else if pct < -5 {
-                    result.append(SnapshotLine(icon: "waveform.path.ecg", text: "HRV down \(Int(abs(pct)))% to \(Int(t)) ms", color: .red))
+                    result.append(SnapshotLine(icon: "waveform.path.ecg", text: "HRV down \(Int(abs(pct)))% to \(Int(t)) ms", color: .statusWarning))
                 } else {
                     result.append(SnapshotLine(icon: "waveform.path.ecg", text: "HRV steady at \(Int(t)) ms", color: .secondary))
                 }
@@ -308,12 +308,12 @@ private struct WeeklySnapshotView: View {
         if let t = sleepThisWeek {
             if t < 7.0 {
                 if let l = sleepLastWeek, t < l - 0.3 {
-                    result.append(SnapshotLine(icon: "bed.double.fill", text: "Sleep down to \(fmt1(t)) hrs (was \(fmt1(l)))", color: .red))
+                    result.append(SnapshotLine(icon: "bed.double.fill", text: "Sleep down to \(fmt1(t)) hrs (was \(fmt1(l)))", color: .statusWarning))
                 } else {
-                    result.append(SnapshotLine(icon: "bed.double.fill", text: "Sleep averaging \(fmt1(t)) hrs — below 7 hr target", color: .yellow))
+                    result.append(SnapshotLine(icon: "bed.double.fill", text: "Sleep averaging \(fmt1(t)) hrs — below 7 hr target", color: .statusMonitoring))
                 }
             } else if let l = sleepLastWeek, t > l + 0.3 {
-                result.append(SnapshotLine(icon: "bed.double.fill", text: "Sleep up to \(fmt1(t)) hrs", color: .green))
+                result.append(SnapshotLine(icon: "bed.double.fill", text: "Sleep up to \(fmt1(t)) hrs", color: .statusOptimal))
             }
             // If sleep is ≥7 and stable, skip — nothing to note
         }
@@ -324,9 +324,9 @@ private struct WeeklySnapshotView: View {
         if let t = rhrThisWeek, let l = rhrLastWeek {
             let diff = t - l
             if diff > 2 {
-                result.append(SnapshotLine(icon: "heart.fill", text: "Resting HR up \(Int(diff)) bpm to \(Int(t))", color: .red))
+                result.append(SnapshotLine(icon: "heart.fill", text: "Resting HR up \(Int(diff)) bpm to \(Int(t))", color: .statusWarning))
             } else if diff < -2 {
-                result.append(SnapshotLine(icon: "heart.fill", text: "Resting HR down \(Int(abs(diff))) bpm to \(Int(t))", color: .green))
+                result.append(SnapshotLine(icon: "heart.fill", text: "Resting HR down \(Int(abs(diff))) bpm to \(Int(t))", color: .statusOptimal))
             }
         }
         

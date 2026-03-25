@@ -13,20 +13,35 @@ struct RecoveryDashboardView: View {
     @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
+        mainView
+            .navigationTitle("Recovery")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar { toolbarItems }
+            .onChange(of: viewModel.selectedPeriod) { _, _ in
+                Task { await viewModel.loadRecoveryData() }
+            }
+            .task {
+                await viewModel.loadRecoveryData()
+            }
+            .overlay {
+                if viewModel.isLoading {
+                    LoadingOverlay(message: "Loading recovery data...")
+                }
+            }
+    }
+
+    private var mainView: some View {
         ScrollView {
             VStack(spacing: 24) {
                 if let yesterday = viewModel.recoveryData.dropLast().last {
                     TodayReadinessCard(data: yesterday)
                         .cardStyle(for: .recovery)
-              }
-                
+                }
                 if !viewModel.recoveryData.isEmpty {
                     RecoveryMetricsChart(data: viewModel.recoveryData, period: viewModel.selectedPeriod)
                         .cardStyle(for: .recovery)
                 }
-                
                 MetricBreakdownCards(data: viewModel.recoveryData)
-                
                 if !viewModel.recoveryData.isEmpty {
                     WeeklySummaryCard(data: viewModel.recoveryData)
                         .cardStyle(for: .recovery)
@@ -35,52 +50,35 @@ struct RecoveryDashboardView: View {
             .padding()
         }
         .background(TabBackgroundColor.recovery(for: colorScheme))
-        
-        .navigationTitle("Recovery")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker("Time Period", selection: $viewModel.selectedPeriod) {
-                        ForEach(TimePeriod.allCases) { period in
-                            Text(period.displayName).tag(period)
-                        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarItems: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Picker("Time Period", selection: $viewModel.selectedPeriod) {
+                    ForEach(TimePeriod.allCases) { period in
+                        Text(period.displayName).tag(period)
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(viewModel.selectedPeriod.displayName)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Image(systemName: "chevron.down")
-                            .font(.caption)
-                    }
-                    .foregroundStyle(.blue)
                 }
-            }
-            
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task {
-                        await viewModel.loadRecoveryData()
-                    }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
+            } label: {
+                HStack(spacing: 4) {
+                    Text(viewModel.selectedPeriod.displayName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
                 }
-                .disabled(viewModel.isLoading)
+                .foregroundStyle(Color.accent)
             }
         }
-        .onChange(of: viewModel.selectedPeriod) { oldValue, newValue in
-            Task {
-                await viewModel.loadRecoveryData()
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                Task { await viewModel.loadRecoveryData() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
             }
-        }
-        .task {
-            await viewModel.loadRecoveryData()
-        }
-        .overlay {
-            if viewModel.isLoading {
-                LoadingOverlay(message: "Loading recovery data...")
-            }
+            .disabled(viewModel.isLoading)
         }
     }
 }
@@ -96,7 +94,7 @@ struct TodayReadinessCard: View {
             ZStack {
                 // Background circle
                 Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 20)
+                    .stroke(Color.textTertiary.opacity(0.2), lineWidth: 20)
                     .frame(width: 180, height: 180)
                 
                 // Progress circle
@@ -665,7 +663,7 @@ struct WeeklySummaryCard: View {
                     
                     Text("\(Int(weeklyAvgReadiness))")
                         .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(Color.accent)
                 }
                 
                 Spacer()
@@ -673,7 +671,7 @@ struct WeeklySummaryCard: View {
                 VStack(spacing: 8) {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Color.statusOptimal)
                         Text("\(excellentDays) excellent")
                             .font(.caption)
                     }
@@ -681,7 +679,7 @@ struct WeeklySummaryCard: View {
                     if poorDays > 0 {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(Color.statusWarning)
                             Text("\(poorDays) poor")
                                 .font(.caption)
                         }

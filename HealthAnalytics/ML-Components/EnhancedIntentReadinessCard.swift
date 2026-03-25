@@ -73,12 +73,12 @@ struct EnhancedIntentReadinessCard: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Green Light", systemImage: "checkmark.circle.fill")
                         .font(.headline)
-                        .foregroundStyle(.green)
-                    
+                        .foregroundStyle(Color.statusOptimal)
+
                     Text("You're ready for these today")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    
+
                     ForEach(assessment.recommendedIntents, id: \.self) { intent in
                         if let readinessData = assessment.performanceReadiness[intent] {
                             ExpandableIntentRow(
@@ -86,7 +86,7 @@ struct EnhancedIntentReadinessCard: View {
                                 readinessData: readinessData,
                                 assessment: assessment,
                                 isExpanded: expandedIntents.contains(intent),
-                                color: .green,
+                                color: .statusOptimal,
                                 onTap: {
                                     withAnimation(.spring(response: 0.3)) {
                                         if expandedIntents.contains(intent) {
@@ -117,12 +117,12 @@ struct EnhancedIntentReadinessCard: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Proceed with Caution", systemImage: "exclamationmark.triangle.fill")
                         .font(.headline)
-                        .foregroundStyle(.orange)
-                    
+                        .foregroundStyle(Color.statusMonitoring)
+
                     Text("Possible, but listen to your body")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    
+
                     ForEach(maybeIntents, id: \.self) { intent in
                         if let readinessData = assessment.performanceReadiness[intent] {
                             ExpandableIntentRow(
@@ -130,7 +130,7 @@ struct EnhancedIntentReadinessCard: View {
                                 readinessData: readinessData,
                                 assessment: assessment,
                                 isExpanded: expandedIntents.contains(intent),
-                                color: .orange,
+                                color: .statusMonitoring,
                                 onTap: {
                                     withAnimation(.spring(response: 0.3)) {
                                         if expandedIntents.contains(intent) {
@@ -153,12 +153,12 @@ struct EnhancedIntentReadinessCard: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Red Light", systemImage: "xmark.circle.fill")
                         .font(.headline)
-                        .foregroundStyle(.red)
-                    
+                        .foregroundStyle(Color.statusWarning)
+
                     Text("Skip these to avoid overtraining")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    
+
                     ForEach(assessment.shouldAvoidIntents, id: \.self) { intent in
                         if let readinessData = assessment.performanceReadiness[intent] {
                             ExpandableIntentRow(
@@ -166,7 +166,7 @@ struct EnhancedIntentReadinessCard: View {
                                 readinessData: readinessData,
                                 assessment: assessment,
                                 isExpanded: expandedIntents.contains(intent),
-                                color: .red,
+                                color: .statusWarning,
                                 onTap: {
                                     withAnimation(.spring(response: 0.3)) {
                                         if expandedIntents.contains(intent) {

@@ -107,7 +107,7 @@ struct TSSChartCard: View {
                             Text("\(Int(selected.weeklyTSS))")
                                 .font(.title3)
                                 .fontWeight(.bold)
-                                .foregroundColor(.green)
+                                .foregroundColor(.statusOptimal)
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
@@ -117,7 +117,7 @@ struct TSSChartCard: View {
                             Text("\(Int(selected.sixWeekAvg))")
                                 .font(.title3)
                                 .fontWeight(.bold)
-                                .foregroundColor(.orange)
+                                .foregroundColor(.accent)
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
@@ -143,7 +143,7 @@ struct TSSChartCard: View {
                             x: .value("Week", data.weekStart, unit: .weekOfYear),
                             y: .value("TSS", data.weeklyTSS)
                         )
-                        .foregroundStyle(data.weeklyTSS > 0 ? Color.green : Color.clear)
+                        .foregroundStyle(data.weeklyTSS > 0 ? Color.statusOptimal : Color.clear)
                         .opacity(0.8)
                     }
                     
@@ -153,7 +153,7 @@ struct TSSChartCard: View {
                             x: .value("Week", data.weekStart, unit: .weekOfYear),
                             y: .value("6-Week Avg", data.sixWeekAvg)
                         )
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(Color.accent)
                         .lineStyle(StrokeStyle(lineWidth: 3))
                         .interpolationMethod(.catmullRom)
                     }
@@ -196,16 +196,16 @@ struct TSSChartCard: View {
                 HStack(spacing: 20) {
                     HStack(spacing: 4) {
                         Rectangle()
-                            .fill(Color.green)
+                            .fill(Color.statusOptimal)
                             .frame(width: 12, height: 12)
                         Text("Weekly TSS")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
-                    
+
                     HStack(spacing: 4) {
                         Rectangle()
-                            .fill(Color.orange)
+                            .fill(Color.accent)
                             .frame(width: 20, height: 3)
                         Text("6-Week Avg")
                             .font(.caption2)

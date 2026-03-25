@@ -33,8 +33,8 @@ struct StravaConnectionView: View {
             // Success icon
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 60))
-                .foregroundStyle(.green)
-            
+                .foregroundStyle(Color.statusOptimal)
+
             Text("Connected to Strava")
                 .font(.title2)
                 .fontWeight(.semibold)
@@ -77,7 +77,7 @@ struct StravaConnectionView: View {
             if let error = errorMessage {
                 Text(error)
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundStyle(Color.statusWarning)
                     .multilineTextAlignment(.center)
             }
         }
@@ -88,8 +88,8 @@ struct StravaConnectionView: View {
             // Strava logo placeholder
             Image(systemName: "bicycle")
                 .font(.system(size: 60))
-                .foregroundStyle(.orange)
-            
+                .foregroundStyle(Color.statusWarning)
+
             Text("Connect to Strava")
                 .font(.title2)
                 .fontWeight(.semibold)
@@ -111,7 +111,7 @@ struct StravaConnectionView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.orange)
+                .background(Color.accent)
                 .foregroundColor(.white)
                 .cornerRadius(12)
             }
@@ -124,7 +124,7 @@ struct StravaConnectionView: View {
             if let error = errorMessage {
                 Text(error)
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundStyle(Color.statusWarning)
                     .multilineTextAlignment(.center)
             }
         }

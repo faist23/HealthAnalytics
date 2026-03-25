@@ -102,7 +102,7 @@ struct SettingsView: View {
                                 } label: {
                                     HStack {
                                         Text(historicalDataWindowYears == 0 ? "All-Time" : "\(historicalDataWindowYears) Years")
-                                            .foregroundStyle(.blue)
+                                            .foregroundStyle(Color.accent)
                                         Image(systemName: "chevron.up.chevron.down")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)

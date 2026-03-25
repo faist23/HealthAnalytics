@@ -251,10 +251,10 @@ struct DateRangePicker: View {
                         Image(systemName: "calendar")
                             .font(.caption)
                     }
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accent)
                 }
             }
-            
+
             if showingCustomRange {
                 VStack(spacing: 12) {
                     DatePicker("Start", selection: $startDate, displayedComponents: .date)
@@ -350,7 +350,7 @@ struct QuickRangeButton: View {
                 .background(
                     Capsule()
                     // Highlight with blue when selected, otherwise system gray
-                        .fill(isSelected ? Color.blue : Color(.systemGray6))
+                        .fill(isSelected ? Color.accent : Color(.systemGray6))
                 )
         }
         .buttonStyle(.plain)

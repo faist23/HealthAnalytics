@@ -42,10 +42,10 @@ struct TrainingZoneCard: View {
                     } label: {
                         Image(systemName: "info.circle")
                             .font(.caption)
-                            .foregroundColor(.blue)
+                            .foregroundStyle(Color.accent)
                     }
                 }
-                
+
                 Spacer()
                 
                 Text(analysis.activityType)
@@ -246,7 +246,7 @@ struct TrainingZoneCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding()
-                    .background(Color.blue.opacity(0.1))
+                    .background(Color.statusRest.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
         }

@@ -44,7 +44,7 @@ struct TemporalInsightsCard: View {
                 
                 Text(analysis.synthesis.headline)
                     .font(.headline)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accent)
             }
             
             // Time scale picker
@@ -73,14 +73,14 @@ struct TemporalInsightsCard: View {
                 Label("Key Insights", systemImage: "lightbulb.fill")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.statusMonitoring)
                 
                 ForEach(analysis.synthesis.insights, id: \.self) { insight in
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.caption)
-                            .foregroundStyle(.green)
-                        
+                            .foregroundStyle(Color.statusOptimal)
+
                         Text(insight)
                             .font(.caption)
                             .foregroundStyle(.primary)
@@ -91,8 +91,8 @@ struct TemporalInsightsCard: View {
             // Recommendation
             HStack(spacing: 12) {
                 Image(systemName: "star.fill")
-                    .foregroundStyle(.yellow)
-                
+                    .foregroundStyle(Color.statusMonitoring)
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Recommendation")
                         .font(.caption)
@@ -105,7 +105,7 @@ struct TemporalInsightsCard: View {
                 }
             }
             .padding()
-            .background(.yellow.opacity(0.1))
+            .background(Color.statusMonitoring.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .padding(20)
@@ -147,31 +147,31 @@ struct RecencyView: View {
                         icon: "bolt.fill",
                         label: "Average Power",
                         value: "\(Int(power))W",
-                        color: .orange
+                        color: .statusWarning
                     )
                 }
-                
+
                 if let speed = analysis.currentForm.averageSpeed {
                     MetricRow(
                         icon: "speedometer",
                         label: "Average Speed",
                         value: String(format: "%.1f mph", speed),
-                        color: .blue
+                        color: .statusRest
                     )
                 }
-                
+
                 MetricRow(
                     icon: "figure.run",
                     label: "Training Load",
                     value: "\(Int(analysis.currentForm.trainingLoad)) workouts",
-                    color: .green
+                    color: .statusOptimal
                 )
                 
                 // Consistency bar
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Image(systemName: "chart.line.uptrend.xyaxis")
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(Color.accent)
                         Text("Consistency")
                             .font(.caption)
                             .fontWeight(.medium)
@@ -179,16 +179,16 @@ struct RecencyView: View {
                         Text("\(Int(analysis.currentForm.consistency * 100))%")
                             .font(.caption)
                             .fontWeight(.bold)
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(Color.accent)
                     }
-                    
+
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(.purple.opacity(0.2))
-                            
+                                .fill(Color.accent.opacity(0.2))
+
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(.purple)
+                                .fill(Color.accent)
                                 .frame(width: geo.size.width * analysis.currentForm.consistency)
                         }
                     }
@@ -231,15 +231,15 @@ struct SeasonalView: View {
             if let yoy = analysis.yearOverYearChange {
                 HStack {
                     Image(systemName: yoy > 0 ? "arrow.up.right" : "arrow.down.right")
-                        .foregroundStyle(yoy > 0 ? .green : .red)
-                    
+                        .foregroundStyle(yoy > 0 ? Color.statusOptimal : Color.statusWarning)
+
                     Text("Year-over-year: \(String(format: "%+.1f%%", yoy))")
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
                 .padding(.vertical, 8)
                 .padding(.horizontal, 12)
-                .background((yoy > 0 ? Color.green : Color.red).opacity(0.1))
+                .background((yoy > 0 ? Color.statusOptimal : Color.statusWarning).opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             
@@ -289,7 +289,7 @@ struct SeasonRow: View {
             if isBest {
                 Image(systemName: "star.fill")
                     .font(.caption2)
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(Color.statusMonitoring)
             }
             
             Text("n=\(metrics.sampleSize)")
@@ -333,15 +333,15 @@ struct LongitudinalView: View {
             // Timespan
             HStack {
                 Image(systemName: "calendar")
-                    .foregroundStyle(.blue)
-                
+                    .foregroundStyle(Color.statusRest)
+
                 Text(analysis.timespan)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
-            .background(.blue.opacity(0.1))
+            .background(Color.statusRest.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             
             // Peak periods
@@ -375,9 +375,9 @@ struct LongitudinalView: View {
     
     private var trendColor: Color {
         switch analysis.overallTrend {
-        case .strengthening: return .green
-        case .plateaued: return .blue
-        case .weakening: return .orange
+        case .strengthening: return .statusOptimal
+        case .plateaued: return .statusRest
+        case .weakening: return .statusWarning
         }
     }
 }
@@ -391,7 +391,7 @@ struct PeakPeriodRow: View {
             Text("#\(rank)")
                 .font(.caption)
                 .fontWeight(.bold)
-                .foregroundStyle(.yellow)
+                .foregroundStyle(Color.statusMonitoring)
                 .frame(width: 24)
             
             VStack(alignment: .leading, spacing: 2) {

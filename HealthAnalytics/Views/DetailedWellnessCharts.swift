@@ -34,7 +34,7 @@ struct DetailedRHRChart: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "heart.fill")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.statusWarning)
                 Text("Resting Heart Rate")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -50,19 +50,19 @@ struct DetailedRHRChart: View {
                         x: .value("Date", point.date),
                         y: .value("BPM", point.value)
                     )
-                    .foregroundStyle(Color.red.gradient)
+                    .foregroundStyle(Color.statusWarning.gradient)
                     .lineStyle(StrokeStyle(lineWidth: 2.5))
                     
                     AreaMark(
                         x: .value("Date", point.date),
                         y: .value("BPM", point.value)
                     )
-                    .foregroundStyle(Color.red.opacity(0.1).gradient)
+                    .foregroundStyle(Color.statusWarning.opacity(0.1).gradient)
                 }
                 
                 if !filteredData.isEmpty {
                     RuleMark(y: .value("Average", averageValueRaw))
-                        .foregroundStyle(.red.opacity(0.6))
+                        .foregroundStyle(Color.statusWarning.opacity(0.6))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }
@@ -118,7 +118,7 @@ struct DetailedHRVChart: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "waveform.path.ecg")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Color.statusOptimal)
                 Text("Heart Rate Variability")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -134,19 +134,19 @@ struct DetailedHRVChart: View {
                         x: .value("Date", point.date),
                         y: .value("HRV", point.value)
                     )
-                    .foregroundStyle(Color.green.gradient)
+                    .foregroundStyle(Color.statusOptimal.gradient)
                     .lineStyle(StrokeStyle(lineWidth: 2.5))
                     
                     AreaMark(
                         x: .value("Date", point.date),
                         y: .value("HRV", point.value)
                     )
-                    .foregroundStyle(Color.green.opacity(0.1).gradient)
+                    .foregroundStyle(Color.statusOptimal.opacity(0.1).gradient)
                 }
                 
                 if !filteredData.isEmpty {
                     RuleMark(y: .value("Average", averageValueRaw))
-                        .foregroundStyle(.green.opacity(0.6))
+                        .foregroundStyle(Color.statusOptimal.opacity(0.6))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }
@@ -202,7 +202,7 @@ struct DetailedSleepChart: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "bed.double.fill")
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(Color.accent)
                 Text("Sleep")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -218,19 +218,19 @@ struct DetailedSleepChart: View {
                         x: .value("Date", point.date),
                         y: .value("Hours", point.value)
                     )
-                    .foregroundStyle(Color.purple.gradient)
+                    .foregroundStyle(Color.accent.gradient)
                     .lineStyle(StrokeStyle(lineWidth: 2.5))
                     
                     AreaMark(
                         x: .value("Date", point.date),
                         y: .value("Hours", point.value)
                     )
-                    .foregroundStyle(Color.purple.opacity(0.1).gradient)
+                    .foregroundStyle(Color.accent.opacity(0.1).gradient)
                 }
                 
                 if !filteredData.isEmpty {
                     RuleMark(y: .value("Average", averageValueRaw))
-                        .foregroundStyle(.purple.opacity(0.6))
+                        .foregroundStyle(Color.accent.opacity(0.6))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }
@@ -286,7 +286,7 @@ struct DetailedStepsChart: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "figure.walk")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.statusWarning)
                 Text("Steps")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -302,19 +302,19 @@ struct DetailedStepsChart: View {
                         x: .value("Date", point.date),
                         y: .value("Steps", point.value)
                     )
-                    .foregroundStyle(Color.orange.gradient)
+                    .foregroundStyle(Color.statusWarning.gradient)
                     .lineStyle(StrokeStyle(lineWidth: 2.5))
                     
                     AreaMark(
                         x: .value("Date", point.date),
                         y: .value("Steps", point.value)
                     )
-                    .foregroundStyle(Color.orange.opacity(0.1).gradient)
+                    .foregroundStyle(Color.statusWarning.opacity(0.1).gradient)
                 }
                 
                 if !filteredData.isEmpty {
                     RuleMark(y: .value("Average", averageValueRaw))
-                        .foregroundStyle(.orange.opacity(0.6))
+                        .foregroundStyle(Color.statusWarning.opacity(0.6))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }
@@ -370,7 +370,7 @@ struct DetailedWeightChart: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "scalemass.fill")
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.statusRest)
                 Text("Weight")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -386,19 +386,19 @@ struct DetailedWeightChart: View {
                         x: .value("Date", point.date),
                         y: .value("Weight", point.value)
                     )
-                    .foregroundStyle(Color.blue.gradient)
+                    .foregroundStyle(Color.statusRest.gradient)
                     .lineStyle(StrokeStyle(lineWidth: 2.5))
                     
                     AreaMark(
                         x: .value("Date", point.date),
                         y: .value("Weight", point.value)
                     )
-                    .foregroundStyle(Color.blue.opacity(0.1).gradient)
+                    .foregroundStyle(Color.statusRest.opacity(0.1).gradient)
                 }
                 
                 if !filteredData.isEmpty {
                     RuleMark(y: .value("Average", averageValueRaw))
-                        .foregroundStyle(.blue.opacity(0.6))
+                        .foregroundStyle(Color.statusRest.opacity(0.6))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }

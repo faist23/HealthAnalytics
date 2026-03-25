@@ -128,8 +128,8 @@ struct LoadSummaryCard: View {
             // Recommendation
             HStack(spacing: 12) {
                 Image(systemName: "lightbulb.fill")
-                    .foregroundStyle(.yellow)
-                
+                    .foregroundStyle(Color.statusMonitoring)
+
                 Text(summary.recommendation)
                     .font(.subheadline)
                     .foregroundStyle(.primary)
@@ -391,7 +391,7 @@ struct WeeklyPatternView: View {
                     x: .value("Week", week.weekStart, unit: .weekOfYear),
                     y: .value("Load", week.totalLoad)
                 )
-                .foregroundStyle(.blue)
+                .foregroundStyle(Color.statusRest)
             }
             .frame(height: 200)
             .chartYAxis {
@@ -447,8 +447,8 @@ struct DangerZonesSection: View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Overload Periods", systemImage: "exclamationmark.triangle.fill")
                 .font(.headline)
-                .foregroundStyle(.orange)
-            
+                .foregroundStyle(Color.statusWarning)
+
             ForEach(zones) { zone in
                 DangerZoneCard(zone: zone)
             }

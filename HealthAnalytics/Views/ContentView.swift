@@ -177,7 +177,7 @@ struct RestingHeartRateCard: View {
                 VStack(alignment: .trailing) {
                     Text("\(Int(averageHR))")
                         .font(.system(size: 36, weight: .bold, design: .rounded))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Color.statusWarning)
                     Text("avg bpm")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -252,7 +252,7 @@ struct ErrorView: View {
         VStack(spacing: 15) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 60))
-                .foregroundStyle(.red)
+                .foregroundStyle(Color.statusWarning)
             
             Text("Error")
                 .font(.title3)
@@ -306,15 +306,15 @@ struct SleepCard: View {
                     x: .value("Date", point.date, unit: .day),
                     y: .value("Hours", point.value)
                 )
-                .foregroundStyle(.blue.gradient)
-                
+                .foregroundStyle(Color.statusRest.gradient)
+
                 RuleMark(y: .value("Target", 7.5))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Color.statusOptimal)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                     .annotation(position: .top, alignment: .trailing) {
                         Text("7.5h goal")
                             .font(.caption2)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Color.statusOptimal)
                     }
             }
             .frame(height: 200)
@@ -385,15 +385,15 @@ struct StepCountCard: View {
                     x: .value("Date", point.date, unit: .day),
                     y: .value("Steps", point.value)
                 )
-                .foregroundStyle(.orange.gradient)
-                
+                .foregroundStyle(Color.statusWarning.gradient)
+
                 RuleMark(y: .value("Goal", 7000))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Color.statusOptimal)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                     .annotation(position: .top, alignment: .trailing) {
                         Text("7k goal")
                             .font(.caption2)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Color.statusOptimal)
                     }
             }
             .frame(height: 200)
@@ -523,7 +523,7 @@ struct StatBox: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.statusWarning)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)

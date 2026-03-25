@@ -42,7 +42,7 @@ struct FitnessTrendCard: View {
                     } label: {
                         Image(systemName: "info.circle")
                             .font(.caption)
-                            .foregroundColor(.blue)
+                            .foregroundStyle(Color.accent)
                     }
                 }
                 
@@ -132,11 +132,11 @@ struct FitnessTrendCard: View {
                             if fitnessAge.fitnessAge < fitnessAge.chronologicalAge {
                                 Text("\(fitnessAge.chronologicalAge - fitnessAge.fitnessAge) years younger")
                                     .font(.caption)
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(Color.statusOptimal)
                             } else if fitnessAge.fitnessAge > fitnessAge.chronologicalAge {
                                 Text("\(fitnessAge.fitnessAge - fitnessAge.chronologicalAge) years older")
                                     .font(.caption)
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(Color.statusWarning)
                             } else {
                                 Text("matches age")
                                     .font(.caption)
@@ -174,11 +174,11 @@ struct FitnessTrendCard: View {
                     VStack(spacing: 4) {
                         ZStack {
                             Circle()
-                                .stroke(Color.blue.opacity(0.2), lineWidth: 8)
-                            
+                                .stroke(Color.statusRest.opacity(0.2), lineWidth: 8)
+
                             Circle()
                                 .trim(from: 0, to: analysis.fitnessBalance.aerobicFitness / 100)
-                                .stroke(Color.blue, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                                .stroke(Color.statusRest, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
                             
                             Text("\(Int(analysis.fitnessBalance.aerobicFitness))")
@@ -196,11 +196,11 @@ struct FitnessTrendCard: View {
                     VStack(spacing: 4) {
                         ZStack {
                             Circle()
-                                .stroke(Color.red.opacity(0.2), lineWidth: 8)
-                            
+                                .stroke(Color.statusWarning.opacity(0.2), lineWidth: 8)
+
                             Circle()
                                 .trim(from: 0, to: analysis.fitnessBalance.anaerobicFitness / 100)
-                                .stroke(Color.red, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                                .stroke(Color.statusWarning, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
                             
                             Text("\(Int(analysis.fitnessBalance.anaerobicFitness))")
@@ -219,7 +219,7 @@ struct FitnessTrendCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(8)
-                    .background(Color.blue.opacity(0.1))
+                    .background(Color.statusRest.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
         }
@@ -240,14 +240,14 @@ struct FitnessTrendCard: View {
                         x: .value("Date", measurement.date),
                         y: .value("VO2max", measurement.value)
                     )
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.statusRest)
                     .interpolationMethod(.catmullRom)
-                    
+
                     PointMark(
                         x: .value("Date", measurement.date),
                         y: .value("VO2max", measurement.value)
                     )
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.statusRest)
                 }
                 .chartYAxisLabel("ml/kg/min")
                 .frame(height: 150)
@@ -315,7 +315,7 @@ struct FitnessTrendCard: View {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.caption)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(Color.statusOptimal)
                         Text(insight)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -351,12 +351,12 @@ struct FitnessTrendCard: View {
                     ZStack(alignment: .leading) {
                         // Background
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.gray.opacity(0.2))
+                            .fill(Color.textTertiary.opacity(0.2))
                             .frame(height: 40)
-                        
+
                         // Progress
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.purple)
+                            .fill(Color.accent)
                             .frame(
                                 width: geometry.size.width * (analysis.projections.percentOfCeiling / 100),
                                 height: 40
@@ -412,7 +412,7 @@ struct FitnessTrendCard: View {
                     .foregroundStyle(.secondary)
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color.orange.opacity(0.1))
+                    .background(Color.statusWarning.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             
@@ -420,14 +420,14 @@ struct FitnessTrendCard: View {
             if let timeToPlateau = analysis.projections.timeToPlateauEstimate {
                 HStack(spacing: 8) {
                     Image(systemName: "clock.fill")
-                        .foregroundStyle(.blue)
-                    
+                        .foregroundStyle(Color.statusRest)
+
                     Text("Estimated time to plateau: \(timeToPlateau)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(8)
-                .background(Color.blue.opacity(0.1))
+                .background(Color.statusRest.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             
@@ -468,10 +468,10 @@ struct FitnessTrendCard: View {
     
     private func trendColor(_ trend: FitnessTrendAnalyzer.VO2maxTrend.TrendDirection) -> Color {
         switch trend {
-        case .improving: return .green
-        case .stable: return .blue
-        case .declining: return .orange
-        case .rapidDecline: return .red
+        case .improving: return .statusOptimal
+        case .stable: return .statusRest
+        case .declining: return .statusWarning
+        case .rapidDecline: return .statusWarning
         }
     }
     
@@ -495,10 +495,10 @@ struct FitnessTrendCard: View {
     
     private func confidenceColor(_ confidence: FitnessTrendAnalyzer.VO2maxTrend.Confidence) -> Color {
         switch confidence {
-        case .high: return .green
-        case .medium: return .blue
-        case .low: return .orange
-        case .insufficient: return .red
+        case .high: return .statusOptimal
+        case .medium: return .statusRest
+        case .low: return .statusWarning
+        case .insufficient: return .statusWarning
         }
     }
     
@@ -513,13 +513,13 @@ struct FitnessTrendCard: View {
     
     private func effectivenessColor(_ score: Double) -> Color {
         if score >= 70 {
-            return .green
+            return .statusOptimal
         } else if score >= 50 {
-            return .blue
+            return .statusRest
         } else if score >= 30 {
-            return .orange
+            return .statusWarning
         } else {
-            return .red
+            return .statusWarning
         }
     }
     
@@ -532,11 +532,11 @@ struct FitnessTrendCard: View {
     }
     
     private func colorForRecommendation(_ text: String) -> Color {
-        if text.contains("✅") { return .green }
-        if text.contains("💡") { return .blue }
-        if text.contains("⚠️") { return .orange }
-        if text.contains("🚨") { return .red }
-        return .blue
+        if text.contains("✅") { return .statusOptimal }
+        if text.contains("💡") { return .statusRest }
+        if text.contains("⚠️") { return .statusWarning }
+        if text.contains("🚨") { return .statusWarning }
+        return .statusRest
     }
 }
 
@@ -562,12 +562,12 @@ struct ChangeRow: View {
             HStack(spacing: 4) {
                 Image(systemName: change >= 0 ? "arrow.up" : "arrow.down")
                     .font(.caption)
-                    .foregroundStyle(change >= 0 ? .green : .red)
-                
+                    .foregroundStyle(change >= 0 ? Color.statusOptimal : Color.statusWarning)
+
                 Text(String(format: "%+.1f", change))
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundStyle(change >= 0 ? .green : .red)
+                    .foregroundStyle(change >= 0 ? Color.statusOptimal : Color.statusWarning)
                 
                 Text("ml/kg/min")
                     .font(.caption2)
@@ -602,11 +602,11 @@ struct ProjectionRow: View {
                     Text(String(format: "%+.1f", value - current))
                         .font(.caption2)
                 }
-                .foregroundStyle(value > current ? .green : .orange)
+                .foregroundStyle(value > current ? Color.statusOptimal : Color.statusWarning)
             }
         }
         .padding(8)
-        .background(Color.gray.opacity(0.1))
+        .background(Color.textTertiary.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
@@ -628,7 +628,7 @@ struct FitnessTrendInfoSheet: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(Color.statusWarning)
                                     .font(.caption)
                                 
                                 Text("Smartwatch VO2max has a mean error of 7-16% and consistently underestimates in fit individuals")
@@ -637,7 +637,7 @@ struct FitnessTrendInfoSheet: View {
                             
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "chart.bar.fill")
-                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(Color.statusRest)
                                     .font(.caption)
                                 
                                 Text("99% of longevity research uses METs (metabolic equivalents), not VO2max measurements")
@@ -646,7 +646,7 @@ struct FitnessTrendInfoSheet: View {
                             
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "heart.fill")
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(Color.statusWarning)
                                     .font(.caption)
                                 
                                 Text("This app emphasizes multiple metrics (HRV, training load, recovery, METs) rather than fixating on VO2max alone")
@@ -655,7 +655,7 @@ struct FitnessTrendInfoSheet: View {
                         }
                     }
                 }
-                .listRowBackground(Color.orange.opacity(0.1))
+                .listRowBackground(Color.statusWarning.opacity(0.1))
                 
                 Section(header: Text("What is VO2max?")) {
                     Text("VO2max is the maximum amount of oxygen your body can utilize during intense exercise. While historically considered the gold standard for cardiorespiratory fitness, it's one of many important health metrics.")
@@ -666,7 +666,7 @@ struct FitnessTrendInfoSheet: View {
                     
                     Text("Research shows smartwatch estimates have 7-16% error rates and tend to underestimate in fit individuals while overestimating in less fit individuals.")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.statusWarning)
                         .fontWeight(.semibold)
                 }
                 

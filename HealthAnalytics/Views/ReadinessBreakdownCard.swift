@@ -17,7 +17,7 @@ struct ReadinessBreakdownCard: View {
             // Header
             HStack {
                 Image(systemName: "chart.bar.fill")
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accent)
                 Text("Score Breakdown")
                     .font(.headline)
                 
@@ -30,7 +30,7 @@ struct ReadinessBreakdownCard: View {
                         Image(systemName: showDetails ? "chevron.up" : "chevron.down")
                             .font(.caption2)
                     }
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accent)
                 }
             }
             
@@ -40,23 +40,23 @@ struct ReadinessBreakdownCard: View {
                     label: "Recovery",
                     score: breakdown.recoveryScore,
                     maxScore: 40,
-                    color: .green,
+                    color: .statusOptimal,
                     icon: "heart.fill"
                 )
-                
+
                 ComponentBar(
                     label: "Fitness",
                     score: breakdown.fitnessScore,
                     maxScore: 30,
-                    color: .blue,
+                    color: .statusRest,
                     icon: "figure.run"
                 )
-                
+
                 ComponentBar(
                     label: "Fatigue",
                     score: breakdown.fatigueScore,
                     maxScore: 30,
-                    color: .orange,
+                    color: .statusMonitoring,
                     icon: "gauge.with.dots.needle.bottom.50percent"
                 )
             }
@@ -83,19 +83,19 @@ struct ReadinessBreakdownCard: View {
                     DetailSection(
                         title: "Recovery (\(breakdown.recoveryScore)/40)",
                         description: breakdown.recoveryDetails,
-                        color: .green
+                        color: .statusOptimal
                     )
-                    
+
                     DetailSection(
                         title: "Fitness (\(breakdown.fitnessScore)/30)",
                         description: breakdown.fitnessDetails,
-                        color: .blue
+                        color: .statusRest
                     )
-                    
+
                     DetailSection(
                         title: "Fatigue (\(breakdown.fatigueScore)/30)",
                         description: breakdown.fatigueDetails,
-                        color: .orange
+                        color: .statusMonitoring
                     )
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -144,7 +144,7 @@ struct ComponentBar: View {
                 ZStack(alignment: .leading) {
                     // Background
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.gray.opacity(0.15))
+                        .fill(Color.textTertiary.opacity(0.15))
                     
                     // Fill
                     RoundedRectangle(cornerRadius: 4)

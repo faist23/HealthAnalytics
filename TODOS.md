@@ -64,7 +64,7 @@
 
 ---
 
-## P1 — ConfidenceBadge Design Token Violation
+## ~~P1 — ConfidenceBadge Design Token Violation~~ ✅ DONE (already implemented)
 
 **What:** Fix `PredictionInsightCard.swift:107-128` `ConfidenceBadge` — swap hardcoded `Color.green`, `Color.blue`, `Color.orange` to design tokens `statusOptimal`, `statusRest`, `statusWarning`.
 
@@ -82,7 +82,7 @@
 
 ---
 
-## P2 — Morning/Evening Navigation Mode (UX Architecture)
+## ~~P1 — Morning/Evening Navigation Mode (UX Architecture)~~ ✅ DONE 2026-03-24
 
 **What:** Replace the current 5-tab navigation with a two-mode contextual toggle: **Morning** (readiness + today's decision + sleep summary) and **Evening** (training log + nutrition ring + tomorrow forecast + recovery action).
 
@@ -102,7 +102,7 @@
 
 ---
 
-## P1 — ResearchThresholdBar Boundary Tests
+## ~~P1 — ResearchThresholdBar Boundary Tests~~ ✅ DONE (already implemented)
 
 **What:** Add 3 missing boundary-condition unit tests to `ResearchThresholdBarTests`:
 1. ACWR exactly at 1.3 — is it `optimal` or `monitoring`? (upper bound inclusive/exclusive)

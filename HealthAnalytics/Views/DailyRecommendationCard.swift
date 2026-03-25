@@ -38,7 +38,7 @@ struct DailyRecommendationCard: View {
                 HStack(spacing: 12) {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.headline)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(Color.statusRest)
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Recovery in progress")
@@ -57,12 +57,12 @@ struct DailyRecommendationCard: View {
                         .fontWeight(.bold)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.1))
-                        .foregroundStyle(.blue)
+                        .background(Color.statusRest.opacity(0.1))
+                        .foregroundStyle(Color.statusRest)
                         .clipShape(Capsule())
                 }
                 .padding(12)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color.blue.opacity(0.05)))
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.statusRest.opacity(0.05)))
             }
             
             // Main guidance
@@ -79,12 +79,12 @@ struct DailyRecommendationCard: View {
                     Label("Recommended Today", systemImage: "checkmark.circle.fill")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.statusOptimal)
                     
                     ForEach(recommendation.targetZones, id: \.self) { zone in
                         HStack(spacing: 8) {
                             Circle()
-                                .fill(.green.opacity(0.2))
+                                .fill(Color.statusOptimal.opacity(0.2))
                                 .frame(width: 6, height: 6)
                             
                             Text(zone)
@@ -100,12 +100,12 @@ struct DailyRecommendationCard: View {
                     Label("Avoid Today", systemImage: "xmark.circle.fill")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.statusWarning)
                     
                     ForEach(recommendation.avoidZones, id: \.self) { zone in
                         HStack(spacing: 8) {
                             Circle()
-                                .fill(.orange.opacity(0.2))
+                                .fill(Color.statusWarning.opacity(0.2))
                                 .frame(width: 6, height: 6)
                             
                             Text(zone)
@@ -145,11 +145,11 @@ struct DailyRecommendationCard: View {
     
     private func colorForStatus(_ status: DailyRecommendationService.DailyRecommendation.RecommendationStatus) -> Color {
         switch status {
-        case .goHard: return .purple
-        case .quality: return .green
-        case .moderate: return .blue
-        case .easy: return .orange
-        case .rest: return .red
+        case .goHard: return .accent
+        case .quality: return .statusOptimal
+        case .moderate: return .statusRest
+        case .easy: return .statusWarning
+        case .rest: return .statusWarning
         }
     }
     

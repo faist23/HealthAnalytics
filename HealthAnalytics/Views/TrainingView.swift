@@ -216,8 +216,8 @@ struct LoadBar: View {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.gray.opacity(0.15))
-                    
+                        .fill(Color.textTertiary.opacity(0.15))
+
                     RoundedRectangle(cornerRadius: 3)
                         .fill(color)
                         .frame(width: min(geometry.size.width, geometry.size.width * (value / 100)))

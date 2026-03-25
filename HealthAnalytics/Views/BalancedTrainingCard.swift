@@ -40,7 +40,7 @@ struct BalancedTrainingCard: View {
                 
                 Button(action: { showRecommendations.toggle() }) {
                     Image(systemName: "lightbulb.fill")
-                        .foregroundStyle(.yellow)
+                        .foregroundStyle(Color.statusMonitoring)
                 }
             }
             
@@ -50,28 +50,28 @@ struct BalancedTrainingCard: View {
                 ZStack {
                     // Background circle
                     Circle()
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 20)
+                        .stroke(Color.textTertiary.opacity(0.2), lineWidth: 20)
                         .frame(width: 120, height: 120)
-                    
+
                     // Endurance segment
                     Circle()
                         .trim(from: 0, to: balance.endurancePercentage / 100)
-                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 20, lineCap: .round))
+                        .stroke(Color.statusRest, style: StrokeStyle(lineWidth: 20, lineCap: .round))
                         .frame(width: 120, height: 120)
                         .rotationEffect(.degrees(-90))
-                    
+
                     // Strength segment
                     Circle()
                         .trim(from: 0, to: balance.strengthPercentage / 100)
-                        .stroke(Color.orange, style: StrokeStyle(lineWidth: 20, lineCap: .round))
+                        .stroke(Color.statusWarning, style: StrokeStyle(lineWidth: 20, lineCap: .round))
                         .frame(width: 120, height: 120)
                         .rotationEffect(.degrees(-90 + (balance.endurancePercentage * 3.6)))
-                    
+
                     // Mobility segment (if present)
                     if balance.mobilityPercentage > 0 {
                         Circle()
                             .trim(from: 0, to: balance.mobilityPercentage / 100)
-                            .stroke(Color.purple, style: StrokeStyle(lineWidth: 20, lineCap: .round))
+                            .stroke(Color.accent, style: StrokeStyle(lineWidth: 20, lineCap: .round))
                             .frame(width: 120, height: 120)
                             .rotationEffect(.degrees(-90 + ((balance.endurancePercentage + balance.strengthPercentage) * 3.6)))
                     }
@@ -90,14 +90,14 @@ struct BalancedTrainingCard: View {
                 // Legend
                 VStack(alignment: .leading, spacing: 12) {
                     BalanceLegendItem(
-                        color: .blue,
+                        color: .statusRest,
                         label: "Endurance",
                         minutes: balance.enduranceMinutes,
                         percentage: balance.endurancePercentage
                     )
                     
                     BalanceLegendItem(
-                        color: .orange,
+                        color: .statusWarning,
                         label: "Strength",
                         minutes: balance.strengthMinutes,
                         percentage: balance.strengthPercentage
@@ -105,7 +105,7 @@ struct BalancedTrainingCard: View {
                     
                     if balance.mobilityMinutes > 0 {
                         BalanceLegendItem(
-                            color: .purple,
+                            color: .accent,
                             label: "Mobility",
                             minutes: balance.mobilityMinutes,
                             percentage: balance.mobilityPercentage
@@ -138,7 +138,7 @@ struct BalancedTrainingCard: View {
             // Recommendation
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "info.circle.fill")
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accent)
                     .font(.caption)
                 
                 Text(balance.recommendation)
@@ -150,13 +150,13 @@ struct BalancedTrainingCard: View {
             .padding(.horizontal, 12)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.blue.opacity(0.1))
+                    .fill(Color.statusRest.opacity(0.1))
             )
-            
+
             // Research insight
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "book.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Color.statusOptimal)
                     .font(.caption2)
                 
                 Text(balance.researchInsight)
@@ -258,7 +258,7 @@ struct RecommendedSplitSheet: View {
                         
                         TrainingRecommendationRow(
                             icon: "figure.outdoor.cycle",
-                            color: .blue,
+                            color: .statusRest,
                             category: "Endurance",
                             recommendation: recommendedSplit.endurance,
                             examples: "Cycling, running, swimming"
@@ -266,7 +266,7 @@ struct RecommendedSplitSheet: View {
                         
                         TrainingRecommendationRow(
                             icon: "dumbbell.fill",
-                            color: .orange,
+                            color: .statusWarning,
                             category: "Strength",
                             recommendation: recommendedSplit.strength,
                             examples: "Weight training, functional strength"
@@ -274,7 +274,7 @@ struct RecommendedSplitSheet: View {
                         
                         TrainingRecommendationRow(
                             icon: "figure.yoga",
-                            color: .purple,
+                            color: .accent,
                             category: "Mobility",
                             recommendation: recommendedSplit.mobility,
                             examples: "Yoga, stretching, foam rolling"
@@ -283,7 +283,7 @@ struct RecommendedSplitSheet: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.gray.opacity(0.1))
+                            .fill(Color.textTertiary.opacity(0.1))
                     )
                     
                     // Research context
@@ -291,7 +291,7 @@ struct RecommendedSplitSheet: View {
                         HStack {
                             Image(systemName: "doc.text.fill")
                                 .font(.title2)
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Color.statusOptimal)
                             
                             Text("Why Balance Matters")
                                 .font(.title2)
@@ -319,7 +319,7 @@ struct RecommendedSplitSheet: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.green.opacity(0.1))
+                            .fill(Color.statusOptimal.opacity(0.1))
                     )
                     
                     // Sample week
@@ -340,7 +340,7 @@ struct RecommendedSplitSheet: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.blue.opacity(0.1))
+                            .fill(Color.statusRest.opacity(0.1))
                     )
                 }
                 .padding()
@@ -397,9 +397,9 @@ struct InsightBullet: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(Color.statusOptimal)
                 .font(.caption)
-            
+
             Text(text)
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)

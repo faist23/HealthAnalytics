@@ -19,14 +19,14 @@ struct HeroReadinessCard: View {
             ZStack {
                 // Background circle
                 Circle()
-                    .stroke(Color.gray.opacity(0.15), lineWidth: 16)
+                    .stroke(Color.textTertiary.opacity(0.15), lineWidth: 16)
                     .frame(width: 140, height: 140)
                 
                 // Baseline indicator (dashed line)
                 if let intraDay = intraDay, !intraDay.isFullyRecovered {
                     Circle()
                         .trim(from: 0, to: Double(intraDay.baselineScore) / 100.0)
-                        .stroke(Color.blue.opacity(0.3), style: StrokeStyle(lineWidth: 16, lineCap: .round, dash: [2, 4]))
+                        .stroke(Color.statusRest.opacity(0.3), style: StrokeStyle(lineWidth: 16, lineCap: .round, dash: [2, 4]))
                         .frame(width: 140, height: 140)
                         .rotationEffect(.degrees(-90))
                 }
@@ -60,7 +60,7 @@ struct HeroReadinessCard: View {
                 HStack(spacing: 12) {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.title3)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(Color.statusRest)
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Recovery in progress")
@@ -79,12 +79,12 @@ struct HeroReadinessCard: View {
                         .fontWeight(.bold)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.orange.opacity(0.2))
-                        .foregroundStyle(.orange)
+                        .background(Color.statusWarning.opacity(0.2))
+                        .foregroundStyle(Color.statusWarning)
                         .clipShape(Capsule())
                 }
                 .padding()
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color.blue.opacity(0.05)))
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.statusRest.opacity(0.05)))
                 .padding(.horizontal)
             }
             
@@ -137,20 +137,20 @@ struct HeroReadinessCard: View {
     private var gradientForScore: LinearGradient {
         let colors: [Color]
         if score >= 80 {
-            colors = [.green, .green.opacity(0.8)]
+            colors = [.statusOptimal, .statusOptimal.opacity(0.8)]
         } else if score >= 60 {
-            colors = [.yellow, .orange]
+            colors = [.statusMonitoring, .statusWarning]
         } else {
-            colors = [.orange, .red]
+            colors = [.statusWarning, .statusWarning]
         }
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
-    
+
     private var colorForLevel: Color {
         switch level {
-        case .excellent, .good: return .green
-        case .moderate: return .yellow
-        case .poor: return .red
+        case .excellent, .good: return .statusOptimal
+        case .moderate: return .statusMonitoring
+        case .poor: return .statusWarning
         }
     }
 }

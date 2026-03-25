@@ -75,7 +75,7 @@ struct MonthSelector: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.title3)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accent)
             }
             
             Spacer()
@@ -91,7 +91,7 @@ struct MonthSelector: View {
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.title3)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accent)
             }
             .disabled(Calendar.current.isDate(selectedMonth, equalTo: Date(), toGranularity: .month))
         }
@@ -192,17 +192,17 @@ struct DayCell: View {
         .frame(height: 44)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+                .fill(isSelected ? Color.accent.opacity(0.1) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(isSelected ? Color.blue : Color.clear, lineWidth: 2)
+                .strokeBorder(isSelected ? Color.accent : Color.clear, lineWidth: 2)
         )
         .opacity(isInCurrentMonth ? 1.0 : 0.3)
     }
     
     private func colorForScore(_ score: Double?) -> Color {
-        guard let score = score else { return .gray.opacity(0.2) }
+        guard let score = score else { return .textTertiary.opacity(0.2) }
         
         if score >= 85 {
             return .green
@@ -378,7 +378,7 @@ struct DayDetailSheet: View {
                         VStack(spacing: 16) {
                             ZStack {
                                 Circle()
-                                    .stroke(Color.gray.opacity(0.2), lineWidth: 15)
+                                    .stroke(Color.textTertiary.opacity(0.2), lineWidth: 15)
                                     .frame(width: 150, height: 150)
                                 
                                 Circle()

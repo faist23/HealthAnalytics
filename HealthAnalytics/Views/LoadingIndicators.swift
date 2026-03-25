@@ -34,14 +34,14 @@ struct LoadingOverlay: View {
                     // Progress ring with percentage
                     ZStack {
                         Circle()
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 8)
+                            .stroke(Color.textTertiary.opacity(0.2), lineWidth: 8)
                             .frame(width: 80, height: 80)
                         
                         Circle()
                             .trim(from: 0, to: progress)
                             .stroke(
                                 LinearGradient(
-                                    colors: [.blue, .cyan],
+                                    colors: [.accent, .statusRest],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ),
@@ -141,7 +141,7 @@ struct SyncProgressCard: View {
                     
                     ProgressView()
                         .scaleEffect(0.8)
-                        .tint(Color.blue)
+                        .tint(Color.accent)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
@@ -210,7 +210,7 @@ struct SettingsLoadingButton: View {
                 }
                 
                 Text(title)
-                    .foregroundStyle(isLoading ? Color.secondary : Color.blue)
+                    .foregroundStyle(isLoading ? Color.secondary : Color.accent)
             }
         }
         .disabled(isLoading)
@@ -232,9 +232,9 @@ struct ShimmerLoadingView: View {
             .fill(
                 LinearGradient(
                     colors: [
-                        Color.gray.opacity(0.1),
-                        Color.gray.opacity(0.2),
-                        Color.gray.opacity(0.1)
+                        Color.textTertiary.opacity(0.1),
+                        Color.textTertiary.opacity(0.2),
+                        Color.textTertiary.opacity(0.1)
                     ],
                     startPoint: .leading,
                     endPoint: .trailing
@@ -264,7 +264,7 @@ struct ShimmerLoadingView: View {
 
 #Preview("Loading Overlay") {
     ZStack {
-        Color.blue.opacity(0.3)
+        Color.statusRest.opacity(0.3)
             .ignoresSafeArea()
         
         LoadingOverlay(message: "Analyzing readiness...")
@@ -273,7 +273,7 @@ struct ShimmerLoadingView: View {
 
 #Preview("Loading Overlay Progress") {
     ZStack {
-        Color.blue.opacity(0.3)
+        Color.statusRest.opacity(0.3)
             .ignoresSafeArea()
         
         LoadingOverlay(

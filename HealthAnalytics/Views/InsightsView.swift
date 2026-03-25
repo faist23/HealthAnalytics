@@ -271,7 +271,9 @@ struct InsightsView: View {
     @ViewBuilder
     private var dataCollectionSection: some View {
         if !viewModel.dataSummary.isEmpty && viewModel.activityTypeInsights.isEmpty {
-            DataCollectionCard(summary: viewModel.dataSummary)
+            DataCollectionCard(summary: viewModel.dataSummary.map {
+                DataCollectionCard.ActivitySummary(activityType: $0.activityType, goodSleep: $0.goodSleep, poorSleep: $0.poorSleep)
+            })
         }
     }
     
@@ -432,39 +434,46 @@ struct EmptyInsightsView: View {
 }
 
 struct DataCollectionCard: View {
-    let summary: [(activityType: String, goodSleep: Int, poorSleep: Int)]
-    
+    struct ActivitySummary: Identifiable {
+        let id = UUID()
+        let activityType: String
+        let goodSleep: Int
+        let poorSleep: Int
+    }
+
+    let summary: [ActivitySummary]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
                 Image(systemName: "chart.bar.fill")
-                    .foregroundStyle(.orange)
-                
+                    .foregroundStyle(Color.statusWarning)
+
                 Text("Data Collection Progress")
                     .font(.headline)
             }
-            
+
             Text("Keep tracking! Here's what we have so far:")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            
+
             Divider()
-            
-            ForEach(summary, id: \.activityType) { item in
+
+            ForEach(summary) { item in
                 HStack {
                     Text(item.activityType)
                         .font(.subheadline)
-                    
+
                     Spacer()
-                    
+
                     HStack(spacing: 15) {
                         Label("\(item.goodSleep)", systemImage: "moon.zzz.fill")
                             .font(.caption)
-                            .foregroundStyle(.green)
-                        
+                            .foregroundStyle(Color.statusOptimal)
+
                         Label("\(item.poorSleep)", systemImage: "moon.fill")
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.statusWarning)
                     }
                 }
             }
@@ -772,8 +781,8 @@ struct ProteinRecoveryCard: View {
             HStack {
                 Image(systemName: "fork.knife")
                     .font(.title2)
-                    .foregroundStyle(.red)
-                
+                    .foregroundStyle(Color.statusWarning)
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Protein Optimization")
                         .font(.headline)
@@ -795,9 +804,9 @@ struct ProteinRecoveryCard: View {
                 .font(.subheadline)
                 .foregroundStyle(.primary)
                 .padding()
-                .background(Color.blue.opacity(0.1))
+                .background(Color.statusRest.opacity(0.1))
                 .cornerRadius(8)
-            
+
             // Protein Ranges
             if !insight.proteinRanges.isEmpty {
                 Divider()
@@ -871,12 +880,12 @@ struct ProteinRangeRow: View {
             if isOptimal {
                 Image(systemName: "star.fill")
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Color.statusOptimal)
             }
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .background(isOptimal ? Color.green.opacity(0.1) : Color.clear)
+        .background(isOptimal ? Color.statusOptimal.opacity(0.1) : Color.clear)
         .cornerRadius(6)
     }
 }
@@ -905,12 +914,12 @@ struct CarbPerformanceCard: View {
             HStack {
                 Image(systemName: icon)
                     .font(.title2)
-                    .foregroundStyle(.green)
-                
+                    .foregroundStyle(Color.statusOptimal)
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.headline)
-                    
+
                     Text("\(insight.sampleSize) cycling workouts analyzed")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -977,7 +986,7 @@ struct CarbPerformanceCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding()
-                .background(Color.green.opacity(0.1))
+                .background(Color.statusOptimal.opacity(0.1))
                 .cornerRadius(8)
         }
         .padding()
@@ -997,9 +1006,9 @@ struct ACWRInfoSheet: View {
                 
                 Section(header: Text("Understanding the Number")) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("0.8 - 1.3 (Sweet Spot): You are building fitness safely.", systemImage: "checkmark.circle.fill").foregroundColor(.green)
-                        Label("1.3 - 1.5 (Overreaching): You are pushing hard; monitor recovery.", systemImage: "exclamationmark.triangle.fill").foregroundColor(.orange)
-                        Label("> 1.5 (Danger Zone): High risk of injury or burnout.", systemImage: "xmark.octagon.fill").foregroundColor(.red)
+                        Label("0.8 - 1.3 (Sweet Spot): You are building fitness safely.", systemImage: "checkmark.circle.fill").foregroundStyle(Color.statusOptimal)
+                        Label("1.3 - 1.5 (Overreaching): You are pushing hard; monitor recovery.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.statusMonitoring)
+                        Label("> 1.5 (Danger Zone): High risk of injury or burnout.", systemImage: "xmark.octagon.fill").foregroundStyle(Color.statusWarning)
                     }
                     .font(.subheadline)
                     .padding(.vertical, 8)

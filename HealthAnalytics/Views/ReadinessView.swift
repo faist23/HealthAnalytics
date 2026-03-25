@@ -19,10 +19,36 @@ struct ReadinessView: View {
     @State private var showInjuryRiskInfo = false
 
     var body: some View {
+        mainView
+            .navigationTitle("Readiness")
+            .toolbar { toolbarItems }
+            .onChange(of: viewModel.selectedPeriod) { _, _ in
+                Task { await viewModel.analyze(modelContext: modelContext) }
+            }
+            .task {
+                if viewModel.modelContainer == nil {
+                    viewModel.configure(container: modelContext.container)
+                }
+                await viewModel.analyze(modelContext: modelContext)
+                isFirstLoad = false
+            }
+            .onChange(of: modelContext) { _, _ in
+                if viewModel.modelContainer == nil {
+                    viewModel.configure(container: modelContext.container)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
+                Task { await viewModel.analyze(modelContext: modelContext) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
+                Task { await viewModel.analyze(modelContext: modelContext) }
+            }
+    }
+
+    private var mainView: some View {
         ZStack {
             TabBackgroundColor.recovery(for: colorScheme)
                 .ignoresSafeArea()
-            
             Group {
                 if syncManager.isBackfillingHistory {
                     BackfillProgressView(
@@ -34,70 +60,33 @@ struct ReadinessView: View {
                 }
             }
         }
-        .navigationTitle("Readiness")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker("Time Period", selection: $viewModel.selectedPeriod) {
-                        ForEach(TimePeriod.allCases) { period in
-                            Text(period.displayName).tag(period)
-                        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarItems: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Picker("Time Period", selection: $viewModel.selectedPeriod) {
+                    ForEach(TimePeriod.allCases) { period in
+                        Text(period.displayName).tag(period)
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(viewModel.selectedPeriod.displayName)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Image(systemName: "chevron.down")
-                            .font(.caption)
-                    }
-                    .foregroundStyle(.blue)
                 }
-            }
-            
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink {
-                    StatisticalDashboardView()
-                } label: {
-                    Image(systemName: "chart.bar.doc.horizontal")
+            } label: {
+                HStack(spacing: 4) {
+                    Text(viewModel.selectedPeriod.displayName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
                 }
+                .foregroundStyle(Color.accent)
             }
         }
-        .onChange(of: viewModel.selectedPeriod) { _, _ in
-            Task {
-                await viewModel.analyze(modelContext: modelContext)
-            }
-        }
-        /*      .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                refreshButton
-            }
-        } */
-        .task {
-            // Configure on first appearance
-            if viewModel.modelContainer == nil {
-                viewModel.configure(container: modelContext.container)
-            }
-            // Always analyze when tab appears
-            await viewModel.analyze(modelContext: modelContext)
-            // Mark first load as complete
-            isFirstLoad = false
-        }
-        .onChange(of: modelContext) { _, _ in
-            if viewModel.modelContainer == nil {
-                viewModel.configure(container: modelContext.container)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
-            // Force recalculation when data window changes
-            Task {
-                await viewModel.analyze(modelContext: modelContext)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
-            // Refresh when new data is synced
-            Task {
-                await viewModel.analyze(modelContext: modelContext)
+        ToolbarItem(placement: .topBarTrailing) {
+            NavigationLink {
+                StatisticalDashboardView()
+            } label: {
+                Image(systemName: "chart.bar.doc.horizontal")
             }
         }
     }
@@ -610,7 +599,7 @@ struct OptimalTimingCard: View {
         HStack(spacing: 16) {
             Image(systemName: "clock.fill")
                 .font(.system(size: 32))
-                .foregroundStyle(.blue)
+                .foregroundStyle(Color.accent)
                 .frame(width: 50)
             
             VStack(alignment: .leading, spacing: 6) {
@@ -697,7 +686,7 @@ struct EmptyReadinessView: View {
         VStack(spacing: 20) {
             Image(systemName: "figure.mixed.cardio")
                 .font(.system(size: 64))
-                .foregroundStyle(.blue)
+                .foregroundStyle(Color.accent)
             
             Text("Building Your Baseline")
                 .font(.title2)
@@ -781,8 +770,8 @@ struct TrainingLoadPreviewCard: View {
             HStack(spacing: 8) {
                 Image(systemName: "lightbulb.fill")
                     .font(.caption)
-                    .foregroundStyle(.yellow)
-                
+                    .foregroundStyle(Color.statusMonitoring)
+
                 Text(summary.recommendation)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -844,12 +833,12 @@ struct InjuryRiskCard: View {
                     } label: {
                         Image(systemName: "info.circle")
                             .font(.caption)
-                            .foregroundColor(.blue)
+                            .foregroundStyle(Color.accent)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 HStack(spacing: 6) {
                     Text(assessment.riskLevel.emoji)
                         .font(.title3)
@@ -923,8 +912,8 @@ struct InjuryRiskCard: View {
                 Label("Recommendation", systemImage: "lightbulb.fill")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundStyle(.orange)
-                
+                    .foregroundStyle(Color.statusMonitoring)
+
                 Text(assessment.recommendation)
                     .font(.body)
                     .foregroundStyle(.primary)
@@ -1089,16 +1078,16 @@ struct InjuryRiskInfoSheet: View {
                 Section(header: Text("Understanding Risk Levels")) {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("Low (0-24): Maintain current training balance", systemImage: "checkmark.shield.fill")
-                            .foregroundColor(.green)
-                        
+                            .foregroundStyle(Color.statusOptimal)
+
                         Label("Moderate (25-44): Monitor recovery closely", systemImage: "exclamationmark.shield.fill")
-                            .foregroundColor(.yellow)
-                        
+                            .foregroundStyle(Color.statusMonitoring)
+
                         Label("High (45-64): Reduce volume/intensity 20-30%", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        
+                            .foregroundStyle(Color.statusWarning)
+
                         Label("Very High (65+): Take 1-2 complete rest days", systemImage: "xmark.shield.fill")
-                            .foregroundColor(.red)
+                            .foregroundStyle(Color.statusWarning)
                     }
                     .font(.subheadline)
                     .padding(.vertical, 8)

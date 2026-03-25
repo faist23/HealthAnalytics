@@ -319,8 +319,8 @@ struct WorkoutDetailsCard: View {
             HStack {
                 Image(systemName: iconName)
                     .font(.title2)
-                    .foregroundStyle(.blue)
-                
+                    .foregroundStyle(Color.accent)
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(workoutName)
                         .font(.headline)
@@ -502,8 +502,8 @@ struct TrainingResultsView: View {
                     VStack(spacing: 8) {
                         Text(String(format: "%.1f%%", result.accuracy))
                             .font(.system(size: 64, weight: .bold, design: .rounded))
-                            .foregroundStyle(.green)
-                        
+                            .foregroundStyle(Color.statusOptimal)
+
                         Text("Validation Accuracy")
                             .font(.headline)
                             .foregroundStyle(.secondary)
@@ -527,17 +527,17 @@ struct TrainingResultsView: View {
                                 Text(String(format: "%.1f%%", importance * 100))
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
-                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(Color.statusRest)
                             }
-                            
+
                             GeometryReader { geo in
                                 ZStack(alignment: .leading) {
                                     RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.blue.opacity(0.1))
+                                        .fill(Color.statusRest.opacity(0.1))
                                         .frame(height: 6)
-                                    
+
                                     RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.blue)
+                                        .fill(Color.statusRest)
                                         .frame(width: geo.size.width * importance, height: 6)
                                 }
                             }

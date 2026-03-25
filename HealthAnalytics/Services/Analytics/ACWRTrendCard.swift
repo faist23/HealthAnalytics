@@ -79,13 +79,13 @@ struct ACWRTrendCard: View {
                         } label: {
                             Image(systemName: "info.circle")
                                 .font(.caption)
-                                .foregroundColor(.blue)
+                                .foregroundStyle(Color.accent)
                         }
                     }
                 }
-                
+
                 Spacer()
-                
+
                 // Current ratio - big and prominent
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(String(format: "%.2f", currentAssessment.acwr))

@@ -49,7 +49,7 @@ struct IntentAwareReadinessCard: View {
                     Label("You're Ready For", systemImage: "checkmark.circle.fill")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.statusOptimal)
                     
                     ForEach(assessment.recommendedIntents, id: \.self) { intent in
                         if let readiness = assessment.performanceReadiness[intent] {
@@ -71,7 +71,7 @@ struct IntentAwareReadinessCard: View {
                     Label("Not Today", systemImage: "exclamationmark.triangle.fill")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.statusWarning)
                     
                     ForEach(assessment.shouldAvoidIntents, id: \.self) { intent in
                         if let readiness = assessment.performanceReadiness[intent] {

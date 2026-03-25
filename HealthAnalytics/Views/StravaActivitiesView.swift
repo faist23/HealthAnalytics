@@ -20,7 +20,7 @@ struct StravaActivitiesView: View {
                 ProgressView("Loading activities...")
             } else if let error = errorMessage {
                 Text(error)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.statusWarning)
             } else if activities.isEmpty {
                 Text("No activities found")
                     .foregroundStyle(.secondary)
@@ -79,8 +79,8 @@ struct StravaActivityRow: View {
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.2))
-                    .foregroundStyle(.orange)
+                    .background(Color.statusWarning.opacity(0.2))
+                    .foregroundStyle(Color.statusWarning)
                     .cornerRadius(4)
             }
             
@@ -101,9 +101,9 @@ struct StravaActivityRow: View {
                         Text("\(Int(avgWatts))W")
                     }
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.statusWarning)
                 }
-                
+
                 // Uses 1:1 KJ to Calorie approximation standard in cycling
                 if let kj = activity.kilojoules, kj > 0 {
                     HStack(spacing: 2) {
@@ -111,7 +111,7 @@ struct StravaActivityRow: View {
                         Text("\(Int(kj))")
                     }
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.statusWarning)
                 }
                 
                 // Existing Heart Rate

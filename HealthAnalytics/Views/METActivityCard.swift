@@ -41,7 +41,7 @@ struct METActivityCard: View {
                 
                 Button(action: { showResearch.toggle() }) {
                     Image(systemName: "info.circle")
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(Color.accent)
                 }
             }
             
@@ -75,16 +75,16 @@ struct METActivityCard: View {
                     ZStack(alignment: .leading) {
                         // Background bar
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.gray.opacity(0.15))
+                            .fill(Color.textTertiary.opacity(0.15))
                         
                         // WHO minimum marker
                         Rectangle()
-                            .fill(Color.yellow.opacity(0.3))
+                            .fill(Color.statusMonitoring.opacity(0.3))
                             .frame(width: geometry.size.width * (600 / 3000))
-                        
+
                         // WHO target marker
                         Rectangle()
-                            .fill(Color.green.opacity(0.3))
+                            .fill(Color.statusOptimal.opacity(0.3))
                             .frame(width: geometry.size.width * (1500 / 3000))
                         
                         // Current level
@@ -106,23 +106,23 @@ struct METActivityCard: View {
                     label: "Vigorous",
                     minutes: summary.vigorousActivityMinutes,
                     total: summary.dailyAverageMETs * 7,
-                    color: .red,
+                    color: .statusWarning,
                     description: "≥6.0 METs (Running, cycling)"
                 )
-                
+
                 IntensityRow(
                     label: "Moderate",
                     minutes: summary.moderateActivityMinutes,
                     total: summary.dailyAverageMETs * 7,
-                    color: .orange,
+                    color: .statusMonitoring,
                     description: "3.0-5.9 METs (Brisk walking)"
                 )
-                
+
                 IntensityRow(
                     label: "Light",
                     minutes: summary.lightActivityMinutes,
                     total: summary.dailyAverageMETs * 7,
-                    color: .blue,
+                    color: .statusRest,
                     description: "<3.0 METs (Slow walking)"
                 )
             }
@@ -130,9 +130,9 @@ struct METActivityCard: View {
             // Recommendation
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "lightbulb.fill")
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(Color.statusMonitoring)
                     .font(.caption)
-                
+
                 Text(summary.recommendation)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -142,7 +142,7 @@ struct METActivityCard: View {
             .padding(.horizontal, 12)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.yellow.opacity(0.1))
+                    .fill(Color.statusMonitoring.opacity(0.1))
             )
         }
         .padding()
@@ -192,7 +192,7 @@ struct IntensityRow: View {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.gray.opacity(0.15))
+                        .fill(Color.textTertiary.opacity(0.15))
                     
                     RoundedRectangle(cornerRadius: 3)
                         .fill(color)
@@ -223,13 +223,13 @@ struct ResearchContextSheet: View {
                         HStack {
                             Image(systemName: "doc.text.magnifyingglass")
                                 .font(.title2)
-                                .foregroundStyle(.blue)
-                            
+                                .foregroundStyle(Color.accent)
+
                             Text("Why METs Matter")
                                 .font(.title2)
                                 .fontWeight(.bold)
                         }
-                        
+
                         Text(summary.researchContext)
                             .font(.body)
                             .fixedSize(horizontal: false, vertical: true)
@@ -237,7 +237,7 @@ struct ResearchContextSheet: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.blue.opacity(0.1))
+                            .fill(Color.accent.opacity(0.1))
                     )
                     
                     // Why not VO2 max?
@@ -254,7 +254,7 @@ struct ResearchContextSheet: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.orange.opacity(0.1))
+                            .fill(Color.statusWarning.opacity(0.1))
                     )
                     
                     // MET advantages
@@ -263,16 +263,16 @@ struct ResearchContextSheet: View {
                             .font(.headline)
                         
                         VStack(alignment: .leading, spacing: 8) {
-                            BulletPoint(text: "Based on real-world activity data", color: .green)
-                            BulletPoint(text: "Validated across 750,000+ participants", color: .green)
-                            BulletPoint(text: "Each MET increase = 14-15% mortality reduction", color: .green)
-                            BulletPoint(text: "Free to calculate from existing data", color: .green)
+                            BulletPoint(text: "Based on real-world activity data", color: .statusOptimal)
+                            BulletPoint(text: "Validated across 750,000+ participants", color: .statusOptimal)
+                            BulletPoint(text: "Each MET increase = 14-15% mortality reduction", color: .statusOptimal)
+                            BulletPoint(text: "Free to calculate from existing data", color: .statusOptimal)
                         }
                     }
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.green.opacity(0.1))
+                            .fill(Color.statusOptimal.opacity(0.1))
                     )
                     
                     // Guidelines
@@ -281,15 +281,15 @@ struct ResearchContextSheet: View {
                             .font(.headline)
                         
                         VStack(alignment: .leading, spacing: 8) {
-                            GuidelineRow(level: "Minimum", value: "600 MET-min/week", color: .yellow)
-                            GuidelineRow(level: "Target", value: "1,500 MET-min/week", color: .green)
-                            GuidelineRow(level: "Excellent", value: "3,000+ MET-min/week", color: .blue)
+                            GuidelineRow(level: "Minimum", value: "600 MET-min/week", color: .statusMonitoring)
+                            GuidelineRow(level: "Target", value: "1,500 MET-min/week", color: .statusOptimal)
+                            GuidelineRow(level: "Excellent", value: "3,000+ MET-min/week", color: .statusRest)
                         }
                     }
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.gray.opacity(0.1))
+                            .fill(Color.textTertiary.opacity(0.1))
                     )
                 }
                 .padding()
@@ -311,7 +311,7 @@ struct ResearchContextSheet: View {
 
 struct BulletPoint: View {
     let text: String
-    var color: Color = .blue
+    var color: Color = .statusOptimal
     
     var body: some View {
         HStack(alignment: .top, spacing: 8) {

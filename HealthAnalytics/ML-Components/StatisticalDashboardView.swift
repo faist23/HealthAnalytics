@@ -434,8 +434,8 @@ struct RecommendationRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "lightbulb.fill")
-                .foregroundStyle(.yellow)
-            
+                .foregroundStyle(Color.statusMonitoring)
+
             Text(text)
                 .font(.caption)
                 .foregroundStyle(.primary)

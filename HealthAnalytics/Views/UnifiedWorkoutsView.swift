@@ -61,8 +61,8 @@ struct UnifiedWorkoutRow: View {
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(isStrava ? Color.orange.opacity(0.15) : Color.pink.opacity(0.15))
-                .foregroundStyle(isStrava ? Color.orange : Color.pink)
+                .background(isStrava ? Color.statusWarning.opacity(0.15) : Color.accent.opacity(0.15))
+                .foregroundStyle(isStrava ? Color.statusWarning : Color.accent)
                 .cornerRadius(6)
             }
             
@@ -84,7 +84,7 @@ struct UnifiedWorkoutRow: View {
                 if let hr = workout.averageHeartRate, hr > 0 {
                     Label("\(Int(hr)) bpm", systemImage: "heart.fill")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Color.statusWarning)
                 }
 
                 // Power (Orange)
@@ -94,7 +94,7 @@ struct UnifiedWorkoutRow: View {
                         Text("\(Int(power))W")
                     }
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.statusWarning)
                 }
                 
                 // Calories/KJ (Red)
@@ -104,7 +104,7 @@ struct UnifiedWorkoutRow: View {
                         Text("\(Int(energy))")
                     }
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.statusWarning)
                 }
                 
                 Spacer()

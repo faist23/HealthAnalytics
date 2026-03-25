@@ -77,12 +77,12 @@ struct UnifiedTrainingLoadCard: View {
                     } label: {
                         Image(systemName: "info.circle")
                             .font(.caption)
-                            .foregroundColor(.blue)
+                            .foregroundStyle(Color.accent)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 // Compact status + ACWR
                 HStack(spacing: 8) {
                     Text(statusEmoji)
@@ -105,15 +105,15 @@ struct UnifiedTrainingLoadCard: View {
                     HStack(spacing: 8) {
                         Image(systemName: "info.circle.fill")
                             .font(.caption)
-                            .foregroundColor(.orange)
-                        
+                            .foregroundStyle(Color.statusWarning)
+
                         Text("No training data in the last 28 days")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
                     .padding(.vertical, 8)
                     .padding(.horizontal, 10)
-                    .background(Color.orange.opacity(0.1))
+                    .background(Color.statusWarning.opacity(0.1))
                     .cornerRadius(8)
                 } else {
                     VStack(spacing: 8) {
@@ -291,15 +291,15 @@ struct UnifiedTrainingLoadCard: View {
                     HStack(spacing: 8) {
                         Image(systemName: "lightbulb.fill")
                             .font(.caption)
-                            .foregroundColor(.yellow)
-                        
+                            .foregroundStyle(Color.statusMonitoring)
+
                         Text(summary.recommendation)
                             .font(.subheadline)
                             .foregroundColor(.primary)
                     }
                     .padding(.vertical, 8)
                     .padding(.horizontal, 10)
-                    .background(Color.yellow.opacity(0.1))
+                    .background(Color.statusMonitoring.opacity(0.1))
                     .cornerRadius(8)
                 }
             }
@@ -328,7 +328,7 @@ struct UnifiedTrainingLoadCard: View {
                         Image(systemName: "chevron.right")
                             .font(.caption2)
                     }
-                    .foregroundColor(.blue)
+                    .foregroundStyle(Color.accent)
                     .padding(.vertical, 8)
                 }
                 .sheet(isPresented: $showExtendedView) {

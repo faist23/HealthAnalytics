@@ -104,7 +104,7 @@ struct HolisticHealthDashboard: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "book.fill")
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(Color.accent)
                         Text("Evidence-Based Approach")
                             .font(.headline)
                     }
@@ -134,15 +134,15 @@ struct HolisticHealthDashboard: View {
                 .padding()
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.blue.opacity(0.1))
+                        .fill(Color.accent.opacity(0.1))
                 )
                 .padding(.horizontal)
-                
+
                 // Key insight
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "lightbulb.fill")
-                            .foregroundStyle(.yellow)
+                            .foregroundStyle(Color.statusMonitoring)
                         Text("No Single Metric Tells the Whole Story")
                             .font(.headline)
                     }
@@ -155,10 +155,10 @@ struct HolisticHealthDashboard: View {
                 .padding()
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.yellow.opacity(0.1))
+                        .fill(Color.statusMonitoring.opacity(0.1))
                 )
                 .padding(.horizontal)
-                
+
                 // Overall status summary
                 OverallStatusView(metrics: metrics)
                     .padding(.horizontal)
@@ -237,7 +237,7 @@ struct ResearchBullet: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "checkmark.seal.fill")
-                .foregroundStyle(.blue)
+                .foregroundStyle(Color.statusOptimal)
                 .font(.caption)
             
             Text(text)
@@ -309,7 +309,7 @@ struct OverallStatusView: View {
             HStack(spacing: 20) {
                 ZStack {
                     Circle()
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 12)
+                        .stroke(Color.textTertiary.opacity(0.2), lineWidth: 12)
                         .frame(width: 80, height: 80)
                     
                     Circle()

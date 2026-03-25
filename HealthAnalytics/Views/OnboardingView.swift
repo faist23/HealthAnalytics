@@ -32,7 +32,7 @@ struct OnboardingView: View {
         ZStack {
             // Background gradient
             LinearGradient(
-                colors: [Color.blue.opacity(0.1), Color.purple.opacity(0.1)],
+                colors: [Color.statusRest.opacity(0.1), Color.accent.opacity(0.1)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -232,7 +232,7 @@ struct HealthKitStep: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.blue)
+                        .background(Color.accent)
                         .cornerRadius(16)
                 }
                 .padding(.horizontal, 24)
@@ -265,7 +265,7 @@ struct HealthKitStep: View {
             if let error = healthKitManager.authorizationError {
                 Text(error)
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundStyle(Color.statusWarning)
                     .padding(.horizontal, 24)
             }
             
@@ -341,7 +341,7 @@ struct StravaStep: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.orange)
+                        .background(Color.statusWarning)
                         .cornerRadius(16)
                     }
                     .disabled(isConnecting)
@@ -349,13 +349,13 @@ struct StravaStep: View {
                     // Connected state
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Color.statusOptimal)
                         Text("Strava Connected")
                             .fontWeight(.semibold)
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color.green.opacity(0.2))
+                    .background(Color.statusOptimal.opacity(0.2))
                     .cornerRadius(16)
                     
                     Button(action: { onContinue(false) }) {
@@ -468,8 +468,8 @@ struct SyncingStep: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 80, height: 80)
-                        .foregroundStyle(.green)
-                    
+                        .foregroundStyle(Color.statusOptimal)
+
                     Text("All Set!")
                         .font(.title)
                         .fontWeight(.bold)
@@ -627,12 +627,12 @@ struct ValuePropRow: View {
 struct DataAccessRow: View {
     let icon: String
     let text: String
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.body)
-                .foregroundStyle(.blue)
+                .foregroundStyle(Color.accent)
                 .frame(width: 24)
             
             Text(text)
@@ -644,12 +644,12 @@ struct DataAccessRow: View {
 struct BenefitRow: View {
     let icon: String
     let text: String
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.body)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.statusWarning)
                 .frame(width: 24)
             
             Text(text)
