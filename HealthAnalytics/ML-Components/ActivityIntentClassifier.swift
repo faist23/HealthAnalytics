@@ -7,9 +7,11 @@
 //
 
 import Foundation
+#if canImport(CreateML)
 import CreateML
-import CoreML
 import TabularData
+#endif
+import CoreML
 import HealthKit
 
 struct ActivityIntentClassifier {
@@ -125,19 +127,19 @@ struct ActivityIntentClassifier {
     
     /// Train a classifier from manually labeled examples
     static func train(labeledWorkouts: [(features: WorkoutFeatures, intent: ActivityIntent)]) async throws -> TrainingResult {
-        
+#if canImport(CreateML)
         guard labeledWorkouts.count >= 10 else {
             throw ClassifierError.insufficientData(count: labeledWorkouts.count, required: 10)
         }
-        
+
         print("🤖 Training intent classifier with \(labeledWorkouts.count) labeled examples...")
-        
+
         // Build DataFrame
         var df = DataFrame()
-        
+
         // Feature columns - normalize activity types to prevent unknown category errors
         let activityTypes = labeledWorkouts.map { normalizeActivityType($0.features.activityType) }
-        
+
         // Track which activity types are in the training data
         let allowedActivityTypes = Set(activityTypes)
         let durations = labeledWorkouts.map { $0.features.durationMinutes }
@@ -146,10 +148,10 @@ struct ActivityIntentClassifier {
         let powers = labeledWorkouts.map { $0.features.avgPower ?? 0 }
         let efforts = labeledWorkouts.map { $0.features.effortScore }
         let isLong = labeledWorkouts.map { $0.features.isLongDuration ? 1.0 : 0.0 }
-        
+
         // Target column
         let intents = labeledWorkouts.map { $0.intent.rawValue }
-        
+
         df.append(column: Column(name: "activity_type", contents: activityTypes))
         df.append(column: Column(name: "duration_min", contents: durations))
         df.append(column: Column(name: "avg_pace", contents: paces))
@@ -158,11 +160,9 @@ struct ActivityIntentClassifier {
         df.append(column: Column(name: "effort_score", contents: efforts))
         df.append(column: Column(name: "is_long", contents: isLong))
         df.append(column: Column(name: "intent", contents: intents))
-        
+
         print("   📊 Training data shape: \(df.rows.count) rows, \(df.columns.count) columns")
-        
-        // Train RandomForestClassifier
-        // Note: In iOS 26, we train on full dataset and CreateML handles validation internally
+
         let classifier = try MLRandomForestClassifier(
             trainingData: df,
             targetColumn: "intent",
@@ -176,30 +176,27 @@ struct ActivityIntentClassifier {
                 "is_long"
             ]
         )
-        
-        // Get training metrics
+
         let metrics = classifier.trainingMetrics
         let accuracy = (1.0 - metrics.classificationError) * 100.0
-        
+
         print("   ✅ Training complete!")
         print("   📈 Training Accuracy: \(String(format: "%.1f%%", accuracy))")
-        
-        // In iOS 26, validationMetrics is always available
+
         let validationMetrics = classifier.validationMetrics
         let validationAccuracy = (1.0 - validationMetrics.classificationError) * 100.0
         print("   📊 Validation Accuracy: \(String(format: "%.1f%%", validationAccuracy))")
-        
-        // Feature importance (approximate via permutation)
+
         let featureImportance = approximateFeatureImportance(
             classifier: classifier,
             trainingData: df
         )
-        
+
         print("   🔍 Top Features:")
         for (feature, importance) in featureImportance.sorted(by: { $0.value > $1.value }).prefix(3) {
             print("      \(feature): \(String(format: "%.1f%%", importance * 100))")
         }
-        
+
         return TrainingResult(
             model: classifier.model,
             accuracy: validationAccuracy,
@@ -209,6 +206,9 @@ struct ActivityIntentClassifier {
             trainedAt: Date(),
             allowedActivityTypes: allowedActivityTypes
         )
+#else
+        throw ClassifierError.insufficientData(count: 0, required: 0)
+#endif
     }
     
     // MARK: - Prediction
@@ -342,6 +342,7 @@ struct ActivityIntentClassifier {
         return standardType
     }
     
+#if canImport(CreateML)
     /// Approximates feature importance by measuring how much each feature's
     /// variance correlates with performance variance (Pearson r²).
     /// Works for both Linear and RandomForest models.
@@ -349,9 +350,6 @@ struct ActivityIntentClassifier {
         classifier: MLRandomForestClassifier,
         trainingData: DataFrame
     ) -> [String: Double] {
-        
-        // This is a simplified version - just returns uniform importance for now
-        // In production, you'd implement permutation importance
         return [
             "effort_score": 0.25,
             "avg_hr": 0.20,
@@ -362,6 +360,7 @@ struct ActivityIntentClassifier {
             "activity_type": 0.04
         ]
     }
+#endif
     
     // MARK: - Errors
     

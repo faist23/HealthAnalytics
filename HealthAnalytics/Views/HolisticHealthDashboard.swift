@@ -349,27 +349,29 @@ struct HealthMetrics {
     // MET Activity
     let weeklyMETMinutes: Double
     let metStatus: MetricStatus
-    
+
     // Training Balance
     let strengthPercentage: Double
     let trainingBalance: MetricStatus
-    
+
     // HRV
     let currentHRV: Double
     let hrvStatus: MetricStatus
-    
+    /// Personal 30-day HRV baseline (ms). Used by ResearchThresholdBar to show % deviation.
+    let hrvBaselineMs: Double?
+
     // Training Load
     let acwr: Double
     let loadStatus: MetricStatus
-    
+
     // Sleep
     let averageSleep: Double
     let sleepStatus: MetricStatus
-    
+
     // Readiness
     let readinessScore: Int
     let readinessStatus: MetricStatus
-    
+
     var metricsCount: Int {
         return 6  // Total number of metrics tracked
     }
@@ -392,10 +394,10 @@ enum MetricStatus {
     
     var color: Color {
         switch self {
-        case .excellent: return .green
-        case .good: return .blue
-        case .moderate: return .yellow
-        case .needsAttention: return .orange
+        case .excellent:      return .statusOptimal
+        case .good:           return .statusRest
+        case .moderate:       return .statusMonitoring
+        case .needsAttention: return .statusWarning
         }
     }
 }
@@ -412,6 +414,7 @@ enum MetricStatus {
                 trainingBalance: .good,
                 currentHRV: 68,
                 hrvStatus: .excellent,
+                hrvBaselineMs: 65,
                 acwr: 1.1,
                 loadStatus: .good,
                 averageSleep: 7.8,
@@ -433,6 +436,7 @@ enum MetricStatus {
                 trainingBalance: .needsAttention,
                 currentHRV: 52,
                 hrvStatus: .moderate,
+                hrvBaselineMs: 65,
                 acwr: 1.4,
                 loadStatus: .moderate,
                 averageSleep: 6.5,

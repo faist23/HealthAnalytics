@@ -9,6 +9,7 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import HealthKit
 import Combine
 
 @MainActor
@@ -22,13 +23,19 @@ class ReadinessRepository: ObservableObject {
     @Published private(set) var isAnalyzing = false
     
     // MARK: - Dependencies
-    
+
     private let readinessAnalyzer = ReadinessAnalyzer()
     private let riskCalculator = InjuryRiskCalculator()
     private let recommendationService = DailyRecommendationService()
     private let loadCalculator = TrainingLoadCalculator()
     private let recoveryService = RecoveryDecayService()
-    
+
+    // ML sub-services (moved from ReadinessViewModel per GEMINI.md mandate)
+    private let intentAwareService = EnhancedIntentAwareReadinessService()
+    private let trendDetector = TrendDetector()
+    private var trainedModels: [PerformancePredictor.TrainedModel] = []
+    private var lastMLTraining: Date?
+
     private var lastFingerprint: PredictionCache.DataFingerprint?
     private var lastAnalysisDate: Date?
     
@@ -45,9 +52,15 @@ class ReadinessRepository: ObservableObject {
         let trend: ReadinessAnalyzer.ReadinessScore.Trend
         let date: Date
         let intraDay: RecoveryDecayService.IntraDayReadiness
-        
+
         // RECONCILED MESSAGE: The single "Master Coach" advice
         let coachAdvice: String
+
+        // ML sub-service outputs (owned by Repository, not ViewModel)
+        let mlPrediction: PerformancePredictor.Prediction?
+        let mlFeatureWeights: PerformancePredictor.FeatureWeights?
+        let mlError: String?
+        let intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
     }
     
     // MARK: - Main Analysis Entry Point
@@ -77,16 +90,16 @@ class ReadinessRepository: ObservableObject {
     
     private func performFullAnalysis(modelContext: ModelContext, fingerprint: PredictionCache.DataFingerprint) async {
         isAnalyzing = true
-        
+
         print("🔄 ReadinessRepository: Starting unified analysis...")
-        
+
         do {
             // 1. Fetch data with STABLE calendar windows
             let calendar = Calendar.current
             let now = Date()
             let today = calendar.startOfDay(for: now)
             let baselineStart = calendar.date(byAdding: .day, value: -90, to: today)!
-            
+
             let workoutDescriptor = FetchDescriptor<StoredWorkout>(
                 predicate: #Predicate { $0.startDate >= baselineStart },
                 sortBy: [SortDescriptor(\.startDate)]
@@ -95,16 +108,23 @@ class ReadinessRepository: ObservableObject {
                 predicate: #Predicate { $0.date >= baselineStart },
                 sortBy: [SortDescriptor(\.date)]
             )
-            
+            let nutritionDescriptor = FetchDescriptor<StoredNutrition>(
+                predicate: #Predicate { $0.date >= baselineStart },
+                sortBy: [SortDescriptor(\.date)]
+            )
+
             let storedWorkouts = try modelContext.fetch(workoutDescriptor)
             let storedMetrics = try modelContext.fetch(metricDescriptor)
-            
+            let storedNutrition = try modelContext.fetch(nutritionDescriptor)
+            let intentLabels = try modelContext.fetch(FetchDescriptor<StoredIntentLabel>())
+
             // Convert data
             let workouts = storedWorkouts.map { WorkoutData(from: $0) }
+            let nutrition = storedNutrition.map { DailyNutrition(from: $0) }
             let hrvData = storedMetrics.filter { $0.type == "HRV" }.map { HealthDataPoint(date: $0.date, value: $0.value) }
             let rhrData = storedMetrics.filter { $0.type == "RHR" }.map { HealthDataPoint(date: $0.date, value: $0.value) }
             let sleepData = storedMetrics.filter { $0.type == "Sleep" }.map { HealthDataPoint(date: $0.date, value: $0.value) }
-            
+
             // 2. Run Individual Services
             // A: Base Readiness Score
             guard let baseReadiness = readinessAnalyzer.analyzeReadiness(
@@ -117,15 +137,14 @@ class ReadinessRepository: ObservableObject {
             ) else {
                 throw NSError(domain: "ReadinessRepository", code: 1, userInfo: [NSLocalizedDescriptionKey: "Insufficient data"])
             }
-            
+
             // B: Injury Risk
             let trainingLoad = loadCalculator.calculateTrainingLoad(
                 healthKitWorkouts: workouts,
                 stravaActivities: [],
                 stepData: []
             )
-            
-            let trendDetector = TrendDetector()
+
             let trends = trendDetector.detectTrends(
                 restingHRData: rhrData,
                 hrvData: hrvData,
@@ -134,13 +153,13 @@ class ReadinessRepository: ObservableObject {
                 weightData: [],
                 workouts: workouts
             )
-            
+
             let riskAssessment = riskCalculator.assessInjuryRisk(
                 trainingLoad: trainingLoad,
-                recoveryStatus: [], // Will be refined in future to pass insights
+                recoveryStatus: [],
                 trends: trends
             )
-            
+
             // C: HRV-Guided Recommendation
             guard let hrvRec = recommendationService.generateDailyRecommendation(
                 hrvData: hrvData,
@@ -151,14 +170,14 @@ class ReadinessRepository: ObservableObject {
             ) else {
                 throw NSError(domain: "ReadinessRepository", code: 2, userInfo: [NSLocalizedDescriptionKey: "Recommendation failed"])
             }
-            
+
             // 3. THE MASTER COACH: Reconcile Advice
             let reconciledAdvice = reconcileAdvice(
                 readiness: baseReadiness,
                 risk: riskAssessment,
                 hrvRec: hrvRec
             )
-            
+
             let reconciledRecommendation = DailyRecommendationService.DailyRecommendation(
                 status: hrvRec.status,
                 headline: (riskAssessment.riskLevel == .high || riskAssessment.riskLevel == .veryHigh) ? "RESTRICTED: " + hrvRec.headline : hrvRec.headline,
@@ -168,16 +187,98 @@ class ReadinessRepository: ObservableObject {
                 confidence: hrvRec.confidence,
                 reasoning: hrvRec.reasoning
             )
-            
+
             // 4. Intra-Day Recovery Decay (Dynamic Score)
             let intraDay = recoveryService.calculateIntraDayReadiness(
                 baselineScore: baseReadiness.score,
                 todayWorkouts: workouts
             )
-            
-            // 5. Update Published State
+
+            // 5. ML Sub-services (moved from ReadinessViewModel per GEMINI.md)
+            //    5a. Train PerformancePredictor (cache models 7 days)
+            let primaryActivity = determinePrimaryActivity(from: workouts)
+            let readinessService = PredictiveReadinessService()
+            var mlError: String? = nil
+
+            let shouldRetrain = trainedModels.isEmpty
+                || lastMLTraining == nil
+                || Date().timeIntervalSince(lastMLTraining!) > 604_800 // 7 days
+
+            if shouldRetrain {
+                do {
+                    // Training is CPU-bound CreateML work — run off the main actor.
+                    // Prediction (< 1ms inference) stays on main actor.
+                    let capturedSleep = sleepData
+                    let capturedHRV = hrvData
+                    let capturedRHR = rhrData
+                    let capturedWorkouts = workouts
+                    let capturedNutrition = nutrition
+                    trainedModels = try await Task.detached(priority: .utility) {
+                        try await PerformancePredictor.train(
+                            sleepData: capturedSleep,
+                            hrvData: capturedHRV,
+                            restingHRData: capturedRHR,
+                            healthKitWorkouts: capturedWorkouts,
+                            stravaActivities: [],
+                            nutritionData: capturedNutrition,
+                            readinessService: readinessService
+                        )
+                    }.value
+                    lastMLTraining = Date()
+                    print("✅ ReadinessRepository: Trained \(trainedModels.count) ML model(s)")
+                } catch {
+                    mlError = error.localizedDescription
+                    print("❌ ReadinessRepository: ML training failed: \(error)")
+                }
+            }
+
+            //    5b. Predict with uncertainty
+            var mlPrediction: PerformancePredictor.Prediction? = nil
+            var mlFeatureWeights: PerformancePredictor.FeatureWeights? = nil
+
+            if !trainedModels.isEmpty {
+                let acwr = readinessService.calculateReadiness(
+                    stravaActivities: [],
+                    healthKitWorkouts: workouts
+                ).acwr
+                let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
+
+                if let sleep = sleepData.first(where: { calendar.isDate($0.date, inSameDayAs: yesterday) })?.value,
+                   let hrv = hrvData.first(where: { calendar.isDate($0.date, inSameDayAs: today) })?.value,
+                   let rhr = rhrData.first(where: { calendar.isDate($0.date, inSameDayAs: today) })?.value {
+                    let recentCarbs = nutrition.first(where: { calendar.isDate($0.date, inSameDayAs: yesterday) })?.totalCarbs ?? 250.0
+                    do {
+                        let result = try PerformancePredictor.predictWithUncertainty(
+                            models: trainedModels,
+                            activityType: primaryActivity,
+                            sleepHours: sleep,
+                            hrvMs: hrv,
+                            restingHR: rhr,
+                            acwr: acwr,
+                            carbs: recentCarbs
+                        )
+                        mlPrediction = result.prediction
+                        mlFeatureWeights = trainedModels.first(where: { $0.activityType == result.prediction.activityType })?.featureWeights
+                    } catch {
+                        mlError = mlError ?? error.localizedDescription
+                    }
+                } else {
+                    mlError = mlError ?? "Missing recent sleep, HRV, or resting HR data"
+                }
+            }
+
+            //    5c. Intent-Aware Readiness
+            let intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment? = intentLabels.isEmpty ? nil :
+                intentAwareService.calculateEnhancedReadiness(
+                    workouts: storedWorkouts,
+                    labels: intentLabels,
+                    sleep: sleepData,
+                    hrv: hrvData
+                )
+
+            // 6. Update Published State
             self.currentReadiness = UnifiedReadiness(
-                score: intraDay.currentScore, // Use the dynamic score
+                score: intraDay.currentScore,
                 level: mapScoreToLevel(intraDay.currentScore),
                 recommendation: reconciledRecommendation,
                 injuryRisk: riskAssessment,
@@ -185,21 +286,41 @@ class ReadinessRepository: ObservableObject {
                 trend: baseReadiness.trend,
                 date: now,
                 intraDay: intraDay,
-                coachAdvice: reconciledAdvice
+                coachAdvice: reconciledAdvice,
+                mlPrediction: mlPrediction,
+                mlFeatureWeights: mlFeatureWeights,
+                mlError: mlError,
+                intentAwareAssessment: intentAwareAssessment
             )
-            
+
             self.intraDayReadiness = intraDay
-            
             self.lastFingerprint = fingerprint
             self.lastAnalysisDate = now
-            
+
             print("✅ ReadinessRepository: Unified Analysis Complete. Score: \(baseReadiness.score)")
-            
+
         } catch {
             print("❌ ReadinessRepository Error: \(error)")
         }
-        
+
         isAnalyzing = false
+    }
+
+    // MARK: - Primary Activity Detection (moved from ReadinessViewModel)
+
+    private func determinePrimaryActivity(from workouts: [WorkoutData]) -> String {
+        let calendar = Calendar.current
+        let ninetyDaysAgo = calendar.date(byAdding: .day, value: -90, to: Date()) ?? Date()
+        var counts: [String: Int] = [:]
+        for workout in workouts where workout.startDate >= ninetyDaysAgo {
+            switch workout.workoutType {
+            case .cycling: counts["Ride", default: 0] += 1
+            case .running:  counts["Run",  default: 0] += 1
+            case .swimming: counts["Swim", default: 0] += 1
+            default: break
+            }
+        }
+        return counts.max(by: { $0.value < $1.value })?.key ?? "Ride"
     }
     
     // MARK: - Reconciler
@@ -241,15 +362,43 @@ class ReadinessRepository: ObservableObject {
     
     private func calculateFingerprint(context: ModelContext) throws -> PredictionCache.DataFingerprint {
         let workoutCount = try context.fetchCount(FetchDescriptor<StoredWorkout>())
-        let sleepCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "Sleep" }))
-        let hrvCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "HRV" }))
-        let rhrCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "RHR" }))
-        
+        let sleepCount   = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "Sleep" }))
+        let hrvCount     = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "HRV" }))
+        let rhrCount     = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "RHR" }))
+
+        // Fetch most-recent date per signal to detect new records that arrive without changing counts.
+        var workoutLatestDesc = FetchDescriptor<StoredWorkout>(sortBy: [SortDescriptor(\.startDate, order: .reverse)])
+        workoutLatestDesc.fetchLimit = 1
+
+        var sleepLatestDesc = FetchDescriptor<StoredHealthMetric>(
+            predicate: #Predicate { $0.type == "Sleep" },
+            sortBy: [SortDescriptor(\.date, order: .reverse)])
+        sleepLatestDesc.fetchLimit = 1
+
+        var hrvLatestDesc = FetchDescriptor<StoredHealthMetric>(
+            predicate: #Predicate { $0.type == "HRV" },
+            sortBy: [SortDescriptor(\.date, order: .reverse)])
+        hrvLatestDesc.fetchLimit = 1
+
+        var rhrLatestDesc = FetchDescriptor<StoredHealthMetric>(
+            predicate: #Predicate { $0.type == "RHR" },
+            sortBy: [SortDescriptor(\.date, order: .reverse)])
+        rhrLatestDesc.fetchLimit = 1
+
+        let latestWorkout = try context.fetch(workoutLatestDesc).first?.startDate
+        let latestSleep   = try context.fetch(sleepLatestDesc).first?.date
+        let latestHRV     = try context.fetch(hrvLatestDesc).first?.date
+        let latestRHR     = try context.fetch(rhrLatestDesc).first?.date
+
         return PredictionCache.DataFingerprint(
-            workoutCount: workoutCount,
-            sleepCount: sleepCount,
-            hrvCount: hrvCount,
-            rhrCount: rhrCount
+            workoutCount:      workoutCount,
+            sleepCount:        sleepCount,
+            hrvCount:          hrvCount,
+            rhrCount:          rhrCount,
+            latestWorkoutDate: latestWorkout,
+            latestSleepDate:   latestSleep,
+            latestHRVDate:     latestHRV,
+            latestRHRDate:     latestRHR
         )
     }
     

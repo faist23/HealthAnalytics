@@ -10,7 +10,9 @@
 //
 
 import Foundation
+#if canImport(CreateML)
 import CreateML
+#endif
 import CoreML
 import HealthKit
 import TabularData
@@ -347,25 +349,25 @@ struct PerformancePredictor {
         rows:         [TrainingRow],
         activityType: String
     ) async throws -> TrainedModel {
-        
+#if canImport(CreateML)
         // ── Build the MLDataTable with 5 features ──
         let sleepCol:  [Double] = rows.map { $0.sleepHours  }
         let hrvCol:    [Double] = rows.map { $0.hrvMs       }
         let rhrCol:    [Double] = rows.map { $0.restingHR   }
-        let acwrCol:   [Double] = rows.map { $0.acwr        } // NEW
-        let carbsCol:  [Double] = rows.map { $0.carbs       } // NEW
+        let acwrCol:   [Double] = rows.map { $0.acwr        }
+        let carbsCol:  [Double] = rows.map { $0.carbs       }
         let perfCol:   [Double] = rows.map { $0.performance }
-        
+
         var df = DataFrame()
         df.append(column: Column(name: "sleep_hours", contents: sleepCol))
         df.append(column: Column(name: "hrv_ms", contents: hrvCol))
         df.append(column: Column(name: "resting_hr", contents: rhrCol))
-        df.append(column: Column(name: "acwr", contents: acwrCol))    // NEW
-        df.append(column: Column(name: "carbs", contents: carbsCol))  // NEW
+        df.append(column: Column(name: "acwr", contents: acwrCol))
+        df.append(column: Column(name: "carbs", contents: carbsCol))
         df.append(column: Column(name: "performance", contents: perfCol))
-        
+
         let featureColumns = ["sleep_hours", "hrv_ms", "resting_hr", "acwr", "carbs"]
-        
+
         // ── Train Linear first ──
         let linear = try MLLinearRegressor(
             trainingData: df,
@@ -373,17 +375,17 @@ struct PerformancePredictor {
             featureColumns: featureColumns
         )
         let linearRMSE = linear.trainingMetrics.rootMeanSquaredError
-        
+
         // ── Compute target variance to judge whether linear is good enough ──
         let perfValues = rows.map { $0.performance }
         let mean       = perfValues.reduce(0, +) / Double(perfValues.count)
         let variance   = perfValues.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(perfValues.count)
         let stdDev     = sqrt(variance)
-        
+
         // If RMSE > 60 % of stdDev the linear model explains very little; try forest
         var chosenModel: MLModel
         var chosenRMSE  = linearRMSE
-        
+
         if linearRMSE > stdDev * 0.6 {
             print("   ⚡ Linear RMSE (\(String(format: "%.2f", linearRMSE))) > 60% of stdDev — trying RandomForest")
             let forest = try MLRandomForestRegressor(
@@ -392,7 +394,7 @@ struct PerformancePredictor {
                 featureColumns: featureColumns
             )
             let forestRMSE = forest.trainingMetrics.rootMeanSquaredError
-            
+
             if forestRMSE < linearRMSE {
                 chosenModel = forest.model
                 chosenRMSE  = forestRMSE
@@ -405,10 +407,10 @@ struct PerformancePredictor {
             chosenModel = linear.model
             print("   ✅ Linear sufficient (RMSE \(String(format: "%.2f", linearRMSE)), stdDev \(String(format: "%.2f", stdDev)))")
         }
-        
+
         // ── Extract approximate feature weights via single-feature variance ──
         let weights = computeFeatureWeights(rows: rows)
-        
+
         return TrainedModel(
             model:             chosenModel,
             activityType:      activityType,
@@ -417,6 +419,9 @@ struct PerformancePredictor {
             featureWeights:    weights,
             trainedAt:         Date()
         )
+#else
+        throw PredictorError.trainingFailed("Model training requires macOS")
+#endif
     }
     
     private static func buildNutritionLookup(_ data: [DailyNutrition], calendar: Calendar) -> [Date: Double] {

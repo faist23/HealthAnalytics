@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import CreateML
 import CoreML
 
 extension PerformancePredictor {

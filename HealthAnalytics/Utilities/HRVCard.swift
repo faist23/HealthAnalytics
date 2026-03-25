@@ -72,7 +72,7 @@ struct HRVCard: View {
                         .font(.headline)
                     Text(period.displayName)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.textSecondary)
                 }
                 
                 Spacer()
@@ -82,10 +82,10 @@ struct HRVCard: View {
                     Text("\(currentValue)")
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.statusOptimal)
                     Text("ms")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
             
@@ -97,15 +97,15 @@ struct HRVCard: View {
                             x: .value("Date", point.date),
                             y: .value("HRV", point.value)
                         )
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.statusOptimal)
                         .lineStyle(StrokeStyle(lineWidth: 2))
                         .interpolationMethod(.catmullRom)
-                        
+
                         AreaMark(
                             x: .value("Date", point.date),
                             y: .value("HRV", point.value)
                         )
-                        .foregroundStyle(.green.opacity(0.08))
+                        .foregroundStyle(Color.statusOptimal.opacity(0.08))
                     }
                 }
                 .chartYAxis {
@@ -115,7 +115,7 @@ struct HRVCard: View {
                                 Text("\(Int(v))").font(.caption2)
                             }
                         }
-                        AxisGridLine().foregroundStyle(.gray.opacity(0.12))
+                        AxisGridLine().foregroundStyle(Color.textTertiary.opacity(0.12))
                     }
                 }
                 // Use consistent smart axis logic matching other charts
@@ -145,22 +145,22 @@ struct HRVCard: View {
             HStack {
                 Text("Avg: \(averageValue) ms")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                
+                    .foregroundStyle(Color.textSecondary)
+
                 Spacer()
-                
+
                 if trend > 2 {
                     Text("↑ improving")
                         .font(.caption)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.statusOptimal)
                 } else if trend < -2 {
                     Text("↓ declining")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Color.statusWarning)
                 } else if dailyData.count >= 14 {
                     Text("→ stable")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
         }

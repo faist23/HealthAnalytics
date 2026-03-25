@@ -46,7 +46,7 @@ struct NutritionView: View {
                                     x: .value("Date", day.date, unit: .day),
                                     y: .value("Calories", day.totalCalories)
                                 )
-                                .foregroundStyle(.orange.gradient)
+                                .foregroundStyle(Color.statusMonitoring.gradient)
                             }
                         }
                         
@@ -125,7 +125,7 @@ struct SummaryCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
             
             HStack(alignment: .lastTextBaseline, spacing: 2) {
                 Text(value)
@@ -194,7 +194,7 @@ struct MacroBreakdownChart: View {
                 RuleMark(
                     x: .value("Selected Date", selectedDate, unit: .day)
                 )
-                .foregroundStyle(.gray.opacity(0.3))
+                .foregroundStyle(Color.textTertiary.opacity(0.3))
                 .offset(yStart: -10)
                 .zIndex(-1)
                 .annotation(
@@ -220,9 +220,9 @@ struct MacroBreakdownChart: View {
                                 Text(day.date.formatted(date: .abbreviated, time: .omitted))
                                     .font(.caption.bold())
                                 HStack(spacing: 8) {
-                                    Text("\(pPct)% P").foregroundStyle(.blue)
-                                    Text("\(cPct)% C").foregroundStyle(.green)
-                                    Text("\(fPct)% F").foregroundStyle(.purple)
+                                    Text("\(pPct)% P").foregroundStyle(Color.accent)
+                                    Text("\(cPct)% C").foregroundStyle(Color.statusOptimal)
+                                    Text("\(fPct)% F").foregroundStyle(Color.statusRest)
                                 }
                                 .font(.caption2.bold())
                             }
@@ -288,7 +288,7 @@ struct NutritionSummaryCard: View {
                 
                 Text("\(completeDays)/\(data.count) days logged")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.textSecondary)
             }
             
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
@@ -312,7 +312,7 @@ struct MacroBox: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(value)
@@ -321,7 +321,7 @@ struct MacroBox: View {
 
                 Text(unit)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.textSecondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -351,18 +351,18 @@ struct MacroChartCard: View {
 
             Chart {
                 ForEach(recentData) { day in
-                    LineMark(x: .value("Date", day.date), y: .value("Grams", day.totalProtein), series: .value("Macro", "Protein")).foregroundStyle(.red).symbol(.circle)
-                    LineMark(x: .value("Date", day.date), y: .value("Grams", day.totalCarbs), series: .value("Macro", "Carbs")).foregroundStyle(.green).symbol(.square)
-                    LineMark(x: .value("Date", day.date), y: .value("Grams", day.totalFat), series: .value("Macro", "Fat")).foregroundStyle(.orange).symbol(.triangle)
+                    LineMark(x: .value("Date", day.date), y: .value("Grams", day.totalProtein), series: .value("Macro", "Protein")).foregroundStyle(Color.statusWarning).symbol(.circle)
+                    LineMark(x: .value("Date", day.date), y: .value("Grams", day.totalCarbs), series: .value("Macro", "Carbs")).foregroundStyle(Color.statusOptimal).symbol(.square)
+                    LineMark(x: .value("Date", day.date), y: .value("Grams", day.totalFat), series: .value("Macro", "Fat")).foregroundStyle(Color.statusMonitoring).symbol(.triangle)
                 }
             }
             .frame(height: 200)
             .chartYAxis { AxisMarks(position: .leading) }
             
             HStack(spacing: 20) {
-                LegendItem(color: .red, label: "Protein")
-                LegendItem(color: .green, label: "Carbs")
-                LegendItem(color: .orange, label: "Fat")
+                LegendItem(color: .statusWarning, label: "Protein")
+                LegendItem(color: .statusOptimal, label: "Carbs")
+                LegendItem(color: .statusMonitoring, label: "Fat")
             }
             .font(.caption)
         }
@@ -415,10 +415,10 @@ struct DailyNutritionRow: View {
                 if !nutrition.isComplete {
                     Text("Incomplete")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.statusMonitoring)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.15))
+                        .background(Color.statusMonitoring.opacity(0.15))
                         .clipShape(Capsule())
                 }
             }
@@ -433,7 +433,7 @@ struct DailyNutritionRow: View {
 
             Text(nutrition.formattedMacros)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
         }
         .padding(14)
         .background(
@@ -457,7 +457,7 @@ struct EmptyNutritionView: View {
         VStack(spacing: 15) {
             Image(systemName: "fork.knife")
                 .font(.system(size: 60))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
             
             Text("No Nutrition Data")
                 .font(.title3)
@@ -465,7 +465,7 @@ struct EmptyNutritionView: View {
             
             Text("Make sure you're logging meals in MyFitnessPal or LoseIt and syncing to Apple Health.")
                 .font(.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
         }

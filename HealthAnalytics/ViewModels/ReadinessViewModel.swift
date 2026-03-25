@@ -48,12 +48,11 @@ class ReadinessViewModel: ObservableObject {
     }
 
     private func updateFromUnifiedReadiness(_ unified: ReadinessRepository.UnifiedReadiness) {
-        // Map Repository state to ViewModel properties
         self.readinessScore = ReadinessAnalyzer.ReadinessScore(
             score: unified.score,
             trend: unified.trend,
             recommendation: unified.coachAdvice,
-            confidence: .high, // Will be refined
+            confidence: .high,
             breakdown: unified.breakdown,
             trajectory: []
         )
@@ -61,6 +60,12 @@ class ReadinessViewModel: ObservableObject {
         self.dailyRecommendation = unified.recommendation
         self.injuryRiskAssessment = unified.injuryRisk
         self.formIndicator = generateFormIndicator(from: self.readinessScore!)
+
+        // ML outputs — now owned by ReadinessRepository
+        self.mlPrediction = unified.mlPrediction
+        self.mlFeatureWeights = unified.mlFeatureWeights
+        self.mlError = unified.mlError
+        self.intentAwareAssessment = unified.intentAwareAssessment
     }
     
     // Training Load (moved from InsightsViewModel)
@@ -72,12 +77,9 @@ class ReadinessViewModel: ObservableObject {
     @Published var dailyTSSData: [DailyTSSData] = []
     @Published var selectedPeriod: TimePeriod = .quarter
 
-    // ML Training State
-    private var trainedModels: [PerformancePredictor.TrainedModel] = []
-    private let intentAwareService = EnhancedIntentAwareReadinessService()
+    // Pattern Discovery State
     private var cachedPatterns: [PerformancePatternAnalyzer.PerformanceWindow]?
     private var lastPatternDiscovery: Date?
-    private var lastMLTraining: Date?
     
     // Data fingerprint for cache checking
     private var lastDataFingerprint: (workouts: Int, sleep: Int, hrv: Int, rhr: Int)?
@@ -237,21 +239,9 @@ class ReadinessViewModel: ObservableObject {
             // PROFILE: Unified Readiness Analysis (Master Coach)
             await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
             
-            // PROFILE: Intent Labels Fetch
-            let intentLabels = try await PerformanceProfiler.measureAsync("🏷️ Intent Labels Fetch") {
-                try await fetchIntentLabels(modelContext: modelContext)
-            }
-            
-            // PROFILE: Intent-Aware Readiness
-            PerformanceProfiler.measure("💡 Intent-Aware Readiness") {
-                calculateIntentAwareReadiness(
-                    workouts: storedWorkouts,
-                    labels: intentLabels,
-                    sleep: sleepData,
-                    hrv: hrvData
-                )
-            }
-            
+            // Intent labels still needed locally for calculateTrainingLoad()
+            let intentLabels = (try? modelContext.fetch(FetchDescriptor<StoredIntentLabel>())) ?? []
+
             // PROFILE: Pattern Discovery (sample recent data only)
             PerformanceProfiler.measure("🔍 Pattern Discovery") {
                 let shouldRediscover = cachedPatterns == nil ||
@@ -289,40 +279,8 @@ class ReadinessViewModel: ObservableObject {
                 workoutSequences = []
             }
             
-            // PROFILE: ML Training (cache models)
-            await PerformanceProfiler.measureAsync("🤖 ML Training") {
-                // Only retrain once per week
-                let shouldRetrain = trainedModels.isEmpty ||
-                    lastMLTraining == nil ||
-                    Date().timeIntervalSince(lastMLTraining!) > 604800 // 7 days
-                
-                if shouldRetrain {
-                    print("🤖 Training ML models...")
-                    await trainMLModelsIfNeeded(
-                        sleepData: sleepData,
-                        hrvData: hrvData,
-                        rhrData: rhrData,
-                        workouts: workouts,
-                        nutrition: nutrition
-                    )
-                    lastMLTraining = Date()
-                } else {
-                    print("✅ ML models already trained (\(trainedModels.count) models)")
-                }
-            }
-            
-            // PROFILE: ML Prediction
-            PerformanceProfiler.measure("🔮 ML Prediction") {
-                makePredictionWithUncertainty(
-                    activityType: primaryActivity,
-                    sleepData: sleepData,
-                    hrvData: hrvData,
-                    rhrData: rhrData,
-                    workouts: workouts,
-                    nutrition: nutrition
-                )
-            }
-            
+            // ML training + prediction now handled by ReadinessRepository (GEMINI.md mandate)
+
             // PROFILE: Temporal Analysis
             PerformanceProfiler.measure("🕐 Temporal Analysis") {
                 let temporalService = TemporalModelingService()
@@ -379,31 +337,7 @@ class ReadinessViewModel: ObservableObject {
         isLoading = false
     }
     
-    func calculateIntentAwareReadiness(
-        workouts: [StoredWorkout],
-        labels: [StoredIntentLabel],
-        sleep: [HealthDataPoint],
-        hrv: [HealthDataPoint]
-    ) {
-        // Only calculate if we have labeled workouts
-        guard !labels.isEmpty else {
-            intentAwareAssessment = nil
-            return
-        }
-        
-        intentAwareAssessment = intentAwareService.calculateEnhancedReadiness(
-            workouts: workouts,
-            labels: labels,
-            sleep: sleep,
-            hrv: hrv
-        )
-    }
-    
-    // Helper to fetch labels
-    private func fetchIntentLabels(modelContext: ModelContext) async throws -> [StoredIntentLabel] {
-        let descriptor = FetchDescriptor<StoredIntentLabel>()
-        return try modelContext.fetch(descriptor)
-    }
+    // calculateIntentAwareReadiness / fetchIntentLabels removed — logic moved to ReadinessRepository
     
     // MARK: - Smart Activity Detection
     
@@ -440,112 +374,7 @@ class ReadinessViewModel: ObservableObject {
         return counts.max(by: { $0.value < $1.value })?.key ?? "Ride"
     }
     
-    // MARK: - ML Training & Prediction
-    
-    private func trainMLModelsIfNeeded(
-        sleepData: [HealthDataPoint],
-        hrvData: [HealthDataPoint],
-        rhrData: [HealthDataPoint],
-        workouts: [WorkoutData],
-        nutrition: [DailyNutrition]
-    ) async {
-        guard trainedModels.isEmpty else {
-            print("✅ ML models already trained, skipping")
-            return
-        }
-        
-        print("🤖 Training ML models...")
-        
-        let readinessService = PredictiveReadinessService()
-        
-        do {
-            trainedModels = try await PerformancePredictor.train(
-                sleepData: sleepData,
-                hrvData: hrvData,
-                restingHRData: rhrData,
-                healthKitWorkouts: workouts,
-                stravaActivities: [],
-                nutritionData: nutrition,
-                readinessService: readinessService
-            )
-            
-            print("✅ Trained \(trainedModels.count) ML model(s)")
-            for model in trainedModels {
-                print("   • \(model.activityType): \(model.sampleCount) samples, RMSE: \(String(format: "%.2f", model.rMeanSquaredError))")
-            }
-            
-        } catch {
-            mlError = error.localizedDescription
-            print("❌ ML training failed: \(error)")
-        }
-    }
-    
-    private func makePredictionWithUncertainty(
-        activityType: String,
-        sleepData: [HealthDataPoint],
-        hrvData: [HealthDataPoint],
-        rhrData: [HealthDataPoint],
-        workouts: [WorkoutData],
-        nutrition: [DailyNutrition]
-    ) {
-        guard !trainedModels.isEmpty else {
-            mlError = "Not enough data to train ML models yet. Need 10+ workouts with complete sleep, HRV, and RHR data."
-            return
-        }
-        
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
-        
-        // Get most recent metrics
-        guard let sleep = sleepData.first(where: { calendar.isDate($0.date, inSameDayAs: yesterday) })?.value,
-              let hrv = hrvData.first(where: { calendar.isDate($0.date, inSameDayAs: today) })?.value,
-              let rhr = rhrData.first(where: { calendar.isDate($0.date, inSameDayAs: today) })?.value else {
-            mlError = "Missing recent sleep, HRV, or resting HR data"
-            return
-        }
-        
-        // Calculate ACWR
-        let readinessService = PredictiveReadinessService()
-        let assessment = readinessService.calculateReadiness(
-            stravaActivities: [],
-            healthKitWorkouts: workouts
-        )
-        
-        // Get recent carbs
-        let recentCarbs = nutrition.first(where: { calendar.isDate($0.date, inSameDayAs: yesterday) })?.totalCarbs ?? 250.0
-        
-        do {
-            // Get prediction with uncertainty
-            let predictionWithUncertainty = try PerformancePredictor.predictWithUncertainty(
-                models: trainedModels,
-                activityType: activityType,
-                sleepHours: sleep,
-                hrvMs: hrv,
-                restingHR: rhr,
-                acwr: assessment.acwr,
-                carbs: recentCarbs
-            )
-            
-            mlPrediction = predictionWithUncertainty.prediction
-            
-            if let usedModel = trainedModels.first(where: { $0.activityType == predictionWithUncertainty.prediction.activityType }) {
-                mlFeatureWeights = usedModel.featureWeights
-            }
-            
-            // Log the uncertainty
-            if let _ = predictionWithUncertainty.predictionInterval {
-                print("✅ ML Prediction: \(predictionWithUncertainty.formattedPrediction)")
-                print("   Uncertainty: \(predictionWithUncertainty.modelUncertainty.description)")
-            } else {
-                print("✅ ML Prediction: \(String(format: "%.1f", predictionWithUncertainty.prediction.predictedPerformance)) \(predictionWithUncertainty.prediction.unit)")
-            }
-            
-        } catch {
-            mlError = error.localizedDescription
-            print("❌ ML prediction failed: \(error)")
-        }
-    }
+    // trainMLModelsIfNeeded / makePredictionWithUncertainty removed — logic moved to ReadinessRepository
     
     // MARK: - Daily Instruction
     

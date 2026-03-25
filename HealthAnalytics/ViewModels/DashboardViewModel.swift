@@ -172,11 +172,18 @@ class DashboardViewModel: ObservableObject {
             }
         }()
         
+        // HRV baseline: 30-day personal average (used by ResearchThresholdBar % deviation)
+        let hrvBaselineMs: Double? = {
+            let thirtyDayData = hrvData.suffix(30).map({ $0.value })
+            guard thirtyDayData.count >= 7 else { return nil }
+            return thirtyDayData.reduce(0, +) / Double(thirtyDayData.count)
+        }()
+
         let hrvStatus: MetricStatus = {
             let recentHRVData = hrvData.suffix(7).map({ $0.value })
             guard !recentHRVData.isEmpty else { return .needsAttention }
             let recentHRV = recentHRVData.reduce(0, +) / Double(recentHRVData.count)
-            
+
             if recentHRV >= 60 {
                 return .excellent
             } else if recentHRV >= 45 {
@@ -233,6 +240,7 @@ class DashboardViewModel: ObservableObject {
             trainingBalance: trainingBalanceStatus,
             currentHRV: hrvData.last?.value ?? 0,
             hrvStatus: hrvStatus,
+            hrvBaselineMs: hrvBaselineMs,
             acwr: load?.acuteChronicRatio ?? 1.0,
             loadStatus: loadStatus,
             averageSleep: sleepData.suffix(7).map({ $0.value }).reduce(0, +) / Double(max(sleepData.suffix(7).count, 1)),

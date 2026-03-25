@@ -39,10 +39,14 @@ final class PredictionCache {
         let descriptor = FetchDescriptor<CachedAnalysis>()
         if let cached = try? modelContext.fetch(descriptor).last {
             self.lastFingerprint = DataFingerprint(
-                workoutCount: cached.workoutCount,
-                sleepCount: cached.sleepCount,
-                hrvCount: cached.hrvCount,
-                rhrCount: cached.rhrCount
+                workoutCount:      cached.workoutCount,
+                sleepCount:        cached.sleepCount,
+                hrvCount:          cached.hrvCount,
+                rhrCount:          cached.rhrCount,
+                latestWorkoutDate: cached.latestWorkoutDate,
+                latestSleepDate:   cached.latestSleepDate,
+                latestHRVDate:     cached.latestHRVDate,
+                latestRHRDate:     cached.latestRHRDate
             )
         }
     }
@@ -50,14 +54,22 @@ final class PredictionCache {
     // MARK: - Cache operations
     
     struct DataFingerprint: Equatable {
-        let workoutCount:  Int
-        let sleepCount:    Int
-        let hrvCount:      Int
-        let rhrCount:      Int
+        let workoutCount:       Int
+        let sleepCount:         Int
+        let hrvCount:           Int
+        let rhrCount:           Int
+        // Max-date fields detect new records that don't change counts
+        let latestWorkoutDate:  Date?
+        let latestSleepDate:    Date?
+        let latestHRVDate:      Date?
+        let latestRHRDate:      Date?
     }
-    
+
     static func fingerprint(workoutCount: Int, sleepCount: Int, hrvCount: Int, rhrCount: Int) -> DataFingerprint {
-        DataFingerprint(workoutCount: workoutCount, sleepCount: sleepCount, hrvCount: hrvCount, rhrCount: rhrCount)
+        DataFingerprint(workoutCount: workoutCount, sleepCount: sleepCount,
+                        hrvCount: hrvCount, rhrCount: rhrCount,
+                        latestWorkoutDate: nil, latestSleepDate: nil,
+                        latestHRVDate: nil, latestRHRDate: nil)
     }
     
     func isUpToDate(fingerprint: DataFingerprint) -> Bool {

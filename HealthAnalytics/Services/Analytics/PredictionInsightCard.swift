@@ -27,7 +27,7 @@ struct PredictionInsightCard: View {
                         .font(.headline)
                     Text("Trained on your workout history")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.textSecondary)
                 }
                 Spacer()
                 ConfidenceBadge(confidence: prediction.confidence)
@@ -44,10 +44,10 @@ struct PredictionInsightCard: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(prediction.unit)
                         .font(.title2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.textSecondary)
                     Text("predicted \(prediction.activityType.lowercased())")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
 
@@ -57,16 +57,16 @@ struct PredictionInsightCard: View {
             Text("What matters most today")
                 .font(.subheadline)
                 .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
             VStack(spacing: 10) {
-                FeatureBar(label: "Sleep",      value: weights.sleep,     color: .blue,   detail: formatSleep(prediction.inputs.sleepHours))
-                FeatureBar(label: "HRV",        value: weights.hrv,       color: .green,  detail: "\(Int(prediction.inputs.hrvMs)) ms")
-                FeatureBar(label: "Resting HR", value: weights.restingHR, color: .red,    detail: "\(Int(prediction.inputs.restingHR)) bpm")
-                FeatureBar(label: "Fatigue",    value: weights.acwr,      color: .orange, detail: String(format: "%.2f ACR", prediction.inputs.acwr))
-                FeatureBar(label: "Fueling",    value: weights.carbs,     color: .purple, detail: "\(Int(prediction.inputs.carbs))g Carbs")
+                FeatureBar(label: "Sleep",      value: weights.sleep,     color: .accent,          detail: formatSleep(prediction.inputs.sleepHours))
+                FeatureBar(label: "HRV",        value: weights.hrv,       color: .statusOptimal,   detail: "\(Int(prediction.inputs.hrvMs)) ms")
+                FeatureBar(label: "Resting HR", value: weights.restingHR, color: .statusWarning,   detail: "\(Int(prediction.inputs.restingHR)) bpm")
+                FeatureBar(label: "Fatigue",    value: weights.acwr,      color: .statusMonitoring, detail: String(format: "%.2f ACR", prediction.inputs.acwr))
+                FeatureBar(label: "Fueling",    value: weights.carbs,     color: .statusRest,      detail: "\(Int(prediction.inputs.carbs))g Carbs")
             }
 
             // ── Dominant-factor callout ──
@@ -92,7 +92,7 @@ struct PredictionInsightCard: View {
         let isGood = prediction.unit == "W"
             ? prediction.predictedPerformance > 150
             : prediction.predictedPerformance > 5.0
-        return isGood ? .green : .orange
+        return isGood ? .statusOptimal : .statusWarning
     }
 
     private func formatSleep(_ hours: Double) -> String {
@@ -120,9 +120,9 @@ private struct ConfidenceBadge: View {
 
     private var badgeColor: Color {
         switch confidence {
-        case .high:   return .green
-        case .medium: return .blue
-        case .low:    return .orange
+        case .high:   return .statusOptimal
+        case .medium: return .statusRest
+        case .low:    return .statusWarning
         }
     }
 }
@@ -144,7 +144,7 @@ private struct FeatureBar: View {
                 Spacer()
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.textSecondary)
                 Text("\(Int(value * 100))%")
                     .font(.caption)
                     .fontWeight(.bold)
@@ -176,11 +176,11 @@ private struct DominantFactorBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "lightbulb.fill")
-                .foregroundStyle(.yellow)
+                .foregroundStyle(Color.statusMonitoring)
 
             Text("\(dominant) is your biggest lever today")
                 .font(.subheadline)
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color.textPrimary)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -200,14 +200,14 @@ struct PredictionUnavailableCard: View {
         VStack(spacing: 12) {
             Image(systemName: "brain.fill")
                 .font(.system(size: 36))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
 
             Text("Prediction Unavailable")
                 .font(.headline)
 
             Text(reason)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.center)
         }
         .padding(20)

@@ -16,14 +16,20 @@ final class CachedAnalysis {
     var sleepCount: Int
     var hrvCount: Int
     var rhrCount: Int
-    
+
+    // Max-date fields for DataFingerprint (optional → no SwiftData migration required)
+    var latestWorkoutDate: Date?
+    var latestSleepDate: Date?
+    var latestHRVDate: Date?
+    var latestRHRDate: Date?
+
     // Coaching fields for the Widget
     var headline: String
     var targetAction: String
     var statusColorHex: String
-    
+
     var lastUpdated: Date
-    
+
     init(
         fingerprint: PredictionCache.DataFingerprint,
         headline: String,
@@ -35,6 +41,10 @@ final class CachedAnalysis {
         self.sleepCount = fingerprint.sleepCount
         self.hrvCount = fingerprint.hrvCount
         self.rhrCount = fingerprint.rhrCount
+        self.latestWorkoutDate = fingerprint.latestWorkoutDate
+        self.latestSleepDate = fingerprint.latestSleepDate
+        self.latestHRVDate = fingerprint.latestHRVDate
+        self.latestRHRDate = fingerprint.latestRHRDate
         self.headline = headline
         self.targetAction = targetAction
         self.statusColorHex = statusColorHex
