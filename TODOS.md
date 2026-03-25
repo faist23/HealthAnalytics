@@ -44,7 +44,7 @@
 
 ---
 
-## ~~P2 — ReadinessViewModel Architecture Violation~~ ✅ DONE 2026-03-23
+## ~~P2 — ReadinessViewModel Architecture Violation~~ ✅ DONE 2026-03-24 (Phase 2)
 
 **What:** Move `PerformancePredictor.train()` / `.predictWithUncertainty()` and `EnhancedIntentAwareReadinessService` out of `ReadinessViewModel` and into `ReadinessRepository` as sub-services.
 
@@ -125,7 +125,7 @@
 
 ---
 
-## P2 — Analysis Error Surfacing
+## ~~P2 — Analysis Error Surfacing~~ ✅ DONE 2026-03-24
 
 **What:** Add `@Published var analysisError: String?` to `ReadinessRepository`. Set it in the `catch` block of `performFullAnalysis`. Clear it on successful analysis. Let views branch on `nil` (no data yet) vs error vs success.
 

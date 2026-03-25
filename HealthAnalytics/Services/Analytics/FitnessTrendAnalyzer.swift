@@ -337,7 +337,7 @@ struct FitnessTrendAnalyzer {
         
         // Estimate fitness age by finding age bracket where current VO2max would be "good"
         var fitnessAge = chronologicalAge
-        for (index, ageNorm) in norms.enumerated() {
+        for (_, ageNorm) in norms.enumerated() {
             if vo2max >= ageNorm.good {
                 fitnessAge = ageNorm.age
                 break

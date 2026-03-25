@@ -21,6 +21,9 @@ class ReadinessRepository: ObservableObject {
     @Published private(set) var currentReadiness: UnifiedReadiness?
     @Published private(set) var intraDayReadiness: RecoveryDecayService.IntraDayReadiness?
     @Published private(set) var isAnalyzing = false
+    /// Non-nil when analysis fails; nil on success. Views branch on this to show
+    /// "add workouts" vs "something went wrong" vs normal content.
+    @Published private(set) var analysisError: String?
     
     // MARK: - Dependencies
 
@@ -33,6 +36,15 @@ class ReadinessRepository: ObservableObject {
     // ML sub-services (moved from ReadinessViewModel per GEMINI.md mandate)
     private let intentAwareService = EnhancedIntentAwareReadinessService()
     private let trendDetector = TrendDetector()
+
+    // Training load & zone sub-services (moved from ReadinessViewModel per GEMINI.md mandate)
+    private let predictiveReadinessService = PredictiveReadinessService()
+    private let correlationEngineRepo      = CorrelationEngine()
+    private let loadVizService             = TrainingLoadVisualizationService()
+    private let zoneAnalyzer               = TrainingZoneAnalyzer()
+    private let fitnessTrendAnalyzer       = FitnessTrendAnalyzer()
+    private let temporalService            = TemporalModelingService()
+
     private var trainedModels: [PerformancePredictor.TrainedModel] = []
     private var lastMLTraining: Date?
 
@@ -61,6 +73,16 @@ class ReadinessRepository: ObservableObject {
         let mlFeatureWeights: PerformancePredictor.FeatureWeights?
         let mlError: String?
         let intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
+
+        // Training load & zone outputs (moved from ReadinessViewModel per GEMINI.md mandate)
+        let primaryActivity: String
+        let trainingLoadSummary: TrainingLoadCalculator.TrainingLoadSummary?
+        let readinessAssessment: PredictiveReadinessService.ReadinessAssessment?
+        let acwrTrend: [ACWRDataPoint]
+        let loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
+        let temporalAnalysis: TemporalModelingService.TemporalAnalysis?
+        let zoneAnalysis: TrainingZoneAnalyzer.ZoneAnalysis?
+        let fitnessAnalysis: FitnessTrendAnalyzer.FitnessAnalysis?
     }
     
     // MARK: - Main Analysis Entry Point
@@ -90,6 +112,7 @@ class ReadinessRepository: ObservableObject {
     
     private func performFullAnalysis(modelContext: ModelContext, fingerprint: PredictionCache.DataFingerprint) async {
         isAnalyzing = true
+        analysisError = nil
 
         print("🔄 ReadinessRepository: Starting unified analysis...")
 
@@ -123,7 +146,9 @@ class ReadinessRepository: ObservableObject {
             let nutrition = storedNutrition.map { DailyNutrition(from: $0) }
             let hrvData = storedMetrics.filter { $0.type == "HRV" }.map { HealthDataPoint(date: $0.date, value: $0.value) }
             let rhrData = storedMetrics.filter { $0.type == "RHR" }.map { HealthDataPoint(date: $0.date, value: $0.value) }
-            let sleepData = storedMetrics.filter { $0.type == "Sleep" }.map { HealthDataPoint(date: $0.date, value: $0.value) }
+            let sleepData  = storedMetrics.filter { $0.type == "Sleep"  }.map { HealthDataPoint(date: $0.date, value: $0.value) }
+            let stepData   = storedMetrics.filter { $0.type == "Steps"  }.map { HealthDataPoint(date: $0.date, value: $0.value) }
+            let vo2maxData = storedMetrics.filter { $0.type == "VO2max" }.map { HealthDataPoint(date: $0.date, value: $0.value) }
 
             // 2. Run Individual Services
             // A: Base Readiness Score
@@ -197,7 +222,6 @@ class ReadinessRepository: ObservableObject {
             // 5. ML Sub-services (moved from ReadinessViewModel per GEMINI.md)
             //    5a. Train PerformancePredictor (cache models 7 days)
             let primaryActivity = determinePrimaryActivity(from: workouts)
-            let readinessService = PredictiveReadinessService()
             var mlError: String? = nil
 
             let shouldRetrain = trainedModels.isEmpty
@@ -213,6 +237,7 @@ class ReadinessRepository: ObservableObject {
                     let capturedRHR = rhrData
                     let capturedWorkouts = workouts
                     let capturedNutrition = nutrition
+                    let capturedReadinessService = predictiveReadinessService
                     trainedModels = try await Task.detached(priority: .utility) {
                         try await PerformancePredictor.train(
                             sleepData: capturedSleep,
@@ -221,7 +246,7 @@ class ReadinessRepository: ObservableObject {
                             healthKitWorkouts: capturedWorkouts,
                             stravaActivities: [],
                             nutritionData: capturedNutrition,
-                            readinessService: readinessService
+                            readinessService: capturedReadinessService
                         )
                     }.value
                     lastMLTraining = Date()
@@ -237,7 +262,7 @@ class ReadinessRepository: ObservableObject {
             var mlFeatureWeights: PerformancePredictor.FeatureWeights? = nil
 
             if !trainedModels.isEmpty {
-                let acwr = readinessService.calculateReadiness(
+                let acwr = predictiveReadinessService.calculateReadiness(
                     stravaActivities: [],
                     healthKitWorkouts: workouts
                 ).acwr
@@ -276,7 +301,52 @@ class ReadinessRepository: ObservableObject {
                     hrv: hrvData
                 )
 
-            // 6. Update Published State
+            // 6. Training Zone, Fitness Trend, Temporal, Load Analysis
+            //    (moved from ReadinessViewModel per GEMINI.md mandate)
+            let zoneAnalysis = zoneAnalyzer.analyzeTrainingZones(workouts: workouts)
+
+            let healthKitManager = HealthKitManager.shared
+            let userAge = healthKitManager.getUserAge() ?? 35
+            let userGender = healthKitManager.getUserBiologicalSex()
+            let fitnessAnalysis = fitnessTrendAnalyzer.analyzeFitnessTrends(
+                vo2maxData: vo2maxData,
+                workouts: workouts,
+                hrvData: hrvData,
+                rhrData: rhrData,
+                userAge: userAge,
+                userGender: userGender
+            )
+
+            let temporalAnalysis = temporalService.analyzeTemporalPatterns(
+                workouts: workouts,
+                activityType: primaryActivity
+            )
+
+            let recoveryInsights = correlationEngineRepo.analyzeRecoveryStatus(
+                restingHRData: rhrData,
+                hrvData: hrvData
+            )
+            let trainingLoadSummary = loadCalculator.calculateTrainingLoad(
+                healthKitWorkouts: workouts,
+                stravaActivities: [],
+                stepData: stepData,
+                recoveryInsights: recoveryInsights
+            )
+
+            let readinessAssessmentResult = predictiveReadinessService.calculateReadiness(
+                stravaActivities: [],
+                healthKitWorkouts: workouts
+            )
+
+            let acwrTrend = calculateImprovedACWRTrend(workouts: workouts)
+
+            let loadVisualization = loadVizService.generateLoadVisualization(
+                workouts: workouts,
+                labels: intentLabels,
+                daysBack: 90
+            )
+
+            // 7. Update Published State
             self.currentReadiness = UnifiedReadiness(
                 score: intraDay.currentScore,
                 level: mapScoreToLevel(intraDay.currentScore),
@@ -290,7 +360,15 @@ class ReadinessRepository: ObservableObject {
                 mlPrediction: mlPrediction,
                 mlFeatureWeights: mlFeatureWeights,
                 mlError: mlError,
-                intentAwareAssessment: intentAwareAssessment
+                intentAwareAssessment: intentAwareAssessment,
+                primaryActivity: primaryActivity,
+                trainingLoadSummary: trainingLoadSummary,
+                readinessAssessment: readinessAssessmentResult,
+                acwrTrend: acwrTrend,
+                loadVisualization: loadVisualization,
+                temporalAnalysis: temporalAnalysis,
+                zoneAnalysis: zoneAnalysis,
+                fitnessAnalysis: fitnessAnalysis
             )
 
             self.intraDayReadiness = intraDay
@@ -301,6 +379,7 @@ class ReadinessRepository: ObservableObject {
 
         } catch {
             print("❌ ReadinessRepository Error: \(error)")
+            analysisError = error.localizedDescription
         }
 
         isAnalyzing = false
@@ -322,7 +401,23 @@ class ReadinessRepository: ObservableObject {
         }
         return counts.max(by: { $0.value < $1.value })?.key ?? "Ride"
     }
-    
+
+    private func calculateImprovedACWRTrend(workouts: [WorkoutData]) -> [ACWRDataPoint] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var dataPoints: [ACWRDataPoint] = []
+        for dayOffset in (0..<7).reversed() {
+            guard let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
+            let workoutsUpToDate = workouts.filter { $0.startDate <= targetDate }
+            let assessment = predictiveReadinessService.calculateReadiness(
+                stravaActivities: [],
+                healthKitWorkouts: workoutsUpToDate
+            )
+            dataPoints.append(ACWRDataPoint(date: targetDate, value: assessment.acwr))
+        }
+        return dataPoints
+    }
+
     // MARK: - Reconciler
     
     private func reconcileAdvice(

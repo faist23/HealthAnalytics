@@ -106,7 +106,7 @@ struct TrainingZoneCard: View {
                     .foregroundStyle(.secondary)
                 
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    if let power = analysis.criticalPower {
+                    if analysis.criticalPower != nil {
                         Text("\(Int(threshold))")
                             .font(.title2)
                             .fontWeight(.bold)

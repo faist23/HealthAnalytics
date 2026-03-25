@@ -33,6 +33,7 @@ class ReadinessViewModel: ObservableObject {
     @Published var fitnessAnalysis: FitnessTrendAnalyzer.FitnessAnalysis?
     
     private var repositoryCancellable: AnyCancellable?
+    private var repositoryErrorCancellable: AnyCancellable?
 
     init() {
         setupRepositorySubscription()
@@ -44,6 +45,19 @@ class ReadinessViewModel: ObservableObject {
             .sink { [weak self] unified in
                 guard let self = self, let unified = unified else { return }
                 self.updateFromUnifiedReadiness(unified)
+            }
+
+        repositoryErrorCancellable = ReadinessRepository.shared.$analysisError
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] error in
+                guard let self else { return }
+                guard let error else {
+                    self.errorMessage = nil
+                    return
+                }
+                self.errorMessage = error.contains("Insufficient data")
+                    ? "Add some workouts and sleep data to see your readiness score."
+                    : "Something went wrong. Pull to refresh or try again later."
             }
     }
 
@@ -66,6 +80,16 @@ class ReadinessViewModel: ObservableObject {
         self.mlFeatureWeights = unified.mlFeatureWeights
         self.mlError = unified.mlError
         self.intentAwareAssessment = unified.intentAwareAssessment
+
+        // Training load & zone outputs — now owned by ReadinessRepository (GEMINI.md mandate)
+        self.temporalAnalysis = unified.temporalAnalysis
+        self.zoneAnalysis = unified.zoneAnalysis
+        self.fitnessAnalysis = unified.fitnessAnalysis
+        self.trainingLoadSummary = unified.trainingLoadSummary
+        self.readinessAssessment = unified.readinessAssessment
+        self.acwrTrend = unified.acwrTrend
+        self.loadVisualization = unified.loadVisualization
+        self.primaryActivity = unified.primaryActivity
     }
     
     // Training Load (moved from InsightsViewModel)
@@ -191,7 +215,7 @@ class ReadinessViewModel: ObservableObject {
             }
             
             // PROFILE: Data Conversion
-            let (workouts, nutrition, sleepData, hrvData, rhrData, vo2maxData) = PerformanceProfiler.measure("🔄 Data Conversion") {
+            let (workouts, nutrition, sleepData, hrvData, rhrData, _) = PerformanceProfiler.measure("🔄 Data Conversion") {
                 let workouts = storedWorkouts.map { WorkoutData(from: $0) }
                 let nutrition = storedNutrition.map { DailyNutrition(from: $0) }
                 
@@ -234,32 +258,29 @@ class ReadinessViewModel: ObservableObject {
                 print("   Latest ride with HR: \(formatter.string(from: latest.startDate))")
             }
 
-            let primaryActivity = determinePrimaryActivity(from: workouts)
-            
             // PROFILE: Unified Readiness Analysis (Master Coach)
+            // Also computes: primaryActivity, temporalAnalysis, trainingLoadSummary,
+            // readinessAssessment, acwrTrend, loadVisualization, zoneAnalysis, fitnessAnalysis
             await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
-            
-            // Intent labels still needed locally for calculateTrainingLoad()
-            let intentLabels = (try? modelContext.fetch(FetchDescriptor<StoredIntentLabel>())) ?? []
 
             // PROFILE: Pattern Discovery (sample recent data only)
             PerformanceProfiler.measure("🔍 Pattern Discovery") {
                 let shouldRediscover = cachedPatterns == nil ||
                     lastPatternDiscovery == nil ||
                     Date().timeIntervalSince(lastPatternDiscovery!) > 86400
-                
+
                 if shouldRediscover {
                     print("🔬 Discovering patterns from recent workouts only...")
-                    
+
                     // Only analyze last 365 days of data
                     let calendar = Calendar.current
                     let oneYearAgo = calendar.date(byAdding: .day, value: -365, to: Date())!
                     let recentWorkouts = workouts.filter { $0.startDate >= oneYearAgo }
                     let recentSleep = sleepData.filter { $0.date >= oneYearAgo }
                     let recentNutrition = nutrition.filter { $0.date >= oneYearAgo }
-                    
+
                     print("   Analyzing \(recentWorkouts.count) recent workouts (vs \(workouts.count) total)")
-                    
+
                     let statPatternAnalyzer = StatisticalPerformancePatternAnalyzer()
                     let validatedWindows = statPatternAnalyzer.discoverValidatedPatterns(
                         workouts: recentWorkouts,
@@ -273,56 +294,25 @@ class ReadinessViewModel: ObservableObject {
                 } else {
                     print("   ✅ Using cached patterns from \(lastPatternDiscovery!)")
                 }
-                
+
                 performanceWindows = cachedPatterns ?? []
                 optimalTimings = []
                 workoutSequences = []
             }
-            
+
             // ML training + prediction now handled by ReadinessRepository (GEMINI.md mandate)
+            // Training load, zone, fitness, temporal now handled by ReadinessRepository (GEMINI.md mandate)
 
-            // PROFILE: Temporal Analysis
-            PerformanceProfiler.measure("🕐 Temporal Analysis") {
-                let temporalService = TemporalModelingService()
-                temporalAnalysis = temporalService.analyzeTemporalPatterns(
-                    workouts: workouts,
-                    activityType: primaryActivity
-                )
-            }
+            // Daily TSS chart data (period-dependent, stays in ViewModel)
+            let stepData = storedHealthMetrics.filter { $0.type == "Steps" }
+                .map { HealthDataPoint(date: $0.date, value: $0.value) }
+            dailyTSSData = calculateDailyTSS(workouts: workouts, stepData: stepData)
 
-            // PROFILE: Training Load (moved from Insights)
-            PerformanceProfiler.measure("📊 Training Load") {
-                let stepData = storedHealthMetrics.filter { $0.type == "Steps" }
-                    .map { HealthDataPoint(date: $0.date, value: $0.value) }
-                
-                calculateTrainingLoad(
-                    workouts: workouts,
-                    stepData: stepData,
-                    hrvData: hrvData,
-                    rhrData: rhrData,
-                    intentLabels: intentLabels
-                )
-            }
-            
             // PROFILE: Daily Instruction
+            let currentPrimaryActivity = ReadinessRepository.shared.currentReadiness?.primaryActivity ?? "Ride"
             PerformanceProfiler.measure("📝 Daily Instruction") {
                 generateDailyInstruction(
-                    primaryActivity: primaryActivity,
-                    workouts: workouts,
-                    hrvData: hrvData,
-                    rhrData: rhrData
-                )
-            }
-            
-            // PROFILE: Training Zone Analysis
-            PerformanceProfiler.measure("🎯 Training Zones") {
-                calculateTrainingZones(workouts: workouts)
-            }
-            
-            // PROFILE: Fitness Trend Analysis
-            PerformanceProfiler.measure("📊 Fitness Trends") {
-                calculateFitnessTrends(
-                    vo2maxData: vo2maxData,
+                    primaryActivity: currentPrimaryActivity,
                     workouts: workouts,
                     hrvData: hrvData,
                     rhrData: rhrData
@@ -337,43 +327,7 @@ class ReadinessViewModel: ObservableObject {
         isLoading = false
     }
     
-    // calculateIntentAwareReadiness / fetchIntentLabels removed — logic moved to ReadinessRepository
-    
-    // MARK: - Smart Activity Detection
-    
-    private func determinePrimaryActivity(from workouts: [WorkoutData]) -> String {
-        let calendar = Calendar.current
-        let now = Date()
-        guard let ninetyDaysAgo = calendar.date(byAdding: .day, value: -90, to: now) else {
-            return "Ride"
-        }
-        
-        let recentWorkouts = workouts.filter { $0.startDate >= ninetyDaysAgo }
-        
-        var counts: [String: Int] = [:]
-        for workout in recentWorkouts {
-            let activityType: String
-            switch workout.workoutType {
-            case .cycling:
-                activityType = "Ride"
-            case .running:
-                activityType = "Run"
-            case .swimming:
-                activityType = "Swim"
-            default:
-                continue
-            }
-            counts[activityType, default: 0] += 1
-        }
-        
-        print("📊 Recent Activity Breakdown (90 days):")
-        for (type, count) in counts.sorted(by: { $0.value > $1.value }) {
-            print("   \(type): \(count) workouts")
-        }
-        
-        return counts.max(by: { $0.value < $1.value })?.key ?? "Ride"
-    }
-    
+    // calculateIntentAwareReadiness / fetchIntentLabels / determinePrimaryActivity removed — logic moved to ReadinessRepository
     // trainMLModelsIfNeeded / makePredictionWithUncertainty removed — logic moved to ReadinessRepository
     
     // MARK: - Daily Instruction
@@ -462,88 +416,9 @@ class ReadinessViewModel: ObservableObject {
         )
     }
     
-    // MARK: - Training Zone Analysis
-    
-    private func calculateTrainingZones(workouts: [WorkoutData]) {
-        let analyzer = TrainingZoneAnalyzer()
-        zoneAnalysis = analyzer.analyzeTrainingZones(workouts: workouts)
-    }
-    
-    // MARK: - Fitness Trend Analysis
-    
-    private func calculateFitnessTrends(
-        vo2maxData: [HealthDataPoint],
-        workouts: [WorkoutData],
-        hrvData: [HealthDataPoint],
-        rhrData: [HealthDataPoint]
-    ) {
-        // Get user age and biological sex from HealthKit
-        let healthKitManager = HealthKitManager.shared
-        let userAge = healthKitManager.getUserAge() ?? 35  // Fallback to 35 if not available
-        let userGender = healthKitManager.getUserBiologicalSex()
-        
-        let analyzer = FitnessTrendAnalyzer()
-        fitnessAnalysis = analyzer.analyzeFitnessTrends(
-            vo2maxData: vo2maxData,
-            workouts: workouts,
-            hrvData: hrvData,
-            rhrData: rhrData,
-            userAge: userAge,
-            userGender: userGender
-        )
-    }
-    
-    // MARK: - Training Load Calculation
-    
-    private func calculateTrainingLoad(
-        workouts: [WorkoutData],
-        stepData: [HealthDataPoint],
-        hrvData: [HealthDataPoint],
-        rhrData: [HealthDataPoint],
-        intentLabels: [StoredIntentLabel]
-    ) {
-        let loadCalculator = TrainingLoadCalculator()
-        let correlationEngine = CorrelationEngine()
-        
-        // Get recovery insights first (needed for training load recommendations)
-        let recoveryInsights = correlationEngine.analyzeRecoveryStatus(
-            restingHRData: rhrData,
-            hrvData: hrvData
-        )
-        
-        // Calculate training load with recovery insights
-        trainingLoadSummary = loadCalculator.calculateTrainingLoad(
-            healthKitWorkouts: workouts,
-            stravaActivities: [],
-            stepData: stepData,
-            recoveryInsights: recoveryInsights
-        )
-        
-        // Calculate readiness assessment
-        let readinessService = PredictiveReadinessService()
-        readinessAssessment = readinessService.calculateReadiness(
-            stravaActivities: [],
-            healthKitWorkouts: workouts
-        )
-        
-        // Calculate ACWR trend
-        acwrTrend = calculateImprovedACWRTrend(
-            workouts: workouts,
-            readinessService: readinessService
-        )
-        
-        // Generate extended visualization data
-        let loadService = TrainingLoadVisualizationService()
-        loadVisualization = loadService.generateLoadVisualization(
-            workouts: workouts,
-            labels: intentLabels,
-            daysBack: 90
-        )
-        
-        // Generate daily TSS data for chart
-        dailyTSSData = calculateDailyTSS(workouts: workouts, stepData: stepData)
-    }
-    
+    // calculateTrainingZones / calculateFitnessTrends / calculateTrainingLoad / calculateImprovedACWRTrend
+    // removed — logic moved to ReadinessRepository per GEMINI.md mandate
+
     private func calculateDailyTSS(workouts: [WorkoutData], stepData: [HealthDataPoint]) -> [DailyTSSData] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -605,45 +480,6 @@ class ReadinessViewModel: ObservableObject {
         }
         
         return dailyData
-    }
-    
-    private func calculateImprovedACWRTrend(
-        workouts: [WorkoutData],
-        readinessService: PredictiveReadinessService
-    ) -> [ACWRDataPoint] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        
-        var dataPoints: [ACWRDataPoint] = []
-        
-        print("🔵 calculateImprovedACWRTrend: Starting calculation for last 7 days")
-        
-        // Calculate ACWR for last 7 days
-        for dayOffset in (0..<7).reversed() {
-            guard let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) else {
-                continue
-            }
-            
-            // Get workouts up to this date
-            let workoutsUpToDate = workouts.filter { $0.startDate <= targetDate }
-            
-            // Calculate readiness for this date
-            let assessment = readinessService.calculateReadiness(
-                stravaActivities: [],
-                healthKitWorkouts: workoutsUpToDate
-            )
-            
-            let dataPoint = ACWRDataPoint(
-                date: targetDate,
-                value: assessment.acwr
-            )
-            dataPoints.append(dataPoint)
-            
-            print("🔵   Day \(dayOffset): \(targetDate) -> ACWR: \(assessment.acwr)")
-        }
-        
-        print("🔵 calculateImprovedACWRTrend: Created \(dataPoints.count) data points")
-        return dataPoints
     }
     
     // MARK: - Daily Instruction Model

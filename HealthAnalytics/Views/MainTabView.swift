@@ -7,102 +7,54 @@
 
 import SwiftUI
 
+// MARK: - App Mode
+
+enum AppMode: String, CaseIterable {
+    case morning = "Morning"
+    case evening = "Evening"
+
+    var systemImage: String {
+        switch self {
+        case .morning: return "sunrise.fill"
+        case .evening: return "sunset.fill"
+        }
+    }
+
+    /// (primaryLabel, secondaryLabel) for the sub-view picker.
+    var subTitles: (String, String) {
+        switch self {
+        case .morning: return ("Readiness", "Today")
+        case .evening: return ("Training", "Nutrition")
+        }
+    }
+
+    /// Auto-detect: before 13:00 → morning, 13:00+ → evening.
+    static var currentDefault: AppMode {
+        Calendar.current.component(.hour, from: Date()) < 13 ? .morning : .evening
+    }
+}
+
+// MARK: - MainTabView
+
 struct MainTabView: View {
-    @State private var selectedTab = 0
+
+    @State private var activeMode: AppMode = AppMode.currentDefault
+    /// 0 = Readiness, 1 = Today  (preserved when switching to evening and back)
+    @State private var morningTab  = 0
+    /// 0 = Training,  1 = Nutrition  (preserved when switching to morning and back)
+    @State private var eveningTab  = 0
+
+    @State private var showSettings = false
+    @State private var showInsights = false
+
     @ObservedObject var syncManager = SyncManager.shared
     @Environment(\.colorScheme) var colorScheme
-    @State private var showSettings = false
-    
+
     var body: some View {
         ZStack {
-            TabView(selection: $selectedTab) {
-            NavigationStack {
-                ContentView()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape")
-                            }
-                        }
-                    }
-            }
-            .tabItem {
-                Label("Today", systemImage: "calendar.circle.fill")
-            }
-            .tag(0)
-            
-            NavigationStack {
-                NutritionView()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape")
-                            }
-                        }
-                    }
-            }
-            .tabItem {
-                Label("Nutrition", systemImage: "fork.knife")
-            }
-            .tag(1)
-            
-            NavigationStack {
-                ReadinessView()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape")
-                            }
-                        }
-                    }
-            }
-            .tabItem {
-                Label("Readiness", systemImage: "heart.circle.fill")
-            }
-            .tag(2)
-            
-            NavigationStack {
-                TrainingView()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape")
-                            }
-                        }
-                    }
-            }
-            .tabItem {
-                Label("Training", systemImage: "figure.run.circle.fill")
-            }
-            .tag(3)
-            
-            NavigationStack {
-                InsightsView()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape")
-                            }
-                        }
-                    }
-            }
-            .tabItem {
-                Label("Insights", systemImage: "lightbulb.fill")
-            }
-            .tag(4)
-            }
-            
-            // Global sync indicator
+            contentArea
+                .safeAreaInset(edge: .bottom) { bottomBar }
+
             if syncManager.isSyncing {
                 LoadingOverlay(message: syncManager.syncProgress)
             }
@@ -112,12 +64,129 @@ struct MainTabView: View {
                 SettingsView()
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") {
-                                showSettings = false
-                            }
+                            Button("Done") { showSettings = false }
                         }
                     }
             }
+        }
+        .sheet(isPresented: $showInsights) {
+            NavigationStack {
+                InsightsView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showInsights = false }
+                        }
+                    }
+            }
+        }
+    }
+
+    // MARK: - Content Area
+
+    @ViewBuilder
+    private var contentArea: some View {
+        switch activeMode {
+        case .morning:
+            if morningTab == 0 {
+                NavigationStack {
+                    ReadinessView()
+                        .toolbar { sharedToolbar }
+                }
+            } else {
+                NavigationStack {
+                    ContentView()
+                        .toolbar { sharedToolbar }
+                }
+            }
+        case .evening:
+            if eveningTab == 0 {
+                NavigationStack {
+                    TrainingView()
+                        .toolbar { sharedToolbar }
+                }
+            } else {
+                NavigationStack {
+                    NutritionView()
+                        .toolbar { sharedToolbar }
+                }
+            }
+        }
+    }
+
+    // MARK: - Shared Toolbar
+
+    @ToolbarContentBuilder
+    private var sharedToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button { showInsights = true } label: {
+                Image(systemName: "lightbulb")
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape")
+            }
+        }
+    }
+
+    // MARK: - Bottom Bar
+
+    private var bottomBar: some View {
+        VStack(spacing: 10) {
+            subViewPicker
+            modeToggle
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(.ultraThinMaterial, ignoresSafeAreaEdges: .bottom)
+    }
+
+    private var subViewPicker: some View {
+        let (primary, secondary) = activeMode.subTitles
+        let binding = subTabBinding
+        return Picker("", selection: binding) {
+            Text(primary).tag(0)
+            Text(secondary).tag(1)
+        }
+        .pickerStyle(.segmented)
+    }
+
+    private var modeToggle: some View {
+        HStack(spacing: 4) {
+            ForEach(AppMode.allCases, id: \.self) { mode in
+                modeButton(mode)
+            }
+        }
+        .padding(4)
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func modeButton(_ mode: AppMode) -> some View {
+        let isActive = activeMode == mode
+        return Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                activeMode = mode
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: mode.systemImage).font(.caption)
+                Text(mode.rawValue).font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(isActive ? Color.background : Color.textSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 10).fill(isActive ? Color.accent : Color.clear))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Sub-tab Binding
+
+    private var subTabBinding: Binding<Int> {
+        switch activeMode {
+        case .morning: return $morningTab
+        case .evening: return $eveningTab
         }
     }
 }
@@ -125,14 +194,14 @@ struct MainTabView: View {
 // MARK: - Header Gradient (Only for nav bar area)
 struct HeaderGradient: View {
     let baseColor: Color
-    
+
     var body: some View {
         let meshColors: [Color] = [
             baseColor.opacity(0.8), baseColor.opacity(0.4), baseColor.opacity(0.9),
             baseColor.opacity(0.4), baseColor, baseColor.opacity(0.7),
             baseColor.opacity(0.6), baseColor.opacity(0.4), baseColor
         ]
-        
+
         MeshGradient(width: 3, height: 3, points: [
             [0, 0], [0.5, 0], [1, 0],
             [0, 0.5], [0.5, 0.5], [1, 0.5],
@@ -155,7 +224,7 @@ struct TabBackgroundColor {
 // MARK: - New Solid Card Style (Replaces glass effect)
 struct SolidCardStyle: ViewModifier {
     @Environment(\.colorScheme) var colorScheme
-    
+
     func body(content: Content) -> some View {
         content
             .background(
@@ -195,7 +264,7 @@ struct AppColors {
 // MARK: - Tinted Card Modifier
 struct TintedCardStyle: ViewModifier {
     var tint: Color
-    
+
     func body(content: Content) -> some View {
         content
             .background(
