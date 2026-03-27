@@ -44,6 +44,14 @@
 
 ---
 
+## ~~P2 — ReadinessViewModel Coaching Instruction Violation~~ ✅ DONE 2026-03-27
+
+**What:** Move `generateDailyInstruction()` from `ReadinessViewModel` into `ReadinessRepository`. Also: dedup `predictiveReadinessService.calculateReadiness()` (was called twice), remove redundant ViewModel DB count fetch + `lastDataFingerprint` guard, remove debug HR audit prints, remove `ReadinessViewModel.DailyInstruction` wrapper struct.
+
+**Done:** `CoachingService` is now a private dependency of `ReadinessRepository`. `UnifiedReadiness.dailyInstruction: CoachingService.DailyInstruction?` — ViewModel subscribes via Combine like all other fields. GEMINI.md violation resolved.
+
+---
+
 ## ~~P2 — ReadinessViewModel Architecture Violation~~ ✅ DONE 2026-03-24 (Phase 2)
 
 **What:** Move `PerformancePredictor.train()` / `.predictWithUncertainty()` and `EnhancedIntentAwareReadinessService` out of `ReadinessViewModel` and into `ReadinessRepository` as sub-services.
@@ -145,20 +153,8 @@
 
 ---
 
-## P2 — ResearchThresholdBar Exhaustive Switch
+## ~~P2 — ResearchThresholdBar Exhaustive Switch~~ ✅ DONE 2026-03-27
 
-**What:** Replace `default:` case in `ResearchThresholdBar.segments` with explicit `case .trainingBalance, .biologicalAge:`. Use `@unknown default:` (or no default) to get compiler exhaustiveness checking on future `SignalType` additions.
+**What:** Replace `default:` case in `ResearchThresholdBar.zone(for:)` with explicit `case .trainingBalance, .biologicalAge:`. (The `segments` and `markerFraction` switches were already exhaustive from the Phase 1 PR.)
 
-**Why:** Currently, adding a new `SignalType` enum case without updating `ResearchThresholdBar` silently renders the generic 3-zone bar. The compiler cannot catch this. An explicit exhaustive switch makes missing cases a compile error.
-
-**Pros:** Compile-time safety. Zero runtime cost. Future `SignalType` additions are forced to handle the bar explicitly.
-
-**Cons:** Trivial maintenance burden.
-
-**Context:** Surfaced by `/plan-ceo-review` 2026-03-24. The `default:` fallback is reasonable now (only 6 `SignalType` cases) but will silently fail as the signal catalog grows.
-
-**Effort:** S (human: ~5 min / CC+gstack: ~2 min)
-
-**Priority:** P2 — do in any PR that touches `ResearchThresholdBar`.
-
-**Depends on / blocked by:** Nothing.
+**Done:** `zone(for:)` at `ResearchThresholdBar.swift:56` now uses explicit cases — adding a new `SignalType` is a compile error.

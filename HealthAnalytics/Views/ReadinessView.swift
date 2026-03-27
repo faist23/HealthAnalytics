@@ -213,7 +213,7 @@ struct BackfillProgressView: View {
 // MARK: - Daily Instruction Card
 
 struct DailyInstructionCard: View {
-    let instruction: ReadinessViewModel.DailyInstruction
+    let instruction: CoachingService.DailyInstruction
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {

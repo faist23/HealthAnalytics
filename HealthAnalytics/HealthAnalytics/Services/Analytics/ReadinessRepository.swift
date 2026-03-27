@@ -39,6 +39,7 @@ class ReadinessRepository: ObservableObject {
 
     // Training load & zone sub-services (moved from ReadinessViewModel per GEMINI.md mandate)
     private let predictiveReadinessService = PredictiveReadinessService()
+    private let coachingService            = CoachingService()
     private let correlationEngineRepo      = CorrelationEngine()
     private let loadVizService             = TrainingLoadVisualizationService()
     private let zoneAnalyzer               = TrainingZoneAnalyzer()
@@ -83,6 +84,9 @@ class ReadinessRepository: ObservableObject {
         let temporalAnalysis: TemporalModelingService.TemporalAnalysis?
         let zoneAnalysis: TrainingZoneAnalyzer.ZoneAnalysis?
         let fitnessAnalysis: FitnessTrendAnalyzer.FitnessAnalysis?
+
+        // Coaching output (moved from ReadinessViewModel per GEMINI.md mandate)
+        let dailyInstruction: CoachingService.DailyInstruction?
     }
     
     // MARK: - Main Analysis Entry Point
@@ -224,6 +228,11 @@ class ReadinessRepository: ObservableObject {
             let primaryActivity = determinePrimaryActivity(from: workouts)
             var mlError: String? = nil
 
+            let readinessAssessmentResult = predictiveReadinessService.calculateReadiness(
+                stravaActivities: [],
+                healthKitWorkouts: workouts
+            )
+
             let shouldRetrain = trainedModels.isEmpty
                 || lastMLTraining == nil
                 || Date().timeIntervalSince(lastMLTraining!) > 604_800 // 7 days
@@ -262,10 +271,7 @@ class ReadinessRepository: ObservableObject {
             var mlFeatureWeights: PerformancePredictor.FeatureWeights? = nil
 
             if !trainedModels.isEmpty {
-                let acwr = predictiveReadinessService.calculateReadiness(
-                    stravaActivities: [],
-                    healthKitWorkouts: workouts
-                ).acwr
+                let acwr = readinessAssessmentResult.acwr
                 let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
 
                 if let sleep = sleepData.first(where: { calendar.isDate($0.date, inSameDayAs: yesterday) })?.value,
@@ -333,11 +339,6 @@ class ReadinessRepository: ObservableObject {
                 recoveryInsights: recoveryInsights
             )
 
-            let readinessAssessmentResult = predictiveReadinessService.calculateReadiness(
-                stravaActivities: [],
-                healthKitWorkouts: workouts
-            )
-
             let acwrTrend = calculateImprovedACWRTrend(workouts: workouts)
 
             let loadVisualization = loadVizService.generateLoadVisualization(
@@ -346,7 +347,22 @@ class ReadinessRepository: ObservableObject {
                 daysBack: 90
             )
 
-            // 7. Update Published State
+            // 7. Coaching Instruction (moved from ReadinessViewModel per GEMINI.md mandate)
+            let rawInstruction = coachingService.generateDailyInstruction(
+                readiness: readinessAssessmentResult,
+                insights: [],
+                recovery: recoveryInsights,
+                prediction: mlPrediction
+            )
+            let dailyInstruction = CoachingService.DailyInstruction(
+                status: rawInstruction.status,
+                headline: rawInstruction.headline,
+                subline: rawInstruction.subline,
+                primaryInsight: rawInstruction.primaryInsight,
+                targetAction: rawInstruction.targetAction?.replacingOccurrences(of: "workout", with: primaryActivity.lowercased())
+            )
+
+            // 8. Update Published State
             self.currentReadiness = UnifiedReadiness(
                 score: intraDay.currentScore,
                 level: mapScoreToLevel(intraDay.currentScore),
@@ -368,7 +384,8 @@ class ReadinessRepository: ObservableObject {
                 loadVisualization: loadVisualization,
                 temporalAnalysis: temporalAnalysis,
                 zoneAnalysis: zoneAnalysis,
-                fitnessAnalysis: fitnessAnalysis
+                fitnessAnalysis: fitnessAnalysis,
+                dailyInstruction: dailyInstruction
             )
 
             self.intraDayReadiness = intraDay

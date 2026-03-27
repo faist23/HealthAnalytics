@@ -19,7 +19,7 @@ class ReadinessViewModel: ObservableObject {
     @Published var performanceWindows: [PerformancePatternAnalyzer.PerformanceWindow] = []
     @Published var optimalTimings: [PerformancePatternAnalyzer.OptimalTiming] = []
     @Published var workoutSequences: [PerformancePatternAnalyzer.WorkoutSequence] = []
-    @Published var dailyInstruction: DailyInstruction?
+    @Published var dailyInstruction: CoachingService.DailyInstruction?
     @Published var mlPrediction: PerformancePredictor.Prediction?
     @Published var mlFeatureWeights: PerformancePredictor.FeatureWeights?
     @Published var mlError: String?
@@ -90,6 +90,9 @@ class ReadinessViewModel: ObservableObject {
         self.acwrTrend = unified.acwrTrend
         self.loadVisualization = unified.loadVisualization
         self.primaryActivity = unified.primaryActivity
+
+        // Coaching output — now owned by ReadinessRepository (GEMINI.md mandate)
+        self.dailyInstruction = unified.dailyInstruction
     }
     
     // Training Load (moved from InsightsViewModel)
@@ -104,10 +107,7 @@ class ReadinessViewModel: ObservableObject {
     // Pattern Discovery State
     private var cachedPatterns: [PerformancePatternAnalyzer.PerformanceWindow]?
     private var lastPatternDiscovery: Date?
-    
-    // Data fingerprint for cache checking
-    private var lastDataFingerprint: (workouts: Int, sleep: Int, hrv: Int, rhr: Int)?
-    
+
     // SwiftData
     var modelContainer: ModelContainer?
     
@@ -132,52 +132,10 @@ class ReadinessViewModel: ObservableObject {
         
         do {
             let context = container.mainContext
-            
-            // CACHE CHECK: Count records to see if data changed
-            var workoutDescriptor: FetchDescriptor<StoredWorkout>
-            
-            if let cutoffDate = DataWindowManager.getCutoffDate() {
-                workoutDescriptor = FetchDescriptor<StoredWorkout>(
-                    predicate: #Predicate { workout in
-                        workout.startDate >= cutoffDate
-                    }
-                )
-            } else {
-                workoutDescriptor = FetchDescriptor<StoredWorkout>()
-            }
-            
-            let workoutCount = try context.fetchCount(workoutDescriptor)
-            let sleepCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(
-                predicate: #Predicate { $0.type == "Sleep" }
-            ))
-            let hrvCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(
-                predicate: #Predicate { $0.type == "HRV" }
-            ))
-            let rhrCount = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(
-                predicate: #Predicate { $0.type == "RHR" }
-            ))
-            
-            let currentFingerprint = (workoutCount, sleepCount, hrvCount, rhrCount)
-            
-            // If data hasn't changed AND we have existing results, skip analysis
-            if let lastFingerprint = lastDataFingerprint,
-               lastFingerprint == currentFingerprint,
-               dailyRecommendation != nil || dailyInstruction != nil {
-                print("✅ Data unchanged - using cached analysis results")
-                isLoading = false
-                return
-            }
-            
-            print("🔄 Data changed or no cache - running full analysis")
-            print("   Workouts: \(workoutCount), Sleep: \(sleepCount), HRV: \(hrvCount), RHR: \(rhrCount)")
-            
-            // Store fingerprint for next check
-            lastDataFingerprint = currentFingerprint
-            
-            // Clear pattern cache when data changes, but keep ML models
+
+            // Clear pattern cache when data changes
             cachedPatterns = nil
             lastPatternDiscovery = nil
-            // Note: We DON'T clear lastMLTraining - models persist across analyses
             
             // PROFILE: Data Fetching (respecting data window)
             let (storedWorkouts, storedHealthMetrics, storedNutrition) = try await PerformanceProfiler.measureAsync("📊 Data Fetch") {
@@ -238,26 +196,6 @@ class ReadinessViewModel: ObservableObject {
                 return (workouts, nutrition, sleepData, hrvData, rhrData, vo2maxData)
             }
             
-            print("\n📊 Data loaded: \(workouts.count) workouts, \(sleepData.count) sleep, \(hrvData.count) HRV\n")
-            
-            // RIGHT AFTER "Data loaded" print statement, add:
-            print("\n🔍 HR DATA AUDIT:")
-            let ridesWithHR = workouts.filter { workout in
-                workout.workoutType == .cycling && workout.averageHeartRate != nil && workout.averageHeartRate! > 0
-            }
-            print("   Total cycling workouts: \(workouts.filter { $0.workoutType == .cycling }.count)")
-            print("   Rides WITH HR: \(ridesWithHR.count)")
-
-            // Show date range of rides with HR
-            let formatter = DateFormatter()
-            formatter.dateStyle = .short
-            if let earliest = ridesWithHR.min(by: { $0.startDate < $1.startDate }) {
-                print("   Earliest ride with HR: \(formatter.string(from: earliest.startDate))")
-            }
-            if let latest = ridesWithHR.max(by: { $0.startDate < $1.startDate }) {
-                print("   Latest ride with HR: \(formatter.string(from: latest.startDate))")
-            }
-
             // PROFILE: Unified Readiness Analysis (Master Coach)
             // Also computes: primaryActivity, temporalAnalysis, trainingLoadSummary,
             // readinessAssessment, acwrTrend, loadVisualization, zoneAnalysis, fitnessAnalysis
@@ -307,17 +245,6 @@ class ReadinessViewModel: ObservableObject {
             let stepData = storedHealthMetrics.filter { $0.type == "Steps" }
                 .map { HealthDataPoint(date: $0.date, value: $0.value) }
             dailyTSSData = calculateDailyTSS(workouts: workouts, stepData: stepData)
-
-            // PROFILE: Daily Instruction
-            let currentPrimaryActivity = ReadinessRepository.shared.currentReadiness?.primaryActivity ?? "Ride"
-            PerformanceProfiler.measure("📝 Daily Instruction") {
-                generateDailyInstruction(
-                    primaryActivity: currentPrimaryActivity,
-                    workouts: workouts,
-                    hrvData: hrvData,
-                    rhrData: rhrData
-                )
-            }
             
         } catch {
             errorMessage = "Failed to analyze readiness: \(error.localizedDescription)"
@@ -329,55 +256,8 @@ class ReadinessViewModel: ObservableObject {
     
     // calculateIntentAwareReadiness / fetchIntentLabels / determinePrimaryActivity removed — logic moved to ReadinessRepository
     // trainMLModelsIfNeeded / makePredictionWithUncertainty removed — logic moved to ReadinessRepository
-    
-    // MARK: - Daily Instruction
-    
-    private func generateDailyInstruction(
-        primaryActivity: String,
-        workouts: [WorkoutData],
-        hrvData: [HealthDataPoint],
-        rhrData: [HealthDataPoint]
-    ) {
-        guard let _ = readinessScore else { return }
-        
-        let service = CoachingService()
-        let readinessService = PredictiveReadinessService()
-        
-        let assessment = readinessService.calculateReadiness(
-            stravaActivities: [],
-            healthKitWorkouts: workouts
-        )
-        
-        let correlationEngine = CorrelationEngine()
-        let recoveryInsights = correlationEngine.analyzeRecoveryStatus(
-            restingHRData: rhrData,
-            hrvData: hrvData
-        )
-        
-        let rawInstruction = service.generateDailyInstruction(
-            readiness: assessment,
-            insights: [],
-            recovery: recoveryInsights,
-            prediction: mlPrediction
-        )
-        
-        // Enhance with activity-specific language
-        let enhancedTargetAction: String?
-        if let target = rawInstruction.targetAction {
-            enhancedTargetAction = target.replacingOccurrences(of: "workout", with: primaryActivity.lowercased())
-        } else {
-            enhancedTargetAction = nil
-        }
-        
-        dailyInstruction = DailyInstruction(
-            status: rawInstruction.status,
-            headline: rawInstruction.headline,
-            subline: rawInstruction.subline,
-            primaryInsight: rawInstruction.primaryInsight,
-            targetAction: enhancedTargetAction
-        )
-    }
-    
+    // generateDailyInstruction removed — logic moved to ReadinessRepository (GEMINI.md mandate)
+
     // MARK: - Helper: Form Indicator
     
     private func generateFormIndicator(from readiness: ReadinessAnalyzer.ReadinessScore) -> ReadinessAnalyzer.FormIndicator {
@@ -482,13 +362,4 @@ class ReadinessViewModel: ObservableObject {
         return dailyData
     }
     
-    // MARK: - Daily Instruction Model
-    
-    struct DailyInstruction {
-        let status: CoachingService.DailyStatus
-        let headline: String
-        let subline: String
-        let primaryInsight: String?
-        let targetAction: String?
-    }
 }

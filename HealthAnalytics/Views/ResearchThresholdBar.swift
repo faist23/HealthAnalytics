@@ -53,7 +53,7 @@ struct ResearchThresholdBar: View {
             return sleepZone(value: value, citation: citation)
         case .metMinutes:
             return metZone(value: value)
-        default:
+        case .trainingBalance, .biologicalAge:
             return symmetricZone(value: value, citation: citation)
         }
     }
