@@ -16,5 +16,26 @@ See `GEMINI.md` for the full engineering mandate. Key rules:
 - Use `DataFingerprint` caching to prevent score drift
 - ACWR sweet spot: 0.8–1.3
 
+## Known Compiler Patterns
+
+### SourceKit "Cannot find X in scope" — always noise
+SourceKit reports false "Cannot find type/member in scope" errors throughout this project because it analyzes files in isolation without the full module graph. These are **not real build errors**. Only trust errors that appear in an actual Xcode build (`xcodebuild`) or from the Swift compiler directly.
+
+### "Compiler unable to type-check expression in reasonable time" — `body` too large
+When a SwiftUI `body` triggers this error, decompose it into:
+- `private var mainView: some View` — owns the top-level container + background
+- `@ToolbarContentBuilder private var toolbarItems: some ToolbarContent` — owns toolbar items
+- Keep `body` as a thin modifier chain only
+
+Applied to: `ReadinessView.swift`, `RecoveryDashboardView.swift`
+
+### `.foregroundStyle(.tokenName)` type inference failures
+In batch-compile contexts Swift sometimes fails to resolve shorthand `.tokenName` for custom `Color` extensions. Always use explicit `Color.tokenName` form (e.g. `Color.accent`, `Color.statusOptimal`) — never the dot-shorthand.
+
+### `ForEach` with named tuple arrays — `Binding<C>` overload always wins
+iOS 26.2 SwiftUI's compiler picks `ForEach.init<C>(_ data: Binding<C>, ...)` over `RandomAccessCollection` when named tuples are involved, regardless of input type. Fix: define a local `struct … : Identifiable` inside the View and use `ForEach(array) { item in }`.
+
+Applied to: `InsightsView.swift` → `DataCollectionCard.ActivitySummary`
+
 ## Project
 iOS SwiftUI app. Target: weekend warriors who want coaching guidance, not raw data dashboards.
