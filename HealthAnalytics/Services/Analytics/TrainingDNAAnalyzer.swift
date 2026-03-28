@@ -85,7 +85,31 @@ struct LivePatternDataProvider: PatternDataProvider {
         // Source preference filtering (dedicatedDevice / appleWatch) requires per-sample
         // source inspection — deferred to Phase 2b when full HKSampleQuery path is added.
         // In auto mode the statistics collection query already applies Watch priority.
+
+        // Side effect: write source-blend flag for MetricConditionDetailView badge.
+        let sourceCount = await detectHRVSourceCount(lookbackDays: 30)
+        UserDefaults.standard.set(sourceCount > 1, forKey: "hrvMultipleSourcesDetected")
+
         return raw.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
+    }
+
+    /// Returns the number of distinct bundle IDs writing HRV samples in the past `lookbackDays`.
+    private func detectHRVSourceCount(lookbackDays: Int) async -> Int {
+        let type = HKQuantityType(.heartRateVariabilitySDNN)
+        let start = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date())
+        return await withCheckedContinuation { cont in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: 200,
+                sortDescriptors: nil
+            ) { _, samples, _ in
+                let bundles = Set((samples ?? []).map { $0.sourceRevision.source.bundleIdentifier })
+                cont.resume(returning: bundles.count)
+            }
+            store.execute(query)
+        }
     }
 
     func fetchDailySleep(days: Int) async throws -> [(date: Date, hours: Double, efficiency: Double)] {

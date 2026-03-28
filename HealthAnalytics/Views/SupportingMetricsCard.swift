@@ -265,7 +265,8 @@ struct SupportingMetricsCard: View {
                 thresholdBarValue: pctDeviation,
                 conditionReasoning: hrvConditionReasoning,
                 guidanceText: statusGuidance(metrics.hrvStatus),
-                detailedInsight: "HRV is highly sensitive to alcohol, stress, and late meals."
+                detailedInsight: "HRV is highly sensitive to alcohol, stress, and late meals.",
+                isBlendedHRVSource: UserDefaults.standard.bool(forKey: "hrvMultipleSourcesDetected")
             )
         case .acwr:
             return MetricDisplayConfig(

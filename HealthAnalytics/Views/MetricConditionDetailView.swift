@@ -34,6 +34,8 @@ struct MetricDisplayConfig: Identifiable {
     let detailedInsight: String?
     /// Whether this tile is an ML estimate (shows estimate card instead of research basis).
     var badgeType: ScienceBadgeType = .none
+    /// True when multiple HealthKit sources are writing HRV and data is being blended.
+    var isBlendedHRVSource: Bool = false
 }
 
 // MARK: - MetricConditionDetailView
@@ -74,6 +76,12 @@ struct MetricConditionDetailView: View {
                                     .background(config.status.color.opacity(0.2))
                                     .foregroundStyle(config.status.color)
                                     .clipShape(Capsule())
+                            }
+
+                            if config.isBlendedHRVSource {
+                                Text("Multiple sources detected")
+                                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(Color.textSecondary)
                             }
                         }
                         Spacer()
