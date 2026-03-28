@@ -232,6 +232,28 @@ enum PatternAnalysisError: Error {
 actor TrainingDNAAnalyzer {
     var dataProvider: any PatternDataProvider = LivePatternDataProvider()
 
+    // MARK: - Dependency Injection
+
+    /// Replaces the live data provider with a test double. Call before `analyze()` in tests.
+    func setDataProvider(_ provider: any PatternDataProvider) {
+        self.dataProvider = provider
+    }
+
+    /// Returns all stored TrainingPattern objects from this actor's model context.
+    /// Use in tests to verify persistence without relying on cross-context merge timing.
+    func fetchAllPatterns() throws -> [TrainingPattern] {
+        try modelContext.fetch(FetchDescriptor<TrainingPattern>())
+    }
+
+    /// Sets notificationSent = true for the matching pattern type and saves.
+    /// Used in tests to simulate a notification being dispatched without going through
+    /// PatternNotificationService (which requires UNUserNotification authorization).
+    func markNotificationSent(patternType: PatternType) throws {
+        let all = try modelContext.fetch(FetchDescriptor<TrainingPattern>())
+        all.first { $0.patternType == patternType }?.notificationSent = true
+        try modelContext.save()
+    }
+
     // MARK: - Main Entry Point
 
     /// Returns the total HealthKit history days so callers can persist it for section-visibility gating.
@@ -471,11 +493,11 @@ actor TrainingDNAAnalyzer {
     // MARK: - Upsert
 
     private func upsertPatterns(_ patterns: [TrainingPattern]) throws {
+        // Fetch all stored patterns once and filter in-memory.
+        // #Predicate cannot capture custom enum values — SwiftData only supports scalar captures.
+        let allStored = try modelContext.fetch(FetchDescriptor<TrainingPattern>())
         for new in patterns {
-            let type = new.patternType
-            let existing = try modelContext.fetch(
-                FetchDescriptor<TrainingPattern>(predicate: #Predicate { $0.patternType == type })
-            ).first
+            let existing = allStored.first { $0.patternType == new.patternType }
 
             if let existing {
                 existing.detectedAt = new.detectedAt

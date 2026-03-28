@@ -1,6 +1,12 @@
 # TODOS
 
-## P3 — InsightsViewModel GEMINI.md Mandate Violation
+## ~~P3 — InsightsViewModel GEMINI.md Mandate Violation~~ ✅ DONE 2026-03-27
+
+`InsightsViewModel.analyzeData()` gutted from 370 → 78 lines. All 9 service calls (`CorrelationEngine`, `NutritionCorrelationEngine`, `BiologicalAgingService`, `ActionableRecommendations`, `PredictiveReadinessService`, `TrainingLoadCalculator`, `TrendDetector`, `InjuryRiskCalculator`, `TrainingLoadVisualizationService`) moved to `ReadinessRepository.performFullAnalysis()`. `UnifiedReadiness` gained 11 new fields. `InsightsViewModel.analyzeData()` now delegates to `ReadinessRepository.shared.refreshIfNecessary(modelContext:)` and assigns from `currentReadiness`. `InsightsView` unchanged. `weightData` fetch added to Repository; `trends` bug fix (was passing `stepData: []`, now passes real step data).
+
+---
+
+## ~~P3 — InsightsViewModel GEMINI.md Mandate Violation (ARCHIVED)~~
 
 **What:** `InsightsViewModel.analyzeData()` calls `CorrelationEngine`, `BiologicalAgingService`, `PredictiveReadinessService`, and other services directly, bypassing `ReadinessRepository` entirely. The GEMINI.md mandate requires all readiness/insights logic to flow through `ReadinessRepository`.
 

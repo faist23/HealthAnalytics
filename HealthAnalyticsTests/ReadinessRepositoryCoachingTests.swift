@@ -69,7 +69,10 @@ final class ReadinessRepositoryCoachingTests: XCTestCase {
             predictedPerformance: 220,
             activityType: "Ride",
             unit: "W",
-            confidence: .high
+            confidence: .high,
+            inputs: PerformancePredictor.PredictionInputs(
+                sleepHours: 7.5, hrvMs: 55, restingHR: 52, acwr: 1.0, carbs: 200
+            )
         )
         let assessment = PredictiveReadinessService.ReadinessAssessment(
             acwr: 1.0,
