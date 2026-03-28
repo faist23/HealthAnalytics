@@ -8,6 +8,7 @@
 import SwiftUI
 import Combine
 import SwiftData
+import BackgroundTasks
 
 @main
 struct HealthAnalyticsApp: App {
@@ -25,6 +26,7 @@ struct HealthAnalyticsApp: App {
                     .task {
                         // ✅ CHANGED: Use smart sync instead of global sync
                         await SyncManager.shared.performSmartSync()
+                        await PatternNotificationService.shared.requestAuthorizationIfNeeded()
                     }
             } else {
                 OnboardingView(isOnboardingComplete: $isOnboardingComplete)
@@ -34,6 +36,17 @@ struct HealthAnalyticsApp: App {
             }
         }
         .modelContainer(HealthDataContainer.shared)
+        .backgroundTask(.appRefresh("com.craigfaist.HealthAnalytics.patternAnalysis")) {
+            let container = HealthDataContainer.shared
+            let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+            let preference = HRVSourcePreference(
+                rawValue: UserDefaults.standard.string(forKey: "preferredHRVSource") ?? HRVSourcePreference.auto.rawValue
+            ) ?? .auto
+            if let historyDays = try? await analyzer.analyze(sourcePreference: preference) {
+                UserDefaults.standard.set(historyDays, forKey: "healthKitHistoryDays")
+                UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
+            }
+        }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active && isOnboardingComplete {
                 Task {
@@ -42,9 +55,19 @@ struct HealthAnalyticsApp: App {
                     await SyncManager.shared.performSmartSync()
                 }
             }
+            if newPhase == .background && isOnboardingComplete {
+                schedulePatternAnalysisTask()
+            }
         }
     }
     
+    private func schedulePatternAnalysisTask() {
+        let request = BGProcessingTaskRequest(identifier: "com.craigfaist.HealthAnalytics.patternAnalysis")
+        request.requiresNetworkConnectivity = false
+        request.requiresExternalPower = false
+        try? BGTaskScheduler.shared.submit(request)
+    }
+
     private func handleIncomingURL(_ url: URL) {
         print("📱 Received URL: \(url.absoluteString)")
         print("📱 Scheme: \(url.scheme ?? "none")")

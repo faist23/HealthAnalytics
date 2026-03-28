@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var isClearingCache = false
     @State private var isClassifyingWorkouts = false
     @AppStorage("historicalDataWindowYears") private var historicalDataWindowYears: Int = 0
+    @AppStorage("preferredHRVSource") private var preferredHRVSource: String = "auto"
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
     
@@ -75,10 +76,78 @@ struct SettingsView: View {
                         } label: {
                             Label("Strava", systemImage: "bicycle")
                         }
+
+                        Divider()
+
+                        // MARK: HRV Source Preference
+                        VStack(alignment: .leading, spacing: 6) {
+                            NavigationLink {
+                                List {
+                                    Section {
+                                        Button {
+                                            preferredHRVSource = "auto"
+                                        } label: {
+                                            HStack {
+                                                Text("Auto-detect")
+                                                Spacer()
+                                                if preferredHRVSource == "auto" {
+                                                    Image(systemName: "checkmark")
+                                                        .foregroundStyle(Color.accent)
+                                                }
+                                            }
+                                        }
+                                        Button {
+                                            preferredHRVSource = "appleWatch"
+                                        } label: {
+                                            HStack {
+                                                Text("Apple Watch")
+                                                Spacer()
+                                                if preferredHRVSource == "appleWatch" {
+                                                    Image(systemName: "checkmark")
+                                                        .foregroundStyle(Color.accent)
+                                                }
+                                            }
+                                        }
+                                        Button {
+                                            preferredHRVSource = "dedicatedDevice"
+                                        } label: {
+                                            HStack {
+                                                Text("Dedicated Device (Polar, Garmin, Oura)")
+                                                Spacer()
+                                                if preferredHRVSource == "dedicatedDevice" {
+                                                    Image(systemName: "checkmark")
+                                                        .foregroundStyle(Color.accent)
+                                                }
+                                            }
+                                        }
+                                    } footer: {
+                                        Text("Training DNA pattern detection uses this source when multiple devices write HRV to HealthKit.")
+                                            .font(.system(size: 13, weight: .regular, design: .default))
+                                            .foregroundStyle(Color.textSecondary)
+                                    }
+                                }
+                                .navigationTitle("HRV Source")
+                            } label: {
+                                HStack {
+                                    Label("HRV Source", systemImage: "waveform.path.ecg")
+                                    Spacer()
+                                    Text(hrvSourceLabel)
+                                        .font(.system(size: 15, weight: .regular, design: .default))
+                                        .foregroundStyle(Color.textSecondary)
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.textTertiary)
+                                }
+                            }
+
+                            Text("Controls which device's HRV readings are used for Training DNA pattern detection.")
+                                .font(.system(size: 13, weight: .regular, design: .default))
+                                .foregroundStyle(Color.textSecondary)
+                        }
                     }
                     .padding()
                     .cardStyle(for: .info)
-                    
+
                     // MARK: - Analysis Settings
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Analysis Settings")
@@ -247,6 +316,14 @@ struct SettingsView: View {
         }
     }
     
+    private var hrvSourceLabel: String {
+        switch preferredHRVSource {
+        case "appleWatch":      return "Apple Watch"
+        case "dedicatedDevice": return "Dedicated Device"
+        default:                return "Auto"
+        }
+    }
+
     private func updateDataWindow(_ years: Int) {
         let oldValue = historicalDataWindowYears
         historicalDataWindowYears = years

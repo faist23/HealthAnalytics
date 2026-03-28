@@ -46,13 +46,47 @@ class ReadinessRepository: ObservableObject {
     private let fitnessTrendAnalyzer       = FitnessTrendAnalyzer()
     private let temporalService            = TemporalModelingService()
 
+    // Phase 2 — Pattern Engine sub-service
+    private var trainingDNAAnalyzer: TrainingDNAAnalyzer?
+
     private var trainedModels: [PerformancePredictor.TrainedModel] = []
     private var lastMLTraining: Date?
 
     private var lastFingerprint: PredictionCache.DataFingerprint?
     private var lastAnalysisDate: Date?
-    
+
+    private var analysisTask: Task<Void, Never>?
+
     private init() {}
+
+    // MARK: - Pattern Analysis (Phase 2)
+
+    /// Primary trigger: called from InsightsView.onAppear (7-day staleness check)
+    /// and from the toolbar refresh button (unconditional).
+    func runPatternAnalysis(container: ModelContainer, force: Bool = false) async {
+        let lastRun = UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
+        guard force || lastRun == nil || Date().timeIntervalSince(lastRun!) > 7 * 86400 else { return }
+
+        UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
+
+        if trainingDNAAnalyzer == nil {
+            trainingDNAAnalyzer = TrainingDNAAnalyzer(modelContainer: container)
+        }
+
+        let analyzer = trainingDNAAnalyzer!
+        let preference = HRVSourcePreference(
+            rawValue: UserDefaults.standard.string(forKey: "preferredHRVSource") ?? HRVSourcePreference.auto.rawValue
+        ) ?? .auto
+
+        do {
+            let historyDays = try await analyzer.analyze(sourcePreference: preference)
+            UserDefaults.standard.set(historyDays, forKey: "healthKitHistoryDays")
+        } catch PatternAnalysisError.insufficientData {
+            // < 60 days of history — silent, no error surfaced
+        } catch {
+            await MainActor.run { self.analysisError = "Pattern analysis failed: \(error.localizedDescription)" }
+        }
+    }
     
     // MARK: - Models
     

@@ -12,8 +12,14 @@ import Charts
 struct InsightsView: View {
     @StateObject private var viewModel = InsightsViewModel()
     @State private var isFirstLoad = true
+    @State private var isPatternAnalyzing = false
+    @State private var patternAnalysisError: String?
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
+
+    // Reactive SwiftData read — updates automatically when TrainingDNAAnalyzer persists
+    @Query(sort: \TrainingPattern.confidenceNumerator, order: .reverse)
+    private var detectedPatterns: [TrainingPattern]
     
     var body: some View {
         ZStack {
@@ -47,22 +53,24 @@ struct InsightsView: View {
                 Button {
                     Task {
                         await viewModel.analyzeData()
+                        // Refresh button: force pattern re-analysis unconditionally
+                        UserDefaults.standard.removeObject(forKey: "lastPatternAnalysisDate")
+                        await triggerPatternAnalysis()
                     }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .disabled(viewModel.isLoading)
+                .disabled(viewModel.isLoading || isPatternAnalyzing)
             }
         }
         .task {
-            // Configure on first appearance
             if viewModel.modelContainer == nil {
                 viewModel.configure(container: modelContext.container)
             }
-            // Always analyze when tab appears
             await viewModel.analyzeData()
-            // Mark first load as complete
             isFirstLoad = false
+            // Pattern analysis: primary trigger — 7-day staleness check
+            await triggerPatternAnalysis()
         }
         .onChange(of: modelContext) { _, _ in
             if viewModel.modelContainer == nil {
@@ -114,8 +122,131 @@ struct InsightsView: View {
             dataCollectionSection
             ComingSoonCard(title: "Optimal Training Windows")
         }
+
+        Group {
+            trainingDNASection
+        }
     }
-    
+
+    // MARK: - Training DNA Section (Phase 2)
+
+    @ViewBuilder
+    private var trainingDNASection: some View {
+        let historyDays = UserDefaults.standard.integer(forKey: "healthKitHistoryDays")
+        // historyDays == 0 means not yet calculated — hide rather than show wrong state
+        if historyDays > 0 && historyDays < 45 {
+            // Hidden entirely — no section
+            EmptyView()
+        } else if historyDays >= 45 && historyDays < 60 {
+            trainingDNAProgressRow(daysNeeded: 60 - historyDays)
+        } else {
+            // 60+ days: show section header + cards/states
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Training DNA")
+                    .font(.system(size: 17, weight: .semibold, design: .default))
+                    .foregroundStyle(Color.textPrimary)
+                    .padding(.horizontal, 4)
+
+                if isPatternAnalyzing && detectedPatterns.isEmpty {
+                    patternLoadingSkeleton
+                } else if let err = patternAnalysisError {
+                    patternErrorRow(message: err)
+                } else if detectedPatterns.isEmpty {
+                    trainingDNAProgressRow(daysNeeded: 0)
+                } else {
+                    VStack(spacing: 16) {
+                        ForEach(detectedPatterns) { pattern in
+                            TrainingDNACard(pattern: pattern)
+                        }
+                    }
+
+                    // Partial state: patterns not yet surfaced
+                    let missingTypes = PatternType.allCases.filter { type in
+                        !detectedPatterns.map(\.patternType).contains(type)
+                    }
+                    if !missingTypes.isEmpty && historyDays < 90 {
+                        let names = missingTypes.map(\.displayName).joined(separator: " + ")
+                        let weeksLeft = max(1, Int(ceil(Double(90 - historyDays) / 7.0)))
+                        Text("\(names) need\(missingTypes.count == 1 ? "s" : "") \(weeksLeft) more week\(weeksLeft == 1 ? "" : "s") of data")
+                            .font(.system(size: 12, weight: .regular, design: .default))
+                            .foregroundStyle(Color.textSecondary)
+                            .padding(.horizontal, 4)
+                    }
+                }
+            }
+        }
+    }
+
+    private func trainingDNAProgressRow(daysNeeded: Int) -> some View {
+        let weeksLeft = daysNeeded > 0 ? max(1, Int(ceil(Double(daysNeeded) / 7.0))) : nil
+        let message: String = weeksLeft != nil
+            ? "Training DNA is building — check back in ~\(weeksLeft!) week\(weeksLeft! == 1 ? "" : "s")"
+            : "Training DNA analyzing — no qualifying training blocks detected yet. Keep training consistently."
+        return Text(message)
+            .font(.system(size: 13, weight: .regular, design: .default))
+            .foregroundStyle(Color.textSecondary)
+            .padding(.horizontal, 4)
+    }
+
+    /// Inline skeleton shown while pattern analysis is running for the first time
+    private var patternLoadingSkeleton: some View {
+        VStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.surface)
+                .frame(height: 120)
+                .overlay(
+                    VStack(alignment: .leading, spacing: 8) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.surfaceRaised)
+                            .frame(width: 160, height: 14)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.surfaceRaised)
+                            .frame(width: 240, height: 10)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.surfaceRaised)
+                            .frame(height: 20)
+                            .padding(.top, 4)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading),
+                    alignment: .leading
+                )
+                .opacity(0.7)
+        }
+    }
+
+    private func patternErrorRow(message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(Color.statusWarning)
+            Text(message)
+                .font(.system(size: 13, weight: .regular, design: .default))
+                .foregroundStyle(Color.textSecondary)
+            Spacer()
+            Button("Try again") {
+                Task { await triggerPatternAnalysis(force: true) }
+            }
+            .font(.system(size: 13, weight: .medium, design: .default))
+            .foregroundStyle(Color.accent)
+        }
+        .padding(16)
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: 16))
+        .frame(minHeight: 44)
+    }
+
+    // MARK: - Pattern Analysis Trigger
+
+    @MainActor
+    private func triggerPatternAnalysis(force: Bool = false) async {
+        isPatternAnalyzing = true
+        patternAnalysisError = nil
+        await ReadinessRepository.shared.runPatternAnalysis(
+            container: modelContext.container,
+            force: force
+        )
+        isPatternAnalyzing = false
+    }
+
     // MARK: - Individual Sections
     
     @ViewBuilder

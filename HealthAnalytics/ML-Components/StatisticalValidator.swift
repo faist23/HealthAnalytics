@@ -14,7 +14,7 @@ struct StatisticalValidator {
     
     /// Calculate confidence interval for a mean using bootstrap resampling
     /// Returns (mean, lowerBound, upperBound)
-    static func bootstrapConfidenceInterval(
+    nonisolated static func bootstrapConfidenceInterval(
         data: [Double],
         confidenceLevel: Double = 0.95,
         iterations: Int = 10000

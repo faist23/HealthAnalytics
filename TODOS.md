@@ -1,5 +1,37 @@
 # TODOS
 
+## P3 — InsightsViewModel GEMINI.md Mandate Violation
+
+**What:** `InsightsViewModel.analyzeData()` calls `CorrelationEngine`, `BiologicalAgingService`, `PredictiveReadinessService`, and other services directly, bypassing `ReadinessRepository` entirely. The GEMINI.md mandate requires all readiness/insights logic to flow through `ReadinessRepository`.
+
+**Why:** This is a latent architecture violation. The same pattern that was fixed for `PerformancePredictor` (moved from ViewModel → Repository in 2026-03-24 Phase 2 refactor) still exists in `InsightsViewModel`. If left unaddressed, new insights services added to Phase 2+ will have two competing integration points.
+
+**How to apply:** Move `CorrelationEngine`, `BiologicalAgingService`, `PredictiveReadinessService` calls out of `InsightsViewModel.analyzeData()` and into `ReadinessRepository` as sub-services. Follow the `InjuryRiskCalculator` sub-service pattern exactly. `InsightsViewModel` subscribes via Combine like all other fields. Phase 2's `ReadinessRepository.runPatternAnalysis` is the correct integration point — extend it or add a sibling `runInsightsAnalysis()` method.
+
+**Effort:** M (human: ~1 day / CC+gstack: ~20 min)
+
+**Priority:** P3 — not blocking Phase 2a. Fix after Phase 2a ships and validates.
+
+**Depends on / blocked by:** Phase 2a must ship first so the full ReadinessRepository call graph is stable before the InsightsViewModel refactor.
+
+---
+
+## P2 — BGProcessingTask Promotion: Evaluate After Phase 2a
+
+**What:** After Phase 2a ships, evaluate whether `BGProcessingTask` fires reliably enough for most users to promote it from "opportunistic" to "primary" trigger for pattern analysis. If BGTask fires consistently (> 80% of users trigger it within 24h of app backgrounding), flip the architecture: BGTask becomes primary, `InsightsView.onAppear` becomes display-only (no analysis trigger).
+
+**Why:** Current design: InsightsView.onAppear is primary, BGTask is opportunistic. This adds analysis latency on every tab open (7-day staleness check + async analysis). If BGTask is reliable in practice, background analysis means patterns are ready when the user opens the tab.
+
+**How to apply:** Monitor `UserDefaults["lastPatternAnalysisDate"]` vs. BGTask `lastFireDate` in production (via logging). If BGTask fires within 24h for most users, the architecture flip is a net win.
+
+**Effort:** S (human: ~2h / CC+gstack: ~10min)
+
+**Priority:** P2 — gated on Phase 2a production data (≥3 months)
+
+**Depends on / blocked by:** Phase 2a must ship. Then 3 months of production data.
+
+---
+
 ## P2 — Phase 2b: Manual Illness Log
 
 **What:** Manual illness log UI + `IllnessEvent` SwiftData model.
@@ -150,6 +182,14 @@
 **Priority:** P2 — not blocking Phase 1, but important for first-run experience.
 
 **Depends on / blocked by:** Nothing.
+
+---
+
+## ~~Phase 2a — Training DNA Pattern Engine~~ ✅ DONE 2026-03-27
+
+**What:** Full Phase 2a implementation: `TrainingPattern` SwiftData model, `PatternType` enum, `TrainingDNAAnalyzer` (`@ModelActor`), `PatternNotificationService`, `TrainingDNACard`, `TrainingPatternTimelineView`, `InsightsView` Training DNA section (5-state machine), `ReadinessRepository.runPatternAnalysis`, `SettingsView` HRV source picker, `HealthAnalyticsApp` `.backgroundTask` + notification auth.
+
+**Done:** All 9 files created/modified. `BGTaskSchedulerPermittedIdentifiers` in Info.plist. Bogus `com.apple.developer.background-task` entitlement removed. `@ModelActor` pattern: no custom init, use `var dataProvider: any PatternDataProvider = LivePatternDataProvider()`. `nonisolated` applied to `StatisticalValidator.bootstrapConfidenceInterval`, `PatternType.citationKey`, `LivePatternDataProvider.init()` to fix `-default-isolation=MainActor` actor isolation errors.
 
 ---
 
