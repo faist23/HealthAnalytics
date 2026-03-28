@@ -46,6 +46,11 @@ class ReadinessRepository: ObservableObject {
     private let fitnessTrendAnalyzer       = FitnessTrendAnalyzer()
     private let temporalService            = TemporalModelingService()
 
+    // Insights sub-services (moved from InsightsViewModel per GEMINI.md mandate)
+    private let nutritionEngine            = NutritionCorrelationEngine()
+    private let agingService               = BiologicalAgingService()
+    private let actionableRecommendations  = ActionableRecommendations()
+
     // Phase 2 — Pattern Engine sub-service
     private var trainingDNAAnalyzer: TrainingDNAAnalyzer?
 
@@ -121,6 +126,19 @@ class ReadinessRepository: ObservableObject {
 
         // Coaching output (moved from ReadinessViewModel per GEMINI.md mandate)
         let dailyInstruction: CoachingService.DailyInstruction?
+
+        // Insights sub-service outputs (moved from InsightsViewModel per GEMINI.md mandate)
+        let metricTrends: [MetricTrend]
+        let sleepPerformanceInsight: CorrelationEngine.SleepPerformanceInsight?
+        let activityTypeInsights: [CorrelationEngine.ActivityTypeInsight]
+        let dataSummary: [(activityType: String, goodSleep: Int, poorSleep: Int)]
+        let simpleInsights: [CorrelationEngine.SimpleInsight]
+        let hrvPerformanceInsights: [CorrelationEngine.HRVPerformanceInsight]
+        let proteinRecoveryInsight: NutritionCorrelationEngine.ProteinRecoveryInsight?
+        let proteinPerformanceInsights: [NutritionCorrelationEngine.ProteinPerformanceInsight]
+        let carbPerformanceInsights: [NutritionCorrelationEngine.CarbPerformanceInsight]
+        let recommendations: [ActionableRecommendations.Recommendation]
+        let agingAssessment: BiologicalAgingService.AgingAssessment?
     }
     
     // MARK: - Main Analysis Entry Point
@@ -186,7 +204,8 @@ class ReadinessRepository: ObservableObject {
             let rhrData = storedMetrics.filter { $0.type == "RHR" }.map { HealthDataPoint(date: $0.date, value: $0.value) }
             let sleepData  = storedMetrics.filter { $0.type == "Sleep"  }.map { HealthDataPoint(date: $0.date, value: $0.value) }
             let stepData   = storedMetrics.filter { $0.type == "Steps"  }.map { HealthDataPoint(date: $0.date, value: $0.value) }
-            let vo2maxData = storedMetrics.filter { $0.type == "VO2max" }.map { HealthDataPoint(date: $0.date, value: $0.value) }
+            let vo2maxData   = storedMetrics.filter { $0.type == "VO2max"  }.map { HealthDataPoint(date: $0.date, value: $0.value) }
+            let weightData   = storedMetrics.filter { $0.type == "Weight" }.map { HealthDataPoint(date: $0.date, value: $0.value) }
 
             // 2. Run Individual Services
             // A: Base Readiness Score
@@ -212,8 +231,8 @@ class ReadinessRepository: ObservableObject {
                 restingHRData: rhrData,
                 hrvData: hrvData,
                 sleepData: sleepData,
-                stepData: [],
-                weightData: [],
+                stepData: stepData,
+                weightData: weightData,
                 workouts: workouts
             )
 
@@ -396,7 +415,41 @@ class ReadinessRepository: ObservableObject {
                 targetAction: rawInstruction.targetAction?.replacingOccurrences(of: "workout", with: primaryActivity.lowercased())
             )
 
-            // 8. Update Published State
+            // 8. Insights Sub-services (moved from InsightsViewModel per GEMINI.md mandate)
+            let sleepPerformanceInsight = correlationEngineRepo.analyzeSleepVsPerformanceCombined(
+                sleepData: sleepData, healthKitWorkouts: workouts, stravaActivities: []
+            )
+            let activityTypeInsights = correlationEngineRepo.analyzeSleepVsPerformanceByActivityType(
+                sleepData: sleepData, healthKitWorkouts: workouts, stravaActivities: []
+            )
+            let insightDataSummary = correlationEngineRepo.getDataSummary(
+                sleepData: sleepData, healthKitWorkouts: workouts, stravaActivities: []
+            )
+            let simpleInsights = correlationEngineRepo.generateSimpleInsights(
+                sleepData: sleepData, healthKitWorkouts: workouts, stravaActivities: [],
+                restingHRData: rhrData, hrvData: hrvData
+            )
+            let hrvPerformanceInsights = correlationEngineRepo.analyzeHRVVsPerformance(
+                hrvData: hrvData, healthKitWorkouts: workouts, stravaActivities: []
+            )
+            let proteinRecoveryInsight = nutritionEngine.analyzeProteinVsRecovery(
+                nutritionData: nutrition, restingHRData: rhrData, hrvData: hrvData
+            )
+            let proteinPerformanceInsights = nutritionEngine.analyzeProteinVsPerformance(
+                nutritionData: nutrition, healthKitWorkouts: workouts, stravaActivities: []
+            )
+            let carbPerformanceInsights = nutritionEngine.analyzeCarbsVsPerformance(
+                nutritionData: nutrition, healthKitWorkouts: workouts, stravaActivities: []
+            )
+            let insightsRecommendations = actionableRecommendations.generateRecommendations(
+                trainingLoad: trainingLoadSummary,
+                recoveryInsights: recoveryInsights,
+                trends: trends,
+                injuryRisk: riskAssessment
+            )
+            let agingAssessment = await agingService.calculateAgingAlpha(modelContext: modelContext)
+
+            // 9. Update Published State
             self.currentReadiness = UnifiedReadiness(
                 score: intraDay.currentScore,
                 level: mapScoreToLevel(intraDay.currentScore),
@@ -419,7 +472,18 @@ class ReadinessRepository: ObservableObject {
                 temporalAnalysis: temporalAnalysis,
                 zoneAnalysis: zoneAnalysis,
                 fitnessAnalysis: fitnessAnalysis,
-                dailyInstruction: dailyInstruction
+                dailyInstruction: dailyInstruction,
+                metricTrends: trends,
+                sleepPerformanceInsight: sleepPerformanceInsight,
+                activityTypeInsights: activityTypeInsights,
+                dataSummary: insightDataSummary,
+                simpleInsights: simpleInsights,
+                hrvPerformanceInsights: hrvPerformanceInsights,
+                proteinRecoveryInsight: proteinRecoveryInsight,
+                proteinPerformanceInsights: proteinPerformanceInsights,
+                carbPerformanceInsights: carbPerformanceInsights,
+                recommendations: insightsRecommendations,
+                agingAssessment: agingAssessment
             )
 
             self.intraDayReadiness = intraDay
