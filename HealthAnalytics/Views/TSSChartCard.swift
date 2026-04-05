@@ -76,7 +76,7 @@ struct TSSChartCard: View {
                 Text("TRAINING STRESS")
                     .font(.caption)
                     .fontWeight(.bold)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 
                 Spacer()
                 
@@ -84,7 +84,7 @@ struct TSSChartCard: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("Current Week")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("\(Int(latest.weeklyTSS / Double(latest.daysInWeek))) TSS/day")
                             .font(.callout)
                             .fontWeight(.semibold)
@@ -97,37 +97,37 @@ struct TSSChartCard: View {
                 VStack(spacing: 4) {
                     Text("Week of \(formatWeekOf(selected.weekStart))")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     HStack(spacing: 20) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("TSS")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text("\(Int(selected.weeklyTSS))")
                                 .font(.title3)
                                 .fontWeight(.bold)
-                                .foregroundColor(.statusOptimal)
+                                .foregroundStyle(.statusOptimal)
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text("6-Wk Avg")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text("\(Int(selected.sixWeekAvg))")
                                 .font(.title3)
                                 .fontWeight(.bold)
-                                .foregroundColor(.accent)
+                                .foregroundStyle(.accent)
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text("6-Wk Daily Avg")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text("\(Int(selected.sixWeekAvg / 7))")
                                 .font(.title3)
                                 .fontWeight(.bold)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -189,7 +189,7 @@ struct TSSChartCard: View {
                 if let first = weeklyData.first, let last = weeklyData.last {
                     Text("\(formatFullDate(first.weekStart)) - \(formatFullDate(last.weekStart))")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 
                 // Legend
@@ -200,7 +200,7 @@ struct TSSChartCard: View {
                             .frame(width: 12, height: 12)
                         Text("Weekly TSS")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
 
                     HStack(spacing: 4) {
@@ -209,7 +209,7 @@ struct TSSChartCard: View {
                             .frame(width: 20, height: 3)
                         Text("6-Week Avg")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.top, 8)
@@ -217,7 +217,7 @@ struct TSSChartCard: View {
             } else {
                 Text("No training data available")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 40)
             }

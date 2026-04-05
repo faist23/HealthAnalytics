@@ -234,7 +234,7 @@ struct DailyInstructionCard: View {
             if let target = instruction.targetAction {
                 HStack {
                     Image(systemName: "target")
-                        .foregroundColor(instruction.status.color)
+                        .foregroundStyle(instruction.status.color)
                     Text(target)
                         .font(.subheadline.weight(.semibold))
                 }

@@ -132,7 +132,7 @@ struct SettingsView: View {
                                     Label("HRV Source", systemImage: "waveform.path.ecg")
                                     Spacer()
                                     Text(hrvSourceLabel)
-                                        .font(.system(size: 15, weight: .regular, design: .default))
+                                        .font(.coachGuidance)
                                         .foregroundStyle(Color.textSecondary)
                                     Image(systemName: "chevron.right")
                                         .font(.caption)

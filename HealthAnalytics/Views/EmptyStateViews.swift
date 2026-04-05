@@ -54,7 +54,7 @@ struct EmptyStateView: View {
                 Button(action: action) {
                     Text(actionTitle)
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
                         .background(Color.accent)
@@ -294,7 +294,7 @@ struct StravaNotConnectedState: View {
                     Text("Connect Strava")
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
                 .background(Color.statusWarning)

@@ -501,7 +501,7 @@ struct TrainingResultsView: View {
                     // Accuracy Hero
                     VStack(spacing: 8) {
                         Text(String(format: "%.1f%%", result.accuracy))
-                            .font(.system(size: 64, weight: .bold, design: .rounded))
+                            .font(.heroNumeral)
                             .foregroundStyle(Color.statusOptimal)
 
                         Text("Validation Accuracy")

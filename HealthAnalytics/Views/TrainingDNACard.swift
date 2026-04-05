@@ -36,7 +36,7 @@ struct TrainingDNACard: View {
                 .padding(.bottom, 10)
 
             Text(pattern.evidenceSummary)
-                .font(.system(size: 15, weight: .regular, design: .default))
+                .font(.coachGuidance)
                 .foregroundStyle(Color.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 10)
@@ -72,7 +72,7 @@ struct TrainingDNACard: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(pattern.patternType.displayName)
-                    .font(.system(size: 17, weight: .semibold, design: .default))
+                    .font(.cardTitle)
                     .foregroundStyle(Color.textPrimary)
 
                 Text(pattern.patternType.definition)
@@ -139,12 +139,12 @@ struct TrainingDNACard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(pattern.coachingResponse)
-                    .font(.system(size: 15, weight: .regular, design: .default))
+                    .font(.coachGuidance)
                     .foregroundStyle(Color.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text("Updated \(pattern.detectedAt.relativeTimeString)")
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(.dataAxis)
                     .foregroundStyle(Color.textTertiary)
             }
         }

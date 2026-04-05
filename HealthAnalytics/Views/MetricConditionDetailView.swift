@@ -80,7 +80,7 @@ struct MetricConditionDetailView: View {
 
                             if config.isBlendedHRVSource {
                                 Text("Multiple sources detected")
-                                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                    .font(.dataAxis)
                                     .foregroundStyle(Color.textSecondary)
                             }
                         }

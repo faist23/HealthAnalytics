@@ -108,7 +108,7 @@ struct HeroReadinessCard: View {
             // Daily Recommendation
             Text(recommendation)
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             

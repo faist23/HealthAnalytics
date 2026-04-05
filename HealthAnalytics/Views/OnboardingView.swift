@@ -150,7 +150,7 @@ struct WelcomeStep: View {
             Button(action: onContinue) {
                 Text("Get Started")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(
@@ -229,7 +229,7 @@ struct HealthKitStep: View {
                 }) {
                     Text("Allow Access")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.accent)
@@ -246,7 +246,7 @@ struct HealthKitStep: View {
                         Image(systemName: "arrow.right")
                     }
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(
@@ -338,7 +338,7 @@ struct StravaStep: View {
                             Text(isConnecting ? "Connecting..." : "Connect Strava")
                         }
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.statusWarning)
@@ -364,7 +364,7 @@ struct StravaStep: View {
                             Image(systemName: "arrow.right")
                         }
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(
@@ -383,7 +383,7 @@ struct StravaStep: View {
                     Button(action: { onContinue(true) }) {
                         Text("Skip for now")
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(.top, 8)
                 }
@@ -485,7 +485,7 @@ struct SyncingStep: View {
                         Image(systemName: "arrow.right")
                     }
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(
@@ -575,7 +575,7 @@ struct FeatureTourStep: View {
                 Button(action: onComplete) {
                     Text("Get Started")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(

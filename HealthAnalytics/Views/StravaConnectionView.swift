@@ -112,7 +112,7 @@ struct StravaConnectionView: View {
                 .frame(maxWidth: .infinity)
                 .padding()
                 .background(Color.accent)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .cornerRadius(12)
             }
             .disabled(isAuthenticating)

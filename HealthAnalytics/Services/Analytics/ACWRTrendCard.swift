@@ -66,13 +66,13 @@ struct ACWRTrendCard: View {
                     Text("TRAINING LOAD BALANCE")
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     HStack(spacing: 8) {
                         Text(stateLabel)
                             .font(.title3)
                             .fontWeight(.bold)
-                            .foregroundColor(stateColor)
+                            .foregroundStyle(stateColor)
                         
                         Button {
                             showInfoSheet = true
@@ -90,17 +90,17 @@ struct ACWRTrendCard: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(String(format: "%.2f", currentAssessment.acwr))
                         .font(.system(size: 32, weight: .black, design: .monospaced))
-                        .foregroundColor(stateColor)
+                        .foregroundStyle(stateColor)
                     Text("ratio")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             
             // Interpretation
             Text(interpretation)
                 .font(.subheadline)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .padding(.vertical, 8)
             
             // Chart - only show if there's actual variation
@@ -117,7 +117,7 @@ struct ACWRTrendCard: View {
                     .annotation(position: .overlay, alignment: .topTrailing) {
                         Text("Sweet Spot")
                             .font(.caption2)
-                            .foregroundColor(.green.opacity(0.6))
+                            .foregroundStyle(.green.opacity(0.6))
                             .padding(.trailing, 4)
                             .padding(.top, 4)
                     }
@@ -169,7 +169,7 @@ struct ACWRTrendCard: View {
                 VStack(spacing: 8) {
                     Image(systemName: "chart.line.flattrend.xyaxis")
                         .font(.title)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     Text("Consistent Training Load")
                         .font(.subheadline)
@@ -177,7 +177,7 @@ struct ACWRTrendCard: View {
                     
                     Text("Your training load has been very consistent over the past week. This is good - it means you're training predictably!")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
@@ -190,35 +190,35 @@ struct ACWRTrendCard: View {
                     .font(.caption)
                     .fontWeight(.semibold)
                     .textCase(.uppercase)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Acute Load")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(String(format: "%.0f", currentAssessment.acuteLoad))
                             .font(.callout)
                             .fontWeight(.semibold)
                         Text("last 7 days")
                             .font(.caption2)
-                            .foregroundColor(.secondary.opacity(0.7))
+                            .foregroundStyle(.secondary.opacity(0.7))
                     }
                     
                     Image(systemName: "arrow.right")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Chronic Load")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(String(format: "%.0f", currentAssessment.chronicLoad))
                             .font(.callout)
                             .fontWeight(.semibold)
                         Text("last 28 days")
                             .font(.caption2)
-                            .foregroundColor(.secondary.opacity(0.7))
+                            .foregroundStyle(.secondary.opacity(0.7))
                     }
                 }
             }
@@ -246,7 +246,7 @@ struct ACWRExplainerSheet: View {
                             .fontWeight(.bold)
                         
                         Text("The Acute:Chronic Workload Ratio (ACWR) helps you train hard while staying healthy.")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     
                     Divider()
@@ -256,7 +256,7 @@ struct ACWRExplainerSheet: View {
                             .font(.headline)
                         
                         Text("We compare your recent training (last 7 days) to your normal training (last 28 days):")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         
                         VStack(alignment: .leading, spacing: 12) {
                             bulletPoint(
@@ -330,7 +330,7 @@ struct ACWRExplainerSheet: View {
                             .fontWeight(.medium)
                         
                         Text("You're training 40% harder than your recent average. This might be intentional (race week, training camp), but if it's not planned, consider adding recovery.")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .padding()
                             .background(Color(.systemGray6))
                             .cornerRadius(8)
@@ -354,7 +354,7 @@ struct ACWRExplainerSheet: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
                 .font(.title3)
-                .foregroundColor(color)
+                .foregroundStyle(color)
                 .frame(width: 24)
             
             VStack(alignment: .leading, spacing: 4) {
@@ -363,7 +363,7 @@ struct ACWRExplainerSheet: View {
                     .fontWeight(.semibold)
                 Text(description)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -373,7 +373,7 @@ struct ACWRExplainerSheet: View {
             Text(range)
                 .font(.system(.callout, design: .monospaced))
                 .fontWeight(.bold)
-                .foregroundColor(color)
+                .foregroundStyle(color)
                 .frame(width: 60, alignment: .leading)
             
             VStack(alignment: .leading, spacing: 4) {
@@ -382,7 +382,7 @@ struct ACWRExplainerSheet: View {
                     .fontWeight(.semibold)
                 Text(description)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 8)

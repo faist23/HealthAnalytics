@@ -378,11 +378,11 @@ struct WeeklyPatternView: View {
                 
                 HStack(spacing: 4) {
                     Image(systemName: trendIcon)
-                        .foregroundColor(trendColor)
+                        .foregroundStyle(trendColor)
                     
                     Text(trendLabel)
                         .font(.caption)
-                        .foregroundColor(trendColor)
+                        .foregroundStyle(trendColor)
                 }
             }
             

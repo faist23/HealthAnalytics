@@ -143,7 +143,7 @@ struct InsightsView: View {
             // 60+ days: show section header + cards/states
             VStack(alignment: .leading, spacing: 12) {
                 Text("Training DNA")
-                    .font(.system(size: 17, weight: .semibold, design: .default))
+                    .font(.cardTitle)
                     .foregroundStyle(Color.textPrimary)
                     .padding(.horizontal, 4)
 
@@ -348,17 +348,17 @@ struct InsightsView: View {
                                 .font(.headline)
                             Spacer()
                             Text("\(String(format: "%.1f", insight.percentDifference))%")
-                                .foregroundColor(insight.percentDifference >= 0 ? .green : .red)
+                                .foregroundStyle(insight.percentDifference >= 0 ? .green : .red)
                                 .bold()
                         }
                         
                         Text(insight.recommendation)
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         
                         Text("Based on \(insight.sampleSize) workouts")
                             .font(.caption2)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(.gray)
                     }
                     .padding(.vertical, 4)
                 }

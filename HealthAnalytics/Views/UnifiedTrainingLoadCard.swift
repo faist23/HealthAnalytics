@@ -70,7 +70,7 @@ struct UnifiedTrainingLoadCard: View {
                     Text("TRAINING LOAD")
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     Button {
                         showInfoSheet = true
@@ -91,11 +91,11 @@ struct UnifiedTrainingLoadCard: View {
                     Text(statusLabel)
                         .font(.body)
                         .fontWeight(.semibold)
-                        .foregroundColor(statusColor)
+                        .foregroundStyle(statusColor)
                     
                     Text(String(format: "%.2f", assessment.acwr))
                         .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundColor(statusColor)
+                        .foregroundStyle(statusColor)
                 }
             }
             
@@ -109,7 +109,7 @@ struct UnifiedTrainingLoadCard: View {
 
                         Text("No training data in the last 28 days")
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
                     .padding(.horizontal, 10)
@@ -121,7 +121,7 @@ struct UnifiedTrainingLoadCard: View {
                         HStack {
                             Text("Yesterday:")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text(summary.yesterdayTSS == 0 ? "Rest day" : "\(Int(summary.yesterdayTSS)) TSS")
                                 .font(.callout)
                                 .fontWeight(.semibold)
@@ -133,7 +133,7 @@ struct UnifiedTrainingLoadCard: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("7-day")
                                     .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                 Text("\(Int(summary.weeklyTSS)) TSS")
                                     .font(.callout)
                                     .fontWeight(.semibold)
@@ -142,7 +142,7 @@ struct UnifiedTrainingLoadCard: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("6-Wk Avg")
                                     .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                 Text("\(Int(summary.sixWeekTSS / 6)) TSS")
                                     .font(.callout)
                                     .fontWeight(.semibold)
@@ -151,11 +151,11 @@ struct UnifiedTrainingLoadCard: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("6-Wk Daily Avg")
                                     .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                 Text("\(Int(summary.sixWeekTSS / 42))")
                                     .font(.callout)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             
                             Spacer()
@@ -168,17 +168,17 @@ struct UnifiedTrainingLoadCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Acute (7d)")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(assessment.acuteLoad == 0 ? "—" : String(format: "%.1f", assessment.acuteLoad))
                             .font(.callout)
                             .fontWeight(.semibold)
-                            .foregroundColor(assessment.acuteLoad == 0 ? .secondary : .primary)
+                            .foregroundStyle(assessment.acuteLoad == 0 ? .secondary : .primary)
                     }
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Chronic (28d)")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(String(format: "%.1f", assessment.chronicLoad))
                             .font(.callout)
                             .fontWeight(.semibold)
@@ -197,16 +197,16 @@ struct UnifiedTrainingLoadCard: View {
                         HStack(spacing: 8) {
                             Text(selectedPoint.date, format: .dateTime.month(.abbreviated).day())
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text(String(format: "%.2f", selectedPoint.value))
                                 .font(.callout)
                                 .fontWeight(.semibold)
-                                .foregroundColor(statusColor)
+                                .foregroundStyle(statusColor)
                         }
                     } else {
                         Text(" ")  // Placeholder to maintain height when no data point selected
                             .font(.callout)
-                            .foregroundColor(.clear)
+                            .foregroundStyle(.clear)
                     }
                 }
                 .frame(height: 20)  // Fixed height always maintained
@@ -224,7 +224,7 @@ struct UnifiedTrainingLoadCard: View {
                     .annotation(position: .overlay, alignment: .topTrailing) {
                         Text("Sweet Spot")
                             .font(.caption2)
-                            .foregroundColor(.green.opacity(0.6))
+                            .foregroundStyle(.green.opacity(0.6))
                             .padding(.trailing, 4)
                             .padding(.top, 4)
                     }
@@ -285,7 +285,7 @@ struct UnifiedTrainingLoadCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(interpretation)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 
                 if let summary = summary {
                     HStack(spacing: 8) {
@@ -295,7 +295,7 @@ struct UnifiedTrainingLoadCard: View {
 
                         Text(summary.recommendation)
                             .font(.subheadline)
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                     }
                     .padding(.vertical, 8)
                     .padding(.horizontal, 10)
@@ -320,7 +320,7 @@ struct UnifiedTrainingLoadCard: View {
                             
                             Text("90-day trends, patterns & danger zones")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         
                         Spacer()
