@@ -107,7 +107,7 @@ struct TSSChartCard: View {
                             Text("\(Int(selected.weeklyTSS))")
                                 .font(.title3)
                                 .fontWeight(.bold)
-                                .foregroundStyle(.statusOptimal)
+                                .foregroundStyle(Color.statusOptimal)
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
@@ -117,7 +117,7 @@ struct TSSChartCard: View {
                             Text("\(Int(selected.sixWeekAvg))")
                                 .font(.title3)
                                 .fontWeight(.bold)
-                                .foregroundStyle(.accent)
+                                .foregroundStyle(Color.accent)
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
