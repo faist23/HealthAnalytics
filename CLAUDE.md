@@ -37,5 +37,74 @@ iOS 26.2 SwiftUI's compiler picks `ForEach.init<C>(_ data: Binding<C>, ...)` ove
 
 Applied to: `InsightsView.swift` → `DataCollectionCard.ActivitySummary`
 
+## Recovery Science Model
+
+This section defines the physiological constraints for all recovery and strain calculations.
+Do not deviate from these decisions without explicit user approval.
+
+### Guiding principle
+The app targets weekend warriors who feel their body but don't have a sports scientist.
+Coaching language should reflect lived experience ("you're still paying off yesterday's ride"),
+not raw numbers. Always translate scores into plain-English guidance.
+
+### Carry-forward fatigue
+Recovery is not a same-day phenomenon. A hard workout creates physiological debt —
+elevated muscle damage, depleted glycogen, suppressed HRV — that persists 24–48+ hours.
+
+- `RecoveryDecayService` must carry forward prior-day fatigue into today's baseline.
+- The intra-day energy chart must start from this morning's readiness score (which already
+  reflects prior-day strain), not from a neutral 100-point baseline.
+- "No workout today" does not mean "fully recovered." It means fatigue is decaying passively.
+
+### Steps and non-exercise activity load (NEAT)
+
+**Scientific basis:**
+- The 10,000-step target has no clinical foundation (1960s Japanese pedometer marketing).
+- I-Min Lee (Harvard, 2019): all-cause mortality curve flattens ~7,500 steps; diminishing
+  returns beyond that for sedentary-baseline populations.
+- Steps represent mechanical load and metabolic expenditure that compounds with training stress.
+
+**Threshold rule — personal baseline, not a fixed number:**
+- Steps contribute to strain only above the user's 30-day rolling average daily step count.
+- A person who habitually walks 12,000 steps/day is not accumulating extra stress at 12,000.
+- A person who averages 4,000 steps/day and hikes 14,000 is accumulating real load.
+- Never hardcode 7,500 or 10,000 as a universal goal or threshold.
+
+**Contribution curve:**
+- Ramp is non-linear: going from 18,000→20,000 steps is harder than 8,000→10,000.
+- Use a mild linear ramp above threshold, capped so steps never exceed 20% of total daily strain.
+- Steps are supporting load, not primary training stress. A hard interval session always dominates.
+
+**Mechanism 1 — steps add to daily strain score:**
+- Compute excess steps = max(0, today_steps − 30day_avg_steps).
+- Map excess steps to fatigue points on a capped ramp (implementation details TBD).
+- Feed the result into `RecoveryDecayService` alongside workout fatigue.
+
+**Mechanism 2 — high daily movement reduces overnight recovery rate:**
+- Only activates when combined load (workout strain + step excess) exceeds a threshold.
+- Implemented as a percentage reduction on overnight recovery rate, not a flat points deduction.
+  This preserves the relationship: 9hrs sleep > 5hrs sleep, even on high-load days.
+- Has a floor: cannot reduce recovery rate below 50% of normal, regardless of step count.
+- Does not activate on step excess alone — walking without training stress does not impair recovery.
+
+**What steps do NOT do:**
+- Steps do not directly set or cap the readiness score.
+- Steps are never shown as a "goal to hit" in coaching language. The app does not reward
+  10,000 steps. If steps are displayed, frame them as load context, not achievement.
+
+### Energy Bank chart intent
+The chart shows dynamic readiness across a full day (midnight to midnight):
+- Solid line = elapsed time (actual fatigue state)
+- Dashed line = projected remainder of day assuming no further workouts
+- Y-axis starts from this morning's readiness baseline (carry-forward), not 100
+- A rest day after a hard workout should show gradual upward slope, not a flat line
+
+### Recovery model hierarchy (highest to lowest influence)
+1. Overnight HRV and resting HR (primary recovery signal)
+2. Sleep duration and quality
+3. Prior-day workout strain (carry-forward fatigue)
+4. Today's workout strain
+5. NEAT / excess steps (supporting modifier)
+
 ## Project
 iOS SwiftUI app. Target: weekend warriors who want coaching guidance, not raw data dashboards.
