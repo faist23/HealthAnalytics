@@ -133,7 +133,7 @@ struct HolisticHealthDashboard: View {
                 }
                 .padding()
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: .radiusMd)
                         .fill(Color.accent.opacity(0.1))
                 )
                 .padding(.horizontal)
@@ -154,7 +154,7 @@ struct HolisticHealthDashboard: View {
                 }
                 .padding()
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: .radiusMd)
                         .fill(Color.statusMonitoring.opacity(0.1))
                 )
                 .padding(.horizontal)
@@ -337,7 +337,7 @@ struct OverallStatusView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: .radiusMd)
                 .fill(overallColor.opacity(0.1))
         )
     }

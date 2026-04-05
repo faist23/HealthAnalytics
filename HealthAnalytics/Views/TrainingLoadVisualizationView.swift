@@ -136,11 +136,11 @@ struct LoadSummaryCard: View {
             }
             .padding()
             .background(.yellow.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
         }
         .padding(20)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
         .padding(.horizontal)
     }
     
@@ -272,7 +272,7 @@ struct ACWRTimeSeriesChart: View {
                 }
                 .padding(12)
                 .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
                 .shadow(radius: 4)
                 .transition(.opacity)
             }
@@ -488,7 +488,7 @@ struct DangerZoneCard: View {
         }
         .padding()
         .background(.white.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
     }
 }
 

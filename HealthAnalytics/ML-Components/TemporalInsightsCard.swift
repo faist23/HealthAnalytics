@@ -106,11 +106,11 @@ struct TemporalInsightsCard: View {
             }
             .padding()
             .background(Color.statusMonitoring.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
         }
         .padding(20)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
     }
 }
 
@@ -240,7 +240,7 @@ struct SeasonalView: View {
                 .padding(.vertical, 8)
                 .padding(.horizontal, 12)
                 .background((yoy > 0 ? Color.statusOptimal : Color.statusWarning).opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
             }
             
             Divider()
@@ -342,7 +342,7 @@ struct LongitudinalView: View {
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
             .background(Color.statusRest.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
             
             // Peak periods
             if !analysis.peakPeriods.isEmpty {

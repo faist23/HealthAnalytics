@@ -332,7 +332,7 @@ struct MetricQualityRow: View {
         }
         .padding()
         .background(color.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
         .padding(.horizontal)
     }
 }
@@ -444,7 +444,7 @@ struct RecommendationRow: View {
         }
         .padding()
         .background(.yellow.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
         .padding(.horizontal)
     }
 }

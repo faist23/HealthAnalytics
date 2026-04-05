@@ -235,7 +235,7 @@ struct HeatmapLegend: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
         )
@@ -487,7 +487,7 @@ struct DetailMetricCard: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
         )

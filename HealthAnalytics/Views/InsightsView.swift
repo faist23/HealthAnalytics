@@ -191,7 +191,7 @@ struct InsightsView: View {
     /// Inline skeleton shown while pattern analysis is running for the first time
     private var patternLoadingSkeleton: some View {
         VStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: .radiusMd)
                 .fill(Color.surface)
                 .frame(height: 120)
                 .overlay(
@@ -230,7 +230,7 @@ struct InsightsView: View {
             .foregroundStyle(Color.accent)
         }
         .padding(16)
-        .background(Color.surface, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: .radiusMd))
         .frame(minHeight: 44)
     }
 
@@ -936,7 +936,7 @@ struct ProteinRecoveryCard: View {
                 .foregroundStyle(.primary)
                 .padding()
                 .background(Color.statusRest.opacity(0.1))
-                .cornerRadius(8)
+                .cornerRadius(.radiusSm)
 
             // Protein Ranges
             if !insight.proteinRanges.isEmpty {
@@ -1097,7 +1097,7 @@ struct CarbPerformanceCard: View {
             }
             .padding()
             .background(Color(.systemBackground))
-            .cornerRadius(8)
+            .cornerRadius(.radiusSm)
             
             // Difference badge
             if abs(insight.percentDifference) >= 5 {
@@ -1118,7 +1118,7 @@ struct CarbPerformanceCard: View {
                 .foregroundStyle(.secondary)
                 .padding()
                 .background(Color.statusOptimal.opacity(0.1))
-                .cornerRadius(8)
+                .cornerRadius(.radiusSm)
         }
         .padding()
         .cardStyle(for: .nutrition)

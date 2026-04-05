@@ -38,7 +38,7 @@ struct IntentAwareReadinessCard: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(acwrColor.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
             }
             
             Divider()
@@ -99,11 +99,11 @@ struct IntentAwareReadinessCard: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(statusColor.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
         }
         .padding(20)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
     }
     
     // MARK: - Computed Properties

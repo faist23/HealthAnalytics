@@ -247,7 +247,7 @@ struct TrainingZoneCard: View {
                     .foregroundStyle(.secondary)
                     .padding()
                     .background(Color.statusRest.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
             }
         }
     }
@@ -300,7 +300,7 @@ struct TrainingZoneCard: View {
                 .foregroundStyle(.secondary)
                 .padding()
                 .background(trendColor(analysis.efficiencyTrend.trend).opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
             
             // Decoupling events if any
             if !analysis.recentDecoupling.isEmpty {
@@ -447,9 +447,9 @@ struct BalanceColumn: View {
                         .frame(height: geometry.size.height * (hard / 100))
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: .radiusSm)
                     .stroke(isTarget ? Color.secondary : Color.clear, lineWidth: 2)
                     .opacity(0.3)
             )
@@ -511,7 +511,7 @@ struct DecouplingRow: View {
         }
         .padding(8)
         .background(severityColor.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
     }
     
     private var severityColor: Color {

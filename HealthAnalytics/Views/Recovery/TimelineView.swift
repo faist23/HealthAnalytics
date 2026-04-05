@@ -390,7 +390,7 @@ struct MetricToggles: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
         )
@@ -572,7 +572,7 @@ struct WorkoutTimeline: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
         )
@@ -661,7 +661,7 @@ struct TimelineStats: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
         )

@@ -184,7 +184,7 @@ struct EnhancedIntentReadinessCard: View {
         }
         .padding(20)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
     }
     
     // MARK: - Computed Properties
@@ -243,7 +243,7 @@ struct DataQualityBanner: View {
         }
         .padding(12)
         .background(bannerColor.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
     }
     
     private var bannerColor: Color {
@@ -309,7 +309,7 @@ struct ExpandableIntentRow: View {
                 }
                 .padding(12)
                 .background(color.opacity(isExpanded ? 0.15 : 0.05))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
             }
             .buttonStyle(.plain)
             
@@ -353,7 +353,7 @@ struct ExpandableIntentRow: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
                 .background(color.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
                 .padding(.top, 4)
             }
         }

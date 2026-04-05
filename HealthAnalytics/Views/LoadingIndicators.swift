@@ -77,7 +77,7 @@ struct LoadingOverlay: View {
             }
             .padding(40)
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: .radiusLg, style: .continuous)
                     .fill(.ultraThickMaterial)
                     .shadow(color: .black.opacity(0.2), radius: 30, y: 10)
             )
@@ -184,7 +184,7 @@ struct SyncProgressCard: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .fill(.ultraThinMaterial)
         )
     }

@@ -389,7 +389,7 @@ struct WorkoutDetailsCard: View {
         }
         .padding()
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
         .padding(.horizontal)
     }
     
@@ -460,7 +460,7 @@ struct MetricTile: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .background(Color.secondary.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
     }
 }
 

@@ -44,9 +44,9 @@ struct TrainingDNACard: View {
             coachingRow
         }
         .padding(16)
-        .background(Color.surface, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: .radiusMd))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: .radiusMd)
                 .stroke(Color.accentBorder, lineWidth: 1)
         )
         .onTapGesture {
@@ -107,9 +107,9 @@ struct TrainingDNACard: View {
             .foregroundStyle(Color.accent)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Color.accentDim, in: RoundedRectangle(cornerRadius: 8))
+            .background(Color.accentDim, in: RoundedRectangle(cornerRadius: .radiusSm))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: .radiusSm)
                     .stroke(Color.accentBorder, lineWidth: 1)
             )
     }

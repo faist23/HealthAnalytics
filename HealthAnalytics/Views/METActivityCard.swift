@@ -141,13 +141,13 @@ struct METActivityCard: View {
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: .radiusSm)
                     .fill(Color.statusMonitoring.opacity(0.1))
             )
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: .radiusMd)
                 .fill(Color(uiColor: .systemBackground))
                 .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
         )

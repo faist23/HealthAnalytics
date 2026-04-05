@@ -160,7 +160,7 @@ struct WelcomeStep: View {
                             endPoint: .trailing
                         )
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(.radiusMd)
                     .shadow(color: .blue.opacity(0.3), radius: 10, y: 5)
             }
             .padding(.horizontal, 24)
@@ -214,7 +214,7 @@ struct HealthKitStep: View {
             }
             .padding(20)
             .background(Color.white.opacity(0.1))
-            .cornerRadius(16)
+            .cornerRadius(.radiusMd)
             .padding(.horizontal, 24)
             
             Spacer()
@@ -233,7 +233,7 @@ struct HealthKitStep: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.accent)
-                        .cornerRadius(16)
+                        .cornerRadius(.radiusMd)
                 }
                 .padding(.horizontal, 24)
             }
@@ -256,7 +256,7 @@ struct HealthKitStep: View {
                             endPoint: .trailing
                         )
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(.radiusMd)
                 }
                 .padding(.horizontal, 24)
             }
@@ -319,7 +319,7 @@ struct StravaStep: View {
             }
             .padding(20)
             .background(Color.white.opacity(0.1))
-            .cornerRadius(16)
+            .cornerRadius(.radiusMd)
             .padding(.horizontal, 24)
             
             Spacer()
@@ -342,7 +342,7 @@ struct StravaStep: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.statusWarning)
-                        .cornerRadius(16)
+                        .cornerRadius(.radiusMd)
                     }
                     .disabled(isConnecting)
                 } else {
@@ -356,7 +356,7 @@ struct StravaStep: View {
                     .padding()
                     .frame(maxWidth: .infinity)
                     .background(Color.statusOptimal.opacity(0.2))
-                    .cornerRadius(16)
+                    .cornerRadius(.radiusMd)
                     
                     Button(action: { onContinue(false) }) {
                         HStack {
@@ -374,7 +374,7 @@ struct StravaStep: View {
                                 endPoint: .trailing
                             )
                         )
-                        .cornerRadius(16)
+                        .cornerRadius(.radiusMd)
                     }
                 }
                 
@@ -495,7 +495,7 @@ struct SyncingStep: View {
                             endPoint: .trailing
                         )
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(.radiusMd)
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 20)
@@ -585,7 +585,7 @@ struct FeatureTourStep: View {
                                 endPoint: .trailing
                             )
                         )
-                        .cornerRadius(16)
+                        .cornerRadius(.radiusMd)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 40)

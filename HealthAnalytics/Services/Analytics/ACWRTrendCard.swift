@@ -333,7 +333,7 @@ struct ACWRExplainerSheet: View {
                             .foregroundStyle(.secondary)
                             .padding()
                             .background(Color(.systemGray6))
-                            .cornerRadius(8)
+                            .cornerRadius(.radiusSm)
                     }
                 }
                 .padding()

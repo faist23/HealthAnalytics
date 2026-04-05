@@ -104,7 +104,7 @@ struct SolidCardStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                     .fill(colorScheme == .dark ? Color.surface : .white)
                     .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, y: 4)
             )
@@ -149,7 +149,7 @@ struct TintedCardStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                     .fill(tint.opacity(0.15))
                     .shadow(color: tint.opacity(0.3), radius: 8, y: 4)
             )

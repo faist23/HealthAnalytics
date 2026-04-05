@@ -103,7 +103,7 @@ struct ReadinessBreakdownCard: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: .radiusMd)
                 .fill(Color(uiColor: .systemBackground))
                 .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
         )

@@ -159,7 +159,7 @@ struct ChartSection<Content: View>: View {
         }
         .padding(.vertical)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
         .padding(.horizontal)
     }
 }
@@ -228,7 +228,7 @@ struct MacroBreakdownChart: View {
                             }
                             .padding(8)
                             .background(Color(uiColor: .systemBackground))
-                            .cornerRadius(8)
+                            .cornerRadius(.radiusSm)
                             .shadow(radius: 3)
                         }
                     }

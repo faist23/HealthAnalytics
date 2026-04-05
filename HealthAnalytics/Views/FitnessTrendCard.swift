@@ -160,7 +160,7 @@ struct FitnessTrendCard: View {
                 }
                 .padding()
                 .background(Color(fitnessAge.classification.color).opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
             }
             
             // Fitness Balance
@@ -350,12 +350,12 @@ struct FitnessTrendCard: View {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         // Background
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: .radiusSm)
                             .fill(Color.textTertiary.opacity(0.2))
                             .frame(height: 40)
 
                         // Progress
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: .radiusSm)
                             .fill(Color.accent)
                             .frame(
                                 width: geometry.size.width * (analysis.projections.percentOfCeiling / 100),
@@ -413,7 +413,7 @@ struct FitnessTrendCard: View {
                     .padding()
                     .frame(maxWidth: .infinity)
                     .background(Color.statusWarning.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
             }
             
             // Time to plateau

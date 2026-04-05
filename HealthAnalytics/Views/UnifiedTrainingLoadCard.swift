@@ -114,7 +114,7 @@ struct UnifiedTrainingLoadCard: View {
                     .padding(.vertical, 8)
                     .padding(.horizontal, 10)
                     .background(Color.statusWarning.opacity(0.1))
-                    .cornerRadius(8)
+                    .cornerRadius(.radiusSm)
                 } else {
                     VStack(spacing: 8) {
                         // Yesterday TSS
@@ -300,7 +300,7 @@ struct UnifiedTrainingLoadCard: View {
                     .padding(.vertical, 8)
                     .padding(.horizontal, 10)
                     .background(Color.statusMonitoring.opacity(0.1))
-                    .cornerRadius(8)
+                    .cornerRadius(.radiusSm)
                 }
             }
             

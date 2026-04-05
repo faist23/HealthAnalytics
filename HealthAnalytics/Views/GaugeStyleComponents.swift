@@ -105,11 +105,11 @@ struct MetricList<Content: View>: View {
             content
         }
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .fill(Color(white: 0.1).opacity(0.8))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .stroke(Color.white.opacity(0.05), lineWidth: 1)
         )
     }

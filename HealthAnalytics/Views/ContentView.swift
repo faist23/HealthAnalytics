@@ -83,7 +83,7 @@ struct ContentView: View {
                             )
                             .padding()
                             .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                                     .fill(.ultraThinMaterial)
                                     .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
                             )

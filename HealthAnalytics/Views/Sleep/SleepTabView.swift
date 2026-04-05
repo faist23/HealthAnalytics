@@ -72,7 +72,7 @@ struct SleepTabView: View {
                             DetailedSleepChart(data: viewModel.sleepHistory, period: .month)
                                 .padding()
                                 .background(Color(white: 0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
                         }
                         .padding(.horizontal)
                         

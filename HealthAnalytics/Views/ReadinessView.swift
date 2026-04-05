@@ -241,7 +241,7 @@ struct DailyInstructionCard: View {
                 .padding(.vertical, 8)
                 .padding(.horizontal, 12)
                 .background(instruction.status.color.opacity(0.1))
-                .cornerRadius(8)
+                .cornerRadius(.radiusSm)
             }
             
             if let insight = instruction.primaryInsight {
@@ -328,7 +328,7 @@ struct ReadinessScoreHero: View {
             }
             .padding()
             .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
             
             // Confidence indicator
             HStack {
@@ -781,7 +781,7 @@ struct TrainingLoadPreviewCard: View {
         }
         .padding(20)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
     }
     
     private var statusColor: Color {
