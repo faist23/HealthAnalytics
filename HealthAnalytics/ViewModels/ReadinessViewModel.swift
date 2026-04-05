@@ -103,6 +103,7 @@ class ReadinessViewModel: ObservableObject {
     @Published var primaryActivity: String = "Ride"
     @Published var dailyTSSData: [DailyTSSData] = []
     @Published var selectedPeriod: TimePeriod = .quarter
+    @Published var todayWorkouts: [WorkoutData] = []
 
     // Pattern Discovery State
     private var cachedPatterns: [PerformancePatternAnalyzer.PerformanceWindow]?
@@ -245,6 +246,11 @@ class ReadinessViewModel: ObservableObject {
             let stepData = storedHealthMetrics.filter { $0.type == "Steps" }
                 .map { HealthDataPoint(date: $0.date, value: $0.value) }
             dailyTSSData = calculateDailyTSS(workouts: workouts, stepData: stepData)
+            
+            // Populate todayWorkouts
+            let calendar = Calendar.current
+            let today = calendar.startOfDay(for: Date())
+            todayWorkouts = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
             
         } catch {
             errorMessage = "Failed to analyze readiness: \(error.localizedDescription)"

@@ -97,19 +97,27 @@ class BiologicalAgingService {
             // 6. Compare Current HRV to Population Standard
             // Model: Standard 25-year-old HRV (SDNN) is roughly 65-70ms. 
             // It drops ~1.5ms per year.
-            let standardHRVForAge = 70.0 - (Double(chronoAge - 25) * 1.5)
+            let standardHRVForAge = max(10.0, 70.0 - (Double(chronoAge - 25) * 1.5))
             
             // Biological Age Calculation (Primary Driver: HRV Efficiency)
             // If current HRV is higher than standard, you are biologically younger.
             let hrvDifference = currentHRV - standardHRVForAge
-            let hrvAgeAdjustment = hrvDifference / 1.5 // 1.5ms per year equivalence
+            let hrvAgeAdjustment = hrvDifference / 2.5 // Less aggressive equivalence
             
             // RHR Adjustment (Lower is better, typically stable RHR is 60)
-            // Every 2bpm below 60 is roughly 1 "bonus" biological year
-            let rhrAgeAdjustment = (60.0 - currentRHR) / 2.0
+            // Every 3bpm below 60 is roughly 1 "bonus" biological year
+            let rhrAgeAdjustment = (60.0 - currentRHR) / 3.0
             
-            let biologicalAge = Double(chronoAge) - hrvAgeAdjustment - rhrAgeAdjustment
-            let agingAlpha = Double(chronoAge) - biologicalAge
+            let totalAdjustment = hrvAgeAdjustment + rhrAgeAdjustment
+            
+            // Cap maximum adjustment to 25% of chronological age or 15 years to remain realistic
+            let maxAdjustment = min(Double(chronoAge) * 0.25, 15.0)
+            let minAdjustment = max(-Double(chronoAge) * 0.25, -15.0)
+            
+            let clampedAdjustment = max(min(totalAdjustment, maxAdjustment), minAdjustment)
+            
+            let biologicalAge = Double(chronoAge) - clampedAdjustment
+            let agingAlpha = clampedAdjustment
             
             return AgingAssessment(
                 chronologicalAge: chronoAge,

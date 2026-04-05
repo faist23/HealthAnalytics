@@ -9,6 +9,7 @@ import SwiftUI
 import SwiftData
 import Charts
 
+@available(*, deprecated, message: "Replaced by MainTabView and its sub-tabs (Recovery, Strain, Sleep).")
 struct ReadinessView: View {
     @StateObject private var viewModel = ReadinessViewModel()
     @State private var isFirstLoad = true
