@@ -2,58 +2,44 @@
 //  MainTabView.swift
 //  HealthAnalytics
 //
-//  Created by Craig Faist on 1/25/26.
-//
 
 import SwiftUI
 
-// MARK: - App Mode
-
-enum AppMode: String, CaseIterable {
-    case morning = "Morning"
-    case evening = "Evening"
-
-    var systemImage: String {
-        switch self {
-        case .morning: return "sunrise.fill"
-        case .evening: return "sunset.fill"
-        }
-    }
-
-    /// (primaryLabel, secondaryLabel) for the sub-view picker.
-    var subTitles: (String, String) {
-        switch self {
-        case .morning: return ("Readiness", "Today")
-        case .evening: return ("Training", "Nutrition")
-        }
-    }
-
-    /// Auto-detect: before 13:00 → morning, 13:00+ → evening.
-    static var currentDefault: AppMode {
-        Calendar.current.component(.hour, from: Date()) < 13 ? .morning : .evening
-    }
-}
-
-// MARK: - MainTabView
-
 struct MainTabView: View {
-
-    @State private var activeMode: AppMode = AppMode.currentDefault
-    /// 0 = Readiness, 1 = Today  (preserved when switching to evening and back)
-    @State private var morningTab  = 0
-    /// 0 = Training,  1 = Nutrition  (preserved when switching to morning and back)
-    @State private var eveningTab  = 0
-
+    @State private var selectedTab = 0
     @State private var showSettings = false
     @State private var showInsights = false
-
     @ObservedObject var syncManager = SyncManager.shared
     @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
         ZStack {
-            contentArea
-                .safeAreaInset(edge: .bottom) { bottomBar }
+            TabView(selection: $selectedTab) {
+                RecoveryTabView()
+                    .tabItem {
+                        Label("Recovery", systemImage: "battery.100")
+                    }
+                    .tag(0)
+
+                StrainTabView()
+                    .tabItem {
+                        Label("Strain", systemImage: "flame.fill")
+                    }
+                    .tag(1)
+
+                SleepTabView()
+                    .tabItem {
+                        Label("Sleep", systemImage: "moon.zzz.fill")
+                    }
+                    .tag(2)
+                
+                HealthspanTabView()
+                    .tabItem {
+                        Label("Healthspan", systemImage: "heart.text.square.fill")
+                    }
+                    .tag(3)
+            }
+            .tint(AppColors.accentColor(for: selectedTab))
 
             if syncManager.isSyncing {
                 LoadingOverlay(message: syncManager.syncProgress)
@@ -78,115 +64,6 @@ struct MainTabView: View {
                         }
                     }
             }
-        }
-    }
-
-    // MARK: - Content Area
-
-    @ViewBuilder
-    private var contentArea: some View {
-        switch activeMode {
-        case .morning:
-            if morningTab == 0 {
-                NavigationStack {
-                    ReadinessView()
-                        .toolbar { sharedToolbar }
-                }
-            } else {
-                NavigationStack {
-                    ContentView()
-                        .toolbar { sharedToolbar }
-                }
-            }
-        case .evening:
-            if eveningTab == 0 {
-                NavigationStack {
-                    TrainingView()
-                        .toolbar { sharedToolbar }
-                }
-            } else {
-                NavigationStack {
-                    NutritionView()
-                        .toolbar { sharedToolbar }
-                }
-            }
-        }
-    }
-
-    // MARK: - Shared Toolbar
-
-    @ToolbarContentBuilder
-    private var sharedToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button { showInsights = true } label: {
-                Image(systemName: "lightbulb")
-            }
-        }
-        ToolbarItem(placement: .topBarTrailing) {
-            Button { showSettings = true } label: {
-                Image(systemName: "gearshape")
-            }
-        }
-    }
-
-    // MARK: - Bottom Bar
-
-    private var bottomBar: some View {
-        VStack(spacing: 10) {
-            subViewPicker
-            modeToggle
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .background(.ultraThinMaterial, ignoresSafeAreaEdges: .bottom)
-    }
-
-    private var subViewPicker: some View {
-        let (primary, secondary) = activeMode.subTitles
-        let binding = subTabBinding
-        return Picker("", selection: binding) {
-            Text(primary).tag(0)
-            Text(secondary).tag(1)
-        }
-        .pickerStyle(.segmented)
-    }
-
-    private var modeToggle: some View {
-        HStack(spacing: 4) {
-            ForEach(AppMode.allCases, id: \.self) { mode in
-                modeButton(mode)
-            }
-        }
-        .padding(4)
-        .background(Color.surface, in: RoundedRectangle(cornerRadius: 14))
-    }
-
-    private func modeButton(_ mode: AppMode) -> some View {
-        let isActive = activeMode == mode
-        return Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                activeMode = mode
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: mode.systemImage).font(.caption)
-                Text(mode.rawValue).font(.subheadline.weight(.semibold))
-            }
-            .foregroundStyle(isActive ? Color.background : Color.textSecondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 10).fill(isActive ? Color.accent : Color.clear))
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Sub-tab Binding
-
-    private var subTabBinding: Binding<Int> {
-        switch activeMode {
-        case .morning: return $morningTab
-        case .evening: return $eveningTab
         }
     }
 }
@@ -220,7 +97,6 @@ struct TabBackgroundColor {
     static func settings(for colorScheme: ColorScheme) -> Color { AppColors.settingsBG }
 }
 
-
 // MARK: - New Solid Card Style (Replaces glass effect)
 struct SolidCardStyle: ViewModifier {
     @Environment(\.colorScheme) var colorScheme
@@ -229,7 +105,7 @@ struct SolidCardStyle: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                    .fill(colorScheme == .dark ? Color.surface : .white)
                     .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, y: 4)
             )
     }
@@ -242,23 +118,28 @@ extension View {
 }
 
 struct AppColors {
-    // Card tints
-    static let heartRate = Color.red
-    static let hrv       = Color.green
-    static let sleep     = Color.blue
-    static let steps     = Color.orange
-    static let workouts  = Color.pink
-    static let recovery  = Color.purple
-    static let nutrition = Color.teal
-    static let error     = Color.red
-    static let info      = Color.indigo
+    // Card tints — mapped to Warm Signal semantic tokens (DESIGN.md)
+    static let heartRate = Color.statusWarning   // Ember — HR elevation signals stress
+    static let hrv       = Color.statusOptimal   // Bio-green — HRV health indicator
+    static let sleep     = Color.statusRest      // Sky blue — rest/recovery mode
+    static let steps     = Color.accent          // Terracotta — daily activity energy
+    static let workouts  = Color.accent          // Terracotta — training effort
+    static let recovery  = Color.statusOptimal   // Bio-green — recovery quality
+    static let nutrition = Color.statusMonitoring // Amber — nutrition monitoring
+    static let error     = Color.statusWarning   // Ember — high-risk / error state
+    static let info      = Color.statusRest      // Sky blue — informational
 
-    // Tab background colors
-    static let dashboardBG = Color(red: 0.1, green: 0.05, blue: 0.15)
-    static let nutritionBG = Color(red: 0.05, green: 0.15, blue: 0.1)
-    static let recoveryBG  = Color(red: 0.15, green: 0.05, blue: 0.1)
-    static let insightsBG  = Color(red: 0.05, green: 0.1, blue: 0.15)
-    static let settingsBG  = Color(red: 0.1, green: 0.1, blue: 0.1)
+    // Tab backgrounds — all use the app background token (no per-tab tinting per DESIGN.md)
+    static let dashboardBG = Color.background
+    static let nutritionBG = Color.background
+    static let recoveryBG  = Color.background
+    static let insightsBG  = Color.background
+    static let settingsBG  = Color.background
+
+    // Unified tab bar tint — terracotta accent across all tabs
+    static func accentColor(for tab: Int) -> Color {
+        Color.accent
+    }
 }
 
 // MARK: - Tinted Card Modifier
@@ -300,7 +181,6 @@ extension View {
 enum CardType {
     case heartRate, hrv, sleep, steps, workouts, recovery, nutrition, error, info
 }
-
 
 #Preview {
     MainTabView()
