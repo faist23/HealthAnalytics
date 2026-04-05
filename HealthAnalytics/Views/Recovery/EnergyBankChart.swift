@@ -16,6 +16,7 @@ struct EnergyBankDataPoint: Identifiable {
 struct EnergyBankChart: View {
     let intraDay: RecoveryDecayService.IntraDayReadiness?
     let baselineScore: Int?
+    let priorDayFatigueImpact: Double
     let todayWorkouts: [WorkoutData]
     
     @Environment(\.colorScheme) var colorScheme
@@ -44,6 +45,7 @@ struct EnergyBankChart: View {
             let simulatedIntra = decayService.calculateIntraDayReadiness(
                 baselineScore: baseline,
                 todayWorkouts: todayWorkouts,
+                priorDayFatigueImpact: priorDayFatigueImpact,
                 now: currentTime
             )
             
@@ -60,6 +62,7 @@ struct EnergyBankChart: View {
         let currentIntra = decayService.calculateIntraDayReadiness(
             baselineScore: baseline,
             todayWorkouts: todayWorkouts,
+            priorDayFatigueImpact: priorDayFatigueImpact,
             now: now
         )
         points.append(EnergyBankDataPoint(

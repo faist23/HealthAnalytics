@@ -88,9 +88,12 @@ struct RecoveryTabView: View {
                                     .padding(.horizontal)
                                     
                                     // Keep Energy Bank Chart
+                                    // priorDayFatigueImpact: fatigueScore of 30 = no debt;
+                                    // every point below 30 represents carry-forward strain.
                                     EnergyBankChart(
                                         intraDay: viewModel.intraDayReadiness,
                                         baselineScore: readiness.score,
+                                        priorDayFatigueImpact: Double(30 - readiness.breakdown.fatigueScore),
                                         todayWorkouts: viewModel.todayWorkouts
                                     )
                                     

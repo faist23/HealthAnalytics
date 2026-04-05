@@ -275,9 +275,12 @@ class ReadinessRepository: ObservableObject {
             )
 
             // 4. Intra-Day Recovery Decay (Dynamic Score)
+            // Carry-forward: fatigueScore of 30 = no debt; less than 30 = points suppressed by prior strain.
+            let priorDayFatigueImpact = Double(30 - baseReadiness.breakdown.fatigueScore)
             let intraDay = recoveryService.calculateIntraDayReadiness(
                 baselineScore: baseReadiness.score,
-                todayWorkouts: workouts
+                todayWorkouts: workouts,
+                priorDayFatigueImpact: max(0, priorDayFatigueImpact)
             )
 
             // 5. ML Sub-services (moved from ReadinessViewModel per GEMINI.md)
