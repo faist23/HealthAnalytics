@@ -150,10 +150,14 @@ struct IntentAwareReadinessTestView: View {
                 HealthDataPoint(date: metric.date, value: metric.value)
             }
             
+            #if DEBUG
             print("📊 Fetched health data: Sleep=\(sleepData.count), HRV=\(hrvData.count)")
-            
+            #endif
+
         } catch {
+            #if DEBUG
             print("❌ Failed to fetch health data: \(error)")
+            #endif
         }
     }
     

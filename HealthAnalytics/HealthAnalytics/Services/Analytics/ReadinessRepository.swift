@@ -152,7 +152,9 @@ class ReadinessRepository: ObservableObject {
            Calendar.current.isDateInToday(lastDate),
            fingerprint == lastFingerprint,
            currentReadiness != nil {
+            #if DEBUG
             print("✅ ReadinessRepository: Using cached unified analysis")
+            #endif
             return
         }
         
@@ -170,7 +172,9 @@ class ReadinessRepository: ObservableObject {
         isAnalyzing = true
         analysisError = nil
 
+        #if DEBUG
         print("🔄 ReadinessRepository: Starting unified analysis...")
+        #endif
 
         do {
             // 1. Fetch data with STABLE calendar windows
@@ -312,10 +316,14 @@ class ReadinessRepository: ObservableObject {
                         )
                     }.value
                     lastMLTraining = Date()
+                    #if DEBUG
                     print("✅ ReadinessRepository: Trained \(trainedModels.count) ML model(s)")
+                    #endif
                 } catch {
                     mlError = error.localizedDescription
+                    #if DEBUG
                     print("❌ ReadinessRepository: ML training failed: \(error)")
+                    #endif
                 }
             }
 
@@ -490,10 +498,14 @@ class ReadinessRepository: ObservableObject {
             self.lastFingerprint = fingerprint
             self.lastAnalysisDate = now
 
+            #if DEBUG
             print("✅ ReadinessRepository: Unified Analysis Complete. Score: \(baseReadiness.score)")
+            #endif
 
         } catch {
+            #if DEBUG
             print("❌ ReadinessRepository Error: \(error)")
+            #endif
             analysisError = error.localizedDescription
         }
 

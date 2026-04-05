@@ -119,16 +119,20 @@ struct TrainingLoadVisualizationService {
         daysBack: Int = 90
     ) -> LoadVisualizationData {
         
+        #if DEBUG
         print("📊 Generating training load visualization...")
-        
+        #endif
+
         let calendar = Calendar.current
         let endDate = Date()
         let startDate = calendar.date(byAdding: .day, value: -daysBack, to: endDate)!
-        
+
         // Filter recent workouts
         let recentWorkouts = workouts.filter { $0.startDate >= startDate }
-        
+
+        #if DEBUG
         print("   Analyzing \(recentWorkouts.count) workouts over \(daysBack) days")
+        #endif
         
         // 1. Generate time series data (daily ACWR)
         let timeSeriesData = generateTimeSeriesData(
@@ -159,10 +163,12 @@ struct TrainingLoadVisualizationService {
             dangerZones: dangerZones
         )
         
+        #if DEBUG
         print("   ✅ Visualization data generated")
         print("      Time points: \(timeSeriesData.count)")
         print("      Intent types: \(intentBreakdown.count)")
         print("      Danger zones: \(dangerZones.count)")
+        #endif
         
         return LoadVisualizationData(
             timeSeriesData: timeSeriesData,

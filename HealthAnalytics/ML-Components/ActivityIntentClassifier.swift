@@ -132,7 +132,9 @@ struct ActivityIntentClassifier {
             throw ClassifierError.insufficientData(count: labeledWorkouts.count, required: 10)
         }
 
+        #if DEBUG
         print("🤖 Training intent classifier with \(labeledWorkouts.count) labeled examples...")
+        #endif
 
         // Build DataFrame
         var df = DataFrame()
@@ -161,7 +163,9 @@ struct ActivityIntentClassifier {
         df.append(column: Column(name: "is_long", contents: isLong))
         df.append(column: Column(name: "intent", contents: intents))
 
+        #if DEBUG
         print("   📊 Training data shape: \(df.rows.count) rows, \(df.columns.count) columns")
+        #endif
 
         let classifier = try MLRandomForestClassifier(
             trainingData: df,
@@ -180,22 +184,28 @@ struct ActivityIntentClassifier {
         let metrics = classifier.trainingMetrics
         let accuracy = (1.0 - metrics.classificationError) * 100.0
 
+        #if DEBUG
         print("   ✅ Training complete!")
         print("   📈 Training Accuracy: \(String(format: "%.1f%%", accuracy))")
+        #endif
 
         let validationMetrics = classifier.validationMetrics
         let validationAccuracy = (1.0 - validationMetrics.classificationError) * 100.0
+        #if DEBUG
         print("   📊 Validation Accuracy: \(String(format: "%.1f%%", validationAccuracy))")
+        #endif
 
         let featureImportance = approximateFeatureImportance(
             classifier: classifier,
             trainingData: df
         )
 
+        #if DEBUG
         print("   🔍 Top Features:")
         for (feature, importance) in featureImportance.sorted(by: { $0.value > $1.value }).prefix(3) {
             print("      \(feature): \(String(format: "%.1f%%", importance * 100))")
         }
+        #endif
 
         return TrainingResult(
             model: classifier.model,
@@ -285,13 +295,17 @@ struct ActivityIntentClassifier {
                 let prediction = try predict(features: features, using: model, allowedActivityTypes: allowedActivityTypes)
                 results.append((workout.id, prediction.intent, prediction.confidence))
             } catch {
+                #if DEBUG
                 print("⚠️ Failed to classify workout \(workout.id): \(error)")
+                #endif
                 // Default to "other"
                 results.append((workout.id, .other, 0.1))
             }
         }
         
+        #if DEBUG
         print("   ✅ Classified \(results.count) workouts")
+        #endif
         return results
     }
     

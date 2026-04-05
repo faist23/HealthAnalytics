@@ -46,7 +46,9 @@ class NutritionViewModel: ObservableObject {
         await SyncManager.shared.performSmartSync()
 
         do {
+            #if DEBUG
             print("🍎 Loading Nutrition from SwiftData...")
+            #endif
             
             // 2. Calculate Date Range
             let calendar = Calendar.current
@@ -74,13 +76,17 @@ class NutritionViewModel: ObservableObject {
             // 5. Calculate Averages for the UI header
             calculateAverages()
             
+            #if DEBUG
             print("✅ Loaded \(self.dailyNutrition.count) nutrition entries from storage")
+            #endif
             isLoading = false
-            
+
         } catch {
             errorMessage = "Failed to load nutrition: \(error.localizedDescription)"
             isLoading = false
+            #if DEBUG
             print("❌ Nutrition Load Error: \(error)")
+            #endif
         }
     }
     

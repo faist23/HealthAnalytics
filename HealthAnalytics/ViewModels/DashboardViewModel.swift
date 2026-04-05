@@ -118,7 +118,9 @@ class DashboardViewModel: ObservableObject {
             // The readiness score is now handled via subscription to ReadinessRepository
             
         } catch {
+            #if DEBUG
             print("Failed to fetch dashboard data: \(error)")
+            #endif
             self.errorMessage = "Could not load data from database."
         }
         

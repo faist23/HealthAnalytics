@@ -130,7 +130,9 @@ struct BalancedTrainingAnalyzer {
         stravaActivities: [StravaActivity]
     ) -> TrainingBalance? {
         
+        #if DEBUG
         print("⚖️ Analyzing Training Balance...")
+        #endif
         
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -150,7 +152,9 @@ struct BalancedTrainingAnalyzer {
         let recentWorkouts = allWorkouts.filter { $0.startDate >= twoWeeksAgo }
         
         guard !recentWorkouts.isEmpty else {
+            #if DEBUG
             print("   ⚠️ No workout data for balance analysis")
+            #endif
             return nil
         }
         
@@ -220,7 +224,9 @@ struct BalancedTrainingAnalyzer {
         let totalMinutes = enduranceMinutes + strengthMinutes + mobilityMinutes
         
         guard totalMinutes > 0 else {
+            #if DEBUG
             print("   ⚠️ No categorizable training data")
+            #endif
             return nil
         }
         
@@ -281,11 +287,13 @@ struct BalancedTrainingAnalyzer {
             other: otherMinutes
         )
         
+        #if DEBUG
         print("   Endurance: \(String(format: "%.0f", enduranceMinutes)) min (\(String(format: "%.0f", endurancePercentage))%)")
         print("   Strength: \(String(format: "%.0f", strengthMinutes)) min (\(String(format: "%.0f", strengthPercentage))%)")
         print("   Mobility: \(String(format: "%.0f", mobilityMinutes)) min (\(String(format: "%.0f", mobilityPercentage))%)")
         print("   Balance: \(balance.label)")
         print("   Days since strength: \(daysSinceStrength)")
+        #endif
         
         return TrainingBalance(
             enduranceMinutes: enduranceMinutes,

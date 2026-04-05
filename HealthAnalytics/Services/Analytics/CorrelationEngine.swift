@@ -101,10 +101,12 @@ class CorrelationEngine {
         for (type, data) in performanceByType {
             let totalSamples = data.good.count + data.poor.count
             
+            #if DEBUG
             print("📊 \(type):")
             print("   Good sleep: \(data.good.count) workouts")
             print("   Poor sleep: \(data.poor.count) workouts")
             print("   Total: \(totalSamples)")
+            #endif
             
             guard totalSamples >= 5, data.good.count >= 2, data.poor.count >= 2 else { continue }
             
@@ -140,10 +142,12 @@ class CorrelationEngine {
             stravaActivities: stravaActivities
         )
         
+        #if DEBUG
         print("📊 Sleep vs Performance Analysis:")
         print("   Using \(hkOnly.count) HealthKit-only workouts")
         print("   Using \(stravaOnly.count) Strava-only workouts")
         print("   Using \(matched.count) matched workouts (counted once)")
+        #endif
         
         // Create a dictionary of sleep by date
         var sleepByDate: [Date: Double] = [:]
@@ -208,8 +212,10 @@ class CorrelationEngine {
         let totalSamples = goodSleepWorkouts.count + poorSleepWorkouts.count
         
         if totalSamples < 5 || goodSleepWorkouts.count < 3 || poorSleepWorkouts.count < 3 {
+            #if DEBUG
             print("⚠️ Insufficient data for meaningful comparison:")
             print("   Good sleep: \(goodSleepWorkouts.count), Poor sleep: \(poorSleepWorkouts.count)")
+            #endif
             
             return SleepPerformanceInsight(
                 averagePerformanceWithGoodSleep: 0,
@@ -229,19 +235,21 @@ class CorrelationEngine {
         let percentDifference = baseline > 0 ? ((avgGoodSleep - avgPoorSleep) / baseline) * 100 : 0
         
         // DEBUG SECTION:
+        #if DEBUG
         print("📊 Sleep Performance Details:")
         print("   Good sleep workouts: \(goodSleepWorkouts.count)")
         print("   Poor sleep workouts: \(poorSleepWorkouts.count)")
         print("   Avg performance (good sleep): \(String(format: "%.2f", avgGoodSleep))")
         print("   Avg performance (poor sleep): \(String(format: "%.2f", avgPoorSleep))")
         print("   Difference: \(String(format: "%.1f", percentDifference))%")
-        
+
         if !goodSleepWorkouts.isEmpty {
             print("   Good sleep samples: \(goodSleepWorkouts.map { String(format: "%.1f", $0) }.joined(separator: ", "))")
         }
         if !poorSleepWorkouts.isEmpty {
             print("   Poor sleep samples: \(poorSleepWorkouts.map { String(format: "%.1f", $0) }.joined(separator: ", "))")
         }
+        #endif
         
         // Determine confidence level
         let confidence: SleepPerformanceInsight.ConfidenceLevel
@@ -505,7 +513,9 @@ class CorrelationEngine {
         guard !hrvData.isEmpty else { return [] }
         let avgHRV = hrvData.map { $0.value }.reduce(0, +) / Double(hrvData.count)
         
+        #if DEBUG
         print("📊 HRV Baseline: \(String(format: "%.1f", avgHRV)) ms")
+        #endif
         
         // Create HRV lookup by date
         var hrvByDate: [Date: Double] = [:]
@@ -607,10 +617,12 @@ class CorrelationEngine {
                     confidence: confidence
                 ))
                 
+                #if DEBUG
                 print("📊 \(type) HRV Analysis:")
                 print("   High HRV: \(data.high.count) workouts, avg \(String(format: "%.1f", avgHigh))")
                 print("   Low HRV: \(data.low.count) workouts, avg \(String(format: "%.1f", avgLow))")
                 print("   Difference: \(String(format: "%.1f", percentDiff))%")
+                #endif
             }
         }
         

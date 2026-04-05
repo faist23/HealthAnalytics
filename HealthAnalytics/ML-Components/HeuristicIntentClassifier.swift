@@ -171,7 +171,9 @@ struct HeuristicIntentClassifier {
             results.append((workout.id, intent, confidence))
         }
         
+        #if DEBUG
         print("🧠 Heuristic classifier: Classified \(results.count) workouts")
+        #endif
         
         return results
     }

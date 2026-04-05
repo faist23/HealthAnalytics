@@ -146,7 +146,9 @@ class SleepViewModel: ObservableObject {
                 .sorted { $0.date < $1.date }
             
         } catch {
+            #if DEBUG
             print("Failed to fetch sleep history: \(error)")
+            #endif
         }
     }
     

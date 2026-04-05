@@ -118,7 +118,9 @@ struct METAnalyzer {
         stepData: [HealthDataPoint]
     ) -> METSummary? {
         
+        #if DEBUG
         print("🏃 Analyzing MET Activity...")
+        #endif
         
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -182,7 +184,9 @@ struct METAnalyzer {
         let totalMETMinutes = weeklyLight + weeklyModerate + weeklyVigorous
         
         guard totalMETMinutes > 0 else {
+            #if DEBUG
             print("   ⚠️ No MET activity data available")
+            #endif
             return nil
         }
         
@@ -233,12 +237,14 @@ struct METAnalyzer {
         // Research context
         let researchContext = "Based on 750,000+ participant studies: Each MET increase = 14-15% mortality reduction"
         
+        #if DEBUG
         print("   Weekly MET-minutes: \(String(format: "%.0f", totalMETMinutes))")
         print("   Status: \(status.label)")
         print("   Trend: \(trend)")
         print("   Light: \(String(format: "%.0f", weeklyLight)) min")
         print("   Moderate: \(String(format: "%.0f", weeklyModerate)) min")
         print("   Vigorous: \(String(format: "%.0f", weeklyVigorous)) min")
+        #endif
         
         return METSummary(
             weeklyMETMinutes: totalMETMinutes,

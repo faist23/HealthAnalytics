@@ -59,7 +59,9 @@ class BiologicalAgingService {
     func calculateAgingAlpha(modelContext: ModelContext) async -> AgingAssessment? {
         // 1. Get Chronological Age from HealthKit
         guard let chronoAge = HealthKitManager.shared.getUserAge() else {
+            #if DEBUG
             print("⚠️ BiologicalAgingService: Could not retrieve age from HealthKit")
+            #endif
             return nil
         }
         
@@ -81,7 +83,9 @@ class BiologicalAgingService {
             let rhrData = metrics.filter { $0.type == "RHR" }
             
             guard hrvData.count > 30 else { // Need at least a month of data to start
+                #if DEBUG
                 print("⚠️ BiologicalAgingService: Insufficient historical data")
+                #endif
                 return nil
             }
             
@@ -129,7 +133,9 @@ class BiologicalAgingService {
             )
             
         } catch {
+            #if DEBUG
             print("❌ BiologicalAgingService Error: \(error)")
+            #endif
             return nil
         }
     }

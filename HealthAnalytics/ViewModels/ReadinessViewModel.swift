@@ -209,7 +209,9 @@ class ReadinessViewModel: ObservableObject {
                     Date().timeIntervalSince(lastPatternDiscovery!) > 86400
 
                 if shouldRediscover {
+                    #if DEBUG
                     print("🔬 Discovering patterns from recent workouts only...")
+                    #endif
 
                     // Only analyze last 365 days of data
                     let calendar = Calendar.current
@@ -218,7 +220,9 @@ class ReadinessViewModel: ObservableObject {
                     let recentSleep = sleepData.filter { $0.date >= oneYearAgo }
                     let recentNutrition = nutrition.filter { $0.date >= oneYearAgo }
 
+                    #if DEBUG
                     print("   Analyzing \(recentWorkouts.count) recent workouts (vs \(workouts.count) total)")
+                    #endif
 
                     let statPatternAnalyzer = StatisticalPerformancePatternAnalyzer()
                     let validatedWindows = statPatternAnalyzer.discoverValidatedPatterns(
@@ -229,9 +233,13 @@ class ReadinessViewModel: ObservableObject {
                     )
                     cachedPatterns = validatedWindows.map { $0.pattern }
                     lastPatternDiscovery = Date()
+                    #if DEBUG
                     print("   Cached \(cachedPatterns?.count ?? 0) new patterns")
+                    #endif
                 } else {
+                    #if DEBUG
                     print("   ✅ Using cached patterns from \(lastPatternDiscovery!)")
+                    #endif
                 }
 
                 performanceWindows = cachedPatterns ?? []
@@ -254,7 +262,9 @@ class ReadinessViewModel: ObservableObject {
             
         } catch {
             errorMessage = "Failed to analyze readiness: \(error.localizedDescription)"
+            #if DEBUG
             print("❌ Readiness analysis error: \(error)")
+            #endif
         }
         
         isLoading = false

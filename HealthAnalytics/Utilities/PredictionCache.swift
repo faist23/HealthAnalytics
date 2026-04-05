@@ -119,7 +119,9 @@ final class PredictionCache {
         lastError        = nil
         try? modelContext.delete(model: CachedAnalysis.self)
         try? modelContext.save()
+        #if DEBUG
         print("📦 PredictionCache: invalidated")
+        #endif
     }
     
     // MARK: - Manual Cache Clear
@@ -127,6 +129,8 @@ final class PredictionCache {
     /// Manually clears all persistent and in-memory cache data.
     func clearAllData() {
         invalidate()
+        #if DEBUG
         print("📦 PredictionCache: Manual database clear triggered.")
+        #endif
     }
 }

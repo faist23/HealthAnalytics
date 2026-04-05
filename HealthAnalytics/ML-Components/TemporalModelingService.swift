@@ -142,9 +142,11 @@ struct TemporalModelingService {
         
         guard !workouts.isEmpty else { return nil }
         
+        #if DEBUG
         print("\n🕐 Temporal Analysis for \(activityType)")
         print(String(repeating: "=", count: 50))
-        
+        #endif
+
         // Filter for specific activity
         let filteredWorkouts = workouts.filter { workout in
             switch workout.workoutType {
@@ -156,7 +158,9 @@ struct TemporalModelingService {
         }
         
         guard filteredWorkouts.count >= 10 else {
+            #if DEBUG
             print("⚠️ Insufficient data (\(filteredWorkouts.count) workouts)")
+            #endif
             return nil
         }
         
@@ -176,8 +180,10 @@ struct TemporalModelingService {
             longitudinal: longitudinal
         )
         
+        #if DEBUG
         print("✅ Temporal analysis complete")
         print(String(repeating: "=", count: 50) + "\n")
+        #endif
         
         return TemporalAnalysis(
             recency: recency,
@@ -203,9 +209,11 @@ struct TemporalModelingService {
             $0.startDate >= sixtyDaysAgo && $0.startDate < thirtyDaysAgo
         }
         
+        #if DEBUG
         print("📊 Recency Analysis:")
         print("   Recent workouts: \(recentWorkouts.count)")
         print("   Previous period: \(previousWorkouts.count)")
+        #endif
         
         // Calculate current form
         let recentPerf = extractPerformanceMetrics(from: recentWorkouts)
@@ -224,7 +232,9 @@ struct TemporalModelingService {
                 trend = .stable
             }
             
+            #if DEBUG
             print("   Trend: \(trend.description)")
+            #endif
         } else {
             trend = .stable
         }
@@ -234,7 +244,9 @@ struct TemporalModelingService {
         let volatility = calculateVolatility(performances)
         
         let consistency = max(0, 1.0 - volatility)
+        #if DEBUG
         print("   Consistency: \(String(format: "%.1f%%", consistency * 100))")
+        #endif
         
         return TemporalAnalysis.RecencyAnalysis(
             currentForm: TemporalAnalysis.RecencyAnalysis.FormMetrics(
@@ -261,7 +273,9 @@ struct TemporalModelingService {
             }
         }
         
+        #if DEBUG
         print("🌍 Seasonal Analysis:")
+        #endif
         
         // Calculate metrics per season
         var seasonMetrics: [TemporalAnalysis.SeasonalAnalysis.Season: TemporalAnalysis.SeasonalAnalysis.SeasonMetrics] = [:]
@@ -286,7 +300,9 @@ struct TemporalModelingService {
                     confidence: confidence
                 )
                 
+                #if DEBUG
                 print("   \(season.emoji) \(season.rawValue): \(String(format: "%.1f", avg)) (n=\(performances.count))")
+                #endif
             }
         }
         
@@ -311,7 +327,9 @@ struct TemporalModelingService {
         if let currentPerf = seasonMetrics[currentSeason]?.averagePerformance,
            let lastYearPerf = seasonMetrics[lastYearSeason]?.averagePerformance {
             yearOverYear = ((currentPerf - lastYearPerf) / lastYearPerf) * 100
+            #if DEBUG
             print("   📅 YoY Change: \(String(format: "%+.1f%%", yearOverYear ?? 0))")
+            #endif
         } else {
             yearOverYear = nil
         }
@@ -348,11 +366,13 @@ struct TemporalModelingService {
                 // Fallback if no HR data - use all power workouts
                 relevantWorkouts = workouts.filter { $0.averagePower != nil && $0.averagePower! > 0 }
                 metricType = "Power (W)"
+                #if DEBUG
                 print("\n🔍 LONGITUDINAL DEBUG:")
                 print("   Total workouts: \(workouts.count)")
                 print("   Metric type: \(metricType)")
                 print("   Relevant workouts: \(relevantWorkouts.count)")
                 print("   ⚠️ No HR data - using all power workouts")
+                #endif
             } else {
                 // Find 60th percentile HR - focuses on harder efforts
                 let sortedHRs = heartRates.sorted()
@@ -367,15 +387,16 @@ struct TemporalModelingService {
                 }
                 
                 metricType = "Power (W)"
-                
+                #if DEBUG
                 print("\n🔍 LONGITUDINAL DEBUG:")
                 print("   Total workouts: \(workouts.count)")
                 print("   Workouts with Power + HR: \(powerHRWorkouts.count)")
                 print("   60th percentile HR: \(Int(hrThreshold)) bpm")
                 print("   Metric type: \(metricType)")
                 print("   Relevant workouts (≥60th %ile HR): \(relevantWorkouts.count)")
+                #endif
             }
-            
+
         } else {
             // Speed-based for runners/swimmers - also filter by HR if available
             let speedHRWorkouts = workouts.filter { workout in
@@ -397,13 +418,14 @@ struct TemporalModelingService {
                 }
                 
                 metricType = "Speed (mph)"
-                
+                #if DEBUG
                 print("\n🔍 LONGITUDINAL DEBUG:")
                 print("   Total workouts: \(workouts.count)")
                 print("   Workouts with Speed + HR: \(speedHRWorkouts.count)")
                 print("   60th percentile HR: \(Int(hrThreshold)) bpm")
                 print("   Metric type: \(metricType)")
                 print("   Relevant workouts (≥60th %ile HR): \(relevantWorkouts.count)")
+                #endif
             } else {
                 // Fallback - use all workouts with speed
                 relevantWorkouts = workouts.filter { workout in
@@ -412,12 +434,13 @@ struct TemporalModelingService {
                 }
                 
                 metricType = "Speed (mph)"
-                
+                #if DEBUG
                 print("\n🔍 LONGITUDINAL DEBUG:")
                 print("   Total workouts: \(workouts.count)")
                 print("   Metric type: \(metricType)")
                 print("   Relevant workouts: \(relevantWorkouts.count)")
                 print("   ⚠️ No HR data - using all workouts")
+                #endif
             }
         }
         
@@ -436,13 +459,17 @@ struct TemporalModelingService {
         let calendar = Calendar.current
         let years = calendar.dateComponents([.year], from: firstDate, to: lastDate).year ?? 0
         
+        #if DEBUG
         print("📈 Longitudinal Analysis:")
         print("   Timespan: \(years) years")
-        
+        #endif
+
         let formatter = DateFormatter()
         formatter.dateStyle = .short
+        #if DEBUG
         print("   First workout: \(formatter.string(from: firstDate))")
         print("   Last workout: \(formatter.string(from: lastDate))")
+        #endif
         
         // Split into early vs late periods
         let midpoint = firstDate.addingTimeInterval(lastDate.timeIntervalSince(firstDate) / 2)
@@ -450,13 +477,16 @@ struct TemporalModelingService {
         let earlyWorkouts = sortedWorkouts.filter { $0.startDate < midpoint }
         let lateWorkouts = sortedWorkouts.filter { $0.startDate >= midpoint }
         
+        #if DEBUG
         print("\n   Early period workouts: \(earlyWorkouts.count)")
         print("   Late period workouts: \(lateWorkouts.count)")
+        #endif
         
         let earlyPerf = extractPerformanceMetrics(from: earlyWorkouts)
         let latePerf = extractPerformanceMetrics(from: lateWorkouts)
         
         // DEBUG: Show what we're comparing
+        #if DEBUG
         print("\n   EARLY PERIOD METRICS:")
         if let power = earlyPerf.power {
             print("      Power: \(String(format: "%.1fW", power))")
@@ -465,7 +495,7 @@ struct TemporalModelingService {
             print("      Speed: \(String(format: "%.1f mph", speed))")
         }
         print("      Primary metric: \(earlyPerf.primary != nil ? String(format: "%.1f", earlyPerf.primary!) : "none")")
-        
+
         print("\n   LATE PERIOD METRICS:")
         if let power = latePerf.power {
             print("      Power: \(String(format: "%.1fW", power))")
@@ -474,6 +504,7 @@ struct TemporalModelingService {
             print("      Speed: \(String(format: "%.1f mph", speed))")
         }
         print("      Primary metric: \(latePerf.primary != nil ? String(format: "%.1f", latePerf.primary!) : "none")")
+        #endif
         
         // Calculate overall trend (only if comparing same metric type)
         let trend: TemporalAnalysis.LongitudinalAnalysis.LongTermTrend
@@ -493,12 +524,14 @@ struct TemporalModelingService {
             let cappedChange = min(max(totalChange, -90), 200)
             growthRate = cappedChange / Double(years)
             
+            #if DEBUG
             print("\n   COMPARISON:")
             print("      Early avg: \(String(format: "%.1f", early))")
             print("      Late avg: \(String(format: "%.1f", late))")
             print("      Total change: \(String(format: "%+.1f%%", totalChange))")
             print("      Capped change: \(String(format: "%+.1f%%", cappedChange))")
             print("      Annual growth: \(String(format: "%+.1f%%", growthRate))")
+            #endif
             
             if cappedChange > 10 {
                 trend = .strengthening(percentChange: cappedChange)
@@ -508,14 +541,18 @@ struct TemporalModelingService {
                 trend = .plateaued
             }
         } else {
+            #if DEBUG
             print("\n   ⚠️ Cannot compare - metric type changed over time")
+            #endif
             trend = .plateaued
             growthRate = 0
         }
         
         // Find peak periods (rolling 90-day windows)
         let peakPeriods = findPeakPeriods(workouts: sortedWorkouts)
+        #if DEBUG
         print("   Peak periods found: \(peakPeriods.count)")
+        #endif
         
         return TemporalAnalysis.LongitudinalAnalysis(
             overallTrend: trend,

@@ -142,13 +142,17 @@ struct TrainingZoneAnalyzer {
         activityType: HKWorkoutActivityType = .cycling
     ) -> ZoneAnalysis? {
         
+        #if DEBUG
         print("🎯 Analyzing Training Zones for \(activityType.name)...")
-        
+        #endif
+
         // Filter to specific activity type
         let relevantWorkouts = workouts.filter { $0.workoutType == activityType }
-        
+
         guard relevantWorkouts.count >= 5 else {
+            #if DEBUG
             print("   ⚠️ Need at least 5 workouts to analyze zones")
+            #endif
             return nil
         }
         
@@ -184,8 +188,10 @@ struct TrainingZoneAnalyzer {
         // Detect recent decoupling events
         let decouplingEvents = detectDecoupling(workouts: relevantWorkouts)
         
+        #if DEBUG
         print("   ✅ Zones analyzed: \(detectionMethod)")
         print("   📊 Training Balance (\(trainingBalance.model.name)): \(Int(trainingBalance.easyPercentage))% easy, \(Int(trainingBalance.moderatePercentage))% moderate, \(Int(trainingBalance.hardPercentage))% hard")
+        #endif
         
         return ZoneAnalysis(
             activityType: activityType.name,

@@ -164,7 +164,9 @@ class HealthKitManager: ObservableObject {
                 
                 let sorted = dataPoints.sorted { $0.date < $1.date }
                 
+                #if DEBUG
                 print("   📊 HRV: Filtered \(samples.count) samples down to \(sorted.count) daily readings")
+                #endif
                 
                 continuation.resume(returning: sorted)
             }
@@ -201,7 +203,9 @@ class HealthKitManager: ObservableObject {
                     )
                 }
                 
-                print("   📊 VO2max: Fetched \\(dataPoints.count) measurements")
+                #if DEBUG
+                print("   📊 VO2max: Fetched \(dataPoints.count) measurements")
+                #endif
                 
                 continuation.resume(returning: dataPoints)
             }
@@ -266,7 +270,9 @@ class HealthKitManager: ObservableObject {
                             value: hours
                         ))
                         
+                        #if DEBUG
                         print("📊 Sleep for night of \(night.formatted(date: .abbreviated, time: .omitted)): \(String(format: "%.1f", hours))h")
+                        #endif
                     }
                 }
                 
@@ -671,7 +677,9 @@ class HealthKitManager: ObservableObject {
             return ([], [], [], [], [], [], [])
         }
         
+        #if DEBUG
         print("📅 Fetching HealthKit snapshot for year \(year)...")
+        #endif
         
         // Fetch concurrently to maximize efficiency within the background task
         async let rhr = fetchRestingHeartRate(startDate: startDate, endDate: endDate)
@@ -745,7 +753,9 @@ class HealthKitManager: ObservableObject {
             )
         }
         
+        #if DEBUG
         print("📅 Fetching nutrition for \(startDate.formatted(date: .abbreviated, time: .omitted))")
+        #endif
         
         // Fetch all nutrition data concurrently - no longer throws
         let totalCal = await fetchNutritionSum(for: .dietaryEnergyConsumed, startDate: startDate, endDate: endDate, unit: .kilocalorie())
@@ -757,7 +767,9 @@ class HealthKitManager: ObservableObject {
         let totalH2O = await fetchNutritionSum(for: .dietaryWater, startDate: startDate, endDate: endDate, unit: .liter())
         
         if totalCal > 0 {
+            #if DEBUG
             print("   ✅ Found data: \(Int(totalCal)) cal, \(Int(totalPro))g P, \(Int(totalCarb))g C, \(Int(totalFat))g F")
+            #endif
         }
         
         return DailyNutrition(
@@ -784,7 +796,9 @@ class HealthKitManager: ObservableObject {
         var currentDate = calendar.startOfDay(for: startDate)
         let end = calendar.startOfDay(for: endDate)
         
+        #if DEBUG
         print("🔄 Fetching nutrition from \(currentDate.formatted(date: .abbreviated, time: .omitted)) to \(end.formatted(date: .abbreviated, time: .omitted))")
+        #endif
         
         while currentDate <= end {
             let dayNutrition = await fetchDailyNutrition(for: currentDate)
@@ -806,7 +820,9 @@ class HealthKitManager: ObservableObject {
         unit: HKUnit
     ) async -> Double {
         guard let quantityType = HKQuantityType.quantityType(forIdentifier: identifier) else {
+            #if DEBUG
             print("⚠️ Nutrition type not available: \(identifier.rawValue)")
+            #endif
             return 0
         }
         
@@ -828,7 +844,9 @@ class HealthKitManager: ObservableObject {
                 if sum > 0 {
                     //                    print("✅ Found \(identifier.rawValue): \(String(format: "%.1f", sum)) \(unit)")
                 } else {
+                    #if DEBUG
                     print("⚠️ No data for \(identifier.rawValue)")
+                    #endif
                 }
                 continuation.resume(returning: sum)
             }
@@ -844,7 +862,9 @@ class HealthKitManager: ObservableObject {
         
         // Simplified: Just return empty array for now
         // We'll focus on daily totals first, then add meal breakdown later
+        #if DEBUG
         print("📊 Skipping meal-level data for now - focusing on daily totals")
+        #endif
         return []
     }
     
@@ -870,7 +890,9 @@ class HealthKitManager: ObservableObject {
             
             query.initialResultsHandler = { _, results, error in
                 guard let results = results, error == nil else {
+                    #if DEBUG
                     print("❌ Error fetching steps: \(error?.localizedDescription ?? "Unknown")")
+                    #endif
                     continuation.resume(returning: [])
                     return
                 }
@@ -931,25 +953,31 @@ class HealthKitManager: ObservableObject {
     func getUserAge() -> Int? {
         // Check if we have basic HealthKit authorization first
         guard HKHealthStore.isHealthDataAvailable() else {
+            #if DEBUG
             print("⚠️ HealthKit not available on this device")
+            #endif
             return nil
         }
-        
+
         do {
             let dateOfBirthComponents = try healthStore.dateOfBirthComponents()
             let calendar = Calendar.current
             let now = Date()
-            
+
             // Create a full date from the components
             guard let birthDate = calendar.date(from: dateOfBirthComponents) else {
+                #if DEBUG
                 print("⚠️ Could not create date from birth components")
+                #endif
                 return nil
             }
-            
+
             let ageComponents = calendar.dateComponents([.year], from: birthDate, to: now)
-            
+
             if let age = ageComponents.year {
+                #if DEBUG
                 print("✅ Retrieved age from HealthKit: \(age)")
+                #endif
                 return age
             }
             return nil
@@ -957,9 +985,11 @@ class HealthKitManager: ObservableObject {
             // HKError code 5 = authorization not determined
             // This can happen if HealthKit permission sheet hasn't been shown yet
             // OR if the user hasn't entered their date of birth in the Health app
+            #if DEBUG
             print("⚠️ Could not read date of birth from HealthKit")
             print("   Make sure your date of birth is set in: Health app > Profile > Health Details")
             print("   Error: \(error.localizedDescription)")
+            #endif
             return nil
         }
     }
@@ -969,10 +999,12 @@ class HealthKitManager: ObservableObject {
     func getUserBiologicalSex() -> String {
         // Check if we have basic HealthKit authorization first
         guard HKHealthStore.isHealthDataAvailable() else {
+            #if DEBUG
             print("⚠️ HealthKit not available on this device")
+            #endif
             return "male"
         }
-        
+
         do {
             let biologicalSex = try healthStore.biologicalSex()
             let sex: String
@@ -984,18 +1016,24 @@ class HealthKitManager: ObservableObject {
             case .other:
                 sex = "other"
             case .notSet:
+                #if DEBUG
                 print("⚠️ Biological sex not set in Health app. Using 'male' as default.")
+                #endif
                 return "male"
             @unknown default:
                 return "male"
             }
+            #if DEBUG
             print("✅ Retrieved biological sex from HealthKit: \(sex)")
+            #endif
             return sex
         } catch {
+            #if DEBUG
             print("⚠️ Could not read biological sex from HealthKit")
             print("   Make sure your biological sex is set in: Health app > Profile > Health Details")
             print("   Error: \(error.localizedDescription)")
             print("   Using 'male' as default.")
+            #endif
             return "male"
         }
     }

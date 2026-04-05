@@ -208,7 +208,9 @@ struct ActivityIntentLabelerView: View {
             generator.impactOccurred()
             
         } catch {
+            #if DEBUG
             print("❌ Failed to save label: \(error)")
+            #endif
         }
     }
     
@@ -246,7 +248,9 @@ struct ActivityIntentLabelerView: View {
             }
             
         } catch {
+            #if DEBUG
             print("❌ Training failed: \(error)")
+            #endif
             await MainActor.run {
                 isTraining = false
             }
@@ -263,7 +267,9 @@ struct ActivityIntentLabelerView: View {
         let existingLabelIds = Set(existingLabels.map { $0.workoutId })
         let unlabeled = allWorkouts.filter { !existingLabelIds.contains($0.id) }
         
+        #if DEBUG
         print("🤖 Auto-classifying \(unlabeled.count) workouts...")
+        #endif
         
         // Process in batches to update progress
         let batchSize = 100
@@ -303,7 +309,9 @@ struct ActivityIntentLabelerView: View {
         await MainActor.run {
             isAutoClassifying = false
             labeledCount = existingLabels.count + unlabeled.count
+            #if DEBUG
             print("✅ Auto-classification complete!")
+            #endif
         }
     }
 }

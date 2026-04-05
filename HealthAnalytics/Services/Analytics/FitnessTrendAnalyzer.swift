@@ -131,10 +131,14 @@ struct FitnessTrendAnalyzer {
         userGender: String = "male"  // "male" or "female"
     ) -> FitnessAnalysis? {
         
+        #if DEBUG
         print("🏃 Analyzing Fitness Trends...")
-        
+        #endif
+
         guard !vo2maxData.isEmpty else {
+            #if DEBUG
             print("   ⚠️ No VO2max data available")
+            #endif
             return nil
         }
         
@@ -191,11 +195,13 @@ struct FitnessTrendAnalyzer {
             projections: projections
         )
         
+        #if DEBUG
         print("   ✅ Current VO2max: \(Int(currentVO2max)) ml/kg/min")
         print("   📈 Trend: \(vo2maxTrend.trend)")
         if let fitAge = fitnessAge {
             print("   🎂 Fitness Age: \(fitAge.fitnessAge) (\(fitAge.classification.description))")
         }
+        #endif
         
         return FitnessAnalysis(
             currentVO2max: currentVO2max,

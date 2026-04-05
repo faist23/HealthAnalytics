@@ -178,7 +178,9 @@ struct PerformancePatternAnalyzer {
         nutrition: [DailyNutrition]
     ) -> [PerformanceWindow] {
         
+        #if DEBUG
         print("🔍 Discovering Performance Patterns...")
+        #endif
         
         var windows: [PerformanceWindow] = []
         
@@ -209,7 +211,9 @@ struct PerformancePatternAnalyzer {
         )
         windows.append(contentsOf: nutritionPatterns)
         
+        #if DEBUG
         print("   ✅ Found \(windows.count) performance windows")
+        #endif
         
         return windows.sorted { $0.confidence.rawValue > $1.confidence.rawValue }
     }
@@ -220,7 +224,9 @@ struct PerformancePatternAnalyzer {
         activities: [StravaActivity]
     ) -> [OptimalTiming] {
         
+        #if DEBUG
         print("⏰ Analyzing Optimal Timing...")
+        #endif
         
         var timings: [OptimalTiming] = []
         let allActivities = combineActivities(workouts: workouts, activities: activities)
@@ -242,7 +248,9 @@ struct PerformancePatternAnalyzer {
             }
         }
         
+        #if DEBUG
         print("   ✅ Found \(timings.count) timing patterns")
+        #endif
         
         return timings
     }
@@ -252,7 +260,9 @@ struct PerformancePatternAnalyzer {
         workouts: [WorkoutData],
         activities: [StravaActivity]
     ) -> [WorkoutSequence] {
+        #if DEBUG
         print("🔄 Analyzing Workout Sequences...")
+        #endif
         
         let allActivities = combineActivities(workouts: workouts, activities: activities)
             .sorted { $0.startDate < $1.startDate }
@@ -302,7 +312,9 @@ struct PerformancePatternAnalyzer {
             }
         }
         
+        #if DEBUG
         print("   ✅ Found \(finalSequences.count) unique sequence patterns")
+        #endif
         
         // Sort by impact (highest absolute percentage first)
         return finalSequences.sorted { abs($0.comparisonToBaseline) > abs($1.comparisonToBaseline) }

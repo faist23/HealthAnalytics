@@ -113,7 +113,9 @@ class TimelineViewModel: ObservableObject {
             )
             
         } catch {
+            #if DEBUG
             print("Error loading timeline data: \(error)")
+            #endif
         }
         
         isLoading = false

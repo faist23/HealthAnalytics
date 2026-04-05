@@ -64,7 +64,9 @@ struct NutritionCorrelationEngine {
         // Need at least 10 days with complete data
         let completeNutritionDays = nutritionData.filter { $0.isComplete }
         guard completeNutritionDays.count >= 10 else {
+            #if DEBUG
             print("⚠️ Protein analysis: Need 10+ complete nutrition days (have \(completeNutritionDays.count))")
+            #endif
             return ProteinRecoveryInsight(
                 proteinRanges: [],
                 optimalProteinRange: nil,

@@ -40,10 +40,12 @@ struct WorkoutMatcher {
         
         stravaOnly = unmatchedStrava
         
+        #if DEBUG
         print("🔍 Workout Matching Results:")
         print("   HealthKit only: \(healthKitOnly.count)")
         print("   Strava only: \(stravaOnly.count)")
         print("   Matched: \(matched.count)")
+        #endif
         
         return (healthKitOnly, stravaOnly, matched)
     }

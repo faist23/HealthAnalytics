@@ -197,6 +197,7 @@ struct TrainingLoadCalculator {
             recommendation = "High risk of overtraining. Prioritize rest and recovery immediately."
         }
         
+        #if DEBUG
         print("📊 Training Load Analysis:")
         print("   Acute Load (7d avg): \(String(format: "%.1f", acuteLoad))")
         print("   Chronic Load (28d avg): \(String(format: "%.1f", chronicLoad))")
@@ -208,6 +209,7 @@ struct TrainingLoadCalculator {
         print("   Strain: \(String(format: "%.1f", strain))")
         print("   Weekly Change: \(String(format: "%.1f", weeklyLoadChange))%")
         print("   Status: \(status)")
+        #endif
         
         return TrainingLoadSummary(
             acuteLoad: acuteLoad,

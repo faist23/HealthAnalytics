@@ -128,7 +128,9 @@ struct PerformancePredictor {
         
         var rows: [TrainingRow] = []
         
+        #if DEBUG
         print("🤖 PerformancePredictor: Starting training on \(healthKitWorkouts.count) total workouts...")
+        #endif
 
         // ── 1. USE THE MERGED WORKOUTS DIRECTLY ──
         let rejectedNoMetrics = 0  // Never mutated, kept for future debugging
@@ -171,6 +173,7 @@ struct PerformancePredictor {
             }
         }
         
+        #if DEBUG
         print("-----------------------------------------")
         print("🤖 ML TRAINING DEBUG:")
         print("   Initial Workouts: \(healthKitWorkouts.count)")
@@ -178,8 +181,9 @@ struct PerformancePredictor {
         print("   Rejected (No Power/Speed data): \(rejectedNoPerformance)")
         print("   Final Assembled Rows: \(rows.count)")
         print("-----------------------------------------")
-        
+
         print("📊 PerformancePredictor: Assembled \(rows.count) training rows")
+        #endif
         
         // ── 2. Train models (Ride / Run) ──
         let runRows  = rows.filter { $0.activityType == "Run"  }
@@ -199,7 +203,9 @@ struct PerformancePredictor {
         }
         
         if models.isEmpty {
+            #if DEBUG
             print("⚠️ No models created. Check if Sleep/HRV/RHR overlap with workout dates.")
+            #endif
         }
         
         return models
@@ -387,7 +393,9 @@ struct PerformancePredictor {
         var chosenRMSE  = linearRMSE
 
         if linearRMSE > stdDev * 0.6 {
+            #if DEBUG
             print("   ⚡ Linear RMSE (\(String(format: "%.2f", linearRMSE))) > 60% of stdDev — trying RandomForest")
+            #endif
             let forest = try MLRandomForestRegressor(
                 trainingData: df,
                 targetColumn: "performance",
@@ -398,14 +406,20 @@ struct PerformancePredictor {
             if forestRMSE < linearRMSE {
                 chosenModel = forest.model
                 chosenRMSE  = forestRMSE
+                #if DEBUG
                 print("   ✅ RandomForest won (RMSE \(String(format: "%.2f", forestRMSE)) vs \(String(format: "%.2f", linearRMSE)))")
+                #endif
             } else {
                 chosenModel = linear.model
+                #if DEBUG
                 print("   ✅ Linear held (RMSE \(String(format: "%.2f", linearRMSE)) vs \(String(format: "%.2f", forestRMSE)))")
+                #endif
             }
         } else {
             chosenModel = linear.model
+            #if DEBUG
             print("   ✅ Linear sufficient (RMSE \(String(format: "%.2f", linearRMSE)), stdDev \(String(format: "%.2f", stdDev)))")
+            #endif
         }
 
         // ── Extract approximate feature weights via single-feature variance ──

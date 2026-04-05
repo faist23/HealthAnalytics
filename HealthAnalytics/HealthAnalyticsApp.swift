@@ -50,7 +50,9 @@ struct HealthAnalyticsApp: App {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active && isOnboardingComplete {
                 Task {
+                    #if DEBUG
                     print("🔄 App became active, triggering smart sync...")
+                    #endif
                     // ✅ CHANGED: Use smart sync instead of global sync
                     await SyncManager.shared.performSmartSync()
                 }
@@ -69,21 +71,27 @@ struct HealthAnalyticsApp: App {
     }
 
     private func handleIncomingURL(_ url: URL) {
+        #if DEBUG
         print("📱 Received URL: \(url.absoluteString)")
         print("📱 Scheme: \(url.scheme ?? "none")")
         print("📱 Host: \(url.host ?? "none")")
-        
+        #endif
+
         // Handle Strava OAuth callback
         if url.scheme == "healthanalytics" {
             Task {
                 do {
                     try await StravaManager.shared.handleOAuthCallback(url: url)
+                    #if DEBUG
                     print("✅ Successfully handled Strava callback")
-                    
+                    #endif
+
                     // After successful Strava auth, sync to get Strava activities
                     await SyncManager.shared.performSmartSync()
                 } catch {
+                    #if DEBUG
                     print("❌ Error handling Strava callback: \(error)")
+                    #endif
                 }
             }
         }

@@ -167,12 +167,16 @@ struct ReadinessAnalyzer {
         nutrition: [DailyNutrition]
     ) -> ReadinessScore? {
         
+        #if DEBUG
         print("🎯 Analyzing Readiness...")
-        
+        #endif
+
         // Need minimum data
         guard !restingHR.isEmpty || !hrv.isEmpty,
               !sleep.isEmpty else {
+            #if DEBUG
             print("   ⚠️ Insufficient data for readiness analysis")
+            #endif
             return nil
         }
         
@@ -230,9 +234,11 @@ struct ReadinessAnalyzer {
             workoutHistory: workouts + stravaActivities.compactMap { WorkoutData(from: $0) }
         )
         
+        #if DEBUG
         print("   ✅ Readiness Score: \(totalScore)/100")
         print("   📊 Breakdown: Recovery \(recovery.score), Fitness \(fitness.score), Fatigue \(fatigue.score)")
         print("   \(trend.emoji) Trend: \(trend)")
+        #endif
         
         return ReadinessScore(
             score: totalScore,

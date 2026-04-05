@@ -39,21 +39,27 @@ class SyncManager: ObservableObject {
     
     /// Intelligently syncs only what's needed
     func performSmartSync() async {
+        #if DEBUG
         print("🔍 SYNC DEBUG:")
         print("   lastSyncDate: \(lastSyncDate?.formatted() ?? "nil")")
         if let last = lastSyncDate {
             print("   Time since last: \(Date().timeIntervalSince(last)) seconds")
             print("   Should skip: \(Date().timeIntervalSince(last) < 1800)")
         }
+        #endif
         
         // Prevent redundant syncs - only sync if 30+ minutes have passed
         if let last = lastSyncDate, Date().timeIntervalSince(last) < 1800 {
+            #if DEBUG
             print("🛡️ Sync Guard: Synced \(Int(Date().timeIntervalSince(last)/60))m ago. Skipping.")
+            #endif
             return
         }
-        
+
         guard !isSyncing else {
+            #if DEBUG
             print("⚠️ Sync already in progress")
+            #endif
             return
         }
         
@@ -72,10 +78,12 @@ class SyncManager: ObservableObject {
             // STEP 1: Determine what we need to sync
             let syncPlan = await determineSyncPlan(dataHandler: dataHandler)
             
+            #if DEBUG
             print("📋 Sync Plan:")
             print("   Historical backfill needed: \(syncPlan.needsHistoricalBackfill)")
             print("   Years to backfill: \(syncPlan.yearsToBackfill)")
             print("   Last data: \(syncPlan.mostRecentDataDate?.formatted() ?? "none")")
+            #endif
             
             // STEP 2: Sync recent data (always - this is fast)
             await syncRecentData(dataHandler: dataHandler)
@@ -87,13 +95,17 @@ class SyncManager: ObservableObject {
             }
             
             lastSyncDate = Date()
+            #if DEBUG
             print("✅ Smart Sync Complete")
-            
+            #endif
+
             // Notify views that new data is available
             NotificationCenter.default.post(name: NSNotification.Name("DataSyncCompleted"), object: nil)
-            
+
         } catch {
+            #if DEBUG
             print("❌ Sync Failed: \(error.localizedDescription)")
+            #endif
         }
         
         isSyncing = false
@@ -102,7 +114,9 @@ class SyncManager: ObservableObject {
     // MARK: - Metric Name Migration
     
     private func migrateMetricNames(dataHandler: DataPersistenceActor) async {
+        #if DEBUG
         print("🔄 Migrating metric type names to standardized format...")
+        #endif
         
         await dataHandler.migrateMetricNames(
             oldToNew: [
@@ -115,7 +129,9 @@ class SyncManager: ObservableObject {
             ]
         )
         
+        #if DEBUG
         print("   ✅ Metric names migrated")
+        #endif
     }
     
     // MARK: - Sync Plan
@@ -131,10 +147,12 @@ class SyncManager: ObservableObject {
         // Check what data we have
         let summary = await dataHandler.getDataSummary()
         
+        #if DEBUG
         print("📊 Current Data Summary:")
         print("   Workouts: \(summary.workoutCount)")
         print("   Sleep days: \(summary.sleepDays)")
         print("   Date range: \(summary.oldestDate?.formatted() ?? "none") to \(summary.newestDate?.formatted() ?? "none")")
+        #endif
         
         // Determine if we need historical backfill
         let needsBackfill: Bool
@@ -150,7 +168,9 @@ class SyncManager: ObservableObject {
             if yearsOfData < 10 {
                 needsBackfill = true
                 yearsToBackfill = max(1, 10 - yearsOfData)
+                #if DEBUG
                 print("   Need \(yearsToBackfill) more years of backfill")
+                #endif
             } else {
                 needsBackfill = false
                 yearsToBackfill = 0
@@ -197,12 +217,16 @@ class SyncManager: ObservableObject {
                 timeDescription = "\(weeks) week\(weeks == 1 ? "" : "s")"
             }
             
+            #if DEBUG
             print("🔄 Syncing data since last sync (\(timeDescription) ago)...")
+            #endif
             syncProgress = "Updating last \(timeDescription)..."
         } else {
             // First sync ever - get last 30 days as initial data
             startDate = calendar.date(byAdding: .day, value: -30, to: endDate) ?? endDate
+            #if DEBUG
             print("🔄 Initial sync: fetching last 30 days...")
+            #endif
             syncProgress = "Fetching initial data..."
         }
         
@@ -238,11 +262,15 @@ class SyncManager: ObservableObject {
                             }
                             
                             allActivities.append(contentsOf: recentActivities)
+                            #if DEBUG
                             print("   📥 Fetched page \(page): \(recentActivities.count)/\(batch.count) activities since \(startDate.formatted(date: .abbreviated, time: .omitted)) (total: \(allActivities.count))")
-                            
+                            #endif
+
                             // Stop fetching if we got fewer activities than requested (means we've reached older data)
                             if recentActivities.count < batch.count {
+                                #if DEBUG
                                 print("   ⏹️ Reached activities older than sync window, stopping pagination")
+                                #endif
                                 keepFetching = false
                             } else {
                                 page += 1
@@ -254,9 +282,11 @@ class SyncManager: ObservableObject {
                 }
                 
                 stravaActivities = allActivities.compactMap { mapStravaActivity($0) }
+                #if DEBUG
                 print("   ✅ Total Strava activities fetched: \(stravaActivities.count)")
+                #endif
             }
-            
+
             let data = try await (
                 rhr: rhr,
                 hrv: hrv,
@@ -267,7 +297,7 @@ class SyncManager: ObservableObject {
                 nutrition: nutrition,
                 vo2max: vo2max
             )
-            
+
             await dataHandler.upsertRecentData(
                 workouts: data.workouts,
                 strava: stravaActivities,
@@ -279,18 +309,24 @@ class SyncManager: ObservableObject {
                 nutrition: data.nutrition,
                 vo2max: data.vo2max
             )
-            
+
+            #if DEBUG
             print("   ✅ Recent data synced")
-            
+            #endif
+
         } catch {
+            #if DEBUG
             print("   ❌ Recent sync failed: \(error)")
+            #endif
         }
     }
     
     // MARK: - Historical Backfill
     
     private func performHistoricalBackfill(years: Int, dataHandler: DataPersistenceActor) async {
+        #if DEBUG
         print("🕰️ Starting \(years)-year historical backfill...")
+        #endif
         
         isBackfillingHistory = true
         backfillProgress = 0
@@ -303,7 +339,9 @@ class SyncManager: ObservableObject {
         for yearOffset in 0..<years {
             let year = startYear + yearOffset
             
+            #if DEBUG
             print("   📅 Backfilling year \(year)...")
+            #endif
             
             // Note: Historical backfill is intentionally minimal
             // All HealthKit data is already fetched in syncRecentData which pulls from current year start
@@ -312,13 +350,17 @@ class SyncManager: ObservableObject {
         
         isBackfillingHistory = false
         backfillProgress = 1.0
+        #if DEBUG
         print("   ✅ Historical backfill complete")
+        #endif
     }
     
     // MARK: - Sync All Historical Data
     
     private func syncAllHistoricalData(dataHandler: DataPersistenceActor) async {
+        #if DEBUG
         print("📚 Fetching ALL historical data (10 years)...")
+        #endif
         
         syncProgress = "Fetching all historical data..."
         
@@ -326,7 +368,9 @@ class SyncManager: ObservableObject {
         let endDate = Date()
         let startDate = calendar.date(byAdding: .year, value: -10, to: endDate) ?? endDate
         
+        #if DEBUG
         print("   📅 Date range: \(startDate.formatted(date: .abbreviated, time: .omitted)) to \(endDate.formatted(date: .abbreviated, time: .omitted))")
+        #endif
         
         do {
             async let rhr = healthKitManager.fetchRestingHeartRate(startDate: startDate, endDate: endDate)
@@ -341,7 +385,9 @@ class SyncManager: ObservableObject {
             // Fetch all Strava activities
             var stravaActivities: [StravaImportData] = []
             if stravaManager.isAuthenticated {
+                #if DEBUG
                 print("   🚴 Fetching all Strava activities...")
+                #endif
                 var allActivities: [StravaActivity] = []
                 var page = 1
                 var keepFetching = true
@@ -352,12 +398,16 @@ class SyncManager: ObservableObject {
                             keepFetching = false
                         } else {
                             allActivities.append(contentsOf: batch)
+                            #if DEBUG
                             print("   📥 Fetched page \(page): \(batch.count) activities (total: \(allActivities.count))")
+                            #endif
                             page += 1
-                            
+
                             // Safety: Stop after 50 pages (10,000 activities)
                             if page > 50 {
+                                #if DEBUG
                                 print("   ⚠️ Reached page limit, stopping")
+                                #endif
                                 keepFetching = false
                             }
                         }
@@ -367,9 +417,11 @@ class SyncManager: ObservableObject {
                 }
                 
                 stravaActivities = allActivities.compactMap { mapStravaActivity($0) }
+                #if DEBUG
                 print("   ✅ Total Strava activities: \(stravaActivities.count)")
+                #endif
             }
-            
+
             let data = try await (
                 rhr: rhr,
                 hrv: hrv,
@@ -380,9 +432,11 @@ class SyncManager: ObservableObject {
                 nutrition: nutrition,
                 vo2max: vo2max
             )
-            
+
+            #if DEBUG
             print("   📊 Fetched: \(data.workouts.count) workouts, \(data.hrv.count) HRV, \(data.rhr.count) RHR, \(data.sleep.count) sleep, \(data.vo2max.count) VO2max")
-            
+            #endif
+
             await dataHandler.upsertRecentData(
                 workouts: data.workouts,
                 strava: stravaActivities,
@@ -394,18 +448,24 @@ class SyncManager: ObservableObject {
                 nutrition: data.nutrition,
                 vo2max: data.vo2max
             )
-            
+
+            #if DEBUG
             print("   ✅ All historical data saved")
-            
+            #endif
+
         } catch {
+            #if DEBUG
             print("   ❌ Failed to fetch historical data: \(error.localizedDescription)")
+            #endif
         }
     }
     
     // MARK: - Manual Operations
     
     func performFullResync() async {
+        #if DEBUG
         print("🔄 Forcing full resync...")
+        #endif
         
         hasCompletedHistoricalBackfill = false
         lastSyncDate = nil
@@ -418,10 +478,14 @@ class SyncManager: ObservableObject {
     }
     
     func resetAllData() async {
+        #if DEBUG
         print("🗑️ Resetting all data...")
-        
+        #endif
+
         guard !isSyncing else {
+            #if DEBUG
             print("⚠️ Sync already in progress")
+            #endif
             return
         }
         
@@ -442,7 +506,9 @@ class SyncManager: ObservableObject {
         lastSyncDate = Date()
         hasCompletedHistoricalBackfill = true
         
+        #if DEBUG
         print("✅ Reset Complete - All historical data restored")
+        #endif
         
         // Notify views that new data is available
         NotificationCenter.default.post(name: NSNotification.Name("DataSyncCompleted"), object: nil)
@@ -497,7 +563,9 @@ actor DataPersistenceActor {
             )
             
             if let metrics = try? modelContext.fetch(descriptor) {
+                #if DEBUG
                 print("   Migrating \(metrics.count) '\(oldName)' metrics to '\(newName)'")
+                #endif
                 
                 for metric in metrics {
                     metric.type = newName
@@ -571,7 +639,9 @@ actor DataPersistenceActor {
         try? modelContext.delete(model: StoredNutrition.self)
         try? modelContext.delete(model: StoredIntentLabel.self)
         try? modelContext.save()
+        #if DEBUG
         print("🗑️ All data deleted")
+        #endif
     }
     
     // MARK: - Upsert Recent Data
@@ -660,7 +730,9 @@ actor DataPersistenceActor {
         // Auto-classify workout intents using heuristic classifier
         autoClassifyWorkoutIntents()
         
+        #if DEBUG
         print("💾 Recent data upserted")
+        #endif
     }
     
     // MARK: - Append Historical Batch
@@ -674,8 +746,10 @@ actor DataPersistenceActor {
         weight: [HealthDataPoint],
         nutrition: [DailyNutrition]
     ) {
+        #if DEBUG
         print("   💾 BATCH SAVE DEBUG:")
         print("      Input counts: Sleep=\(sleep.count), HRV=\(hrv.count), Steps=\(steps.count), Weight=\(weight.count)")
+        #endif
         
         // Save workouts (this is working)
         for workout in workouts {
@@ -702,34 +776,46 @@ actor DataPersistenceActor {
         }
         
         // Save metrics with detailed logging
+        #if DEBUG
         print("   🔍 Processing health metrics:")
-        
+        #endif
+
         for (points, type) in [(hrv, "HRV"), (rhr, "RHR"), (sleep, "Sleep"), (steps, "Steps"), (weight, "Weight")] {
+            #if DEBUG
             print("   📊 Processing \(type): \(points.count) points")
-            
+            #endif
+
             if points.isEmpty {
+                #if DEBUG
                 print("      ⚠️ No points to save!")
+                #endif
                 continue
             }
-            
+
             // Show first few samples
+            #if DEBUG
             for (index, point) in points.prefix(3).enumerated() {
                 let formatter = DateFormatter()
                 formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
                 print("      Sample \(index+1): date=\(formatter.string(from: point.date)), value=\(point.value)")
             }
-            
+            #endif
+
             var savedCount = 0
             for point in points {
                 upsertMetric(type: type, date: point.date, value: point.value)
                 savedCount += 1
-                
+
                 // Progress indicator
+                #if DEBUG
                 if savedCount % 50 == 0 {
                     print("      ... processed \(savedCount)/\(points.count)")
                 }
+                #endif
             }
+            #if DEBUG
             print("      ✅ Processed \(savedCount) \(type) points")
+            #endif
         }
         
         // Nutrition
@@ -738,15 +824,20 @@ actor DataPersistenceActor {
         }
         
         // CRITICAL: Save with error handling
+        #if DEBUG
         print("   💾 Attempting to save...")
         print("      Context has changes: \(modelContext.hasChanges)")
-        
+        #endif
+
         if modelContext.hasChanges {
             do {
+                #if DEBUG
                 print("      🔄 Calling save()...")
+                #endif
                 try modelContext.save()
+                #if DEBUG
                 print("      ✅ SAVE SUCCESSFUL!")
-                
+
                 // Verify what was saved
                 let sleepCount = (try? modelContext.fetchCount(
                     FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "Sleep" })
@@ -769,21 +860,26 @@ actor DataPersistenceActor {
                 print("         HRV: \(hrvCount)")
                 print("         Steps: \(stepsCount)")
                 print("         Weight: \(weightCount)")
+                #endif
 
             } catch {
+                #if DEBUG
                 print("      ❌ SAVE FAILED: \(error)")
                 print("      Error details: \(error.localizedDescription)")
+                #endif
             }
-            
+
             modelContext.processPendingChanges()
-            
+
             Task { @MainActor in
                 HealthDataContainer.shared.mainContext.processPendingChanges()
             }
         } else {
+            #if DEBUG
             print("      ⚠️ No changes to save (this is the problem!)")
             print("      Inserted items count: \(modelContext.insertedModelsArray.count)")
             print("      Updated items count: \(modelContext.changedModelsArray.count)")
+            #endif
         }
     }
     
@@ -835,41 +931,53 @@ actor DataPersistenceActor {
         let dateString = formatter.string(from: date)
         let key = "\(type)_\(dateString)"
         
+        #if DEBUG
         print("      🔍 Processing \(type): date=\(dateString), value=\(value), key=\(key)")
-        
+        #endif
+
         // Try to fetch existing
         let descriptor = FetchDescriptor<StoredHealthMetric>(
             predicate: #Predicate { $0.uniqueKey == key }
         )
-        
+
         do {
             let existing = try modelContext.fetch(descriptor)
-            
+
             if let found = existing.first {
+                #if DEBUG
                 print("         ✏️ Updating existing: \(key)")
+                #endif
                 found.value = value
             } else {
+                #if DEBUG
                 print("         ➕ Creating new: \(key)")
+                #endif
                 let metric = StoredHealthMetric(
                     type: type,
                     date: date,
                     value: value
                 )
                 modelContext.insert(metric)
+                #if DEBUG
                 print("         ✅ Inserted successfully")
+                #endif
             }
         } catch {
+            #if DEBUG
             print("         ❌ FETCH ERROR: \(error)")
-            
+
             // Try direct insert as fallback
             print("         🔄 Attempting direct insert...")
+            #endif
             let metric = StoredHealthMetric(
                 type: type,
                 date: date,
                 value: value
             )
             modelContext.insert(metric)
+            #if DEBUG
             print("         ✅ Direct insert complete")
+            #endif
         }
     }
     
@@ -902,12 +1010,16 @@ actor DataPersistenceActor {
     
     /// Automatically classify workout intents using heuristic rules
     func autoClassifyWorkoutIntents() {
+        #if DEBUG
         print("🧠 Auto-classifying workout intents...")
-        
+        #endif
+
         // Fetch all workouts
         let workoutDescriptor = FetchDescriptor<StoredWorkout>()
         guard let allWorkouts = try? modelContext.fetch(workoutDescriptor) else {
+            #if DEBUG
             print("   ⚠️ Failed to fetch workouts")
+            #endif
             return
         }
         
@@ -937,9 +1049,13 @@ actor DataPersistenceActor {
         
         if modelContext.hasChanges {
             try? modelContext.save()
+            #if DEBUG
             print("   ✅ Auto-classified \(newLabelsCount) workouts")
+            #endif
         } else {
+            #if DEBUG
             print("   ℹ️ No new workouts to classify")
+            #endif
         }
     }
 }

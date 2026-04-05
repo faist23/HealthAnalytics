@@ -90,11 +90,15 @@ struct DailyRecommendationService {
         readinessScore: Int?
     ) -> DailyRecommendation? {
         
+        #if DEBUG
         print("🎯 Generating Daily Recommendation...")
+        #endif
         
         // Need minimum HRV data
         guard hrvData.count >= 7 else {
+            #if DEBUG
             print("   ⚠️ Need at least 7 days of HRV data")
+            #endif
             return nil
         }
         
@@ -123,8 +127,10 @@ struct DailyRecommendationService {
             confidence: confidence
         )
         
+        #if DEBUG
         print("   ✅ Recommendation: \(recommendation.status)")
         print("   📊 HRV: \(Int(hrvStatus.currentHRV))ms (baseline: \(Int(hrvStatus.baselineHRV))ms, \(hrvStatus.percentChange > 0 ? "+" : "")\(String(format: "%.1f", hrvStatus.percentChange))%)")
+        #endif
         
         return recommendation
     }

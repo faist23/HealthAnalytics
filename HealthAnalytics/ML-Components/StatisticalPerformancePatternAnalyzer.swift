@@ -59,7 +59,9 @@ struct StatisticalPerformancePatternAnalyzer {
         nutrition: [DailyNutrition]
     ) -> [ValidatedPerformanceWindow] {
         
+        #if DEBUG
         print("🔬 Discovering statistically validated patterns...")
+        #endif
         
         // Use original analyzer to find candidates
         let baseAnalyzer = PerformancePatternAnalyzer()
@@ -85,7 +87,9 @@ struct StatisticalPerformancePatternAnalyzer {
             }
         }
         
+        #if DEBUG
         print("   ✅ Found \(validated.count) statistically significant patterns (from \(candidates.count) candidates)")
+        #endif
         
         // Sort by significance and effect size
         return validated.sorted { pattern1, pattern2 in
@@ -165,7 +169,9 @@ struct StatisticalPerformancePatternAnalyzer {
         )
         
         guard sampleValidation.isValid else {
+            #if DEBUG
             print("   ⚠️ Skipping '\(pattern.activityType)' pattern - insufficient sample size (\(pattern.sampleSize) < \(sampleValidation.required))")
+            #endif
             return nil
         }
         

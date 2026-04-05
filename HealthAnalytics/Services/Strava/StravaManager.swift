@@ -62,25 +62,33 @@ class StravaManager: ObservableObject {
             "grant_type": "authorization_code"
         ]
         
+        #if DEBUG
         print("🔑 Token Exchange Request:")
         print("   URL: \(url)")
         print("   Client ID: \(StravaConfig.clientID)")
         print("   Code: \(code)")
+        #endif
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
         if let httpResponse = response as? HTTPURLResponse {
+            #if DEBUG
             print("📡 Token Response Status: \(httpResponse.statusCode)")
+            #endif
         }
-        
+
         if let responseString = String(data: data, encoding: .utf8) {
+            #if DEBUG
             print("📡 Token Response Body: \(responseString)")
+            #endif
         }
-        
+
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            #if DEBUG
             print("❌ Token exchange failed with status: \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+            #endif
             throw StravaError.authenticationFailed
         }
         
@@ -92,7 +100,9 @@ class StravaManager: ObservableObject {
             self.tokenExpiresAt = Date(timeIntervalSince1970: TimeInterval(tokenResponse.expiresAt))
             self.athlete = tokenResponse.athlete
             self.isAuthenticated = true
+            #if DEBUG
             print("✅ Successfully authenticated as \(tokenResponse.athlete?.fullName ?? "Unknown")")
+            #endif
         }
         
         saveTokensToKeychain()
@@ -128,7 +138,9 @@ class StravaManager: ObservableObject {
         
         let fetchedActivities = try JSONDecoder().decode([StravaActivity].self, from: data)
         
+        #if DEBUG
         print("📊 Fetched \(fetchedActivities.count) activities from Strava")
+        #endif
         
         return fetchedActivities
     }
@@ -163,7 +175,9 @@ class StravaManager: ObservableObject {
         if accessToken != nil {
             // Check if token is expired
             if let expiresAt = tokenExpiresAt, Date() >= expiresAt {
+                #if DEBUG
                 print("⚠️ Loaded token is expired. Will need to refresh on next use.")
+                #endif
             }
             isAuthenticated = true
         }
@@ -190,7 +204,9 @@ class StravaManager: ObservableObject {
             return // Token is still valid
         }
         
+        #if DEBUG
         print("🔄 Strava token expired or expiring soon. Refreshing...")
+        #endif
         
         guard let tokenURL = URL(string: StravaConfig.tokenURL) else {
             throw StravaError.invalidURL
@@ -215,7 +231,9 @@ class StravaManager: ObservableObject {
             throw StravaError.fetchFailed
         }
         
+        #if DEBUG
         print("📡 Token refresh response: \(httpResponse.statusCode)")
+        #endif
         
         guard httpResponse.statusCode == 200 else {
             // If refresh fails, clear tokens and force re-auth
@@ -237,7 +255,9 @@ class StravaManager: ObservableObject {
             self.refreshToken = tokenResponse.refreshToken
             self.tokenExpiresAt = Date(timeIntervalSince1970: TimeInterval(tokenResponse.expiresAt))
             self.isAuthenticated = true
+            #if DEBUG
             print("✅ Token refreshed successfully. Expires at: \(self.tokenExpiresAt?.formatted() ?? "unknown")")
+            #endif
         }
         
         saveTokensToKeychain()

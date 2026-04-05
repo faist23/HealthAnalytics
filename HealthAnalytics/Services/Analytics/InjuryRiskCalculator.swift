@@ -277,6 +277,7 @@ class InjuryRiskCalculator {
             recommendation = "VERY HIGH RISK - Take 1-2 complete rest days immediately. Multiple risk factors present. Resume with easy training only when HRV normalizes."
         }
         
+        #if DEBUG
         print("🏥 Injury Risk Assessment:")
         print("   Total Score: \(totalScore)/100")
         print("   Load Risk: \(loadRisk)/40")
@@ -284,6 +285,7 @@ class InjuryRiskCalculator {
         print("   Trend Risk: \(trendRisk)/20")
         print("   Monotony Risk: \(monotonyRisk)/10")
         print("   Risk Level: \(level.label)")
+        #endif
         
         return InjuryRiskAssessment(
             riskLevel: level,
