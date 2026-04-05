@@ -49,7 +49,7 @@ struct AgingAlphaCard: View {
             
             // The Big Comparison
             HStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Actual Age")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -62,7 +62,7 @@ struct AgingAlphaCard: View {
                     .font(.title2)
                     .foregroundStyle(.secondary.opacity(0.5))
                 
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: .spacingXs) {
                     Text("Bio-Age")
                         .font(.caption)
                         .foregroundStyle(.secondary)

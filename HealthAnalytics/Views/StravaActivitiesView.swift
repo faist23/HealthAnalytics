@@ -68,7 +68,7 @@ struct StravaActivityRow: View {
     let activity: StravaActivity
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: .spacingSm) {
             HStack {
                 Text(activity.name)
                     .font(.headline)
@@ -77,8 +77,8 @@ struct StravaActivityRow: View {
                 
                 Text(activity.type)
                     .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, .spacingSm)
+                    .padding(.vertical, .spacingXs)
                     .background(Color.statusWarning.opacity(0.2))
                     .foregroundStyle(Color.statusWarning)
                     .cornerRadius(4)
@@ -129,7 +129,7 @@ struct StravaActivityRow: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, .spacingXs)
     }
 }
 

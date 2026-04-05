@@ -62,7 +62,7 @@ struct LoadingOverlay: View {
                         .tint(.blue)
                 }
                 
-                VStack(spacing: 8) {
+                VStack(spacing: .spacingSm) {
                     Text(message)
                         .font(.headline)
                         .foregroundStyle(.primary)
@@ -132,7 +132,7 @@ struct SyncProgressCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
@@ -144,7 +144,7 @@ struct SyncProgressCard: View {
                         .tint(Color.accent)
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text(title)
                         .font(.headline)
                         .foregroundStyle(.primary)
@@ -158,7 +158,7 @@ struct SyncProgressCard: View {
             }
             
             if let progress = progress {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSm) {
                     ProgressView(value: progress, total: 1.0)
                         .tint(.blue)
                     
@@ -203,7 +203,7 @@ struct SettingsLoadingButton: View {
                 action()
             }
         }) {
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 if isLoading {
                     ProgressView()
                         .scaleEffect(0.8)
@@ -293,7 +293,7 @@ struct ShimmerLoadingView: View {
 }
 
 #Preview("Sync Progress Card") {
-    VStack(spacing: 16) {
+    VStack(spacing: .spacingMd) {
         SyncProgressCard(
             message: "Fetching HealthKit workouts",
             progress: 0.45,
@@ -311,7 +311,7 @@ struct ShimmerLoadingView: View {
 }
 
 #Preview("Shimmer Loading") {
-    VStack(spacing: 16) {
+    VStack(spacing: .spacingMd) {
         ShimmerLoadingView(height: 100)
         ShimmerLoadingView(height: 60)
         ShimmerLoadingView(height: 80)

@@ -285,7 +285,7 @@ private extension ResearchThresholdBar {
 
 #if DEBUG
 #Preview {
-    VStack(spacing: 24) {
+    VStack(spacing: .spacingLg) {
         Group {
             Text("ACWR 1.4 (monitoring)").font(.caption).foregroundStyle(Color.textSecondary)
             if let c = CitationDatabase.citation(for: .acwr) {

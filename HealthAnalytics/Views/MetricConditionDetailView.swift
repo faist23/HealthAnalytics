@@ -58,12 +58,12 @@ struct MetricConditionDetailView: View {
                             .background(config.status.color.opacity(0.1))
                             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: .spacingXs) {
                             Text(config.title)
                                 .font(.headline)
                                 .foregroundStyle(Color.textSecondary)
 
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            HStack(alignment: .firstTextBaseline, spacing: .spacingXs) {
                                 Text(config.currentValueFormatted)
                                     .font(.system(size: 32, weight: .bold, design: .rounded))
                                     .foregroundStyle(Color.textPrimary)
@@ -71,7 +71,7 @@ struct MetricConditionDetailView: View {
                                 Text(config.status.label.uppercased())
                                     .font(.caption2)
                                     .fontWeight(.bold)
-                                    .padding(.horizontal, 8)
+                                    .padding(.horizontal, .spacingSm)
                                     .padding(.vertical, 2)
                                     .background(config.status.color.opacity(0.2))
                                     .foregroundStyle(config.status.color)
@@ -93,7 +93,7 @@ struct MetricConditionDetailView: View {
                     // Only shown when citation has scalar thresholds (not trainingBalance/estimate).
                     if let citation = config.citation,
                        citation.lowerBound != nil || citation.dangerAbove != nil {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSm) {
                             ResearchThresholdBar(
                                 citation: citation,
                                 currentValue: config.thresholdBarValue
@@ -103,7 +103,7 @@ struct MetricConditionDetailView: View {
                     }
 
                     // 3. WHY THIS STATUS?
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: .spacingSm) {
                         HStack {
                             Image(systemName: "info.circle.fill")
                                 .font(.caption)
@@ -134,7 +134,7 @@ struct MetricConditionDetailView: View {
                     }
 
                     // 5. COACH'S GUIDANCE
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: .spacingSm) {
                         HStack {
                             Image(systemName: "bolt.fill")
                                 .font(.caption)
@@ -160,7 +160,7 @@ struct MetricConditionDetailView: View {
                         Text(detail)
                             .font(.caption)
                             .foregroundStyle(Color.textSecondary)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, .spacingLg)
                             .multilineTextAlignment(.center)
                     }
                 }
@@ -193,7 +193,7 @@ struct MetricConditionDetailView: View {
             }
             .foregroundStyle(Color.statusRest)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 // Author · Year · Finding
                 Text("\(citation.author) \(String(citation.year))")
                     .font(.subheadline)
@@ -220,7 +220,7 @@ struct MetricConditionDetailView: View {
             // [View source ↗]
             if let url = citation.referenceURL {
                 Link(destination: url) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXs) {
                         Text("View source")
                             .font(.subheadline)
                             .fontWeight(.medium)

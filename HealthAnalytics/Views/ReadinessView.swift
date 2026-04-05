@@ -73,7 +73,7 @@ struct ReadinessView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Text(viewModel.selectedPeriod.displayName)
                         .font(.subheadline)
                         .fontWeight(.medium)
@@ -97,7 +97,7 @@ struct ReadinessView: View {
     private var readinessContent: some View {
         ZStack {
             ScrollView {
-                VStack(spacing: 24) {
+                VStack(spacing: .spacingLg) {
                     
                     if let error = viewModel.errorMessage {
                         ErrorView(message: error)
@@ -238,7 +238,7 @@ struct DailyInstructionCard: View {
                     Text(target)
                         .font(.subheadline.weight(.semibold))
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, .spacingSm)
                 .padding(.horizontal, 12)
                 .background(instruction.status.color.opacity(0.1))
                 .cornerRadius(.radiusSm)
@@ -285,7 +285,7 @@ struct ReadinessScoreHero: View {
                     .rotationEffect(.degrees(-90))
                     .animation(.spring(duration: 1.0), value: readiness.score)
                 
-                VStack(spacing: 4) {
+                VStack(spacing: .spacingXs) {
                     Text("\(readiness.score)")
                         .font(.system(size: 72, weight: .bold, design: .rounded))
                         .foregroundStyle(scoreColor)
@@ -298,7 +298,7 @@ struct ReadinessScoreHero: View {
             .padding(.top)
             
             // Trend Badge
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Text(readiness.trend.emoji)
                     .font(.title2)
                 
@@ -313,7 +313,7 @@ struct ReadinessScoreHero: View {
             .clipShape(Capsule())
             
             // Recommendation
-            VStack(spacing: 8) {
+            VStack(spacing: .spacingSm) {
                 Text("Today's Guidance")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -396,14 +396,14 @@ struct FormIndicatorCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             HStack {
                 Text("Current Form")
                     .font(.headline)
                 
                 Spacer()
                 
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Circle()
                         .fill(riskColor)
                         .frame(width: 8, height: 8)
@@ -418,7 +418,7 @@ struct FormIndicatorCard: View {
                 Text(form.status.emoji)
                     .font(.system(size: 48))
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text(form.status.label)
                         .font(.title2)
                         .fontWeight(.bold)
@@ -432,7 +432,7 @@ struct FormIndicatorCard: View {
             
             Divider()
             
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 Label("Optimal Action Window", systemImage: "calendar.badge.clock")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -461,7 +461,7 @@ struct ScoreBreakdownCard: View {
     let breakdown: ReadinessAnalyzer.ScoreBreakdown
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             Text("Score Breakdown")
                 .font(.headline)
             
@@ -503,7 +503,7 @@ struct BreakdownRow: View {
     let details: String
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: .spacingSm) {
             HStack {
                 Text(label)
                     .font(.subheadline)
@@ -551,7 +551,7 @@ struct PerformanceWindowCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text(window.activityType)
                         .font(.headline)
                     
@@ -597,7 +597,7 @@ struct OptimalTimingCard: View {
     let timing: PerformancePatternAnalyzer.OptimalTiming
     
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: .spacingMd) {
             Image(systemName: "clock.fill")
                 .font(.system(size: 32))
                 .foregroundStyle(Color.accent)
@@ -630,7 +630,7 @@ struct WorkoutSequenceCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 ForEach(sequence.sequence.indices, id: \.self) { index in
                     if index > 0 {
                         Image(systemName: "arrow.right")
@@ -666,7 +666,7 @@ struct SectionHeader: View {
     let subtitle: String
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: .spacingXs) {
             Text(title)
                 .font(.title2)
                 .fontWeight(.bold)
@@ -676,7 +676,7 @@ struct SectionHeader: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 8)
+        .padding(.top, .spacingSm)
     }
 }
 
@@ -714,9 +714,9 @@ struct TrainingLoadPreviewCard: View {
     let summary: TrainingLoadVisualizationService.LoadVisualizationData.LoadSummary
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Training Load")
                         .font(.title3)
                         .fontWeight(.bold)
@@ -736,12 +736,12 @@ struct TrainingLoadPreviewCard: View {
             
             HStack(spacing: 20) {
                 // Current ACWR
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("ACWR")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXs) {
                         Text(String(format: "%.2f", summary.currentACWR))
                             .font(.title2)
                             .fontWeight(.bold)
@@ -755,7 +755,7 @@ struct TrainingLoadPreviewCard: View {
                 Spacer()
                 
                 // Current status
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: .spacingXs) {
                     Text("Status")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -768,7 +768,7 @@ struct TrainingLoadPreviewCard: View {
             }
             
             // Quick recommendation
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Image(systemName: "lightbulb.fill")
                     .font(.caption)
                     .foregroundStyle(Color.statusMonitoring)
@@ -822,10 +822,10 @@ struct InjuryRiskCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header
             HStack {
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Text("INJURY RISK")
                         .font(.headline)
                     
@@ -878,7 +878,7 @@ struct InjuryRiskCard: View {
                 }
                 
                 // Breakdown
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSm) {
                     RiskBreakdownRow(
                         label: "Load",
                         score: assessment.loadRisk,
@@ -909,7 +909,7 @@ struct InjuryRiskCard: View {
             Divider()
             
             // Recommendation
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 Label("Recommendation", systemImage: "lightbulb.fill")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -944,7 +944,7 @@ struct InjuryRiskCard: View {
                 if showDetails {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(assessment.contributingFactors) { factor in
-                            HStack(alignment: .top, spacing: 8) {
+                            HStack(alignment: .top, spacing: .spacingSm) {
                                 // Severity indicator
                                 Circle()
                                     .fill(severityColor(factor.severity))
@@ -963,10 +963,10 @@ struct InjuryRiskCard: View {
                                 
                                 Spacer()
                             }
-                            .padding(.vertical, 4)
+                            .padding(.vertical, .spacingXs)
                         }
                     }
-                    .padding(.top, 8)
+                    .padding(.top, .spacingSm)
                 }
             }
         }
@@ -1000,7 +1000,7 @@ struct RiskBreakdownRow: View {
     let color: Color
     
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: .spacingSm) {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -1091,7 +1091,7 @@ struct InjuryRiskInfoSheet: View {
                             .foregroundStyle(Color.statusWarning)
                     }
                     .font(.subheadline)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, .spacingSm)
                 }
                 
                 Section(header: Text("Key Metrics")) {
@@ -1129,7 +1129,7 @@ struct InjuryRiskInfoSheet: View {
                 }
                 
                 Section {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: .spacingSm) {
                         Text("Research-Backed")
                             .font(.headline)
                         
@@ -1162,7 +1162,7 @@ struct ComponentRow: View {
                 .foregroundStyle(color)
                 .frame(width: 30)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(label)
                     .fontWeight(.semibold)
                 
@@ -1190,8 +1190,8 @@ struct MetricExplanation: View {
                 Text("Optimal: \(optimal)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, .spacingSm)
+                    .padding(.vertical, .spacingXs)
                     .background(.green.opacity(0.15))
                     .clipShape(Capsule())
             }

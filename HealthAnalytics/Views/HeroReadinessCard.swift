@@ -14,7 +14,7 @@ struct HeroReadinessCard: View {
     var intraDay: RecoveryDecayService.IntraDayReadiness? = nil
     
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: .spacingMd) {
             // Hero Score Circle
             ZStack {
                 // Background circle
@@ -53,7 +53,7 @@ struct HeroReadinessCard: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, .spacingSm)
             
             // Dynamic Recovery Banner
             if let intraDay = intraDay, !intraDay.isFullyRecovered {
@@ -89,7 +89,7 @@ struct HeroReadinessCard: View {
             }
             
             // Status Badge
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Text(level.emoji)
                     .font(.title3)
                 

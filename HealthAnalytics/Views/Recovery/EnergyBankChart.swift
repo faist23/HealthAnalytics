@@ -160,7 +160,7 @@ struct EnergyBankChart: View {
                         }
                     }
                 }
-                .padding(.top, 8)
+                .padding(.top, .spacingSm)
             }
             } // Close VStack
         } // Close Button

@@ -13,7 +13,7 @@ struct ReadinessBreakdownCard: View {
     @State private var showDetails = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header
             HStack {
                 Image(systemName: "chart.bar.fill")
@@ -24,7 +24,7 @@ struct ReadinessBreakdownCard: View {
                 Spacer()
                 
                 Button(action: { showDetails.toggle() }) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXs) {
                         Text(showDetails ? "Hide" : "Details")
                             .font(.caption)
                         Image(systemName: showDetails ? "chevron.up" : "chevron.down")
@@ -73,7 +73,7 @@ struct ReadinessBreakdownCard: View {
                     .font(.headline)
                     .fontWeight(.bold)
             }
-            .padding(.top, 8)
+            .padding(.top, .spacingSm)
             
             // Detailed explanations
             if showDetails {
@@ -165,7 +165,7 @@ struct DetailSection: View {
     let color: Color
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: .spacingXs) {
             Text(title)
                 .font(.subheadline)
                 .fontWeight(.semibold)

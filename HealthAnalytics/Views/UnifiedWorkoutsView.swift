@@ -43,7 +43,7 @@ struct UnifiedWorkoutRow: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: .spacingSm) {
             // 1. Header: Name and Source Badge
             HStack {
                 Text(displayName)
@@ -53,7 +53,7 @@ struct UnifiedWorkoutRow: View {
                 Spacer()
                 
                 // Source Badge
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Image(systemName: workout.workoutType.iconName) // Use a dynamic icon                        .font(.caption2)
                     Text(workout.source)
                         .font(.caption2)
@@ -67,7 +67,7 @@ struct UnifiedWorkoutRow: View {
             }
             
             // 2. Stats Row
-            HStack(spacing: 16) {
+            HStack(spacing: .spacingMd) {
                 // Duration
                 Label(formatDuration(workout.duration), systemImage: "clock")
                     .font(.caption)

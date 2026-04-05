@@ -26,7 +26,7 @@ struct HealthspanTabView: View {
                     )
                 } else {
                     ScrollView {
-                        VStack(spacing: 24) {
+                        VStack(spacing: .spacingLg) {
                             if let error = viewModel.errorMessage {
                                 ErrorView(message: error)
                                     .cardStyle(for: .error)
@@ -45,7 +45,7 @@ struct HealthspanTabView: View {
                                     )
                                     
                                     // 2. Pace of Aging Section
-                                    VStack(alignment: .leading, spacing: 16) {
+                                    VStack(alignment: .leading, spacing: .spacingMd) {
                                         Text("PACE OF AGING")
                                             .font(.caption)
                                             .fontWeight(.bold)

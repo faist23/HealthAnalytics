@@ -30,7 +30,7 @@ struct SettingsView: View {
                 .ignoresSafeArea()
             
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: .spacingMd) {
                     
                     // MARK: - App
                     VStack(alignment: .leading, spacing: 12) {
@@ -154,7 +154,7 @@ struct SettingsView: View {
                             .font(.headline)
                             .foregroundStyle(.secondary)
                         
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSm) {
                             HStack {
                                 Label("Historical Data Window", systemImage: "calendar")
                                 Spacer()

@@ -29,7 +29,7 @@ struct TimelineView: View {
             .background(TabBackgroundColor.recovery(for: colorScheme))
             
             ScrollView {
-                VStack(spacing: 24) {
+                VStack(spacing: .spacingLg) {
                     // Metric toggles
                     MetricToggles(selectedMetrics: $viewModel.selectedMetrics)
                     
@@ -247,7 +247,7 @@ struct DateRangePicker: View {
                     showingCustomRange.toggle()
                     if showingCustomRange { selectedQuickRange = nil }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXs) {
                         Text(formattedRange)
                             .font(.subheadline)
                         Image(systemName: "calendar")
@@ -279,7 +279,7 @@ struct DateRangePicker: View {
             // Quick range buttons
             if !showingCustomRange {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: .spacingSm) {
                         // 7 Days
                         QuickRangeButton(title: "7D", isSelected: selectedQuickRange == "7D") {
                             updateRange(days: -7, title: "7D")
@@ -347,7 +347,7 @@ struct QuickRangeButton: View {
                 .font(.caption)
                 .fontWeight(isSelected ? .bold : .medium)
                 .padding(.horizontal, 15)
-                .padding(.vertical, 8)
+                .padding(.vertical, .spacingSm)
                 .foregroundStyle(isSelected ? .white : .primary)
                 .background(
                     Capsule()
@@ -388,7 +388,7 @@ struct MetricToggles: View {
                 }
             }
         }
-        .padding(16)
+        .padding(.spacingMd)
         .background(
             RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -404,7 +404,7 @@ struct TimelineMetricToggle: View {
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
+            VStack(spacing: .spacingSm) {
                 Image(systemName: metric.icon)
                     .font(.title3)
                     .foregroundStyle(isSelected ? metric.color : .secondary)
@@ -436,7 +436,7 @@ struct TimelineChart: View {
     let workouts: [WorkoutData]
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             Text("Metrics Over Time")
                 .font(.headline)
                 .padding(.horizontal)
@@ -452,8 +452,8 @@ struct TimelineChart: View {
                 VStack(spacing: 20) {
                     // Separate chart for each metric
                     ForEach(Array(selectedMetrics).sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { metric in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSm) {
+                            HStack(spacing: .spacingSm) {
                                 Image(systemName: metric.icon)
                                     .foregroundStyle(metric.color)
                                 Text(metric.rawValue)
@@ -567,10 +567,10 @@ struct WorkoutTimeline: View {
                         WorkoutMarker(workout: workout)
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, .spacingXs)
             }
         }
-        .padding(16)
+        .padding(.spacingMd)
         .background(
             RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -583,7 +583,7 @@ struct WorkoutMarker: View {
     let workout: WorkoutData
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: .spacingSm) {
             Image(systemName: workout.iconName)
                 .font(.title3)
                 .foregroundStyle(.white)
@@ -613,7 +613,7 @@ struct TimelineStats: View {
     let selectedMetrics: Set<TimelineMetric>
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             Text("Period Summary")
                 .font(.headline)
             
@@ -659,7 +659,7 @@ struct TimelineStats: View {
                 }
             }
         }
-        .padding(16)
+        .padding(.spacingMd)
         .background(
             RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -696,7 +696,7 @@ struct StatCard: View {
     let color: Color
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: .spacingSm) {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundStyle(color)
@@ -705,7 +705,7 @@ struct StatCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: .spacingXs) {
                 Text(value)
                     .font(.title3)
                     .fontWeight(.bold)
@@ -718,7 +718,7 @@ struct StatCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(.spacingMd)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(color.opacity(0.1))

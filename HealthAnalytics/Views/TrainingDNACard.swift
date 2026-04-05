@@ -26,7 +26,7 @@ struct TrainingDNACard: View {
                 .padding(.bottom, 10)
 
             confidenceLine
-                .padding(.bottom, 8)
+                .padding(.bottom, .spacingSm)
 
             TrainingPatternTimelineView(pattern: pattern)
                 .padding(.bottom, 12)
@@ -43,7 +43,7 @@ struct TrainingDNACard: View {
 
             coachingRow
         }
-        .padding(16)
+        .padding(.spacingMd)
         .background(Color.surface, in: RoundedRectangle(cornerRadius: .radiusMd))
         .overlay(
             RoundedRectangle(cornerRadius: .radiusMd)
@@ -65,7 +65,7 @@ struct TrainingDNACard: View {
 
     @ViewBuilder
     private var headerRow: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: .spacingSm) {
             Image(systemName: pattern.patternType.icon)
                 .font(.system(size: 20))
                 .foregroundStyle(patternColor)
@@ -83,7 +83,7 @@ struct TrainingDNACard: View {
 
             Spacer()
 
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 if pattern.isNewlyDetected && !isSeen {
                     newBadge
                 }
@@ -137,7 +137,7 @@ struct TrainingDNACard: View {
                 .fill(Color.accent)
                 .frame(width: 3)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(pattern.coachingResponse)
                     .font(.coachGuidance)
                     .foregroundStyle(Color.textPrimary)
@@ -194,7 +194,7 @@ private extension Date {
         coachingResponse: "Try adding an extra deload day at the end of each block before intensity drops."
     )
     return ScrollView {
-        VStack(spacing: 16) {
+        VStack(spacing: .spacingMd) {
             TrainingDNACard(pattern: pattern)
         }
         .padding()

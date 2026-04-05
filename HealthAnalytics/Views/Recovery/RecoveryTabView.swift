@@ -27,7 +27,7 @@ struct RecoveryTabView: View {
                     )
                 } else {
                     ScrollView {
-                        VStack(spacing: 24) {
+                        VStack(spacing: .spacingLg) {
                             if let error = viewModel.errorMessage {
                                 ErrorView(message: error)
                                     .cardStyle(for: .error)

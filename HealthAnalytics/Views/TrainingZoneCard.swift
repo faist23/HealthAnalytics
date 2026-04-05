@@ -30,10 +30,10 @@ struct TrainingZoneCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header
             HStack {
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Text("TRAINING ZONES")
                         .font(.headline)
                     
@@ -100,12 +100,12 @@ struct TrainingZoneCard: View {
     @ViewBuilder
     private func thresholdDisplay(threshold: Double) -> some View {
         HStack(spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text("Functional Threshold")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: .spacingXs) {
                     if analysis.criticalPower != nil {
                         Text("\(Int(threshold))")
                             .font(.title2)
@@ -133,12 +133,12 @@ struct TrainingZoneCard: View {
             Spacer()
             
             if let cp = analysis.criticalPower {
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: .spacingXs) {
                     Text("Critical Power")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: .spacingXs) {
                         Text("\(Int(cp))")
                             .font(.title3)
                             .fontWeight(.semibold)
@@ -189,7 +189,7 @@ struct TrainingZoneCard: View {
     // MARK: - Training Balance View
     
     private var polarizedBalanceView: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Training model header
             HStack {
                 Text(analysis.trainingBalance.model.name)
@@ -212,7 +212,7 @@ struct TrainingZoneCard: View {
             // Visual representation of training distribution
             VStack(spacing: 12) {
                 // Target vs Actual
-                HStack(spacing: 16) {
+                HStack(spacing: .spacingMd) {
                     BalanceColumn(
                         title: "Target",
                         easy: analysis.trainingBalance.targetEasy,
@@ -232,7 +232,7 @@ struct TrainingZoneCard: View {
                 .frame(height: 150)
                 
                 // Status
-                HStack(spacing: 8) {
+                HStack(spacing: .spacingSm) {
                     Image(systemName: analysis.trainingBalance.matchesModel ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(analysis.trainingBalance.matchesModel ? .green : .orange)
                     
@@ -255,14 +255,14 @@ struct TrainingZoneCard: View {
     // MARK: - Efficiency View
     
     private var efficiencyView: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             Text("Efficiency Factor Trend")
                 .font(.subheadline)
                 .fontWeight(.semibold)
             
             // Current EF
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Current EF")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -275,8 +275,8 @@ struct TrainingZoneCard: View {
                 Spacer()
                 
                 // Trend indicator
-                VStack(alignment: .trailing, spacing: 4) {
-                    HStack(spacing: 4) {
+                VStack(alignment: .trailing, spacing: .spacingXs) {
+                    HStack(spacing: .spacingXs) {
                         Image(systemName: trendIcon(analysis.efficiencyTrend.trend))
                             .foregroundStyle(trendColor(analysis.efficiencyTrend.trend))
                         
@@ -386,7 +386,7 @@ struct ZoneRow: View {
                     .fontWeight(.medium)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, .spacingXs)
     }
     
     private func zoneColor(_ number: Int) -> Color {
@@ -422,7 +422,7 @@ struct BalanceColumn: View {
     let isTarget: Bool
     
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: .spacingXs) {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -483,12 +483,12 @@ struct DecouplingRow: View {
     let event: TrainingZoneAnalyzer.DecouplingEvent
     
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: .spacingSm) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(severityColor)
                 .font(.caption)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 HStack {
                     Text(event.activityType)
                         .font(.caption)
@@ -509,7 +509,7 @@ struct DecouplingRow: View {
             
             Spacer()
         }
-        .padding(8)
+        .padding(.spacingSm)
         .background(severityColor.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
     }
@@ -569,7 +569,7 @@ struct TrainingZoneInfoSheet: View {
                     Text("Different training philosophies work for different athletes and schedules. The app auto-detects which model fits your current training.")
                     
                     VStack(alignment: .leading, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: .spacingXs) {
                             Text("Polarized (80/20)")
                                 .fontWeight(.semibold)
                             Text("80% easy, minimal moderate, 20% hard. Maximizes fitness with limited time. Good for time-crunched athletes.")
@@ -579,7 +579,7 @@ struct TrainingZoneInfoSheet: View {
                         
                         Divider()
                         
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: .spacingXs) {
                             Text("Pyramidal")
                                 .fontWeight(.semibold)
                             Text("80% easy, 15% moderate, 5% hard. Classic endurance model. Most sustainable long-term.")
@@ -589,7 +589,7 @@ struct TrainingZoneInfoSheet: View {
                         
                         Divider()
                         
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: .spacingXs) {
                             Text("Threshold-Based")
                                 .fontWeight(.semibold)
                             Text("70% easy, 20% threshold/tempo, 10% hard. Builds race-specific fitness efficiently.")
@@ -630,7 +630,7 @@ struct ZoneInfoRow: View {
                 .foregroundStyle(color)
                 .frame(width: 30)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(title)
                     .fontWeight(.semibold)
                 

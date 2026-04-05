@@ -32,7 +32,7 @@ struct DetailedRHRChart: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Image(systemName: "heart.fill")
                     .foregroundStyle(Color.statusWarning)
                 Text("Resting Heart Rate")
@@ -116,7 +116,7 @@ struct DetailedHRVChart: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Image(systemName: "waveform.path.ecg")
                     .foregroundStyle(Color.statusOptimal)
                 Text("Heart Rate Variability")
@@ -200,7 +200,7 @@ struct DetailedSleepChart: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Image(systemName: "bed.double.fill")
                     .foregroundStyle(Color.accent)
                 Text("Sleep")
@@ -284,7 +284,7 @@ struct DetailedStepsChart: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Image(systemName: "figure.walk")
                     .foregroundStyle(Color.statusWarning)
                 Text("Steps")
@@ -368,7 +368,7 @@ struct DetailedWeightChart: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Image(systemName: "scalemass.fill")
                     .foregroundStyle(Color.statusRest)
                 Text("Weight")

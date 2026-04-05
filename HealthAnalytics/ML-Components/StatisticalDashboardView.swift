@@ -16,10 +16,10 @@ struct StatisticalDashboardView: View {
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: .spacingLg) {
                 
                 // Header
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSm) {
                     Text("Data Quality Dashboard")
                         .font(.title2)
                         .fontWeight(.bold)
@@ -35,7 +35,7 @@ struct StatisticalDashboardView: View {
                     .padding(.horizontal)
                 
                 // Individual Metrics
-                VStack(spacing: 16) {
+                VStack(spacing: .spacingMd) {
                     Text("Metric Breakdown")
                         .font(.headline)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -245,12 +245,12 @@ struct OverallQualityCard: View {
     let summary: StatisticalDashboardView.DataQualitySummary
     
     var body: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 16) {
+        VStack(spacing: .spacingMd) {
+            HStack(spacing: .spacingMd) {
                 Text(summary.quality.emoji)
                     .font(.system(size: 48))
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text(summary.quality.title)
                         .font(.title3)
                         .fontWeight(.bold)
@@ -309,7 +309,7 @@ struct MetricQualityRow: View {
                 .foregroundStyle(color)
                 .frame(width: 30)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(name)
                     .font(.subheadline)
                     .fontWeight(.medium)
@@ -321,7 +321,7 @@ struct MetricQualityRow: View {
             
             Spacer()
             
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing, spacing: .spacingXs) {
                 Text(validation.confidence.emoji)
                     .font(.title3)
                 

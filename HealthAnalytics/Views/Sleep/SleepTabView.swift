@@ -16,7 +16,7 @@ struct SleepTabView: View {
                     .ignoresSafeArea()
                 
                 ScrollView {
-                    VStack(spacing: 24) {
+                    VStack(spacing: .spacingLg) {
                         
                         if !viewModel.isLoading && !viewModel.sleepStages.isEmpty {
                             let neededSleep = 8.0

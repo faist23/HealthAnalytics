@@ -238,8 +238,8 @@ private struct PatternView: View {
         .padding(.bottom, 12)
         
         // Legend row: dashed line = baseline, colors = below/above
-        HStack(spacing: 16) {
-            HStack(spacing: 4) {
+        HStack(spacing: .spacingMd) {
+            HStack(spacing: .spacingXs) {
                 Line()
                     .stroke(.gray.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                     .frame(width: 24, height: 1)
@@ -247,7 +247,7 @@ private struct PatternView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            HStack(spacing: 4) {
+            HStack(spacing: .spacingXs) {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Color.statusWarning.opacity(0.6))
                     .frame(width: 12, height: 10)
@@ -255,7 +255,7 @@ private struct PatternView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            HStack(spacing: 4) {
+            HStack(spacing: .spacingXs) {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Color.statusOptimal.opacity(0.6))
                     .frame(width: 12, height: 10)
@@ -363,7 +363,7 @@ private struct WeeklySnapshotView: View {
                         .foregroundStyle(.primary)
                 }
                 if i < lines.count - 1 {
-                    Divider().padding(.vertical, 8)
+                    Divider().padding(.vertical, .spacingSm)
                 }
             }
         }

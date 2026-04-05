@@ -33,7 +33,7 @@ struct CircularGauge: View {
                 .animation(.spring(response: 1.5, dampingFraction: 0.8), value: animatedProgress)
             
             // Inner text
-            VStack(spacing: 4) {
+            VStack(spacing: .spacingXs) {
                 Text(title.uppercased())
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .tracking(2)
@@ -67,7 +67,7 @@ struct GaugeMetricRow: View {
     let trendColor: Color
     
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: .spacingMd) {
             Image(systemName: icon)
                 .font(.system(size: 20))
                 .foregroundStyle(.secondary)
@@ -92,7 +92,7 @@ struct GaugeMetricRow: View {
                 }
             }
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, .spacingMd)
         .padding(.horizontal, 20)
     }
 }
@@ -142,7 +142,7 @@ struct InsightBox: View {
                 .multilineTextAlignment(.leading)
             
             if let actionText = actionText {
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Text(actionText.uppercased())
                         .font(.system(size: 13, weight: .bold))
                         .tracking(1)

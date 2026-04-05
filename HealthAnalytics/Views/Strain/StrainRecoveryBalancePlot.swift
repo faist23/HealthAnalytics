@@ -129,7 +129,7 @@ struct StrainRecoveryBalancePlot: View {
                             .font(.title3.bold())
                     }
                 }
-                .padding(.top, 8)
+                .padding(.top, .spacingSm)
                 
             } else {
                 Text("Not enough data to plot Strain vs. Recovery balance.")

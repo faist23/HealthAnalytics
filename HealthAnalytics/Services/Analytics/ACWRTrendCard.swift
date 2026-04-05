@@ -59,16 +59,16 @@ struct ACWRTrendCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header with info button
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("TRAINING LOAD BALANCE")
                         .font(.caption)
                         .fontWeight(.bold)
                         .foregroundStyle(.secondary)
                     
-                    HStack(spacing: 8) {
+                    HStack(spacing: .spacingSm) {
                         Text(stateLabel)
                             .font(.title3)
                             .fontWeight(.bold)
@@ -101,7 +101,7 @@ struct ACWRTrendCard: View {
             Text(interpretation)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
-                .padding(.vertical, 8)
+                .padding(.vertical, .spacingSm)
             
             // Chart - only show if there's actual variation
             if hasValidTrend {
@@ -166,7 +166,7 @@ struct ACWRTrendCard: View {
                 }
             } else {
                 // Flat line explanation
-                VStack(spacing: 8) {
+                VStack(spacing: .spacingSm) {
                     Image(systemName: "chart.line.flattrend.xyaxis")
                         .font(.title)
                         .foregroundStyle(.secondary)
@@ -185,15 +185,15 @@ struct ACWRTrendCard: View {
             }
             
             // What this means section
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 Text("What This Means")
                     .font(.caption)
                     .fontWeight(.semibold)
                     .textCase(.uppercase)
                     .foregroundStyle(.secondary)
                 
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: .spacingMd) {
+                    VStack(alignment: .leading, spacing: .spacingXs) {
                         Text("Acute Load")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -209,7 +209,7 @@ struct ACWRTrendCard: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: .spacingXs) {
                         Text("Chronic Load")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -222,7 +222,7 @@ struct ACWRTrendCard: View {
                     }
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, .spacingSm)
         }
         .padding()
         .sheet(isPresented: $showInfoSheet) {
@@ -357,7 +357,7 @@ struct ACWRExplainerSheet: View {
                 .foregroundStyle(color)
                 .frame(width: 24)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -376,7 +376,7 @@ struct ACWRExplainerSheet: View {
                 .foregroundStyle(color)
                 .frame(width: 60, alignment: .leading)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(label)
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -385,7 +385,7 @@ struct ACWRExplainerSheet: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, .spacingSm)
     }
 }
 

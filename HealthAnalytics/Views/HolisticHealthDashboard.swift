@@ -15,7 +15,7 @@ struct HolisticHealthDashboard: View {
         ScrollView {
             VStack(spacing: 20) {
                 // Header
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSm) {
                     Text("Holistic Health Overview")
                         .font(.title)
                         .fontWeight(.bold)
@@ -29,9 +29,9 @@ struct HolisticHealthDashboard: View {
                 
                 // Grid of metrics - equal visual weight
                 LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 16),
-                    GridItem(.flexible(), spacing: 16)
-                ], spacing: 16) {
+                    GridItem(.flexible(), spacing: .spacingMd),
+                    GridItem(.flexible(), spacing: .spacingMd)
+                ], spacing: .spacingMd) {
                     // MET Activity
                     HealthMetricTile(
                         icon: "flame.fill",
@@ -109,7 +109,7 @@ struct HolisticHealthDashboard: View {
                             .font(.headline)
                     }
                     
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: .spacingSm) {
                         ResearchBullet(
                             text: "MET-based activity shows 14-15% mortality reduction per MET increase (750,000+ participants)"
                         )
@@ -212,8 +212,8 @@ struct HealthMetricTile: View {
                 .font(.caption2)
                 .fontWeight(.semibold)
                 .foregroundStyle(statusColor)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, .spacingSm)
+                .padding(.vertical, .spacingXs)
                 .background(
                     Capsule()
                         .fill(statusColor.opacity(0.15))
@@ -235,7 +235,7 @@ struct ResearchBullet: View {
     let text: String
     
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: .spacingSm) {
             Image(systemName: "checkmark.seal.fill")
                 .foregroundStyle(Color.statusOptimal)
                 .font(.caption)
@@ -324,7 +324,7 @@ struct OverallStatusView: View {
                         .foregroundStyle(overallColor)
                 }
                 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSm) {
                     Text(overallStatus)
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)

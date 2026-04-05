@@ -113,7 +113,7 @@ private struct ConfidenceBadge: View {
             .fontWeight(.semibold)
             .foregroundStyle(badgeColor)
             .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .padding(.vertical, .spacingXs)
             .background(badgeColor.opacity(0.15))
             .clipShape(Capsule())
     }

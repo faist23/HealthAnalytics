@@ -65,7 +65,7 @@ struct SleepStagesChart: View {
                             .foregroundStyle(AppColors.sleep)
                     }
                 }
-                .padding(.top, 8)
+                .padding(.top, .spacingSm)
             }
             } // Close VStack
         } // Close Button

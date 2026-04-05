@@ -22,7 +22,7 @@ struct EnhancedIntentReadinessCard: View {
             
             // Header with ACWR + Confidence
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Today's Readiness")
                         .font(.title3)
                         .fontWeight(.bold)
@@ -34,7 +34,7 @@ struct EnhancedIntentReadinessCard: View {
                 Spacer()
                 
                 // ACWR Badge with confidence interval
-                VStack(spacing: 4) {
+                VStack(spacing: .spacingXs) {
                     Text(String(format: "%.2f", assessment.acwr.value))
                         .font(.system(size: 32, weight: .bold, design: .rounded))
                         .foregroundStyle(acwrColor)
@@ -50,7 +50,7 @@ struct EnhancedIntentReadinessCard: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXs) {
                         Text(acwrLabel)
                             .font(.caption2)
                             .fontWeight(.medium)
@@ -229,7 +229,7 @@ struct DataQualityBanner: View {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(bannerColor)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text("Limited Data")
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -271,7 +271,7 @@ struct ExpandableIntentRow: View {
             Button(action: onTap) {
                 HStack(spacing: 12) {
                     // Intent info
-                    HStack(spacing: 8) {
+                    HStack(spacing: .spacingSm) {
                         Text(intent.emoji)
                             .font(.title3)
                         
@@ -291,7 +291,7 @@ struct ExpandableIntentRow: View {
                     Spacer()
                     
                     // Confidence badge
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXs) {
                         Text(readinessData.level.emoji)
                             .font(.title3)
                         
@@ -315,17 +315,17 @@ struct ExpandableIntentRow: View {
             
             // Expanded details (conditional)
             if isExpanded {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSm) {
                     
                     Text("Why \(reasoningVerb)")
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.secondary)
-                        .padding(.top, 8)
+                        .padding(.top, .spacingSm)
                     
                     // Reasoning bullets
                     ForEach(reasons, id: \.self) { reason in
-                        HStack(alignment: .top, spacing: 8) {
+                        HStack(alignment: .top, spacing: .spacingSm) {
                             Image(systemName: reason.isPositive ? "checkmark.circle.fill" : "xmark.circle.fill")
                                 .font(.caption)
                                 .foregroundStyle(reason.isPositive ? .green : .red)
@@ -338,7 +338,7 @@ struct ExpandableIntentRow: View {
                     
                     // Statistical confidence footer
                     Divider()
-                        .padding(.vertical, 4)
+                        .padding(.vertical, .spacingXs)
                     
                     HStack {
                         Image(systemName: "chart.bar.fill")

@@ -122,7 +122,7 @@ struct WelcomeStep: View {
             Spacer()
             
             // Value propositions
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: .spacingLg) {
                 ValuePropRow(
                     icon: "chart.line.uptrend.xyaxis",
                     color: .blue,
@@ -142,7 +142,7 @@ struct WelcomeStep: View {
                     description: "Know when to push hard or take it easy"
                 )
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, .spacingLg)
             
             Spacer()
             
@@ -163,7 +163,7 @@ struct WelcomeStep: View {
                     .cornerRadius(.radiusMd)
                     .shadow(color: .blue.opacity(0.3), radius: 10, y: 5)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, .spacingLg)
             .padding(.bottom, 40)
         }
     }
@@ -202,7 +202,7 @@ struct HealthKitStep: View {
             Spacer()
             
             // What we access
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: .spacingMd) {
                 Text("We'll access:")
                     .font(.headline)
                     .padding(.bottom, 4)
@@ -215,7 +215,7 @@ struct HealthKitStep: View {
             .padding(20)
             .background(Color.white.opacity(0.1))
             .cornerRadius(.radiusMd)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, .spacingLg)
             
             Spacer()
             
@@ -235,7 +235,7 @@ struct HealthKitStep: View {
                         .background(Color.accent)
                         .cornerRadius(.radiusMd)
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, .spacingLg)
             }
             
             // Continue button (after authorization)
@@ -258,7 +258,7 @@ struct HealthKitStep: View {
                     )
                     .cornerRadius(.radiusMd)
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, .spacingLg)
             }
             
             // Error message
@@ -266,7 +266,7 @@ struct HealthKitStep: View {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(Color.statusWarning)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, .spacingLg)
             }
             
             Spacer()
@@ -308,7 +308,7 @@ struct StravaStep: View {
             Spacer()
             
             // Benefits
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: .spacingMd) {
                 Text("Why connect Strava?")
                     .font(.headline)
                     .padding(.bottom, 4)
@@ -320,7 +320,7 @@ struct StravaStep: View {
             .padding(20)
             .background(Color.white.opacity(0.1))
             .cornerRadius(.radiusMd)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, .spacingLg)
             
             Spacer()
             
@@ -385,10 +385,10 @@ struct StravaStep: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.top, 8)
+                    .padding(.top, .spacingSm)
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, .spacingLg)
             
             Text("You can always connect Strava later in Settings")
                 .font(.caption)
@@ -424,7 +424,7 @@ struct SyncingStep: View {
             
             if !hasCompletedSync {
                 // Loading state
-                VStack(spacing: 24) {
+                VStack(spacing: .spacingLg) {
                     ProgressView()
                         .scaleEffect(1.5)
                         .tint(.blue)
@@ -444,7 +444,7 @@ struct SyncingStep: View {
                             if syncManager.backfillProgress > 0 {
                                 ProgressView(value: syncManager.backfillProgress)
                                     .padding(.horizontal, 40)
-                                    .padding(.top, 8)
+                                    .padding(.top, .spacingSm)
                             }
                         }
                     } else {
@@ -463,7 +463,7 @@ struct SyncingStep: View {
                 }
             } else {
                 // Success state
-                VStack(spacing: 24) {
+                VStack(spacing: .spacingLg) {
                     Image(systemName: "checkmark.circle.fill")
                         .resizable()
                         .scaledToFit()
@@ -497,7 +497,7 @@ struct SyncingStep: View {
                     )
                     .cornerRadius(.radiusMd)
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, .spacingLg)
                 .padding(.top, 20)
             }
             
@@ -587,7 +587,7 @@ struct FeatureTourStep: View {
                         )
                         .cornerRadius(.radiusMd)
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, .spacingLg)
                 .padding(.bottom, 40)
                 .transition(.opacity)
             } else {
@@ -607,13 +607,13 @@ struct ValuePropRow: View {
     let description: String
     
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: .spacingMd) {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundStyle(color.gradient)
                 .frame(width: 40, height: 40)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(title)
                     .font(.headline)
                 Text(description)
@@ -665,7 +665,7 @@ struct TourPageView: View {
     let description: String
     
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: .spacingLg) {
             Spacer()
             
             Image(systemName: icon)

@@ -14,10 +14,10 @@ struct BalancedTrainingCard: View {
     @State private var showRecommendations = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     HStack {
                         Text(balance.balance.emoji)
                             .font(.title3)
@@ -116,7 +116,7 @@ struct BalancedTrainingCard: View {
             
             // Activity breakdown
             if !balance.activityBreakdown.topActivities.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSm) {
                     Text("Top Activities (Last 14 Days)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -132,11 +132,11 @@ struct BalancedTrainingCard: View {
                         }
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, .spacingSm)
             }
             
             // Recommendation
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: .spacingSm) {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(Color.accent)
                     .font(.caption)
@@ -146,7 +146,7 @@ struct BalancedTrainingCard: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, .spacingSm)
             .padding(.horizontal, 12)
             .background(
                 RoundedRectangle(cornerRadius: .radiusSm)
@@ -186,7 +186,7 @@ struct BalanceLegendItem: View {
     let percentage: Double
     
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: .spacingSm) {
             Circle()
                 .fill(color)
                 .frame(width: 10, height: 10)
@@ -196,7 +196,7 @@ struct BalanceLegendItem: View {
                     .font(.caption)
                     .fontWeight(.medium)
                 
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Text(String(format: "%.0f min", minutes))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -223,7 +223,7 @@ struct RecommendedSplitSheet: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: .spacingLg) {
                     // Current status
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
@@ -252,7 +252,7 @@ struct RecommendedSplitSheet: View {
                     )
                     
                     // Recommended split
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: .spacingMd) {
                         Text("Recommended Weekly Split")
                             .font(.headline)
                         
@@ -327,7 +327,7 @@ struct RecommendedSplitSheet: View {
                         Text("Sample Balanced Week")
                             .font(.headline)
                         
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSm) {
                             SampleDayRow(day: "Mon", activity: "Endurance ride", duration: "60-90 min")
                             SampleDayRow(day: "Tue", activity: "Strength training", duration: "45 min")
                             SampleDayRow(day: "Wed", activity: "Quality intervals", duration: "60 min")
@@ -374,7 +374,7 @@ struct TrainingRecommendationRow: View {
                 .foregroundStyle(color)
                 .frame(width: 30)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(category)
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -395,7 +395,7 @@ struct InsightBullet: View {
     let text: String
     
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: .spacingSm) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(Color.statusOptimal)
                 .font(.caption)

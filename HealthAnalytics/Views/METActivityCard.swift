@@ -14,10 +14,10 @@ struct METActivityCard: View {
     @State private var showResearch = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header with info button
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     HStack {
                         Image(systemName: "flame.fill")
                             .foregroundStyle(summary.status.color)
@@ -46,8 +46,8 @@ struct METActivityCard: View {
             }
             
             // Weekly MET-minutes display
-            VStack(spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+            VStack(spacing: .spacingSm) {
+                HStack(alignment: .firstTextBaseline, spacing: .spacingXs) {
                     Text(String(format: "%.0f", summary.weeklyMETMinutes))
                         .font(.system(size: 42, weight: .bold, design: .rounded))
                         .foregroundStyle(summary.status.color)
@@ -62,10 +62,10 @@ struct METActivityCard: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.vertical, .spacingSm)
             
             // WHO Guidelines Reference
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text("WHO Guideline: 600-1500 MET-min/week")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -97,7 +97,7 @@ struct METActivityCard: View {
             }
             
             // Intensity breakdown
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 Text("Intensity Breakdown")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -128,7 +128,7 @@ struct METActivityCard: View {
             }
             
             // Recommendation
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: .spacingSm) {
                 Image(systemName: "lightbulb.fill")
                     .foregroundStyle(Color.statusMonitoring)
                     .font(.caption)
@@ -138,7 +138,7 @@ struct METActivityCard: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, .spacingSm)
             .padding(.horizontal, 12)
             .background(
                 RoundedRectangle(cornerRadius: .radiusSm)
@@ -172,7 +172,7 @@ struct IntensityRow: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: .spacingXs) {
             HStack {
                 Text(label)
                     .font(.caption)
@@ -245,7 +245,7 @@ struct ResearchContextSheet: View {
                         Text("The VO2 Max Problem")
                             .font(.headline)
                         
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSm) {
                             BulletPoint(text: "Smartwatch VO2 max has 7-16% error rate")
                             BulletPoint(text: "Consistently underestimates in fit individuals")
                             BulletPoint(text: "99% of longevity research uses METs, not VO2 max")
@@ -262,7 +262,7 @@ struct ResearchContextSheet: View {
                         Text("MET Advantages")
                             .font(.headline)
                         
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSm) {
                             BulletPoint(text: "Based on real-world activity data", color: .statusOptimal)
                             BulletPoint(text: "Validated across 750,000+ participants", color: .statusOptimal)
                             BulletPoint(text: "Each MET increase = 14-15% mortality reduction", color: .statusOptimal)
@@ -280,7 +280,7 @@ struct ResearchContextSheet: View {
                         Text("WHO Physical Activity Guidelines")
                             .font(.headline)
                         
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSm) {
                             GuidelineRow(level: "Minimum", value: "600 MET-min/week", color: .statusMonitoring)
                             GuidelineRow(level: "Target", value: "1,500 MET-min/week", color: .statusOptimal)
                             GuidelineRow(level: "Excellent", value: "3,000+ MET-min/week", color: .statusRest)
@@ -314,7 +314,7 @@ struct BulletPoint: View {
     var color: Color = .statusOptimal
     
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: .spacingSm) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(color)
                 .font(.caption)

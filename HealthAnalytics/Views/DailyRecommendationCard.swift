@@ -18,7 +18,7 @@ struct DailyRecommendationCard: View {
                 Text(recommendation.status.emoji)
                     .font(.system(size: 40))
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("TODAY'S RECOMMENDATION")
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -75,14 +75,14 @@ struct DailyRecommendationCard: View {
             
             // Training zones
             if !recommendation.targetZones.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSm) {
                     Label("Recommended Today", systemImage: "checkmark.circle.fill")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(Color.statusOptimal)
                     
                     ForEach(recommendation.targetZones, id: \.self) { zone in
-                        HStack(spacing: 8) {
+                        HStack(spacing: .spacingSm) {
                             Circle()
                                 .fill(Color.statusOptimal.opacity(0.2))
                                 .frame(width: 6, height: 6)
@@ -96,14 +96,14 @@ struct DailyRecommendationCard: View {
             }
             
             if !recommendation.avoidZones.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSm) {
                     Label("Avoid Today", systemImage: "xmark.circle.fill")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(Color.statusWarning)
                     
                     ForEach(recommendation.avoidZones, id: \.self) { zone in
-                        HStack(spacing: 8) {
+                        HStack(spacing: .spacingSm) {
                             Circle()
                                 .fill(Color.statusWarning.opacity(0.2))
                                 .frame(width: 6, height: 6)
@@ -117,7 +117,7 @@ struct DailyRecommendationCard: View {
             }
             
             // Reasoning and confidence
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Image(systemName: "info.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -132,8 +132,8 @@ struct DailyRecommendationCard: View {
                     .font(.caption2)
                     .fontWeight(.medium)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, .spacingSm)
+                    .padding(.vertical, .spacingXs)
                     .background(
                         Capsule()
                             .fill(.secondary.opacity(0.1))
@@ -168,7 +168,7 @@ struct DailyRecommendationCard: View {
 // MARK: - Preview
 
 #Preview {
-    VStack(spacing: 16) {
+    VStack(spacing: .spacingMd) {
         DailyRecommendationCard(
             recommendation: DailyRecommendationService.DailyRecommendation(
                 status: .goHard,

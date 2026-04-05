@@ -69,9 +69,9 @@ struct TrainingView: View {
     @ViewBuilder
     private var trainingContent: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: .spacingLg) {
                 // Section 1: Activity Overview
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: .spacingMd) {
                     Text("Activity")
                         .font(.title2)
                         .fontWeight(.bold)
@@ -97,7 +97,7 @@ struct TrainingView: View {
                 }
                 
                 // Section 2: Load Management
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: .spacingMd) {
                     Text("Load Management")
                         .font(.title2)
                         .fontWeight(.bold)
@@ -130,10 +130,10 @@ struct TrainingLoadSummaryCard: View {
     let load: TrainingLoadCalculator.TrainingLoadSummary
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Training Load")
                         .font(.headline)
                     Text(load.status.emoji + " " + statusLabel)
@@ -144,7 +144,7 @@ struct TrainingLoadSummaryCard: View {
                 Spacer()
                 
                 // ACWR
-                VStack(spacing: 4) {
+                VStack(spacing: .spacingXs) {
                     Text(String(format: "%.2f", load.acuteChronicRatio))
                         .font(.title)
                         .fontWeight(.bold)
@@ -176,7 +176,7 @@ struct TrainingLoadSummaryCard: View {
             Text(load.recommendation)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.top, 8)
+                .padding(.top, .spacingSm)
         }
         .padding()
         .background(
@@ -202,7 +202,7 @@ struct LoadBar: View {
     let color: Color
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: .spacingXs) {
             HStack {
                 Text(label)
                     .font(.caption)
@@ -244,7 +244,7 @@ struct EmptyActivityCard: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(32)
+        .padding(.spacingXl)
         .background(
             RoundedRectangle(cornerRadius: .radiusMd)
                 .fill(Color(uiColor: .systemBackground))
@@ -267,7 +267,7 @@ struct EmptyBalanceCard: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(32)
+        .padding(.spacingXl)
         .background(
             RoundedRectangle(cornerRadius: .radiusMd)
                 .fill(Color(uiColor: .systemBackground))
@@ -290,7 +290,7 @@ struct EmptyLoadCard: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(32)
+        .padding(.spacingXl)
         .background(
             RoundedRectangle(cornerRadius: .radiusMd)
                 .fill(Color(uiColor: .systemBackground))

@@ -461,15 +461,15 @@ struct WorkoutSummaryCard: View {
             if !countsByType.isEmpty {
                 HStack(spacing: 12) {
                     ForEach(countsByType, id: \.name) { item in
-                        HStack(spacing: 4) {
+                        HStack(spacing: .spacingXs) {
                             Image(systemName: item.icon)
                                 .font(.caption2)
                             Text("\(item.count) \(item.name)")
                                 .font(.caption)
                                 .fontWeight(.medium)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, .spacingSm)
+                        .padding(.vertical, .spacingXs)
                         .background(Color.secondary.opacity(0.1))
                         .cornerRadius(6)
                     }
@@ -521,7 +521,7 @@ struct StatBox: View {
     let label: String
     
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: .spacingSm) {
             Image(systemName: icon)
                 .foregroundStyle(Color.statusWarning)
             
@@ -594,7 +594,7 @@ struct WorkoutRow: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, .spacingXs)
     }
     
     private func sourceColor(for source: WorkoutSource) -> Color {

@@ -38,7 +38,7 @@ struct EmptyStateView: View {
                 .frame(width: 60, height: 60)
                 .foregroundStyle(.secondary.opacity(0.5))
             
-            VStack(spacing: 8) {
+            VStack(spacing: .spacingSm) {
                 Text(title)
                     .font(.title3)
                     .fontWeight(.semibold)
@@ -55,12 +55,12 @@ struct EmptyStateView: View {
                     Text(actionTitle)
                         .font(.headline)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, .spacingLg)
                         .padding(.vertical, 12)
                         .background(Color.accent)
                         .cornerRadius(12)
                 }
-                .padding(.top, 8)
+                .padding(.top, .spacingSm)
             }
         }
         .padding(40)
@@ -71,7 +71,7 @@ struct EmptyStateView: View {
 
 struct DashboardEmptyState: View {
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: .spacingLg) {
             Image(systemName: "chart.line.uptrend.xyaxis")
                 .resizable()
                 .scaledToFit()
@@ -90,7 +90,7 @@ struct DashboardEmptyState: View {
                     .padding(.horizontal, 40)
             }
             
-            VStack(spacing: 16) {
+            VStack(spacing: .spacingMd) {
                 QuickTipRow(
                     icon: "figure.run",
                     text: "Record a workout in the Health app"
@@ -105,7 +105,7 @@ struct DashboardEmptyState: View {
                 )
             }
             .padding(.horizontal, 40)
-            .padding(.top, 8)
+            .padding(.top, .spacingSm)
         }
         .padding(.vertical, 60)
     }
@@ -127,7 +127,7 @@ struct WorkoutsEmptyState: View {
 
 struct NutritionEmptyState: View {
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: .spacingLg) {
             Image(systemName: "fork.knife.circle")
                 .resizable()
                 .scaledToFit()
@@ -151,7 +151,7 @@ struct NutritionEmptyState: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 
-                HStack(spacing: 16) {
+                HStack(spacing: .spacingMd) {
                     Text("MyFitnessPal")
                     Text("•")
                         .foregroundStyle(.secondary)
@@ -163,7 +163,7 @@ struct NutritionEmptyState: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            .padding(.top, 8)
+            .padding(.top, .spacingSm)
         }
         .padding(.vertical, 40)
     }
@@ -173,7 +173,7 @@ struct NutritionEmptyState: View {
 
 struct ReadinessEmptyState: View {
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: .spacingLg) {
             Image(systemName: "bolt.heart.fill")
                 .resizable()
                 .scaledToFit()
@@ -192,7 +192,7 @@ struct ReadinessEmptyState: View {
                     .padding(.horizontal, 40)
             }
             
-            VStack(spacing: 16) {
+            VStack(spacing: .spacingMd) {
                 DataRequirementRow(
                     icon: "heart.fill",
                     title: "Heart Rate Variability",
@@ -210,7 +210,7 @@ struct ReadinessEmptyState: View {
                 )
             }
             .padding(.horizontal, 40)
-            .padding(.top, 8)
+            .padding(.top, .spacingSm)
             
             Text("Keep recording your health data and check back soon")
                 .font(.caption)
@@ -225,7 +225,7 @@ struct ReadinessEmptyState: View {
 
 struct InsightsEmptyState: View {
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: .spacingLg) {
             Image(systemName: "lightbulb.circle")
                 .resizable()
                 .scaledToFit()
@@ -257,7 +257,7 @@ struct InsightsEmptyState: View {
                 )
             }
             .padding(.horizontal, 40)
-            .padding(.top, 8)
+            .padding(.top, .spacingSm)
         }
         .padding(.vertical, 40)
     }
@@ -269,7 +269,7 @@ struct StravaNotConnectedState: View {
     let onConnect: () -> Void
     
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: .spacingLg) {
             Image(systemName: "bicycle.circle")
                 .resizable()
                 .scaledToFit()
@@ -295,12 +295,12 @@ struct StravaNotConnectedState: View {
                 }
                 .font(.headline)
                 .foregroundStyle(.white)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, .spacingLg)
                 .padding(.vertical, 12)
                 .background(Color.statusWarning)
                 .cornerRadius(12)
             }
-            .padding(.top, 8)
+            .padding(.top, .spacingSm)
         }
         .padding(.vertical, 40)
     }
@@ -370,7 +370,7 @@ struct DataRequirementRow: View {
             Image(systemName: status.icon)
                 .foregroundStyle(status.color)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, .spacingXs)
     }
 }
 
@@ -384,7 +384,7 @@ struct ProgressRequirementRow: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: .spacingSm) {
             HStack {
                 Text(title)
                     .font(.subheadline)
@@ -399,7 +399,7 @@ struct ProgressRequirementRow: View {
             ProgressView(value: progress)
                 .tint(progress >= 1.0 ? .green : .blue)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, .spacingXs)
     }
 }
 

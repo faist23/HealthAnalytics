@@ -21,11 +21,11 @@ struct IntentAwareReadinessTestView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: .spacingLg) {
                 
                 // Status Header
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: .spacingXs) {
                         Text("Intent-Aware Readiness")
                             .font(.title2)
                             .fontWeight(.bold)
@@ -70,7 +70,7 @@ struct IntentAwareReadinessTestView: View {
                         Text("Debug Info")
                             .font(.headline)
                         
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSm) {
                             DebugRow(label: "ACWR", value: String(format: "%.2f", assessment.acwr.value))
                             DebugRow(label: "Chronic Load", value: String(format: "%.0f", assessment.chronicLoad))
                             DebugRow(label: "Acute Load", value: String(format: "%.0f", assessment.acuteLoad))

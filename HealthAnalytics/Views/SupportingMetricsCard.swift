@@ -24,7 +24,7 @@ struct SupportingMetricsCard: View {
     @State private var selectedConfig: MetricDisplayConfig?
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header with info button
             HStack {
                 Text("Health Signals")
@@ -121,10 +121,10 @@ struct SupportingMetricsCard: View {
             }
             
             Divider()
-                .padding(.vertical, 8)
+                .padding(.vertical, .spacingSm)
             
             // Overall Score Section
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: .spacingMd) {
                 // Score circle
                 ZStack {
                     Circle()
@@ -388,7 +388,7 @@ private struct MetricTileView: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
+            VStack(spacing: .spacingSm) {
                 // Icon with status color
                 Image(systemName: icon)
                     .font(.title2)
@@ -430,8 +430,8 @@ private struct MetricTileView: View {
                     .foregroundStyle(Color.textPrimary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .padding(.horizontal, 8)
+            .padding(.vertical, .spacingMd)
+            .padding(.horizontal, .spacingSm)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(status.color.opacity(0.1))
@@ -474,7 +474,7 @@ private struct DetailedReadinessExplanationView: View {
                     .padding(.horizontal)
 
                     // Score breakdown
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: .spacingSm) {
                         HStack {
                             Image(systemName: "chart.bar.fill").font(.caption)
                             Text("SCORE CALCULATION")
@@ -494,7 +494,7 @@ private struct DetailedReadinessExplanationView: View {
                     .padding(.horizontal)
 
                     // Data timeframes
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: .spacingSm) {
                         HStack {
                             Image(systemName: "calendar").font(.caption)
                             Text("DATA WINDOWS")

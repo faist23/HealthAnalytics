@@ -322,7 +322,7 @@ struct WorkoutDetailsCard: View {
     let workout: StoredWorkout
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header
             HStack {
                 Image(systemName: iconName)
@@ -458,7 +458,7 @@ struct MetricTile: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, .spacingSm)
         .background(Color.secondary.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
     }
@@ -472,7 +472,7 @@ struct IntentButton: View {
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
+            VStack(spacing: .spacingSm) {
                 Text(intent.emoji)
                     .font(.largeTitle)
                 
@@ -504,10 +504,10 @@ struct TrainingResultsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
+                VStack(spacing: .spacingLg) {
                     
                     // Accuracy Hero
-                    VStack(spacing: 8) {
+                    VStack(spacing: .spacingSm) {
                         Text(String(format: "%.1f%%", result.accuracy))
                             .font(.heroNumeral)
                             .foregroundStyle(Color.statusOptimal)
@@ -625,7 +625,7 @@ struct AutoClassifyProgressView: View {
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.8))
             }
-            .padding(32)
+            .padding(.spacingXl)
             .background(.ultraThinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 20))
         }

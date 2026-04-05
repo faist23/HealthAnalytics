@@ -66,7 +66,7 @@ struct UnifiedTrainingLoadCard: View {
         VStack(alignment: .leading, spacing: 12) {
             // Compact header
             HStack {
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Text("TRAINING LOAD")
                         .font(.caption)
                         .fontWeight(.bold)
@@ -84,7 +84,7 @@ struct UnifiedTrainingLoadCard: View {
                 Spacer()
 
                 // Compact status + ACWR
-                HStack(spacing: 8) {
+                HStack(spacing: .spacingSm) {
                     Text(statusEmoji)
                         .font(.title3)
                     
@@ -102,7 +102,7 @@ struct UnifiedTrainingLoadCard: View {
             // TSS Metrics (what athletes understand)
             if let summary = summary {
                 if summary.weeklyTSS == 0 && summary.ctl == 0 {
-                    HStack(spacing: 8) {
+                    HStack(spacing: .spacingSm) {
                         Image(systemName: "info.circle.fill")
                             .font(.caption)
                             .foregroundStyle(Color.statusWarning)
@@ -111,12 +111,12 @@ struct UnifiedTrainingLoadCard: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, .spacingSm)
                     .padding(.horizontal, 10)
                     .background(Color.statusWarning.opacity(0.1))
                     .cornerRadius(.radiusSm)
                 } else {
-                    VStack(spacing: 8) {
+                    VStack(spacing: .spacingSm) {
                         // Yesterday TSS
                         HStack {
                             Text("Yesterday:")
@@ -194,7 +194,7 @@ struct UnifiedTrainingLoadCard: View {
                 Group {
                     if let date = selectedDate,
                        let selectedPoint = trend.first(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: .spacingSm) {
                             Text(selectedPoint.date, format: .dateTime.month(.abbreviated).day())
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -282,13 +282,13 @@ struct UnifiedTrainingLoadCard: View {
             }
             
             // Compact interpretation + recommendation
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 Text(interpretation)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 
                 if let summary = summary {
-                    HStack(spacing: 8) {
+                    HStack(spacing: .spacingSm) {
                         Image(systemName: "lightbulb.fill")
                             .font(.caption)
                             .foregroundStyle(Color.statusMonitoring)
@@ -297,7 +297,7 @@ struct UnifiedTrainingLoadCard: View {
                             .font(.subheadline)
                             .foregroundStyle(.primary)
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, .spacingSm)
                     .padding(.horizontal, 10)
                     .background(Color.statusMonitoring.opacity(0.1))
                     .cornerRadius(.radiusSm)
@@ -329,7 +329,7 @@ struct UnifiedTrainingLoadCard: View {
                             .font(.caption2)
                     }
                     .foregroundStyle(Color.accent)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, .spacingSm)
                 }
                 .sheet(isPresented: $showExtendedView) {
                     NavigationStack {
@@ -338,7 +338,7 @@ struct UnifiedTrainingLoadCard: View {
                 }
             }
         }
-        .padding(16)
+        .padding(.spacingMd)
         .sheet(isPresented: $showInfoSheet) {
             ACWRExplainerSheet()
         }

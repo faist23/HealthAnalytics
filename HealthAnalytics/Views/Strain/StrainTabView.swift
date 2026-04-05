@@ -80,7 +80,7 @@ struct StrainTabView: View {
                     )
                 } else {
                     ScrollView {
-                        VStack(spacing: 24) {
+                        VStack(spacing: .spacingLg) {
                             if let error = viewModel.errorMessage {
                                 ErrorView(message: error)
                                     .cardStyle(for: .error)
@@ -97,7 +97,7 @@ struct StrainTabView: View {
                                     }()
                                     
                                     // 1. Circular Gauge
-                                    VStack(spacing: 8) {
+                                    VStack(spacing: .spacingSm) {
                                         CircularGauge(
                                             title: "STRAIN",
                                             value: String(format: "%.1f", strainValue),
@@ -265,6 +265,6 @@ struct ScaleRow: View {
                 .frame(width: 40, height: 4)
         }
         .padding(.vertical, 12)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, .spacingMd)
     }
 }

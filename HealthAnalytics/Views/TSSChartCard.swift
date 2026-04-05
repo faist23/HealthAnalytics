@@ -70,7 +70,7 @@ struct TSSChartCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header
             HStack {
                 Text("TRAINING STRESS")
@@ -94,7 +94,7 @@ struct TSSChartCard: View {
             
             // Scrub Info Display
             if let selected = selectedWeek {
-                VStack(spacing: 4) {
+                VStack(spacing: .spacingXs) {
                     Text("Week of \(formatWeekOf(selected.weekStart))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -131,7 +131,7 @@ struct TSSChartCard: View {
                         }
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, .spacingSm)
             }
             
             // Chart
@@ -194,7 +194,7 @@ struct TSSChartCard: View {
                 
                 // Legend
                 HStack(spacing: 20) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXs) {
                         Rectangle()
                             .fill(Color.statusOptimal)
                             .frame(width: 12, height: 12)
@@ -203,7 +203,7 @@ struct TSSChartCard: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXs) {
                         Rectangle()
                             .fill(Color.accent)
                             .frame(width: 20, height: 3)
@@ -212,7 +212,7 @@ struct TSSChartCard: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.top, 8)
+                .padding(.top, .spacingSm)
                 
             } else {
                 Text("No training data available")

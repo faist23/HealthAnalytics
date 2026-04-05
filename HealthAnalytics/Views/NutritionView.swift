@@ -86,7 +86,7 @@ struct NutritionSummaryGrid: View {
     @ObservedObject var viewModel: NutritionViewModel
     
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: .spacingMd) {
             SummaryCard(
                 title: "Avg Calories",
                 value: String(format: "%.0f", viewModel.averageCalories),
@@ -122,7 +122,7 @@ struct SummaryCard: View {
     let color: Color
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: .spacingSm) {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(Color.textSecondary)
@@ -148,7 +148,7 @@ struct ChartSection<Content: View>: View {
     @ViewBuilder let content: () -> Content
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             Text(title)
                 .font(.headline)
                 .padding(.horizontal)
@@ -216,17 +216,17 @@ struct MacroBreakdownChart: View {
                             let cPct = Int((cCals / totalCals) * 100)
                             let fPct = Int((fCals / totalCals) * 100)
                             
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: .spacingXs) {
                                 Text(day.date.formatted(date: .abbreviated, time: .omitted))
                                     .font(.caption.bold())
-                                HStack(spacing: 8) {
+                                HStack(spacing: .spacingSm) {
                                     Text("\(pPct)% P").foregroundStyle(Color.accent)
                                     Text("\(cPct)% C").foregroundStyle(Color.statusOptimal)
                                     Text("\(fPct)% F").foregroundStyle(Color.statusRest)
                                 }
                                 .font(.caption2.bold())
                             }
-                            .padding(8)
+                            .padding(.spacingSm)
                             .background(Color(uiColor: .systemBackground))
                             .cornerRadius(.radiusSm)
                             .shadow(radius: 3)
@@ -314,7 +314,7 @@ struct MacroBox: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(Color.textSecondary)
 
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: .spacingXs) {
                 Text(value)
                     .font(.title3.bold())
                     .foregroundStyle(color)
@@ -374,7 +374,7 @@ struct LegendItem: View {
     let color: Color
     let label: String
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: .spacingXs) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(label)
         }
@@ -416,8 +416,8 @@ struct DailyNutritionRow: View {
                     Text("Incomplete")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(Color.statusMonitoring)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, .spacingSm)
+                        .padding(.vertical, .spacingXs)
                         .background(Color.statusMonitoring.opacity(0.15))
                         .clipShape(Capsule())
                 }

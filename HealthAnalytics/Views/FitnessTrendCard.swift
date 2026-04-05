@@ -30,10 +30,10 @@ struct FitnessTrendCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header
             HStack {
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Text("FITNESS TRENDS")
                         .font(.headline)
                     
@@ -82,15 +82,15 @@ struct FitnessTrendCard: View {
     // MARK: - Overview View
     
     private var overviewView: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Current VO2max
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Current VO2max")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: .spacingXs) {
                         Text("\(Int(analysis.vo2maxTrend.currentValue))")
                             .font(.system(size: 48, weight: .bold))
                         Text("ml/kg/min")
@@ -102,7 +102,7 @@ struct FitnessTrendCard: View {
                 Spacer()
                 
                 // Trend indicator
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: .spacingXs) {
                     Image(systemName: trendIcon(analysis.vo2maxTrend.trend))
                         .font(.title)
                         .foregroundStyle(trendColor(analysis.vo2maxTrend.trend))
@@ -118,12 +118,12 @@ struct FitnessTrendCard: View {
             // Fitness Age
             if let fitnessAge = analysis.fitnessAge {
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: .spacingXs) {
                         Text("Fitness Age")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: .spacingSm) {
                             Text("\(fitnessAge.fitnessAge)")
                                 .font(.title)
                                 .fontWeight(.bold)
@@ -147,7 +147,7 @@ struct FitnessTrendCard: View {
                     
                     Spacer()
                     
-                    VStack(alignment: .trailing, spacing: 4) {
+                    VStack(alignment: .trailing, spacing: .spacingXs) {
                         Text(fitnessAge.classification.description)
                             .font(.subheadline)
                             .fontWeight(.semibold)
@@ -164,14 +164,14 @@ struct FitnessTrendCard: View {
             }
             
             // Fitness Balance
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 Text("Fitness Balance")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 
-                HStack(spacing: 16) {
+                HStack(spacing: .spacingMd) {
                     // Aerobic
-                    VStack(spacing: 4) {
+                    VStack(spacing: .spacingXs) {
                         ZStack {
                             Circle()
                                 .stroke(Color.statusRest.opacity(0.2), lineWidth: 8)
@@ -193,7 +193,7 @@ struct FitnessTrendCard: View {
                     }
                     
                     // Anaerobic
-                    VStack(spacing: 4) {
+                    VStack(spacing: .spacingXs) {
                         ZStack {
                             Circle()
                                 .stroke(Color.statusWarning.opacity(0.2), lineWidth: 8)
@@ -218,7 +218,7 @@ struct FitnessTrendCard: View {
                 Text(analysis.fitnessBalance.recommendation)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(8)
+                    .padding(.spacingSm)
                     .background(Color.statusRest.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
@@ -228,7 +228,7 @@ struct FitnessTrendCard: View {
     // MARK: - Trends View
     
     private var trendsView: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             Text("VO2max Progress")
                 .font(.subheadline)
                 .fontWeight(.semibold)
@@ -277,7 +277,7 @@ struct FitnessTrendCard: View {
             }
             
             // Confidence
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Image(systemName: confidenceIcon(analysis.vo2maxTrend.confidence))
                     .foregroundStyle(confidenceColor(analysis.vo2maxTrend.confidence))
                 
@@ -293,7 +293,7 @@ struct FitnessTrendCard: View {
             // Training Effectiveness
             Divider()
             
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 HStack {
                     Text("Training Effectiveness")
                         .font(.subheadline)
@@ -312,7 +312,7 @@ struct FitnessTrendCard: View {
                     .foregroundStyle(.secondary)
                 
                 ForEach(analysis.trainingEffectiveness.insights, id: \.self) { insight in
-                    HStack(spacing: 8) {
+                    HStack(spacing: .spacingSm) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.caption)
                             .foregroundStyle(Color.statusOptimal)
@@ -328,13 +328,13 @@ struct FitnessTrendCard: View {
     // MARK: - Projections View
     
     private var projectionsView: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             Text("Fitness Projections")
                 .font(.subheadline)
                 .fontWeight(.semibold)
             
             // Current vs Ceiling
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 HStack {
                     Text("Genetic Potential")
                         .font(.caption)
@@ -418,7 +418,7 @@ struct FitnessTrendCard: View {
             
             // Time to plateau
             if let timeToPlateau = analysis.projections.timeToPlateauEstimate {
-                HStack(spacing: 8) {
+                HStack(spacing: .spacingSm) {
                     Image(systemName: "clock.fill")
                         .foregroundStyle(Color.statusRest)
 
@@ -426,7 +426,7 @@ struct FitnessTrendCard: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .padding(8)
+                .padding(.spacingSm)
                 .background(Color.statusRest.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             }
@@ -434,13 +434,13 @@ struct FitnessTrendCard: View {
             Divider()
             
             // Recommendations
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 Text("Recommendations")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 
                 ForEach(analysis.recommendations, id: \.self) { recommendation in
-                    HStack(alignment: .top, spacing: 8) {
+                    HStack(alignment: .top, spacing: .spacingSm) {
                         Image(systemName: iconForRecommendation(recommendation))
                             .font(.caption)
                             .foregroundStyle(colorForRecommendation(recommendation))
@@ -559,7 +559,7 @@ struct ChangeRow: View {
             
             Spacer()
             
-            HStack(spacing: 4) {
+            HStack(spacing: .spacingXs) {
                 Image(systemName: change >= 0 ? "arrow.up" : "arrow.down")
                     .font(.caption)
                     .foregroundStyle(change >= 0 ? Color.statusOptimal : Color.statusWarning)
@@ -574,7 +574,7 @@ struct ChangeRow: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, .spacingXs)
     }
 }
 
@@ -591,7 +591,7 @@ struct ProjectionRow: View {
             
             Spacer()
             
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Text("\(Int(value))")
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -605,7 +605,7 @@ struct ProjectionRow: View {
                 .foregroundStyle(value > current ? Color.statusOptimal : Color.statusWarning)
             }
         }
-        .padding(8)
+        .padding(.spacingSm)
         .background(Color.textTertiary.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
@@ -625,8 +625,8 @@ struct FitnessTrendInfoSheet: View {
                         Text("This app shows VO2max data from Apple Watch, but it's important to understand its limitations:")
                             .fontWeight(.semibold)
                         
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(alignment: .top, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSm) {
+                            HStack(alignment: .top, spacing: .spacingSm) {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundStyle(Color.statusWarning)
                                     .font(.caption)
@@ -635,7 +635,7 @@ struct FitnessTrendInfoSheet: View {
                                     .font(.caption)
                             }
                             
-                            HStack(alignment: .top, spacing: 8) {
+                            HStack(alignment: .top, spacing: .spacingSm) {
                                 Image(systemName: "chart.bar.fill")
                                     .foregroundStyle(Color.statusRest)
                                     .font(.caption)
@@ -644,7 +644,7 @@ struct FitnessTrendInfoSheet: View {
                                     .font(.caption)
                             }
                             
-                            HStack(alignment: .top, spacing: 8) {
+                            HStack(alignment: .top, spacing: .spacingSm) {
                                 Image(systemName: "heart.fill")
                                     .foregroundStyle(Color.statusWarning)
                                     .font(.caption)
@@ -671,7 +671,7 @@ struct FitnessTrendInfoSheet: View {
                 }
                 
                 Section(header: Text("Why We Show Multiple Metrics")) {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: .spacingSm) {
                         Text("**MET-minutes:** Based on 750,000+ participant studies. Each MET increase = 14-15% mortality reduction.")
                         
                         Text("**Training Balance:** Research shows combining cardiorespiratory fitness AND strength training reduces mortality more than either alone.")
@@ -692,7 +692,7 @@ struct FitnessTrendInfoSheet: View {
                 }
                 
                 Section(header: Text("Aerobic vs Anaerobic Balance")) {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: .spacingSm) {
                         Text("**Aerobic Fitness:** VO2max-based. Your ability to sustain moderate intensity for long durations.")
                         Text("**Anaerobic Fitness:** Based on high-intensity workout frequency. Your ability to produce power in short, hard efforts.")
                     }

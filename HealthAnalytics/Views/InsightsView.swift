@@ -145,7 +145,7 @@ struct InsightsView: View {
                 Text("Training DNA")
                     .font(.cardTitle)
                     .foregroundStyle(Color.textPrimary)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, .spacingXs)
 
                 if isPatternAnalyzing && detectedPatterns.isEmpty {
                     patternLoadingSkeleton
@@ -154,7 +154,7 @@ struct InsightsView: View {
                 } else if detectedPatterns.isEmpty {
                     trainingDNAProgressRow(daysNeeded: 0)
                 } else {
-                    VStack(spacing: 16) {
+                    VStack(spacing: .spacingMd) {
                         ForEach(detectedPatterns) { pattern in
                             TrainingDNACard(pattern: pattern)
                         }
@@ -170,7 +170,7 @@ struct InsightsView: View {
                         Text("\(names) need\(missingTypes.count == 1 ? "s" : "") \(weeksLeft) more week\(weeksLeft == 1 ? "" : "s") of data")
                             .font(.system(size: 12, weight: .regular, design: .default))
                             .foregroundStyle(Color.textSecondary)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, .spacingXs)
                     }
                 }
             }
@@ -185,7 +185,7 @@ struct InsightsView: View {
         return Text(message)
             .font(.system(size: 13, weight: .regular, design: .default))
             .foregroundStyle(Color.textSecondary)
-            .padding(.horizontal, 4)
+            .padding(.horizontal, .spacingXs)
     }
 
     /// Inline skeleton shown while pattern analysis is running for the first time
@@ -195,7 +195,7 @@ struct InsightsView: View {
                 .fill(Color.surface)
                 .frame(height: 120)
                 .overlay(
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: .spacingSm) {
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.surfaceRaised)
                             .frame(width: 160, height: 14)
@@ -207,7 +207,7 @@ struct InsightsView: View {
                             .frame(height: 20)
                             .padding(.top, 4)
                     }
-                    .padding(16)
+                    .padding(.spacingMd)
                     .frame(maxWidth: .infinity, alignment: .leading),
                     alignment: .leading
                 )
@@ -229,7 +229,7 @@ struct InsightsView: View {
             .font(.system(size: 13, weight: .medium, design: .default))
             .foregroundStyle(Color.accent)
         }
-        .padding(16)
+        .padding(.spacingMd)
         .background(Color.surface, in: RoundedRectangle(cornerRadius: .radiusMd))
         .frame(minHeight: 44)
     }
@@ -341,7 +341,7 @@ struct InsightsView: View {
         if !viewModel.proteinPerformanceInsights.isEmpty {
             Section(header: Text("Protein & Performance")) {
                 ForEach(viewModel.proteinPerformanceInsights, id: \.activityType) { insight in
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: .spacingSm) {
                         HStack {
                             Image(systemName: insight.activityType == "Run" ? "figure.run" : "figure.outdoor.cycle")
                             Text("\(insight.activityType) Performance")
@@ -360,7 +360,7 @@ struct InsightsView: View {
                             .font(.caption2)
                             .foregroundStyle(.gray)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, .spacingXs)
                 }
             }
         }
@@ -452,7 +452,7 @@ struct InsightCard: View {
             if !details.isEmpty {
                 Divider()
                 
-                VStack(spacing: 8) {
+                VStack(spacing: .spacingSm) {
                     ForEach(details, id: \.0) { detail in
                         HStack {
                             Text(detail.0)
@@ -488,8 +488,8 @@ struct ComingSoonCard: View {
             
             Text("Coming soon")
                 .font(.caption)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, .spacingSm)
+                .padding(.vertical, .spacingXs)
                 .background(Color(.systemGray5))
                 .cornerRadius(4)
         }
@@ -639,7 +639,7 @@ struct SimpleInsightCard: View {
                 .foregroundStyle(iconColor)
                 .frame(width: 40)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(insight.title)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -682,7 +682,7 @@ struct RecoveryInsightCard: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 
-                HStack(spacing: 8) {
+                HStack(spacing: .spacingSm) {
                     Text(String(format: "%.0f", insight.currentValue))
                         .font(.title2)
                         .fontWeight(.bold)
@@ -760,7 +760,7 @@ struct TrainingLoadCard: View {
             Divider()
             
             HStack(spacing: 30) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Acute Load")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -772,7 +772,7 @@ struct TrainingLoadCard: View {
                         .foregroundStyle(.tertiary)
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Chronic Load")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -805,7 +805,7 @@ struct TrendCard: View {
             Text(trend.trendDirection.emoji)
                 .font(.system(size: 32))
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 // Metric Name
                 Text(trend.metricName)
                     .font(.subheadline)
@@ -828,8 +828,8 @@ struct TrendCard: View {
             Text(trend.status.rawValue.capitalized)
                 .font(.caption)
                 .fontWeight(.bold)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, .spacingSm)
+                .padding(.vertical, .spacingXs)
                 .background(trend.status.color.opacity(0.15))
                 .foregroundStyle(trend.status.color)
                 .cornerRadius(6)
@@ -914,7 +914,7 @@ struct ProteinRecoveryCard: View {
                     .font(.title2)
                     .foregroundStyle(Color.statusWarning)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Protein Optimization")
                         .font(.headline)
                     
@@ -946,7 +946,7 @@ struct ProteinRecoveryCard: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 
-                VStack(spacing: 8) {
+                VStack(spacing: .spacingSm) {
                     ForEach(insight.proteinRanges, id: \.range) { range in
                         ProteinRangeRow(
                             range: range,
@@ -1014,8 +1014,8 @@ struct ProteinRangeRow: View {
                     .foregroundStyle(Color.statusOptimal)
             }
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
+        .padding(.vertical, .spacingXs)
+        .padding(.horizontal, .spacingSm)
         .background(isOptimal ? Color.statusOptimal.opacity(0.1) : Color.clear)
         .cornerRadius(6)
     }
@@ -1047,7 +1047,7 @@ struct CarbPerformanceCard: View {
                     .font(.title2)
                     .foregroundStyle(Color.statusOptimal)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text(title)
                         .font(.headline)
 
@@ -1065,7 +1065,7 @@ struct CarbPerformanceCard: View {
             
             // Performance comparison
             HStack(spacing: 30) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("<\(Int(insight.carbThreshold))g carbs")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1081,7 +1081,7 @@ struct CarbPerformanceCard: View {
                 Image(systemName: "arrow.right")
                     .foregroundStyle(.secondary)
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("≥\(Int(insight.carbThreshold))g carbs")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1142,7 +1142,7 @@ struct ACWRInfoSheet: View {
                         Label("> 1.5 (Danger Zone): High risk of injury or burnout.", systemImage: "xmark.octagon.fill").foregroundStyle(Color.statusWarning)
                     }
                     .font(.subheadline)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, .spacingSm)
                 }
             }
             .navigationTitle("Training Readiness")

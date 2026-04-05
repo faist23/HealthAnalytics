@@ -28,7 +28,7 @@ struct TrainingLoadVisualizationView: View {
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: .spacingLg) {
                 
                 // Summary Card
                 LoadSummaryCard(summary: data.summary)
@@ -78,9 +78,9 @@ struct LoadSummaryCard: View {
     let summary: TrainingLoadVisualizationService.LoadVisualizationData.LoadSummary
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Current Status")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -93,7 +93,7 @@ struct LoadSummaryCard: View {
                 
                 Spacer()
                 
-                VStack(spacing: 4) {
+                VStack(spacing: .spacingXs) {
                     Text(String(format: "%.2f", summary.currentACWR))
                         .font(.system(size: 36, weight: .bold, design: .rounded))
                         .foregroundStyle(statusColor)
@@ -239,7 +239,7 @@ struct ACWRTimeSeriesChart: View {
             // Popup overlay
             if let selectedDate = selectedDate,
                let selected = data.first(where: { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text(selected.date.formatted(date: .abbreviated, time: .omitted))
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -259,7 +259,7 @@ struct ACWRTimeSeriesChart: View {
                             Text("Status")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
-                            HStack(spacing: 4) {
+                            HStack(spacing: .spacingXs) {
                                 Circle()
                                     .fill(selected.status.color)
                                     .frame(width: 8, height: 8)
@@ -298,7 +298,7 @@ struct IntentBreakdownView: View {
     let breakdown: [TrainingLoadVisualizationService.LoadVisualizationData.IntentLoadBreakdown]
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             Text("Load by Intent")
                 .font(.headline)
             
@@ -316,7 +316,7 @@ struct IntentLoadRow: View {
     let item: TrainingLoadVisualizationService.LoadVisualizationData.IntentLoadBreakdown
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: .spacingSm) {
             HStack {
                 Text(item.intent.emoji)
                     .font(.title3)
@@ -369,14 +369,14 @@ struct WeeklyPatternView: View {
     let pattern: TrainingLoadVisualizationService.LoadVisualizationData.WeeklyLoadPattern
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             HStack {
                 Text("Weekly Pattern")
                     .font(.headline)
                 
                 Spacer()
                 
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Image(systemName: trendIcon)
                         .foregroundStyle(trendColor)
                     
@@ -474,7 +474,7 @@ struct DangerZoneCard: View {
                     .fontWeight(.bold)
             }
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(zone.reason)
                     .font(.subheadline)
                     .fontWeight(.medium)

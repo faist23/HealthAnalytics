@@ -16,7 +16,7 @@ struct PerformanceCalendarView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: .spacingLg) {
                 // Month Selector
                 MonthSelector(selectedMonth: $selectedMonth)
                 
@@ -107,7 +107,7 @@ struct CalendarHeatmap: View {
     @Binding var selectedDate: Date?
     
     private let calendar = Calendar.current
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 7)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: .spacingSm), count: 7)
     
     var daysInMonth: [Date] {
         guard let monthInterval = calendar.dateInterval(of: .month, for: selectedMonth),
@@ -136,7 +136,7 @@ struct CalendarHeatmap: View {
     var body: some View {
         VStack(spacing: 12) {
             // Weekday headers
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 ForEach(calendar.shortWeekdaySymbols, id: \.self) { day in
                     Text(day)
                         .font(.caption2)
@@ -147,7 +147,7 @@ struct CalendarHeatmap: View {
             }
             
             // Calendar grid
-            LazyVGrid(columns: columns, spacing: 8) {
+            LazyVGrid(columns: columns, spacing: .spacingSm) {
                 ForEach(daysInMonth, id: \.self) { date in
                     DayCell(
                         date: date,
@@ -179,7 +179,7 @@ struct DayCell: View {
     let isInCurrentMonth: Bool
     
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: .spacingXs) {
             Text(date, format: .dateTime.day())
                 .font(.caption)
                 .fontWeight(isSelected ? .bold : .regular)
@@ -225,14 +225,14 @@ struct HeatmapLegend: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
             
-            HStack(spacing: 16) {
+            HStack(spacing: .spacingMd) {
                 CalendarLegendItem(color: .green, label: "Excellent (85+)")
                 CalendarLegendItem(color: .blue, label: "Good (70-84)")
                 CalendarLegendItem(color: .orange, label: "Moderate (55-69)")
                 CalendarLegendItem(color: .red, label: "Poor (<55)")
             }
         }
-        .padding(16)
+        .padding(.spacingMd)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
@@ -265,10 +265,10 @@ struct DayDetailCard: View {
     let data: DailyRecoveryData
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Date header
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text(data.date, format: .dateTime.month().day())
                         .font(.title2)
                         .fontWeight(.bold)
@@ -281,7 +281,7 @@ struct DayDetailCard: View {
                 Spacer()
                 
                 if let score = data.readinessScore {
-                    VStack(spacing: 4) {
+                    VStack(spacing: .spacingXs) {
                         Text("\(Int(score))")
                             .font(.system(size: 32, weight: .bold, design: .rounded))
                             .foregroundStyle(colorForScore(score))
@@ -342,7 +342,7 @@ struct MetricRow: View {
     let color: Color
     
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: .spacingSm) {
             Image(systemName: icon)
                 .font(.title3)
                 .foregroundStyle(color)
@@ -372,10 +372,10 @@ struct DayDetailSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
+                VStack(spacing: .spacingLg) {
                     // Large readiness circle
                     if let score = data.readinessScore, let level = data.readinessLevel {
-                        VStack(spacing: 16) {
+                        VStack(spacing: .spacingMd) {
                             ZStack {
                                 Circle()
                                     .stroke(Color.textTertiary.opacity(0.2), lineWidth: 15)
@@ -387,7 +387,7 @@ struct DayDetailSheet: View {
                                     .frame(width: 150, height: 150)
                                     .rotationEffect(.degrees(-90))
                                 
-                                VStack(spacing: 4) {
+                                VStack(spacing: .spacingXs) {
                                     Text("\(Int(score))")
                                         .font(.system(size: 48, weight: .bold, design: .rounded))
                                     
@@ -407,7 +407,7 @@ struct DayDetailSheet: View {
                     }
                     
                     // All metrics
-                    VStack(spacing: 16) {
+                    VStack(spacing: .spacingMd) {
                         if let hrv = data.hrv {
                             DetailMetricCard(icon: "waveform.path.ecg", title: "Heart Rate Variability", value: "\(Int(hrv))", unit: "ms", color: .green)
                         }
@@ -462,18 +462,18 @@ struct DetailMetricCard: View {
     let color: Color
     
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: .spacingMd) {
             Image(systemName: icon)
                 .font(.largeTitle)
                 .foregroundStyle(color)
                 .frame(width: 50)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
                 Text(title)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: .spacingXs) {
                     Text(value)
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                     

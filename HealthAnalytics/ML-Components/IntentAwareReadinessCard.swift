@@ -36,7 +36,7 @@ struct IntentAwareReadinessCard: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.vertical, .spacingSm)
                 .background(acwrColor.opacity(0.15))
                 .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
             }
@@ -155,7 +155,7 @@ struct IntentReadinessRow: View {
     var body: some View {
         HStack(spacing: 12) {
             // Intent emoji and name
-            HStack(spacing: 8) {
+            HStack(spacing: .spacingSm) {
                 Text(intent.emoji)
                     .font(.title3)
                 
@@ -167,7 +167,7 @@ struct IntentReadinessRow: View {
             Spacer()
             
             // Readiness indicator
-            HStack(spacing: 4) {
+            HStack(spacing: .spacingXs) {
                 Text(readiness.emoji)
                 Text(readinessText)
                     .font(.caption)
@@ -175,11 +175,11 @@ struct IntentReadinessRow: View {
                     .foregroundStyle(readinessColor)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .padding(.vertical, .spacingXs)
             .background(readinessColor.opacity(0.15))
             .clipShape(Capsule())
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, .spacingXs)
     }
     
     private var readinessText: String {

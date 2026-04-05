@@ -32,7 +32,7 @@ struct RecoveryDashboardView: View {
 
     private var mainView: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: .spacingLg) {
                 if let yesterday = viewModel.recoveryData.dropLast().last {
                     TodayReadinessCard(data: yesterday)
                         .cardStyle(for: .recovery)
@@ -62,7 +62,7 @@ struct RecoveryDashboardView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXs) {
                     Text(viewModel.selectedPeriod.displayName)
                         .font(.subheadline)
                         .fontWeight(.medium)
@@ -109,7 +109,7 @@ struct TodayReadinessCard: View {
                     .animation(.spring(response: 1.0, dampingFraction: 0.8), value: data.readinessScore)
                 
                 // Score text
-                VStack(spacing: 4) {
+                VStack(spacing: .spacingXs) {
                     Text("\(Int(data.readinessScore ?? 0))")
                         .font(.system(size: 56, weight: .bold, design: .rounded))
                         .foregroundStyle(
@@ -121,11 +121,11 @@ struct TodayReadinessCard: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, .spacingSm)
             
             // Status Badge
             if let level = data.readinessLevel {
-                HStack(spacing: 8) {
+                HStack(spacing: .spacingSm) {
                     Text(level.emoji)
                         .font(.title3)
                     
@@ -155,7 +155,7 @@ struct TodayReadinessCard: View {
                 .padding(.horizontal)
             
             // Quick Stats
-            HStack(spacing: 24) {
+            HStack(spacing: .spacingLg) {
                 if let rhr = data.restingHR {
                     QuickStat(
                         icon: "heart.fill",
@@ -184,7 +184,7 @@ struct TodayReadinessCard: View {
                 }
             }
         }
-        .padding(24)
+        .padding(.spacingLg)
         .cardStyle(for: .recovery)
     }
     
@@ -278,7 +278,7 @@ struct RecoveryMetricsChart: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             // Header
             HStack {
                 Text("Recovery Metrics")
@@ -319,10 +319,10 @@ struct RecoveryMetricsChart: View {
                     .frame(maxWidth: .infinity)
                     .padding()
             } else {
-                VStack(spacing: 16) {
+                VStack(spacing: .spacingMd) {
                     ForEach(Array(selectedMetrics).sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { metric in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSm) {
+                            HStack(spacing: .spacingSm) {
                                 Image(systemName: metric.icon)
                                     .font(.caption)
                                     .foregroundStyle(metric.color)
@@ -456,7 +456,7 @@ struct MetricToggle: View {
                     .fontWeight(.medium)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.vertical, .spacingSm)
             .background(
                 Capsule()
                     .fill(isSelected ? metric.color.opacity(0.2) : Color(.systemGray6))
@@ -505,13 +505,13 @@ struct MetricBreakdownCards: View {
     }
     
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: .spacingMd) {
             Text("Metric Details")
                 .font(.title3)
                 .fontWeight(.bold)
                 .frame(maxWidth: .infinity, alignment: .leading)
             
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: .spacingMd) {
                 if let hrv = latestHRV {
                     MetricCard(
                         title: "HRV",
@@ -603,8 +603,8 @@ struct MetricCard: View {
                     )
             }
             
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXs) {
+                HStack(alignment: .firstTextBaseline, spacing: .spacingXs) {
                     Text(value)
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                     
@@ -624,7 +624,7 @@ struct MetricCard: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
-        .padding(16)
+        .padding(.spacingMd)
         .frame(height: 140)
         .cardStyle(for: .recovery)
     }
@@ -650,13 +650,13 @@ struct WeeklySummaryCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             Text("7-Day Summary")
                 .font(.title3)
                 .fontWeight(.bold)
             
             HStack(spacing: 20) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Average Readiness")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -668,7 +668,7 @@ struct WeeklySummaryCard: View {
                 
                 Spacer()
                 
-                VStack(spacing: 8) {
+                VStack(spacing: .spacingSm) {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(Color.statusOptimal)

@@ -30,7 +30,7 @@ struct TemporalInsightsCard: View {
         VStack(alignment: .leading, spacing: 20) {
             
             // Header with synthesis
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 HStack {
                     Text("Temporal Analysis")
                         .font(.title3)
@@ -76,7 +76,7 @@ struct TemporalInsightsCard: View {
                     .foregroundStyle(Color.statusMonitoring)
                 
                 ForEach(analysis.synthesis.insights, id: \.self) { insight in
-                    HStack(alignment: .top, spacing: 8) {
+                    HStack(alignment: .top, spacing: .spacingSm) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.caption)
                             .foregroundStyle(Color.statusOptimal)
@@ -93,7 +93,7 @@ struct TemporalInsightsCard: View {
                 Image(systemName: "star.fill")
                     .foregroundStyle(Color.statusMonitoring)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("Recommendation")
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -120,14 +120,14 @@ struct RecencyView: View {
     let analysis: TemporalModelingService.TemporalAnalysis.RecencyAnalysis
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             
             // Trend indicator
             HStack(spacing: 12) {
                 Text(analysis.trend.emoji)
                     .font(.system(size: 48))
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text("30-Day Trend")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -205,14 +205,14 @@ struct SeasonalView: View {
     let analysis: TemporalModelingService.TemporalAnalysis.SeasonalAnalysis
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             
             // Current season
             HStack(spacing: 12) {
                 Text(analysis.currentSeasonPerformance.season.emoji)
                     .font(.system(size: 48))
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXs) {
                     Text(analysis.currentSeasonPerformance.season.rawValue)
                         .font(.title3)
                         .fontWeight(.bold)
@@ -237,7 +237,7 @@ struct SeasonalView: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, .spacingSm)
                 .padding(.horizontal, 12)
                 .background((yoy > 0 ? Color.statusOptimal : Color.statusWarning).opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
@@ -246,7 +246,7 @@ struct SeasonalView: View {
             Divider()
             
             // Seasonal breakdown
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 Text("Performance by Season")
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -305,10 +305,10 @@ struct LongitudinalView: View {
     let analysis: TemporalModelingService.TemporalAnalysis.LongitudinalAnalysis
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMd) {
             
             // Overall trend
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: .spacingSm) {
                 Text("Long-term Trajectory")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -318,7 +318,7 @@ struct LongitudinalView: View {
                         .font(.system(size: 32))
                         .foregroundStyle(trendColor)
                     
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: .spacingXs) {
                         Text(analysis.overallTrend.description)
                             .font(.subheadline)
                             .fontWeight(.bold)
@@ -339,7 +339,7 @@ struct LongitudinalView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, .spacingSm)
             .padding(.horizontal, 12)
             .background(Color.statusRest.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
@@ -348,7 +348,7 @@ struct LongitudinalView: View {
             if !analysis.peakPeriods.isEmpty {
                 Divider()
                 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSm) {
                     Text("Peak Performance Periods")
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -406,7 +406,7 @@ struct PeakPeriodRow: View {
             
             Spacer()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, .spacingXs)
     }
     
     private func formatDateRange(_ start: Date, _ end: Date) -> String {
