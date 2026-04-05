@@ -76,7 +76,10 @@ class InsightsViewModel: ObservableObject {
             loadVisualization           = r.loadVisualization
             primaryActivity             = r.primaryActivity
         } else {
-            errorMessage = ReadinessRepository.shared.analysisError ?? "Analysis failed"
+            let rawError = ReadinessRepository.shared.analysisError ?? "Analysis failed"
+            errorMessage = rawError.contains("Insufficient data")
+                ? "Add some workouts and sleep data to see your analysis."
+                : "Something went wrong. Pull to refresh or try again."
         }
 
         isLoading = false

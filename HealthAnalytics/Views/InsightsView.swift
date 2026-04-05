@@ -30,8 +30,10 @@ struct InsightsView: View {
                 VStack(spacing: 20) {
                     // 1. Handle Error States
                     if let error = viewModel.errorMessage {
-                        ErrorView(message: error)
-                            .cardStyle(for: .error)
+                        ErrorView(message: error) {
+                            Task { await viewModel.analyzeData() }
+                        }
+                        .cardStyle(for: .error)
                     } else if !viewModel.isLoading && !isFirstLoad {
                         // 2. Main Dashboard Content (Broken into groups to fix compiler timeout)
                         dashboardContent

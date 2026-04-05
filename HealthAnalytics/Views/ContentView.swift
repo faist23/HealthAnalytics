@@ -52,9 +52,11 @@ struct ContentView: View {
                             .padding()
                             .padding(.top, 40) // Add spacing below the pinned header
                     } else if let error = viewModel.errorMessage {
-                        ErrorView(message: error)
-                            .cardStyle(for: .error)
-                            .padding(.top, 40)
+                        ErrorView(message: error) {
+                            Task { await viewModel.loadData() }
+                        }
+                        .cardStyle(for: .error)
+                        .padding(.top, 40)
                     } else {
                         VStack(spacing: 20) {
                             // ─── HERO: Readiness Score (Single Source of Truth) ─────────
@@ -247,24 +249,38 @@ struct RestingHeartRateCard: View {
 
 struct ErrorView: View {
     let message: String
-    
+    var retryAction: (() -> Void)?
+
     var body: some View {
-        VStack(spacing: 15) {
+        VStack(spacing: .spacingMd) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 60))
                 .foregroundStyle(Color.statusWarning)
-            
+
             Text("Error")
                 .font(.title3)
                 .fontWeight(.semibold)
-            
+
             Text(message)
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
+
+            if let retry = retryAction {
+                Button(action: retry) {
+                    Label("Try Again", systemImage: "arrow.clockwise")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, .spacingLg)
+                        .padding(.vertical, .spacingSm)
+                        .background(Color.accent, in: Capsule())
+                        .foregroundStyle(.white)
+                }
+                .padding(.top, .spacingXs)
+            }
         }
-        .padding()
+        .padding(.spacingLg)
     }
 }
 
