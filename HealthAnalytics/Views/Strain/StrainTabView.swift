@@ -11,6 +11,7 @@ struct StrainTabView: View {
     @StateObject private var viewModel = ReadinessViewModel()
     @State private var isFirstLoad = true
     @State private var showStrainDetails = false
+    @State private var showACWRDetail = false
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) var colorScheme
     @ObservedObject var syncManager = SyncManager.shared
@@ -155,7 +156,7 @@ struct StrainTabView: View {
                                 }
                                 .padding(.horizontal)
 
-                                // 3. Training Load (ACWR) — secondary metric
+                                // 3. Training Load (ACWR) — secondary metric, tappable for chart
                                 if let assessment = viewModel.readinessAssessment {
                                     VStack(alignment: .leading, spacing: .spacingSm) {
                                         Text("TRAINING LOAD")
@@ -165,15 +166,18 @@ struct StrainTabView: View {
                                             .tracking(1)
                                             .padding(.horizontal)
 
-                                        MetricList {
-                                            GaugeMetricRow(
-                                                icon: "chart.line.uptrend.xyaxis",
-                                                title: "ACUTE:CHRONIC RATIO",
-                                                value: String(format: "%.2f", assessment.acwr),
-                                                trendIcon: assessment.acwr > 1.3 ? "exclamationmark.triangle" : "checkmark.circle",
-                                                trendColor: assessment.acwr > 1.3 ? .orange : .green
-                                            )
+                                        Button { showACWRDetail = true } label: {
+                                            MetricList {
+                                                GaugeMetricRow(
+                                                    icon: "chart.line.uptrend.xyaxis",
+                                                    title: "ACUTE:CHRONIC RATIO",
+                                                    value: String(format: "%.2f", assessment.acwr),
+                                                    trendIcon: assessment.acwr > 1.3 ? "exclamationmark.triangle" : "checkmark.circle",
+                                                    trendColor: assessment.acwr > 1.3 ? .orange : .green
+                                                )
+                                            }
                                         }
+                                        .buttonStyle(.plain)
                                         .padding(.horizontal)
                                     }
                                 }
@@ -287,6 +291,28 @@ struct StrainTabView: View {
             }
             .refreshable {
                 await viewModel.analyze(modelContext: modelContext)
+            }
+        }
+        .sheet(isPresented: $showACWRDetail) {
+            if let assessment = viewModel.readinessAssessment, !viewModel.acwrTrend.isEmpty {
+                NavigationStack {
+                    ScrollView {
+                        ACWRTrendCard(
+                            trend: viewModel.acwrTrend,
+                            currentAssessment: assessment,
+                            primaryActivity: viewModel.primaryActivity
+                        )
+                        .padding()
+                    }
+                    .navigationTitle("Acute:Chronic Ratio")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showACWRDetail = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
             }
         }
         .sheet(isPresented: $showStrainDetails) {
