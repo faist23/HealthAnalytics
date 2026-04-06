@@ -17,6 +17,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 struct CardiovascularStrainService {
 
@@ -48,8 +49,9 @@ struct CardiovascularStrainService {
     private static let hrrFloor: Double = 0.20
 
     /// Raw units that map to 21 strain points.
-    /// Derived: 90-min hard workout (80% HRR) + light waking activity ≈ 90 raw → 21 pts.
-    private static let normalization: Double = 90.0
+    /// Calibrated so a hard 60-min zone 4-5 effort (≈90% HRR) scores ~16-18 (STRENUOUS),
+    /// a 90-min hard workout hits the 21-point cap, and a rest day lands 2-5 (LIGHT).
+    private static let normalization: Double = 70.0
 
     // MARK: - Main entry point
 
@@ -116,14 +118,23 @@ struct CardiovascularStrainService {
         )
     }
 
-    // MARK: - Strain label (mirrors WHOOP scale)
+    // MARK: - Strain label + color
 
     static func label(for strain: Double) -> String {
         switch strain {
-        case 0..<10:  return "LIGHT"
-        case 10..<14: return "MODERATE"
-        case 14..<18: return "STRENUOUS"
+        case 0..<7:   return "LIGHT"
+        case 7..<13:  return "MODERATE"
+        case 13..<18: return "STRENUOUS"
         default:      return "ALL-OUT"
+        }
+    }
+
+    static func color(for strain: Double) -> Color {
+        switch strain {
+        case 0..<7:   return Color.statusOptimal
+        case 7..<13:  return Color.statusMonitoring
+        case 13..<18: return Color.statusWarning
+        default:      return Color.statusAllOut
         }
     }
 }
