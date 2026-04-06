@@ -245,6 +245,13 @@ actor TrainingDNAAnalyzer {
         try modelContext.fetch(FetchDescriptor<TrainingPattern>())
     }
 
+    /// Pre-populates StoredDailyScore records for detectBackToBackReadinessCrash tests.
+    /// Used in tests to avoid needing a live ReadinessRepository analysis run.
+    func insertDailyScores(_ scores: [StoredDailyScore]) throws {
+        for score in scores { modelContext.insert(score) }
+        try modelContext.save()
+    }
+
     /// Sets notificationSent = true for the matching pattern type and saves.
     /// Used in tests to simulate a notification being dispatched without going through
     /// PatternNotificationService (which requires UNUserNotification authorization).
