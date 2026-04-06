@@ -668,6 +668,95 @@ class HealthKitManager: ObservableObject {
         }
     }
     
+    // MARK: - Cardiovascular Strain Queries
+
+    /// Fetches raw heart-rate samples for a time window.
+    /// Used by CardiovascularStrainService to compute intra-day strain.
+    /// Returns timestamped (date, bpm) pairs sorted by date ascending.
+    func fetchRawHeartRateSamples(startDate: Date, endDate: Date) async throws -> [(date: Date, bpm: Double)] {
+        guard let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+            throw HealthKitError.dataTypeNotAvailable
+        }
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        let bpmUnit = HKUnit.count().unitDivided(by: .minute())
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: hrType,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+            ) { _, samples, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                let result = (samples as? [HKQuantitySample] ?? []).map {
+                    (date: $0.startDate, bpm: $0.quantity.doubleValue(for: bpmUnit))
+                }
+                continuation.resume(returning: result)
+            }
+            healthStore.execute(query)
+        }
+    }
+
+    /// Estimates the user's personal max HR from their recent HR history.
+    /// Uses the 95th percentile of daily max HR values over the last `days` days.
+    /// Returns nil if there is insufficient data (< 7 days with readings).
+    /// Cache result in UserDefaults — call site checks freshness before querying.
+    func fetchPersonalMaxHR(over days: Int = 90) async throws -> Double? {
+        guard let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+            throw HealthKitError.dataTypeNotAvailable
+        }
+        let calendar = Calendar.current
+        let endDate = Date()
+        guard let startDate = calendar.date(byAdding: .day, value: -days, to: endDate) else { return nil }
+
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate)
+        var interval = DateComponents()
+        interval.day = 1
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: hrType,
+                quantitySamplePredicate: predicate,
+                options: .discreteMax,
+                anchorDate: calendar.startOfDay(for: endDate),
+                intervalComponents: interval
+            )
+            let bpmUnit = HKUnit.count().unitDivided(by: .minute())
+
+            query.initialResultsHandler = { _, results, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let results else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                var dailyMaxes: [Double] = []
+                results.enumerateStatistics(from: startDate, to: endDate) { stats, _ in
+                    if let max = stats.maximumQuantity() {
+                        dailyMaxes.append(max.doubleValue(for: bpmUnit))
+                    }
+                }
+
+                guard dailyMaxes.count >= 7 else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                // 95th percentile of daily max values — robust against single-day sensor spikes.
+                let sorted = dailyMaxes.sorted()
+                let idx = min(Int(Double(sorted.count) * 0.95), sorted.count - 1)
+                continuation.resume(returning: sorted[idx])
+            }
+            healthStore.execute(query)
+        }
+    }
+
     /// Fetches all relevant health metrics for a specific calendar year
     func fetchYearlySnapshot(year: Int) async throws -> (rhr: [HealthDataPoint], hrv: [HealthDataPoint], sleep: [HealthDataPoint], steps: [HealthDataPoint], weight: [HealthDataPoint], workouts: [WorkoutData], nutrition: [DailyNutrition]) {
         let calendar = Calendar.current

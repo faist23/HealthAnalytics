@@ -104,6 +104,13 @@ class ReadinessViewModel: ObservableObject {
     @Published var dailyTSSData: [DailyTSSData] = []
     @Published var selectedPeriod: TimePeriod = .quarter
     @Published var todayWorkouts: [WorkoutData] = []
+    @Published var cardiovascularStrain: CardiovascularStrainService.Result?
+    @Published var todaySteps: Int = 0
+
+    // UserDefaults keys for maxHR cache (refresh weekly — doesn't change fast).
+    private static let maxHRCacheKey = "cachedPersonalMaxHR"
+    private static let maxHRCacheDateKey = "cachedPersonalMaxHRDate"
+    private static let maxHRCacheTTL: TimeInterval = 7 * 86400 // 7 days
 
     // Pattern Discovery State
     private var cachedPatterns: [PerformancePatternAnalyzer.PerformanceWindow]?
@@ -255,10 +262,17 @@ class ReadinessViewModel: ObservableObject {
                 .map { HealthDataPoint(date: $0.date, value: $0.value) }
             dailyTSSData = calculateDailyTSS(workouts: workouts, stepData: stepData)
             
-            // Populate todayWorkouts
+            // Populate todayWorkouts and today's step count
             let calendar = Calendar.current
             let today = calendar.startOfDay(for: Date())
             todayWorkouts = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
+            let todayStepValue = storedHealthMetrics
+                .filter { $0.type == "Steps" && calendar.isDate($0.date, inSameDayAs: today) }
+                .map(\.value).reduce(0, +)
+            todaySteps = Int(todayStepValue)
+
+            // Cardiovascular strain — live HealthKit query (not stored; too many raw samples).
+            await computeCardiovascularStrain(rhrData: rhrData)
             
         } catch {
             errorMessage = "Failed to analyze readiness: \(error.localizedDescription)"
@@ -273,6 +287,59 @@ class ReadinessViewModel: ObservableObject {
     // calculateIntentAwareReadiness / fetchIntentLabels / determinePrimaryActivity removed — logic moved to ReadinessRepository
     // trainMLModelsIfNeeded / makePredictionWithUncertainty removed — logic moved to ReadinessRepository
     // generateDailyInstruction removed — logic moved to ReadinessRepository (GEMINI.md mandate)
+
+    // MARK: - Cardiovascular Strain
+
+    @MainActor
+    private func computeCardiovascularStrain(rhrData: [HealthDataPoint]) async {
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: Date())
+        let now = Date()
+
+        // Fetch today's raw HR samples (lightweight — just today).
+        async let hrSamplesTask = HealthKitManager.shared.fetchRawHeartRateSamples(
+            startDate: todayStart, endDate: now
+        )
+
+        // MaxHR: use cached value if fresh, otherwise query HealthKit.
+        let maxHR = await resolvedMaxHR()
+
+        let hrSamples = (try? await hrSamplesTask) ?? []
+        let restingHR = rhrData.last?.value ?? 55.0
+
+        cardiovascularStrain = CardiovascularStrainService().compute(
+            todayHRSamples: hrSamples,
+            estimatedMaxHR: maxHR,
+            restingHR: restingHR
+        )
+    }
+
+    /// Returns maxHR from UserDefaults cache if < 7 days old, otherwise queries HealthKit
+    /// and refreshes the cache. Falls back to 220-age only if HealthKit returns no data.
+    private func resolvedMaxHR() async -> Double {
+        let defaults = UserDefaults.standard
+        let cacheDate = defaults.object(forKey: Self.maxHRCacheDateKey) as? Date ?? .distantPast
+        let isFresh = Date().timeIntervalSince(cacheDate) < Self.maxHRCacheTTL
+        let cached = defaults.double(forKey: Self.maxHRCacheKey)
+
+        if isFresh, cached > 100 {
+            return cached
+        }
+
+        // Query HealthKit for the user's personal peak HR.
+        if let personal = try? await HealthKitManager.shared.fetchPersonalMaxHR(over: 90), personal > 100 {
+            defaults.set(personal, forKey: Self.maxHRCacheKey)
+            defaults.set(Date(), forKey: Self.maxHRCacheDateKey)
+            #if DEBUG
+            print("✅ Personal maxHR updated: \(Int(personal)) bpm")
+            #endif
+            return personal
+        }
+
+        // Fallback: age-based formula (acknowledged as population average, not personal).
+        let age = HealthKitManager.shared.getUserAge() ?? 35
+        return 220.0 - Double(age)
+    }
 
     // MARK: - Helper: Form Indicator
     
