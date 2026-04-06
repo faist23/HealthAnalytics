@@ -148,9 +148,9 @@ struct RecoveryTabView: View {
     }
     
     private func scoreColor(for score: Int) -> Color {
-        if score >= 67 { return .green }
-        if score >= 34 { return .yellow }
-        return .red
+        if score >= 67 { return Color.statusOptimal }
+        if score >= 34 { return Color.statusMonitoring }
+        return Color.statusRest
     }
 }
 

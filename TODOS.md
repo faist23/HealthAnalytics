@@ -1,5 +1,24 @@
 # TODOS
 
+## P3 — Strain Sensitivity Calibration UI (Phase 3)
+
+**What:** A user-adjustable sensitivity slider in Settings for the cardiovascular strain score. Maps to a ±20% offset on the normalization constant in `CardiovascularStrainService`. Range: "Less sensitive" → "More sensitive." No hex values exposed to user.
+
+**Why:** The "transparent science" positioning means target users (who have read Gabbett 2016) will notice when their strain score doesn't match their perceived effort. Allowing calibration is an act of trust — and trust is the moat. The current normalization (70.0) is calibrated for a hard 60-min zone 4-5 effort. Athletes with higher fitness base or unusual HR profiles may need adjustment.
+
+**Implementation notes:**
+- `UserDefaults["strainSensitivityOffset"]` → Double in range [-0.2, +0.2], default 0.0
+- `normalization` in `CardiovascularStrainService` becomes `70.0 * (1.0 - offset)` — higher offset = higher sensitivity = higher strain scores
+- `ReadinessViewModel.computeCardiovascularStrain()` reads `UserDefaults` at compute time
+- SettingsView gets a `Slider` row: "Strain Sensitivity" with labels "Lower" / "Higher"
+- Show a preview: "Your hard workout would score: ~15 → ~16" as offset changes
+
+**Effort:** S (human: ~2h / CC+gstack: ~10 min)
+
+**Priority:** P3 — after strain tab is fully validated in production (3+ months). Not blocking Phase 2b or 2c.
+
+---
+
 ## ~~P3 — InsightsViewModel GEMINI.md Mandate Violation~~ ✅ DONE 2026-03-27
 
 `InsightsViewModel.analyzeData()` gutted from 370 → 78 lines. All 9 service calls (`CorrelationEngine`, `NutritionCorrelationEngine`, `BiologicalAgingService`, `ActionableRecommendations`, `PredictiveReadinessService`, `TrainingLoadCalculator`, `TrendDetector`, `InjuryRiskCalculator`, `TrainingLoadVisualizationService`) moved to `ReadinessRepository.performFullAnalysis()`. `UnifiedReadiness` gained 11 new fields. `InsightsViewModel.analyzeData()` now delegates to `ReadinessRepository.shared.refreshIfNecessary(modelContext:)` and assigns from `currentReadiness`. `InsightsView` unchanged. `weightData` fetch added to Repository; `trends` bug fix (was passing `stepData: []`, now passes real step data).

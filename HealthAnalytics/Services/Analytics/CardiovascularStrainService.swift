@@ -120,21 +120,17 @@ struct CardiovascularStrainService {
 
     // MARK: - Strain label + color
 
-    static func label(for strain: Double) -> String {
+    /// Single source of truth for zone thresholds.
+    /// Both label(for:) and color(for:) delegate here — they cannot disagree.
+    private static func zone(for strain: Double) -> (label: String, color: Color) {
         switch strain {
-        case 0..<7:   return "LIGHT"
-        case 7..<13:  return "MODERATE"
-        case 13..<18: return "STRENUOUS"
-        default:      return "ALL-OUT"
+        case 0..<7:   return ("LIGHT",     Color.statusOptimal)
+        case 7..<13:  return ("MODERATE",  Color.statusMonitoring)
+        case 13..<18: return ("STRENUOUS", Color.statusWarning)
+        default:      return ("ALL-OUT",   Color.statusAllOut)
         }
     }
 
-    static func color(for strain: Double) -> Color {
-        switch strain {
-        case 0..<7:   return Color.statusOptimal
-        case 7..<13:  return Color.statusMonitoring
-        case 13..<18: return Color.statusWarning
-        default:      return Color.statusAllOut
-        }
-    }
+    static func label(for strain: Double) -> String { zone(for: strain).label }
+    static func color(for strain: Double) -> Color  { zone(for: strain).color }
 }

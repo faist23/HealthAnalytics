@@ -191,10 +191,10 @@ struct StrainTabView: View {
                                         .tracking(1)
 
                                     VStack(spacing: 1) {
-                                        ScaleRow(label: "0 — 6",  description: "Light",     color: Color.statusOptimal)
-                                        ScaleRow(label: "7 — 12", description: "Moderate",  color: Color.statusMonitoring)
-                                        ScaleRow(label: "13 — 17", description: "Strenuous", color: Color.statusWarning)
-                                        ScaleRow(label: "18 — 21", description: "All-Out",   color: Color.statusAllOut)
+                                        ScaleRow(label: "0 – 6.9",   description: "Light",     color: Color.statusOptimal)
+                                        ScaleRow(label: "7 – 12.9",  description: "Moderate",  color: Color.statusMonitoring)
+                                        ScaleRow(label: "13 – 17.9", description: "Strenuous", color: Color.statusWarning)
+                                        ScaleRow(label: "18 – 21",   description: "All-Out",   color: Color.statusAllOut)
                                     }
                                     .background(Color(white: 0.1).opacity(0.8))
                                     .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
