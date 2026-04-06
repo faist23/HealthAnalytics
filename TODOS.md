@@ -204,3 +204,39 @@
 **What:** Replace `default:` case in `ResearchThresholdBar.zone(for:)` with explicit `case .trainingBalance, .biologicalAge:`. (The `segments` and `markerFraction` switches were already exhaustive from the Phase 1 PR.)
 
 **Done:** `zone(for:)` at `ResearchThresholdBar.swift:56` now uses explicit cases — adding a new `SignalType` is a compile error.
+
+---
+
+## P3 — Pattern Confirmation: Graduate from Vote-Based to Pearson at n >= 10
+
+**What:** `detectBackToBackReadinessCrash()` starts with threshold-vote confirmation (drop > 10 points = Yes-vote; confirm if Yes-rate >= 60% and n >= 4). When the user accumulates n >= 10 back-to-back sequences in the 90-day window, the algorithm should automatically graduate to using Pearson r as the primary gate (r >= 0.55) for more rigorous confirmation.
+
+**Why:** Pearson correlation at n=5 is statistically uninterpretable (p≈0.33 at r=0.55, df=3). Vote-based confirmation is more robust at low n. Pearson is the right tool once there's enough variance to compute a meaningful r.
+
+**How to apply:** Add a conditional in `detectBackToBackReadinessCrash()`: if `sequences.count < 10`, use vote-based gate; otherwise use Pearson gate. Display lagCorrelation (Pearson r) in the detail sheet at all times as contextual data, but only use it as the decision variable at n >= 10.
+
+**Effort:** S (human: ~2h / CC: ~10 min)
+
+**Priority:** P3 — deferred to Phase 4 (Post-Mortem Coach sprint). Current sprint ships with vote-based confirmation only.
+
+**Depends on / blocked by:** detectBackToBackReadinessCrash() must ship and accumulate real user data first.
+
+---
+
+## P4 — Light Mode Token Sweep: TrainingSignatureCard
+
+**What:** When the light mode phase begins (per DESIGN.md roadmap), sweep `TrainingSignatureCard.swift` and `SpaghettiPlot` to verify all token-based colors render correctly in light mode. The Visual Spec section in the design plan uses dark-mode token values only.
+
+**Why:** All color tokens in the Visual Spec (e.g., `Color.surface` = `#1C1915`, `Color.surfaceRaised` = `#262118`) are specified as dark-mode hex values. Light mode requires `#FFFFFF` / `#F0EDE8` equivalents. If the token extension is updated correctly for light mode, the card should work automatically — but the spaghetti plot SVG line opacities and chart background may need review since they're tuned for dark contrast.
+
+**Pros:** Ensures the card doesn't look broken in light mode when that phase ships.
+
+**Cons:** Requires producing data-driven light mode designs for the spaghetti plot (terracotta on light gray may need opacity adjustment). Low priority until light mode phase is scoped.
+
+**Context:** Design review 2026-04-05. All elements use DESIGN.md tokens, so the sweep should be lightweight — verify tokens, check chart line contrast ratios, done.
+
+**Effort:** S (human: ~2h / CC: ~10 min)
+
+**Priority:** P4 — blocked on light mode phase (not scoped)
+
+**Depends on / blocked by:** Light mode design system phase. DESIGN.md must define light mode token values first.
