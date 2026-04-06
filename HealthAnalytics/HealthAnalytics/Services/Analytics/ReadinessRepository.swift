@@ -501,6 +501,15 @@ class ReadinessRepository: ObservableObject {
             self.lastFingerprint = fingerprint
             self.lastAnalysisDate = now
 
+            // Persist today's readiness score for 90-day back-to-back crash pattern detection.
+            upsertDailyScore(
+                date: today,
+                score: baseReadiness.score,
+                acwr: readinessAssessmentResult.acwr,
+                workoutCount: workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }.count,
+                modelContext: modelContext
+            )
+
             #if DEBUG
             print("✅ ReadinessRepository: Unified Analysis Complete. Score: \(baseReadiness.score)")
             #endif
@@ -513,6 +522,39 @@ class ReadinessRepository: ObservableObject {
         }
 
         isAnalyzing = false
+    }
+
+    // MARK: - Daily Score Persistence
+
+    /// Upserts today's readiness score into StoredDailyScore for 90-day pattern analysis.
+    /// Dedup is in-memory (dateString equality) — avoids @Attribute(.unique) migration risk.
+    private func upsertDailyScore(
+        date: Date,
+        score: Int,
+        acwr: Double,
+        workoutCount: Int,
+        modelContext: ModelContext
+    ) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        let dateStr = formatter.string(from: date)
+
+        let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
+        if let existing = allScores.first(where: { $0.dateString == dateStr }) {
+            existing.readinessScore = score
+            existing.dailyStrain = acwr
+            existing.workoutCount = workoutCount
+        } else {
+            let record = StoredDailyScore(
+                date: date,
+                readinessScore: score,
+                dailyStrain: acwr,
+                workoutCount: workoutCount
+            )
+            modelContext.insert(record)
+        }
+        try? modelContext.save()
     }
 
     // MARK: - Primary Activity Detection (moved from ReadinessViewModel)

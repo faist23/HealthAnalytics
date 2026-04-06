@@ -277,6 +277,10 @@ actor TrainingDNAAnalyzer {
             if let p = try await detectSleepFragmentation() { detected.append(p) }
         }
 
+        if historyDays >= 90, !Task.isCancelled {
+            if let p = try await detectBackToBackReadinessCrash() { detected.append(p) }
+        }
+
         guard !Task.isCancelled else { return historyDays }
 
         try upsertPatterns(detected)
@@ -490,6 +494,108 @@ actor TrainingDNAAnalyzer {
         )
     }
 
+    // MARK: - Pattern 4: Back-to-Back Crash
+
+    /// Detects whether the user's readiness consistently crashes after two consecutive
+    /// high-strain training days. Uses vote-based confirmation (drop > 10pts = Yes-vote;
+    /// confirm if Yes-rate >= 60% and n >= 4). Pearson r is computed for display only.
+    ///
+    /// Data source: StoredDailyScore — fetched directly from this actor's modelContext
+    /// (StoredDailyScore is in the shared schema since HealthDataContainer was updated).
+    private func detectBackToBackReadinessCrash() async throws -> TrainingPattern? {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
+        let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
+        let scores = allScores
+            .filter { $0.date >= cutoff }
+            .sorted { $0.date < $1.date }
+
+        guard scores.count >= 14 else { return nil }
+
+        let calendar = Calendar.current
+
+        // Build a day-keyed lookup for O(1) access
+        let scoreByDate: [String: Int] = Dictionary(
+            uniqueKeysWithValues: scores.map { (formatDay($0.date), $0.readinessScore) }
+        )
+        let workoutByDate: [String: Int] = Dictionary(
+            uniqueKeysWithValues: scores.map { (formatDay($0.date), $0.workoutCount) }
+        )
+
+        // Identify back-to-back hard days: two consecutive days each with >= 1 workout.
+        // "Hard" proxy = workoutCount >= 1 on both days. We look at Day+1 and Day+2 crash.
+        var sequences: [(crashDate: Date, dropMagnitude: Double)] = []
+
+        for i in 1..<(scores.count - 1) {
+            let dayA = scores[i - 1]
+            let dayB = scores[i]
+            let dayC = scores[i + 1]   // the crash day
+
+            let keyA = formatDay(dayA.date)
+            let keyB = formatDay(dayB.date)
+            let keyC = formatDay(dayC.date)
+
+            // Must be three consecutive calendar days
+            guard let nextA = calendar.date(byAdding: .day, value: 1, to: dayA.date),
+                  calendar.isDate(nextA, inSameDayAs: dayB.date),
+                  let nextB = calendar.date(byAdding: .day, value: 1, to: dayB.date),
+                  calendar.isDate(nextB, inSameDayAs: dayC.date) else { continue }
+
+            // Both A and B must have workouts (back-to-back hard days)
+            guard (workoutByDate[keyA] ?? 0) >= 1,
+                  (workoutByDate[keyB] ?? 0) >= 1 else { continue }
+
+            let scoreA = Double(scoreByDate[keyA] ?? 50)
+            let scoreC = Double(scoreByDate[keyC] ?? 50)
+
+            // C is the post-sequence crash day — compare against the average of A and B
+            let scoreB = Double(scoreByDate[keyB] ?? 50)
+            let avgAB = (scoreA + scoreB) / 2.0
+            let drop = avgAB - scoreC
+
+            if drop > 0 {
+                sequences.append((crashDate: dayC.date, dropMagnitude: drop))
+            }
+        }
+
+        guard sequences.count >= 4 else { return nil }
+
+        // Vote-based confirmation: drop > 10pts = Yes-vote
+        let yesVotes = sequences.filter { $0.dropMagnitude > 10 }
+        let yesRate = Double(yesVotes.count) / Double(sequences.count)
+        guard yesRate >= 0.60 else { return nil }
+
+        // Pearson r: sequence index vs drop magnitude (display-only at n < 10)
+        let xVals = (0..<sequences.count).map { Double($0) }
+        let yVals = sequences.map { $0.dropMagnitude }
+        let pearson = StatisticalValidator.pearsonCorrelation(x: xVals, y: yVals)
+        let lagR = pearson?.r ?? 0.0
+
+        // Average drop across confirmed sequences
+        let avgDrop = yVals.reduce(0, +) / Double(yVals.count)
+
+        let instanceDates = yesVotes.map { $0.crashDate }
+        let avgDropInt = Int(avgDrop.rounded())
+
+        return TrainingPattern(
+            patternType: .backToBackCrash,
+            confidenceNumerator: yesVotes.count,
+            confidenceDenominator: sequences.count,
+            evidenceSummary: "Your readiness drops an average of \(avgDropInt) points the day after back-to-back training sessions. Seen in \(yesVotes.count) of \(sequences.count) sequences over the last 90 days.",
+            citationKey: PatternType.backToBackCrash.citationKey,
+            instanceDates: instanceDates,
+            coachingResponse: "Separate hard sessions by at least one recovery day. If you must train back-to-back, keep day 2 at zone 1–2 intensity only.",
+            lagCorrelation: lagR,
+            peakDropDay: 1    // crash is deepest at Day+1 (the day after the second hard session)
+        )
+    }
+
+    private func formatDay(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone.current
+        return f.string(from: date)
+    }
+
     // MARK: - Upsert
 
     private func upsertPatterns(_ patterns: [TrainingPattern]) throws {
@@ -506,6 +612,8 @@ actor TrainingDNAAnalyzer {
                 existing.instanceDates = new.instanceDates
                 existing.evidenceSummary = new.evidenceSummary
                 existing.coachingResponse = new.coachingResponse
+                existing.lagCorrelation = new.lagCorrelation
+                existing.peakDropDay = new.peakDropDay
                 // notificationSent is NEVER reset once true
             } else {
                 modelContext.insert(new)

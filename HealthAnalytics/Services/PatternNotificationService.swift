@@ -58,6 +58,8 @@ actor PatternNotificationService {
             return "Your HRV drops 36–72h before illness — you have a detectable warning signature."
         case .sleepFragmentation:
             return "Your sleep fragments after sustained high training loads. Open the app to see the pattern."
+        case .backToBackCrash:
+            return "Your readiness drops predictably after back-to-back hard sessions. Open the app to see your pattern."
         }
     }
 }

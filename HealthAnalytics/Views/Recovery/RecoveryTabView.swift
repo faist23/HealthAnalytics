@@ -96,7 +96,10 @@ struct RecoveryTabView: View {
                                         priorDayFatigueImpact: Double(30 - readiness.breakdown.fatigueScore),
                                         todayWorkouts: viewModel.todayWorkouts
                                     )
-                                    
+
+                                    // 14-Day Signature — back-to-back crash pattern
+                                    TrainingSignatureCard()
+
                                 } else {
                                     ReadinessEmptyState()
                                         .cardStyle(for: .info)

@@ -82,3 +82,27 @@ final class StoredNutrition {
         self.fat = fat
     }
 }
+
+/// Persists one readiness score per calendar day for 90-day pattern analysis.
+/// Uses plain UUID primary key (NOT @Attribute(.unique)) to avoid non-lightweight migration risk.
+/// Uniqueness is enforced in-memory via dateString dedup in ReadinessRepository.
+@Model
+final class StoredDailyScore {
+    var id: UUID = UUID()
+    var dateString: String      // "yyyy-MM-dd" — used for in-memory dedup
+    var date: Date
+    var readinessScore: Int     // 0–100
+    var dailyStrain: Double     // ACWR-based strain value
+    var workoutCount: Int       // number of workouts logged that day
+
+    init(date: Date, readinessScore: Int, dailyStrain: Double, workoutCount: Int) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        self.dateString = formatter.string(from: date)
+        self.date = date
+        self.readinessScore = readinessScore
+        self.dailyStrain = dailyStrain
+        self.workoutCount = workoutCount
+    }
+}

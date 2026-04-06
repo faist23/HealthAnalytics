@@ -157,6 +157,7 @@ struct TrainingDNACard: View {
         case .blockCrashCycle:    return Color.statusWarning
         case .hrvPrecursor:       return Color.statusMonitoring
         case .sleepFragmentation: return Color.statusRest
+        case .backToBackCrash:    return Color.accent
         }
     }
 }

@@ -14,12 +14,14 @@ enum PatternType: String, Codable, CaseIterable {
     case blockCrashCycle
     case hrvPrecursor
     case sleepFragmentation
+    case backToBackCrash
 
     var displayName: String {
         switch self {
         case .blockCrashCycle:    return "Block Crash Cycle"
         case .hrvPrecursor:       return "HRV Precursor"
         case .sleepFragmentation: return "Sleep Fragmentation"
+        case .backToBackCrash:    return "14-Day Signature"
         }
     }
 
@@ -31,6 +33,8 @@ enum PatternType: String, Codable, CaseIterable {
             return "Your HRV drops 36–72h before illness — a detectable early warning."
         case .sleepFragmentation:
             return "Sleep quality fragments after sustained high training loads."
+        case .backToBackCrash:
+            return "Your readiness consistently crashes after back-to-back hard training days."
         }
     }
 
@@ -40,6 +44,7 @@ enum PatternType: String, Codable, CaseIterable {
         case .blockCrashCycle:    return "blocks"
         case .hrvPrecursor:       return "events"
         case .sleepFragmentation: return "periods"
+        case .backToBackCrash:    return "sequences"
         }
     }
 
@@ -48,6 +53,7 @@ enum PatternType: String, Codable, CaseIterable {
         case .blockCrashCycle:    return "chart.bar.fill"
         case .hrvPrecursor:       return "waveform.path.ecg"
         case .sleepFragmentation: return "moon.zzz.fill"
+        case .backToBackCrash:    return "bolt.horizontal.fill"
         }
     }
 
@@ -57,6 +63,7 @@ enum PatternType: String, Codable, CaseIterable {
         case .blockCrashCycle:    return "meeusen2013"
         case .hrvPrecursor:       return "plews2013"
         case .sleepFragmentation: return "halson2014"
+        case .backToBackCrash:    return "gabbett2016"
         }
     }
 }
@@ -74,6 +81,9 @@ final class TrainingPattern {
     var instanceDates: [Date]
     var coachingResponse: String
     var notificationSent: Bool
+    // backToBackCrash-specific fields (nil for all other pattern types)
+    var lagCorrelation: Double?   // Pearson r between sequence index and readiness drop magnitude
+    var peakDropDay: Int?         // Day offset (1 or 2) where the crash is deepest on average
 
     init(
         patternType: PatternType,
@@ -84,7 +94,9 @@ final class TrainingPattern {
         citationKey: String,
         instanceDates: [Date],
         coachingResponse: String,
-        notificationSent: Bool = false
+        notificationSent: Bool = false,
+        lagCorrelation: Double? = nil,
+        peakDropDay: Int? = nil
     ) {
         self.patternType = patternType
         self.detectedAt = detectedAt
@@ -95,6 +107,8 @@ final class TrainingPattern {
         self.instanceDates = instanceDates
         self.coachingResponse = coachingResponse
         self.notificationSent = notificationSent
+        self.lagCorrelation = lagCorrelation
+        self.peakDropDay = peakDropDay
     }
 
     // MARK: - Computed
