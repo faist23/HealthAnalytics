@@ -255,6 +255,12 @@ struct PredictiveReadinessService {
         )
     }
     
+    /// Effective FTP for power-based intensity calculations. Testable.
+    internal static func resolvedFTP() -> Double {
+        let stored = UserDefaults.standard.integer(forKey: "strava_ftp")
+        return stored > 0 ? Double(stored) : 200.0
+    }
+
     private func calculateActivityLoad(activity: StravaActivity) -> Double {
         let durationMinutes = Double(activity.movingTime) / 60.0
         
@@ -265,7 +271,8 @@ struct PredictiveReadinessService {
         
         // Prioritize Power (Sweet Spot / Intervals)
         if let power = activity.averageWatts, power > 0 {
-            let intensityFactor = power / 200.0 // Placeholder FTP baseline
+            let effectiveFTP = PredictiveReadinessService.resolvedFTP()
+            let intensityFactor = power / effectiveFTP
             return (intensityFactor * intensityFactor) * durationMinutes
         }
         

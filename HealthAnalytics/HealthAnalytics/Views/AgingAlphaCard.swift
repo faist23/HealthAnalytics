@@ -119,7 +119,7 @@ struct AgingAlphaCard: View {
             }
             
             // Educational Footer
-            Text("Calculated using 10-year HRV/RHR trends vs. standard human biological decay curves (1.5ms HRV drop/year).")
+            Text("Calculated using 10-year HRV, RHR, and VO₂ Max trends vs. age-stratified norms (RMSSD decline ~0.8ms/year, Malik et al. 1996).")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -186,21 +186,33 @@ private struct AgingMetricRow: View {
     VStack {
         AgingAlphaCard(assessment: BiologicalAgingService.AgingAssessment(
             chronologicalAge: 45,
-            biologicalAge: 34.2,
-            agingAlpha: 10.8,
+            biologicalAge: 37.8,
+            agingAlpha: 7.2,
             hrvRetained: 124,
             rhrStability: 4.0,
-            yearlyHRVDecline: 0.4
+            yearlyHRVDecline: 0.4,
+            currentHRV: 48,
+            standardHRVForAge: 37,
+            currentRHR: 52,
+            standardVO2ForAge: 32.5,
+            currentVO2: 40.0,
+            vo2MaxRetained: 123
         ))
         .padding()
-        
+
         AgingAlphaCard(assessment: BiologicalAgingService.AgingAssessment(
             chronologicalAge: 45,
             biologicalAge: 48.5,
             agingAlpha: -3.5,
             hrvRetained: 88,
             rhrStability: -2.0,
-            yearlyHRVDecline: 1.8
+            yearlyHRVDecline: 1.8,
+            currentHRV: 32,
+            standardHRVForAge: 37,
+            currentRHR: 68,
+            standardVO2ForAge: 32.5,
+            currentVO2: nil,
+            vo2MaxRetained: nil
         ))
         .padding()
     }

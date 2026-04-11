@@ -33,7 +33,8 @@ struct StravaAthlete: Codable {
     let username: String?
     let firstname: String?
     let lastname: String?
-    
+    let ftp: Int?   // watts; set by athlete in Strava; absent from token-embed response
+
     var fullName: String {
         let first = firstname ?? ""
         let last = lastname ?? ""

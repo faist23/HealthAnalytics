@@ -8,6 +8,7 @@ import SwiftData
 import HealthKit
 
 struct StrainTabView: View {
+    @Binding var showSettings: Bool
     @StateObject private var viewModel = ReadinessViewModel()
     @State private var isFirstLoad = true
     @State private var showStrainDetails = false
@@ -282,6 +283,15 @@ struct StrainTabView: View {
             }
             .navigationTitle("TODAY")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape")
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
             .task {
                 if viewModel.modelContainer == nil {
                     viewModel.configure(container: modelContext.container)
@@ -343,7 +353,7 @@ struct StrainTabView: View {
 }
 
 #Preview {
-    StrainTabView()
+    StrainTabView(showSettings: .constant(false))
 }
 
 struct ScaleRow: View {

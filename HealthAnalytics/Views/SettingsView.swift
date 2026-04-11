@@ -74,7 +74,22 @@ struct SettingsView: View {
                         NavigationLink {
                             StravaConnectionView()
                         } label: {
-                            Label("Strava", systemImage: "bicycle")
+                            HStack {
+                                Label("Strava", systemImage: "bicycle")
+                                Spacer()
+                                Text(StravaManager.shared.isAuthenticated
+                                     ? (StravaManager.shared.athlete?.fullName ?? "Connected")
+                                     : "Not connected")
+                                    .font(.caption)
+                                    .foregroundStyle(StravaManager.shared.isAuthenticated
+                                                     ? Color.statusOptimal : Color.textTertiary)
+                            }
+                        }
+
+                        NavigationLink {
+                            WorkoutAuditView()
+                        } label: {
+                            Label("Today's Workouts", systemImage: "figure.run.circle")
                         }
 
                         Divider()

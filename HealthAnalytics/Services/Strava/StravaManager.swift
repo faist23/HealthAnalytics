@@ -145,8 +145,27 @@ class StravaManager: ObservableObject {
         return fetchedActivities
     }
     
+    // MARK: - Athlete Profile
+
+    /// Fetches full athlete profile including FTP. Call from StravaConnectionView on appear (24h guard).
+    func fetchAthleteProfile() async throws {
+        try await refreshTokenIfNeeded()
+        guard let token = accessToken else { throw StravaError.notAuthenticated }
+        var request = URLRequest(url: URL(string: "\(StravaConfig.apiBaseURL)/athlete")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw StravaError.apiError
+        }
+        let fetched = try JSONDecoder().decode(StravaAthlete.self, from: data)
+        if let ftp = fetched.ftp, ftp > 0 {
+            UserDefaults.standard.set(ftp, forKey: "strava_ftp")
+        }
+        await MainActor.run { self.athlete = fetched }
+    }
+
     // MARK: - Sign Out
-    
+
     func signOut() {
         accessToken = nil
         refreshToken = nil
@@ -321,6 +340,7 @@ enum StravaError: Error, LocalizedError {
     case notAuthenticated
     case invalidURL
     case fetchFailed
+    case apiError
     
     var errorDescription: String? {
         switch self {
@@ -334,6 +354,8 @@ enum StravaError: Error, LocalizedError {
             return "Invalid URL"
         case .fetchFailed:
             return "Failed to fetch data from Strava"
+        case .apiError:
+            return "Strava API returned an error"
         }
     }
 }

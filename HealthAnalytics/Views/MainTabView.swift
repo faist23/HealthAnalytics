@@ -15,25 +15,25 @@ struct MainTabView: View {
     var body: some View {
         ZStack {
             TabView(selection: $selectedTab) {
-                RecoveryTabView()
+                RecoveryTabView(showSettings: $showSettings, showInsights: $showInsights)
                     .tabItem {
                         Label("Recovery", systemImage: "battery.100")
                     }
                     .tag(0)
 
-                StrainTabView()
+                StrainTabView(showSettings: $showSettings)
                     .tabItem {
                         Label("Strain", systemImage: "flame.fill")
                     }
                     .tag(1)
 
-                SleepTabView()
+                SleepTabView(showSettings: $showSettings)
                     .tabItem {
                         Label("Sleep", systemImage: "moon.zzz.fill")
                     }
                     .tag(2)
-                
-                HealthspanTabView()
+
+                HealthspanTabView(showSettings: $showSettings)
                     .tabItem {
                         Label("Healthspan", systemImage: "heart.text.square.fill")
                     }

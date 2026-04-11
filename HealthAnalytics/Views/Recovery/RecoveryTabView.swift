@@ -7,6 +7,8 @@ import SwiftUI
 import SwiftData
 
 struct RecoveryTabView: View {
+    @Binding var showSettings: Bool
+    @Binding var showInsights: Bool
     @StateObject private var viewModel = ReadinessViewModel()
     @State private var isFirstLoad = true
     @State private var showBreakdown = false
@@ -117,6 +119,22 @@ struct RecoveryTabView: View {
             }
             .navigationTitle("TODAY")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 12) {
+                        Button { showInsights = true } label: {
+                            Image(systemName: "chart.bar.xaxis")
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                        .accessibilityLabel("Insights")
+                        Button { showSettings = true } label: {
+                            Image(systemName: "gearshape")
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                        .accessibilityLabel("Settings")
+                    }
+                }
+            }
             .task {
                 if viewModel.modelContainer == nil {
                     viewModel.configure(container: modelContext.container)
@@ -155,5 +173,5 @@ struct RecoveryTabView: View {
 }
 
 #Preview {
-    RecoveryTabView()
+    RecoveryTabView(showSettings: .constant(false), showInsights: .constant(false))
 }
