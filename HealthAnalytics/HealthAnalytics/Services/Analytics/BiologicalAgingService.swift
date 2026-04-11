@@ -133,7 +133,7 @@ class BiologicalAgingService {
             // ACSM sex-stratified VO2 Max norms. getUserSex() already authorized via .biologicalSex.
             // Male: Age 20 → 45, Age 65 → 22.5 ml/kg/min
             // Female: Age 20 → 40, Age 65 → 19.5 ml/kg/min (~10% lower, per ACSM)
-            let sex = HealthKitManager.shared.getUserSex() ?? "male"
+            let sex = HealthKitManager.shared.getUserBiologicalSex()
             let baseVO2 = sex == "female" ? 40.0 : 45.0
             let standardVO2ForAge = max(18.0, baseVO2 - Double(max(0, chronoAge - 20)) * 0.5)
 
