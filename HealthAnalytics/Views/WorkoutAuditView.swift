@@ -8,6 +8,7 @@
 
 import SwiftUI
 import HealthKit
+import SwiftData
 
 struct WorkoutAuditView: View {
     @StateObject private var viewModel = ReadinessViewModel()
