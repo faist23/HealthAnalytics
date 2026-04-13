@@ -99,6 +99,9 @@ struct RecoveryTabView: View {
                                         todayWorkouts: viewModel.todayWorkouts
                                     )
 
+                                    // 7-Day Readiness Forecast
+                                    ReadinessForecastChart()
+
                                     // 14-Day Signature — back-to-back crash pattern
                                     TrainingSignatureCard()
 

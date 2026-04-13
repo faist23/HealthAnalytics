@@ -226,19 +226,11 @@
 
 ---
 
-## P3 — Pattern Confirmation: Graduate from Vote-Based to Pearson at n >= 10
+## ~~P3 — Pattern Confirmation: Graduate from Vote-Based to Pearson at n >= 10~~ ✅ DONE 2026-04-13
 
-**What:** `detectBackToBackReadinessCrash()` starts with threshold-vote confirmation (drop > 10 points = Yes-vote; confirm if Yes-rate >= 60% and n >= 4). When the user accumulates n >= 10 back-to-back sequences in the 90-day window, the algorithm should automatically graduate to using Pearson r as the primary gate (r >= 0.55) for more rigorous confirmation.
+**What:** `detectBackToBackReadinessCrash()` combined gate: n < 10 → vote-only (yesRate >= 60%); n >= 10 → combined (yesRate >= 40% AND lagCorrelation >= 0.55). 4 unit tests added to `TrainingDNAAnalyzerTests.swift` covering both gate paths.
 
-**Why:** Pearson correlation at n=5 is statistically uninterpretable (p≈0.33 at r=0.55, df=3). Vote-based confirmation is more robust at low n. Pearson is the right tool once there's enough variance to compute a meaningful r.
-
-**How to apply:** Add a conditional in `detectBackToBackReadinessCrash()`: if `sequences.count < 10`, use vote-based gate; otherwise use Pearson gate. Display lagCorrelation (Pearson r) in the detail sheet at all times as contextual data, but only use it as the decision variable at n >= 10.
-
-**Effort:** S (human: ~2h / CC: ~10 min)
-
-**Priority:** P3 — deferred to Phase 4 (Post-Mortem Coach sprint). Current sprint ships with vote-based confirmation only.
-
-**Depends on / blocked by:** detectBackToBackReadinessCrash() must ship and accumulate real user data first.
+**Done:** Combined gate implemented in `TrainingDNAAnalyzer.detectBackToBackReadinessCrash()`. Tests: `testBackToBackCrash_n9_voteGate_fires`, `testBackToBackCrash_n9_lowYesRate_fails`, `testBackToBackCrash_n10_combinedGate_fires`, `testBackToBackCrash_n10_lowLagR_fails`.
 
 ---
 

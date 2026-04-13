@@ -285,8 +285,29 @@ struct StatisticalValidator {
         )
     }
     
+    // MARK: - Linear Regression
+
+    /// Ordinary least-squares regression. Returns (slope, intercept) or nil for empty / degenerate input.
+    /// Usage: y = slope * x + intercept
+    static func linearRegression(x: [Double], y: [Double]) -> (slope: Double, intercept: Double)? {
+        guard x.count == y.count, x.count >= 2 else { return nil }
+        let n = Double(x.count)
+        let meanX = x.reduce(0, +) / n
+        let meanY = y.reduce(0, +) / n
+        var sumXY = 0.0
+        var sumX2 = 0.0
+        for i in 0..<x.count {
+            sumXY += (x[i] - meanX) * (y[i] - meanY)
+            sumX2 += (x[i] - meanX) * (x[i] - meanX)
+        }
+        guard sumX2 > 0 else { return nil }
+        let slope = sumXY / sumX2
+        let intercept = meanY - slope * meanX
+        return (slope: slope, intercept: intercept)
+    }
+
     // MARK: - Helper Functions
-    
+
     private static func calculateVariance(_ data: [Double]) -> Double {
         guard data.count > 1 else { return 0 }
         

@@ -158,6 +158,8 @@ struct TrainingDNACard: View {
         case .hrvPrecursor:       return Color.statusMonitoring
         case .sleepFragmentation: return Color.statusRest
         case .backToBackCrash:    return Color.accent
+        case .performancePeak:    return Color.statusOptimal
+        case .tapering:           return Color.textSecondary
         }
     }
 }

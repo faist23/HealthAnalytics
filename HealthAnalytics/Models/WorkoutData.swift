@@ -41,10 +41,12 @@ struct WorkoutData: Identifiable {
     let duration: TimeInterval
     let totalEnergyBurned: Double?
     let totalDistance: Double?
-    let averagePower: Double?
+    let averagePower: Double?           // mean watts (for display)
+    let normalizedPower: Double?        // Strava NP (weighted_average_watts)
+    let powerZoneSeconds: [Double]?     // [z1..z7] seconds from power stream; nil until fetched
     let averageHeartRate: Double?
     let source: WorkoutSource
-    
+
     init(
         id: UUID = UUID(), // Default for previews only
         title: String? = nil,
@@ -55,6 +57,8 @@ struct WorkoutData: Identifiable {
         totalEnergyBurned: Double?,
         totalDistance: Double?,
         averagePower: Double?,
+        normalizedPower: Double? = nil,
+        powerZoneSeconds: [Double]? = nil,
         averageHeartRate: Double?,
         source: WorkoutSource
     ) {
@@ -67,6 +71,8 @@ struct WorkoutData: Identifiable {
         self.totalEnergyBurned = totalEnergyBurned
         self.totalDistance = totalDistance
         self.averagePower = averagePower
+        self.normalizedPower = normalizedPower
+        self.powerZoneSeconds = powerZoneSeconds
         self.averageHeartRate = averageHeartRate
         self.source = source
     }
@@ -189,7 +195,8 @@ struct StravaImportData: Sendable {
     let startDate: Date
     let duration: Double
     let distance: Double?
-    let power: Double?
+    let power: Double?               // average_watts (display)
+    let normalizedPower: Double?     // weighted_average_watts / NP (load calc)
     let energy: Double?
     let averageHeartRate: Double?
 }

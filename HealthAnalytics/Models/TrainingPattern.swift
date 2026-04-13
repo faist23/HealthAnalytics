@@ -15,6 +15,8 @@ enum PatternType: String, Codable, CaseIterable {
     case hrvPrecursor
     case sleepFragmentation
     case backToBackCrash
+    case performancePeak
+    case tapering
 
     var displayName: String {
         switch self {
@@ -22,6 +24,8 @@ enum PatternType: String, Codable, CaseIterable {
         case .hrvPrecursor:       return "HRV Precursor"
         case .sleepFragmentation: return "Sleep Fragmentation"
         case .backToBackCrash:    return "14-Day Signature"
+        case .performancePeak:    return "Peak Form"
+        case .tapering:           return "Taper Underway"
         }
     }
 
@@ -35,6 +39,10 @@ enum PatternType: String, Codable, CaseIterable {
             return "Sleep quality fragments after sustained high training loads."
         case .backToBackCrash:
             return "Your readiness consistently crashes after back-to-back hard training days."
+        case .performancePeak:
+            return "HRV elevated 7+ days and optimal training load — race-ready window."
+        case .tapering:
+            return "Training load dropping 30%+ with HRV trending up — pre-race peak window approaching."
         }
     }
 
@@ -45,6 +53,8 @@ enum PatternType: String, Codable, CaseIterable {
         case .hrvPrecursor:       return "events"
         case .sleepFragmentation: return "periods"
         case .backToBackCrash:    return "sequences"
+        case .performancePeak:    return "peak"
+        case .tapering:           return "taper"
         }
     }
 
@@ -54,6 +64,8 @@ enum PatternType: String, Codable, CaseIterable {
         case .hrvPrecursor:       return "waveform.path.ecg"
         case .sleepFragmentation: return "moon.zzz.fill"
         case .backToBackCrash:    return "bolt.horizontal.fill"
+        case .performancePeak:    return "trophy.fill"
+        case .tapering:           return "arrow.down.circle.fill"
         }
     }
 
@@ -64,6 +76,8 @@ enum PatternType: String, Codable, CaseIterable {
         case .hrvPrecursor:       return "plews2013"
         case .sleepFragmentation: return "halson2014"
         case .backToBackCrash:    return "gabbett2016"
+        case .performancePeak:    return "pyne2009"
+        case .tapering:           return "mujika2003"
         }
     }
 }
@@ -84,6 +98,10 @@ final class TrainingPattern {
     // backToBackCrash-specific fields (nil for all other pattern types)
     var lagCorrelation: Double?   // Pearson r between sequence index and readiness drop magnitude
     var peakDropDay: Int?         // Day offset (1 or 2) where the crash is deepest on average
+    // performancePeak-specific field: 0.0–1.0 signal strength (nil for other types)
+    var probability: Double?
+    // tapering-specific field: predicted race-peak date (nil for other types)
+    var peakDate: Date?
 
     init(
         patternType: PatternType,
@@ -96,7 +114,9 @@ final class TrainingPattern {
         coachingResponse: String,
         notificationSent: Bool = false,
         lagCorrelation: Double? = nil,
-        peakDropDay: Int? = nil
+        peakDropDay: Int? = nil,
+        probability: Double? = nil,
+        peakDate: Date? = nil
     ) {
         self.patternType = patternType
         self.detectedAt = detectedAt
@@ -109,6 +129,8 @@ final class TrainingPattern {
         self.notificationSent = notificationSent
         self.lagCorrelation = lagCorrelation
         self.peakDropDay = peakDropDay
+        self.probability = probability
+        self.peakDate = peakDate
     }
 
     // MARK: - Computed

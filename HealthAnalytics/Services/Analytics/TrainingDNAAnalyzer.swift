@@ -232,6 +232,14 @@ enum PatternAnalysisError: Error {
 actor TrainingDNAAnalyzer {
     var dataProvider: any PatternDataProvider = LivePatternDataProvider()
 
+    /// Shared day formatter — created once, reused across all formatDay calls.
+    private let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone.current
+        return f
+    }()
+
     // MARK: - Dependency Injection
 
     /// Replaces the live data provider with a test double. Call before `analyze()` in tests.
@@ -286,6 +294,11 @@ actor TrainingDNAAnalyzer {
 
         if historyDays >= 90, !Task.isCancelled {
             if let p = try await detectBackToBackReadinessCrash() { detected.append(p) }
+        }
+
+        if historyDays >= 90, !Task.isCancelled {
+            if let p = try await detectPerformancePeak(sourcePreference: sourcePreference) { detected.append(p) }
+            if let p = try await detectTaperUnderway(sourcePreference: sourcePreference) { detected.append(p) }
         }
 
         guard !Task.isCancelled else { return historyDays }
@@ -569,13 +582,23 @@ actor TrainingDNAAnalyzer {
         // Vote-based confirmation: drop > 10pts = Yes-vote
         let yesVotes = sequences.filter { $0.dropMagnitude > 10 }
         let yesRate = Double(yesVotes.count) / Double(sequences.count)
-        guard yesRate >= 0.60 else { return nil }
 
-        // Pearson r: sequence index vs drop magnitude (display-only at n < 10)
+        // Pearson r: sequence index vs drop magnitude
         let xVals = (0..<sequences.count).map { Double($0) }
         let yVals = sequences.map { $0.dropMagnitude }
         let pearson = StatisticalValidator.pearsonCorrelation(x: xVals, y: yVals)
         let lagR = pearson?.r ?? 0.0
+
+        // Confirmation gate:
+        //   n < 10:  vote gate — yesRate >= 60% (stable at small samples)
+        //   n >= 10: combined gate — yesRate >= 40% AND lagCorrelation >= 0.55
+        //            (Pearson meaningful at n=10+; relaxed vote floor prevents silencing
+        //             consistent crashes that are growing in magnitude)
+        if sequences.count < 10 {
+            guard yesRate >= 0.60 else { return nil }
+        } else {
+            guard yesRate >= 0.40, lagR >= 0.55 else { return nil }
+        }
 
         // Average drop across confirmed sequences
         let avgDrop = yVals.reduce(0, +) / Double(yVals.count)
@@ -597,10 +620,135 @@ actor TrainingDNAAnalyzer {
     }
 
     private func formatDay(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = TimeZone.current
-        return f.string(from: date)
+        dayFormatter.string(from: date)
+    }
+
+    // MARK: - Pattern 5: Performance Peak
+
+    /// Detects when the user is in a race-ready peak window.
+    /// Criteria: HRV elevated (top 20% of 90-day range) for 7+ consecutive days AND
+    /// ACWR in the sweet spot (0.8–1.3) for 10+ consecutive days.
+    ///
+    /// Probability: hrvScore * 0.60 + acwrScore * 0.40 — confirmation gate >= 80%.
+    /// HRV data from dataProvider (daily aggregated, same path as detectHRVPrecursor).
+    /// ACWR streak from StoredDailyScore.dailyStrain (pre-computed ACWR ratio).
+    private func detectPerformancePeak(sourcePreference: HRVSourcePreference) async throws -> TrainingPattern? {
+        let hrvHistory = try await dataProvider.fetchDailyHRV(days: 90, sourcePreference: sourcePreference)
+        guard hrvHistory.count >= 7 else { return nil }
+
+        // ACWR streak from StoredDailyScore (same source as detectBackToBackReadinessCrash)
+        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
+        let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
+        let scores = allScores.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
+
+        // HRV elevation streak: consecutive trailing days in top 20% of 90-day range
+        let sortedHRV = hrvHistory.map(\.hrv).sorted()
+        let p80idx = Int(Double(sortedHRV.count) * 0.80)
+        let p80threshold = sortedHRV[min(p80idx, sortedHRV.count - 1)]
+
+        let sortedHRVByDate = hrvHistory.sorted { $0.date > $1.date } // newest first
+        var hrvStreakDays = 0
+        for entry in sortedHRVByDate {
+            if entry.hrv >= p80threshold {
+                hrvStreakDays += 1
+            } else {
+                break  // missing day or below threshold — streak ends
+            }
+        }
+
+        // ACWR sweet-spot streak: consecutive trailing days where dailyStrain in [0.8, 1.3]
+        var acwrStreakDays = 0
+        for score in scores.reversed() {
+            if score.dailyStrain >= 0.8 && score.dailyStrain <= 1.3 {
+                acwrStreakDays += 1
+            } else {
+                break
+            }
+        }
+
+        let hrvScore  = min(1.0, Double(hrvStreakDays)  / 7.0)  * 0.60
+        let acwrScore = min(1.0, Double(acwrStreakDays) / 10.0) * 0.40
+        let probability = (hrvScore + acwrScore)   // 0.0–1.0
+
+        guard probability >= 0.80 else { return nil }
+
+        // Signal strength label — avoids displaying a deceptively precise percentage
+        let signalLabel: String
+        switch probability {
+        case 0.90...: signalLabel = "Peak form"
+        default:      signalLabel = "Building"
+        }
+
+        return TrainingPattern(
+            patternType: .performancePeak,
+            confidenceNumerator: hrvStreakDays,
+            confidenceDenominator: 7,
+            evidenceSummary: "\(signalLabel) — HRV elevated for \(hrvStreakDays) consecutive days and training load optimal for \(acwrStreakDays) days. Pyne et al. 2009.",
+            citationKey: PatternType.performancePeak.citationKey,
+            instanceDates: [Date()],
+            coachingResponse: "You're in peak form — great week for a race or benchmark effort. Maintain current load; don't add volume.",
+            probability: probability
+        )
+    }
+
+    // MARK: - Pattern 6: Taper Underway
+
+    /// Detects when the user has intentionally reduced training load before a race.
+    /// Criteria: ACWR last 7 days dropped >= 30% vs days 8–28 AND HRV slope last 7 days is positive.
+    /// Predicted peak date: today + 14 days (Mujika & Padilla 2003 — recreational athletes).
+    private func detectTaperUnderway(sourcePreference: HRVSourcePreference) async throws -> TrainingPattern? {
+        let cutoff28 = Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? Date()
+        let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
+        let scores28 = allScores.filter { $0.date >= cutoff28 }.sorted { $0.date < $1.date }
+        guard scores28.count >= 28 else { return nil }
+
+        // Load drop: mean ACWR last 7 days vs mean ACWR days 8–28
+        let last7  = scores28.suffix(7).map(\.dailyStrain)
+        let prev21 = scores28.prefix(scores28.count - 7).map(\.dailyStrain)
+        guard !last7.isEmpty, !prev21.isEmpty else { return nil }
+
+        let acwrLast7  = last7.reduce(0, +)  / Double(last7.count)
+        let acwrPrev21 = prev21.reduce(0, +) / Double(prev21.count)
+        let dropPct    = acwrPrev21 > 0.01 ? (acwrPrev21 - acwrLast7) / acwrPrev21 : 0.0
+
+        guard dropPct >= 0.30 else { return nil }
+
+        // HRV trend: positive slope over last 7 days
+        let hrvHistory = try await dataProvider.fetchDailyHRV(days: 7, sourcePreference: sourcePreference)
+        let sortedHRV = hrvHistory.sorted { $0.date < $1.date }
+        let hrvValues = sortedHRV.map(\.hrv)
+        let xVals = (0..<hrvValues.count).map { Double($0) }
+        let hrv_slope_positive: Bool
+        if let reg = StatisticalValidator.linearRegression(x: xVals, y: hrvValues) {
+            hrv_slope_positive = reg.slope > 0
+        } else {
+            hrv_slope_positive = false
+        }
+
+        let loadConfidence = min(1.0, dropPct / 0.30) * 0.60
+        let hrvConfidence  = hrv_slope_positive ? 0.40 : 0.0
+        let probability    = loadConfidence + hrvConfidence
+        guard probability >= 0.80 else { return nil }
+
+        // Peak date: fixed 14-day estimate (recreational athletes, Mujika & Padilla 2003)
+        let peakDate = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
+
+        let loadDropPct = Int((dropPct * 100).rounded())
+        let peakFormatter = DateFormatter()
+        peakFormatter.dateStyle = .medium
+        peakFormatter.timeStyle = .none
+        let peakDateStr = peakFormatter.string(from: peakDate)
+
+        return TrainingPattern(
+            patternType: .tapering,
+            confidenceNumerator: Int((dropPct * 100).rounded()),
+            confidenceDenominator: 30,
+            evidenceSummary: "Load down \(loadDropPct)% — peak form expected \(peakDateStr). Mujika & Padilla 2003.",
+            citationKey: PatternType.tapering.citationKey,
+            instanceDates: [Date()],
+            coachingResponse: "Taper underway — keep intensity but cut volume. Trust the process; fitness is locked in.",
+            peakDate: peakDate
+        )
     }
 
     // MARK: - Upsert
@@ -621,6 +769,8 @@ actor TrainingDNAAnalyzer {
                 existing.coachingResponse = new.coachingResponse
                 existing.lagCorrelation = new.lagCorrelation
                 existing.peakDropDay = new.peakDropDay
+                existing.probability = new.probability
+                existing.peakDate = new.peakDate
                 // notificationSent is NEVER reset once true
             } else {
                 modelContext.insert(new)

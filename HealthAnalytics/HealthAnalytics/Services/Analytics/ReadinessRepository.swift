@@ -20,6 +20,7 @@ class ReadinessRepository: ObservableObject {
     
     @Published private(set) var currentReadiness: UnifiedReadiness?
     @Published private(set) var intraDayReadiness: RecoveryDecayService.IntraDayReadiness?
+    @Published private(set) var forecast: [ReadinessForecastDay]?
     @Published private(set) var isAnalyzing = false
     /// Non-nil when analysis fails; nil on success. Views branch on this to show
     /// "add workouts" vs "something went wrong" vs normal content.
@@ -94,7 +95,17 @@ class ReadinessRepository: ObservableObject {
     }
     
     // MARK: - Models
-    
+
+    /// One day in the 7-day readiness forecast.
+    struct ReadinessForecastDay: Identifiable {
+        let id = UUID()
+        let date: Date
+        let predictedReadiness: Int   // 0–100, clamped
+        let confidenceLow: Int        // predictedReadiness - σ(day)
+        let confidenceHigh: Int       // predictedReadiness + σ(day)
+        let coaching: String          // "Hard effort OK" / "Moderate training" / "Easy only" / "Rest recommended"
+    }
+
     struct UnifiedReadiness {
         let score: Int
         let level: ReadinessLevel
@@ -288,9 +299,14 @@ class ReadinessRepository: ObservableObject {
             let primaryActivity = determinePrimaryActivity(from: workouts)
             var mlError: String? = nil
 
+            // Fetch FTP snapshot history once — passed to every load calculation so that
+            // each workout is evaluated against the FTP that was in effect on its date.
+            let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+
             let readinessAssessmentResult = predictiveReadinessService.calculateReadiness(
                 stravaActivities: [],
-                healthKitWorkouts: workouts
+                healthKitWorkouts: workouts,
+                ftpSnapshots: ftpSnapshots
             )
 
             let shouldRetrain = trainedModels.isEmpty
@@ -403,7 +419,7 @@ class ReadinessRepository: ObservableObject {
                 recoveryInsights: recoveryInsights
             )
 
-            let acwrTrend = calculateImprovedACWRTrend(workouts: workouts)
+            let acwrTrend = calculateImprovedACWRTrend(workouts: workouts, ftpSnapshots: ftpSnapshots)
 
             let loadVisualization = loadVizService.generateLoadVisualization(
                 workouts: workouts,
@@ -510,6 +526,10 @@ class ReadinessRepository: ObservableObject {
                 modelContext: modelContext
             )
 
+            // 7-day readiness forecast (requires 14 days of stored scores).
+            // currentReadiness is already set above so the ACWR modifier reads correctly.
+            self.forecast = compute7DayForecast(modelContext: modelContext)
+
             #if DEBUG
             print("✅ ReadinessRepository: Unified Analysis Complete. Score: \(baseReadiness.score)")
             #endif
@@ -540,8 +560,10 @@ class ReadinessRepository: ObservableObject {
         formatter.timeZone = TimeZone.current
         let dateStr = formatter.string(from: date)
 
-        let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
-        if let existing = allScores.first(where: { $0.dateString == dateStr }) {
+        // Fetch only today's record via predicate rather than all records.
+        let predicate = #Predicate<StoredDailyScore> { $0.dateString == dateStr }
+        let todayScores = (try? modelContext.fetch(FetchDescriptor(predicate: predicate))) ?? []
+        if let existing = todayScores.first {
             existing.readinessScore = score
             existing.dailyStrain = acwr
             existing.workoutCount = workoutCount
@@ -555,6 +577,76 @@ class ReadinessRepository: ObservableObject {
             modelContext.insert(record)
         }
         try? modelContext.save()
+    }
+
+    // MARK: - 7-Day Readiness Forecast
+
+    /// Computes a 7-day readiness forecast from the last 14 StoredDailyScore entries.
+    /// Returns nil when fewer than 14 stored scores exist (insufficient trend window).
+    /// Published as `self.forecast` at the end of performFullAnalysis().
+    func compute7DayForecast(modelContext: ModelContext) -> [ReadinessForecastDay]? {
+        let calendar = Calendar.current
+        let cutoff = calendar.date(byAdding: .day, value: -14, to: Date()) ?? Date()
+        let predicate = #Predicate<StoredDailyScore> { $0.date >= cutoff }
+        var descriptor = FetchDescriptor(predicate: predicate)
+        descriptor.sortBy = [SortDescriptor(\.date)]
+        let recent = (try? modelContext.fetch(descriptor)) ?? []
+        guard recent.count >= 14 else { return nil }
+        let last14 = Array(recent.suffix(14))
+
+        // Linear regression on last 14 readiness scores
+        let xVals = (0..<14).map { Double($0) }
+        let yVals = last14.map { Double($0.readinessScore) }
+        guard let reg = StatisticalValidator.linearRegression(x: xVals, y: yVals) else { return nil }
+
+        // Baseline standard deviation for confidence bands
+        let meanY = yVals.reduce(0, +) / Double(yVals.count)
+        let variance = yVals.map { ($0 - meanY) * ($0 - meanY) }.reduce(0, +) / Double(yVals.count)
+        let baselineSigma = (variance > 0 ? sqrt(variance) : 5.0) / 2.0
+
+        // ACWR modifier from current published readiness
+        let acwr = currentReadiness?.readinessAssessment?.acwr
+
+        var days: [ReadinessForecastDay] = []
+        for d in 1...7 {
+            let xDay = Double(13 + d)  // extends the trend beyond the 14-day window
+            var predicted = reg.slope * xDay + reg.intercept
+
+            if let acwr {
+                if acwr > 1.3 {
+                    predicted -= predicted * 0.03 * Double(d)  // decay 3%/day under overload
+                } else if acwr < 0.8 {
+                    predicted += predicted * 0.02 * Double(d)  // improve 2%/day during underload
+                }
+            }
+
+            let clamped = max(20.0, min(100.0, predicted))
+            let sigma = min(15.0, baselineSigma * sqrt(Double(d)))
+            let lo = max(0,   Int((clamped - sigma).rounded()))
+            let hi = min(100, Int((clamped + sigma).rounded()))
+
+            let coaching: String
+            let score = Int(clamped.rounded())
+            if score >= 80 {
+                coaching = "Hard effort OK"
+            } else if score >= 70 {
+                coaching = "Moderate training"
+            } else if score >= 60 {
+                coaching = "Easy only"
+            } else {
+                coaching = "Rest recommended"
+            }
+
+            let date = calendar.date(byAdding: .day, value: d, to: calendar.startOfDay(for: Date())) ?? Date()
+            days.append(ReadinessForecastDay(
+                date: date,
+                predictedReadiness: score,
+                confidenceLow: lo,
+                confidenceHigh: hi,
+                coaching: coaching
+            ))
+        }
+        return days
     }
 
     // MARK: - Primary Activity Detection (moved from ReadinessViewModel)
@@ -574,7 +666,7 @@ class ReadinessRepository: ObservableObject {
         return counts.max(by: { $0.value < $1.value })?.key ?? "Ride"
     }
 
-    private func calculateImprovedACWRTrend(workouts: [WorkoutData]) -> [ACWRDataPoint] {
+    private func calculateImprovedACWRTrend(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot]) -> [ACWRDataPoint] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         var dataPoints: [ACWRDataPoint] = []
@@ -583,7 +675,8 @@ class ReadinessRepository: ObservableObject {
             let workoutsUpToDate = workouts.filter { $0.startDate <= targetDate }
             let assessment = predictiveReadinessService.calculateReadiness(
                 stravaActivities: [],
-                healthKitWorkouts: workoutsUpToDate
+                healthKitWorkouts: workoutsUpToDate,
+                ftpSnapshots: ftpSnapshots
             )
             dataPoints.append(ACWRDataPoint(date: targetDate, value: assessment.acwr))
         }

@@ -60,6 +60,11 @@ actor PatternNotificationService {
             return "Your sleep fragments after sustained high training loads. Open the app to see the pattern."
         case .backToBackCrash:
             return "Your readiness drops predictably after back-to-back hard sessions. Open the app to see your pattern."
+        case .performancePeak:
+            return "You're in peak form \u{1F3C5} — great week for a race or benchmark effort."
+        case .tapering:
+            return ""  // Tapering never dispatches a notification (planning tool, not a surprise insight)
+                       // Case required for exhaustive switch compliance only.
         }
     }
 }

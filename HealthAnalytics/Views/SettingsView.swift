@@ -163,6 +163,9 @@ struct SettingsView: View {
                     .padding()
                     .cardStyle(for: .info)
 
+                    // MARK: - Training Zones (FTP)
+                    FTPSettingsCard()
+
                     // MARK: - Analysis Settings
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Analysis Settings")
@@ -362,6 +365,123 @@ struct SettingsView: View {
         NotificationCenter.default.post(name: NSNotification.Name("DataSyncCompleted"), object: nil)
         
         isClassifyingWorkouts = false
+    }
+}
+
+// MARK: - FTP Settings Card
+
+private struct FTPSettingsCard: View {
+    @Query(sort: \StoredFTPSnapshot.date, order: .reverse) private var snapshots: [StoredFTPSnapshot]
+    @Environment(\.modelContext) private var modelContext
+    @ObservedObject private var syncManager = SyncManager.shared
+    @State private var isFetching = false
+    @State private var fetchMessage: String?
+
+    private var currentFTP: Int {
+        snapshots.first?.watts ?? UserDefaults.standard.integer(forKey: "strava_ftp")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Training Zones")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if StravaManager.shared.isAuthenticated {
+                    Button {
+                        Task { await refreshFTP() }
+                    } label: {
+                        if isFetching {
+                            ProgressView().scaleEffect(0.8)
+                        } else {
+                            Label("Sync", systemImage: "arrow.clockwise")
+                                .font(.caption)
+                                .foregroundStyle(Color.accent)
+                        }
+                    }
+                    .disabled(isFetching)
+                }
+            }
+
+            HStack {
+                Label("FTP", systemImage: "bolt.fill")
+                Spacer()
+                if currentFTP > 0 {
+                    Text("\(currentFTP) W")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.accent)
+                } else {
+                    Text("Not set — using 200W default")
+                        .font(.caption)
+                        .foregroundStyle(Color.statusWarning)
+                }
+            }
+
+            if let msg = fetchMessage {
+                Text(msg)
+                    .font(.caption)
+                    .foregroundStyle(currentFTP > 0 ? Color.statusOptimal : Color.statusWarning)
+            } else if currentFTP > 0 {
+                Text("Used for zone-based load calculations on Strava cycling workouts.")
+                    .font(.caption)
+                    .foregroundStyle(Color.textSecondary)
+            } else {
+                Text("Set your FTP in Strava profile, then tap Sync. Zone-based intensity calculations will be used for all cycling workouts.")
+                    .font(.caption)
+                    .foregroundStyle(Color.textSecondary)
+            }
+
+            if let progress = syncManager.zoneBackfillProgress {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.75)
+                    Text("Re-computing zones (\(progress.current)/\(progress.total))...")
+                        .font(.caption)
+                        .foregroundStyle(Color.textSecondary)
+                }
+            }
+
+            Divider()
+
+            NavigationLink {
+                FTPHistoryView()
+            } label: {
+                HStack {
+                    Text("Manage FTP History")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.accent)
+                    Spacer()
+                    if !snapshots.isEmpty {
+                        Text("\(snapshots.count) \(snapshots.count == 1 ? "entry" : "entries")")
+                            .font(.caption)
+                            .foregroundStyle(Color.textTertiary)
+                    }
+                }
+            }
+        }
+        .padding()
+        .cardStyle(for: .info)
+    }
+
+    private func refreshFTP() async {
+        isFetching = true
+        fetchMessage = nil
+        // Clear the 24h guard so StravaConnectionView doesn't also skip on next open
+        UserDefaults.standard.removeObject(forKey: "strava_athlete_last_fetch")
+        do {
+            let watts = try await StravaManager.shared.fetchAthleteProfile()
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "strava_athlete_last_fetch")
+            if let w = watts {
+                StoredFTPSnapshot.upsertIfChanged(watts: w, source: "strava_profile", context: modelContext)
+                fetchMessage = "FTP updated: \(w)W"
+            } else {
+                fetchMessage = "Strava profile has no FTP set. Add it at strava.com/settings."
+            }
+        } catch {
+            fetchMessage = "Could not reach Strava. Check your connection."
+        }
+        isFetching = false
     }
 }
 

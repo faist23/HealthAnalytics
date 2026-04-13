@@ -23,10 +23,14 @@ class PredictiveReadinessService {
         }
     }
     
-    /// Calculate readiness metrics from workout history
+    /// Calculate readiness metrics from workout history.
+    /// `ftpSnapshots` is the full FTP history for time-aware power-zone calculations.
+    /// Currently only HealthKit workouts are processed; Strava power path is wired but
+    /// not yet active (stravaActivities is passed as [] from all call sites).
     func calculateReadiness(
         stravaActivities: [StravaActivity],
-        healthKitWorkouts: [WorkoutData]
+        healthKitWorkouts: [WorkoutData],
+        ftpSnapshots: [StoredFTPSnapshot] = []
     ) -> ReadinessAssessment {
         
         // Combine all workouts
@@ -36,8 +40,8 @@ class PredictiveReadinessService {
         let sorted = allWorkouts.sorted { $0.startDate > $1.startDate }
         
         // Calculate training loads
-        let chronicLoad = calculateChronicLoad(workouts: sorted)
-        let acuteLoad = calculateAcuteLoad(workouts: sorted)
+        let chronicLoad = calculateChronicLoad(workouts: sorted, ftpSnapshots: ftpSnapshots)
+        let acuteLoad = calculateAcuteLoad(workouts: sorted, ftpSnapshots: ftpSnapshots)
         
         // Calculate ratio
         let acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1.0
@@ -63,65 +67,102 @@ class PredictiveReadinessService {
     }
     
     // MARK: - Load Calculations
-    
+
     /// Calculate chronic load (28-day rolling average)
-    private func calculateChronicLoad(workouts: [WorkoutData]) -> Double {
+    private func calculateChronicLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot]) -> Double {
         let calendar = Calendar.current
         let now = Date()
-        
+
         guard let twentyEightDaysAgo = calendar.date(byAdding: .day, value: -28, to: now) else {
             return 0
         }
-        
+
         let recentWorkouts = workouts.filter { $0.startDate >= twentyEightDaysAgo }
-        
+
         guard !recentWorkouts.isEmpty else { return 0 }
-        
+
         let totalLoad = recentWorkouts.reduce(0.0) { sum, workout in
-            sum + calculateWorkoutLoad(workout)
+            sum + calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
         }
-        
-        // Debug logging removed to prevent console spam during Extended Analysis
-        
+
         // Daily average over 28 days
         return totalLoad / 28.0
     }
-    
+
     /// Calculate acute load (7-day rolling average)
-    private func calculateAcuteLoad(workouts: [WorkoutData]) -> Double {
+    private func calculateAcuteLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot]) -> Double {
         let calendar = Calendar.current
         let now = Date()
-        
+
         guard let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: now) else {
             return 0
         }
-        
+
         let recentWorkouts = workouts.filter { $0.startDate >= sevenDaysAgo }
-        
+
         guard !recentWorkouts.isEmpty else { return 0 }
-        
+
         let totalLoad = recentWorkouts.reduce(0.0) { sum, workout in
-            sum + calculateWorkoutLoad(workout)
+            sum + calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
         }
-        
-        // Debug logging removed to prevent console spam during Extended Analysis
-        
+
         // Daily average over 7 days
         return totalLoad / 7.0
     }
-    
-    /// Calculate training load for a single workout
-    private func calculateWorkoutLoad(_ workout: WorkoutData) -> Double {
-        // Simple duration-based load (in hours)
-        // Can be enhanced with intensity factors later
+
+    /// Zone weights: exponential scaling so Z5/Z6 cost reflects actual physiological demand.
+    /// A 2hr ride with 30% Z5/Z6 + 60% Z1 scores ~3x higher than NP alone would suggest.
+    static let zoneWeights: [Double] = [0.5, 1.0, 2.0, 3.5, 5.5, 8.0, 10.0]
+
+    /// Calculate training load for a single workout.
+    /// Priority: zone-weighted (power stream) > NP-based TSS > duration × sport multiplier.
+    func calculateWorkoutLoad(_ workout: WorkoutData, ftpSnapshots: [StoredFTPSnapshot]) -> Double {
         let durationHours = workout.duration / 3600.0
-        
-        // Apply sport-specific multipliers
+
+        // PATH 1: Zone distribution available (most accurate — uses actual time at each intensity)
+        if let zoneSecs = workout.powerZoneSeconds, workout.workoutType == .cycling {
+            let load = zip(zoneSecs, PredictiveReadinessService.zoneWeights).reduce(0.0) { sum, pair in
+                sum + (pair.0 / 3600.0) * pair.1
+            }
+            #if DEBUG
+            let total = zoneSecs.reduce(0, +)
+            let pcts = zoneSecs.map { String(format: "%.0f%%", total > 0 ? $0/total*100 : 0) }
+            print("⚡️ Zone load: \(workout.title ?? "Ride") Z1=\(pcts[0]) Z2=\(pcts[1]) Z3=\(pcts[2]) Z4=\(pcts[3]) Z5=\(pcts[4]) Z6=\(pcts[5]) Z7=\(pcts[6]) → load=\(String(format: "%.2f", load))")
+            #endif
+            return load
+        }
+
+        // PATH 2: NP or avg watts available (better than duration but misses interval structure)
+        if let np = workout.normalizedPower ?? workout.averagePower, np > 0,
+           workout.workoutType == .cycling {
+            let effectiveFTP = ftpSnapshots.isEmpty
+                ? PredictiveReadinessService.resolvedFTP()
+                : StoredFTPSnapshot.resolved(for: workout.startDate, snapshots: ftpSnapshots)
+            let intensityFactor = np / effectiveFTP
+            let tss = intensityFactor * intensityFactor * durationHours
+            let powerLabel = workout.normalizedPower != nil ? "NP" : "avg"
+            #if DEBUG
+            print("⚡️ Power load: \(workout.title ?? "Ride") \(powerLabel)=\(Int(np))W FTP=\(Int(effectiveFTP))W IF=\(String(format: "%.2f", intensityFactor)) TSS=\(String(format: "%.2f", tss)) [no stream yet]")
+            #endif
+            return tss
+        }
+
+        // PATH 3: No power data — duration × sport multiplier
         let multiplier = sportMultiplier(for: workout.workoutType)
-        
         return durationHours * multiplier
     }
-    
+
+    /// Current FTP from UserDefaults. Used when no snapshot history is available.
+    /// Returns 200W as a fallback — console warning fires so it's visible during analysis.
+    internal static func resolvedFTP() -> Double {
+        let stored = UserDefaults.standard.integer(forKey: "strava_ftp")
+        if stored > 0 { return Double(stored) }
+        #if DEBUG
+        print("⚠️ FTP not set — defaulting to 200W. Go to Settings → Training Zones and tap Sync.")
+        #endif
+        return 200.0
+    }
+
     /// Sport-specific intensity multipliers
     private func sportMultiplier(for type: HKWorkoutActivityType) -> Double {
         switch type {
@@ -188,10 +229,13 @@ struct PredictiveReadinessService {
         let primaryFactor: String
     }
     
-    /// Calculates readiness using EWMA for Acute (7-day) and Chronic (28-day) loads
+    /// Calculates readiness using EWMA for Acute (7-day) and Chronic (28-day) loads.
+    /// `ftpSnapshots` is the full FTP history — each Strava activity's intensity is evaluated
+    /// against the FTP that was in effect on the day of that workout.
     func calculateReadiness(
         stravaActivities: [StravaActivity],
-        healthKitWorkouts: [WorkoutData]
+        healthKitWorkouts: [WorkoutData],
+        ftpSnapshots: [StoredFTPSnapshot] = []
     ) -> ReadinessAssessment {
         
         let calendar = Calendar.current
@@ -205,7 +249,7 @@ struct PredictiveReadinessService {
         for activity in stravaActivities {
             guard let date = activity.startDateFormatted, date >= sixtyDaysAgo else { continue }
             let day = calendar.startOfDay(for: date)
-            let load = calculateActivityLoad(activity: activity)
+            let load = calculateActivityLoad(activity: activity, ftpSnapshots: ftpSnapshots)
             dailyLoads[day, default: 0] += load
         }
         
@@ -255,23 +299,26 @@ struct PredictiveReadinessService {
         )
     }
     
-    /// Effective FTP for power-based intensity calculations. Testable.
+    /// Current FTP from UserDefaults. Used when no snapshot history is available.
     internal static func resolvedFTP() -> Double {
         let stored = UserDefaults.standard.integer(forKey: "strava_ftp")
         return stored > 0 ? Double(stored) : 200.0
     }
 
-    private func calculateActivityLoad(activity: StravaActivity) -> Double {
+    private func calculateActivityLoad(activity: StravaActivity, ftpSnapshots: [StoredFTPSnapshot] = []) -> Double {
         let durationMinutes = Double(activity.movingTime) / 60.0
-        
+
         // Weighting Core/Maintenance very low
         if activity.type == "WeightTraining" || activity.type == "Yoga" {
             return durationMinutes * 0.2
         }
-        
+
         // Prioritize Power (Sweet Spot / Intervals)
         if let power = activity.averageWatts, power > 0 {
-            let effectiveFTP = PredictiveReadinessService.resolvedFTP()
+            let workoutDate = activity.startDateFormatted ?? Date()
+            let effectiveFTP = ftpSnapshots.isEmpty
+                ? PredictiveReadinessService.resolvedFTP()
+                : StoredFTPSnapshot.resolved(for: workoutDate, snapshots: ftpSnapshots)
             let intensityFactor = power / effectiveFTP
             return (intensityFactor * intensityFactor) * durationMinutes
         }

@@ -7,6 +7,7 @@
 
 
 import SwiftUI
+import SwiftData
 
 struct StravaConnectionView: View {
     @StateObject private var stravaManager = StravaManager.shared
@@ -14,6 +15,7 @@ struct StravaConnectionView: View {
     @State private var errorMessage: String?
     @State private var fetchError: String?
     @Environment(\.openURL) private var openURL
+    @Environment(\.modelContext) private var modelContext
     
     var body: some View {
         VStack(spacing: 30) {
@@ -32,8 +34,11 @@ struct StravaConnectionView: View {
             let lastFetch = UserDefaults.standard.double(forKey: "strava_athlete_last_fetch")
             guard Date().timeIntervalSince1970 - lastFetch > 86400 else { return }
             do {
-                try await StravaManager.shared.fetchAthleteProfile()
+                let fetchedFTP = try await StravaManager.shared.fetchAthleteProfile()
                 UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "strava_athlete_last_fetch")
+                if let watts = fetchedFTP {
+                    StoredFTPSnapshot.upsertIfChanged(watts: watts, source: "strava_profile", context: modelContext)
+                }
             } catch {
                 fetchError = "Could not refresh Strava data. Check your connection."
             }

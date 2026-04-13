@@ -67,8 +67,7 @@ class ReadinessViewModel: ObservableObject {
             trend: unified.trend,
             recommendation: unified.coachAdvice,
             confidence: .high,
-            breakdown: unified.breakdown,
-            trajectory: []
+            breakdown: unified.breakdown
         )
         self.intraDayReadiness = unified.intraDay
         self.dailyRecommendation = unified.recommendation
