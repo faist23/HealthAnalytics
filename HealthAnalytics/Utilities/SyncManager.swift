@@ -497,19 +497,21 @@ class SyncManager: ObservableObject {
         print("⚡️ Power zone backfill: \(workoutTuples.count) cycling workouts need stream data")
         #endif
 
-        // FTP snapshots for time-aware zone boundaries
-        let snapshots = (try? await MainActor.run {
-            try context.fetch(FetchDescriptor<StoredFTPSnapshot>())
-        }) ?? []
+        // FTP snapshots for time-aware zone boundaries.
+        // Extracted as value tuples on MainActor — @Model objects are not Sendable.
+        let ftpValues: [(date: Date, watts: Int)] = await MainActor.run {
+            let snaps = (try? context.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+            return snaps.map { ($0.date, $0.watts) }
+        }
 
         let total = workoutTuples.count
         var fetched = 0
         for (workoutID, startDate) in workoutTuples {
             guard let activityId = Int(workoutID) else { continue }
 
-            let ftp = snapshots.isEmpty
+            let ftp = ftpValues.isEmpty
                 ? PredictiveReadinessService.resolvedFTP()
-                : StoredFTPSnapshot.resolved(for: startDate, snapshots: snapshots)
+                : StoredFTPSnapshot.resolved(for: startDate, ftpValues: ftpValues)
 
             do {
                 if let zoneSecs = try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: ftp) {
@@ -544,7 +546,8 @@ class SyncManager: ObservableObject {
             #endif
             // Re-classify cycling workouts whose zones just changed — power zones
             // are more accurate than HR for intent (captures interval structure).
-            autoClassifyWorkoutIntents()
+            let classifyActor = await MainActor.run { DataPersistenceActor(modelContainer: HealthDataContainer.shared) }
+            await classifyActor.autoClassifyWorkoutIntents()
             NotificationCenter.default.post(name: NSNotification.Name("DataSyncCompleted"), object: nil)
         }
         self.zoneBackfillProgress = nil
