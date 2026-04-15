@@ -19,6 +19,7 @@ class SyncManager: ObservableObject {
     @AppStorage("lastSyncDate") private var lastSyncTimestamp: Double = 0
     @AppStorage("hasCompletedHistoricalBackfill") private var hasCompletedHistoricalBackfill: Bool = false
     @AppStorage("hasMigratedMetricNames") private var hasMigratedMetricNames: Bool = false
+    @AppStorage("hasDeduplicatedWorkoutsV4") private var hasDeduplicatedWorkouts: Bool = false
     
     var lastSyncDate: Date? {
         get { lastSyncTimestamp == 0 ? nil : Date(timeIntervalSince1970: lastSyncTimestamp) }
@@ -49,6 +50,20 @@ class SyncManager: ObservableObject {
         }
         #endif
         
+        // Run one-time migrations before the throttle guard so they always execute
+        // on the first launch after an app update, regardless of last sync time.
+        let container = HealthDataContainer.shared
+        let dataHandler = DataPersistenceActor(modelContainer: container)
+
+        if !hasMigratedMetricNames {
+            await migrateMetricNames(dataHandler: dataHandler)
+            hasMigratedMetricNames = true
+        }
+        if !hasDeduplicatedWorkouts {
+            await dataHandler.removeDuplicateWorkouts()
+            hasDeduplicatedWorkouts = true
+        }
+
         // Prevent redundant syncs - only sync if 30+ minutes have passed
         if let last = lastSyncDate, Date().timeIntervalSince(last) < 1800 {
             #if DEBUG
@@ -63,18 +78,10 @@ class SyncManager: ObservableObject {
             #endif
             return
         }
-        
+
         isSyncing = true
-        
-        let container = HealthDataContainer.shared
-        let dataHandler = DataPersistenceActor(modelContainer: container)
-        
+
         do {
-            // MIGRATION: Update old metric type names to new standardized names
-            if !hasMigratedMetricNames {
-                await migrateMetricNames(dataHandler: dataHandler)
-                hasMigratedMetricNames = true
-            }
             
             // STEP 1: Determine what we need to sync
             let syncPlan = await determineSyncPlan(dataHandler: dataHandler)
@@ -724,6 +731,61 @@ actor DataPersistenceActor {
         }
     }
     
+    // MARK: - Workout Deduplication Migration
+
+    /// One-time pass: removes stale HealthKit-UUID records that survived alongside their
+    /// Strava-matched counterpart from syncs that ran before the upsertRecentData fix.
+    /// Uses temporal overlap (≥50% of the shorter session) rather than start-time delta,
+    /// because HealthKit records elapsed time while Strava records moving time — the Strava
+    /// window often starts 5–15 min later and is fully contained within the HK window.
+    func removeDuplicateWorkouts() {
+        let descriptor = FetchDescriptor<StoredWorkout>(sortBy: [SortDescriptor(\.startDate)])
+        guard let all = try? modelContext.fetch(descriptor) else { return }
+
+        var toDelete = Set<ObjectIdentifier>()
+
+        for i in 0..<all.count {
+            let a = all[i]
+            if toDelete.contains(ObjectIdentifier(a)) { continue }
+            let aEnd = a.startDate.addingTimeInterval(a.duration)
+
+            for j in (i + 1)..<all.count {
+                let b = all[j]
+                if toDelete.contains(ObjectIdentifier(b)) { continue }
+                // Sorted by startDate: once b starts after a ends, no further overlaps possible
+                if b.startDate >= aEnd { break }
+                guard a.workoutTypeInt == b.workoutTypeInt else { continue }
+
+                let bEnd = b.startDate.addingTimeInterval(b.duration)
+                let overlapStart = max(a.startDate, b.startDate)
+                let overlapEnd   = min(aEnd, bEnd)
+                guard overlapStart < overlapEnd else { continue }
+
+                let overlapDuration = overlapEnd.timeIntervalSince(overlapStart)
+                let minDuration     = min(a.duration, b.duration)
+                guard overlapDuration >= minDuration * 0.5 else { continue }
+
+                // Keep the better record: power data wins, then Strava source, then keep a
+                let keepA: Bool
+                if (a.averagePower != nil) != (b.averagePower != nil) {
+                    keepA = a.averagePower != nil
+                } else {
+                    keepA = a.source == "Strava" || b.source != "Strava"
+                }
+                toDelete.insert(ObjectIdentifier(keepA ? b : a))
+            }
+        }
+
+        guard !toDelete.isEmpty else { return }
+        for workout in all where toDelete.contains(ObjectIdentifier(workout)) {
+            modelContext.delete(workout)
+        }
+        try? modelContext.save()
+        #if DEBUG
+        print("🧹 Workout dedup migration: removed \(toDelete.count) duplicate record(s)")
+        #endif
+    }
+
     // MARK: - Data Summary
     
     struct DataSummary {
@@ -804,6 +866,15 @@ actor DataPersistenceActor {
             let workoutID = hkWorkout.id.uuidString
             
             if let match = WorkoutMatcher.findMatch(for: hkWorkout, in: strava) {
+                // Delete any stale HK-UUID record so the Strava version is the only copy.
+                // Without this, a workout saved under its HK UUID on a previous sync persists
+                // alongside the Strava-ID record, causing double-counting in readiness/strain.
+                let hkDescriptor = FetchDescriptor<StoredWorkout>(
+                    predicate: #Predicate { $0.id == workoutID }
+                )
+                if let staleHK = try? modelContext.fetch(hkDescriptor).first {
+                    modelContext.delete(staleHK)
+                }
                 upsertWorkout(
                     id: match.id,
                     title: match.title,

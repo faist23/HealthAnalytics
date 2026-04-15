@@ -92,31 +92,27 @@ struct WorkoutMatcher {
         for hkWorkout: WorkoutData,
         in stravaActivities: [StravaActivity]
     ) -> Int? {
-        
+        let hkEnd = hkWorkout.startDate.addingTimeInterval(hkWorkout.duration)
+
         for (index, stravaActivity) in stravaActivities.enumerated() {
-            // Check if activities match based on:
-            // 1. Start time (within 5 minutes)
-            // 2. Activity type
-            // 3. Duration (within 10% or 2 minutes)
-            
             guard let stravaStartDate = stravaActivity.startDateFormatted else { continue }
-            
-            // 1. Time matching (within 5 minutes = 300 seconds)
-            let timeDifference = abs(hkWorkout.startDate.timeIntervalSince(stravaStartDate))
-            guard timeDifference <= 300 else { continue }
-            
-            // 2. Activity type matching
+
+            // 1. Activity type matching
             guard activityTypesMatch(hkType: hkWorkout.workoutType, stravaType: stravaActivity.type) else { continue }
-            
-            // 3. Duration matching (within 10% or 120 seconds, whichever is larger)
-            let durationDifference = abs(hkWorkout.duration - Double(stravaActivity.movingTime))
-            let durationTolerance = max(hkWorkout.duration * 0.1, 120.0)
-            guard durationDifference <= durationTolerance else { continue }
-            
-            // Found a match!
+
+            // 2. Overlap check (same rationale as findMatch above)
+            let stravaEnd = stravaStartDate.addingTimeInterval(Double(stravaActivity.movingTime))
+            let overlapStart = max(hkWorkout.startDate, stravaStartDate)
+            let overlapEnd   = min(hkEnd, stravaEnd)
+            guard overlapStart < overlapEnd else { continue }
+
+            let overlapDuration = overlapEnd.timeIntervalSince(overlapStart)
+            let minDuration     = min(hkWorkout.duration, Double(stravaActivity.movingTime))
+            guard overlapDuration >= minDuration * 0.5 else { continue }
+
             return index
         }
-        
+
         return nil
     }
     
@@ -145,19 +141,26 @@ struct WorkoutMatcher {
     }
     
     nonisolated static func findMatch(for hkWorkout: WorkoutData, in stravaImports: [StravaImportData]) -> StravaImportData? {
+        let hkEnd = hkWorkout.startDate.addingTimeInterval(hkWorkout.duration)
+
         for stravaActivity in stravaImports {
-            // 1. Time matching (within 5 minutes)
-            let timeDifference = abs(hkWorkout.startDate.timeIntervalSince(stravaActivity.startDate))
-            guard timeDifference <= 300 else { continue }
-            
-            // 2. Activity type matching
+            // 1. Activity type matching
             guard activityTypesMatch(hkType: hkWorkout.workoutType, stravaType: stravaActivity.workoutType) else { continue }
-            
-            // 3. Duration matching (within 10% or 120 seconds)
-            let durationDifference = abs(hkWorkout.duration - stravaActivity.duration)
-            let durationTolerance = max(hkWorkout.duration * 0.1, 120.0)
-            guard durationDifference <= durationTolerance else { continue }
-            
+
+            // 2. Overlap check.
+            // HealthKit records elapsed time (start = button press); Strava records moving time
+            // (start = first GPS movement, often 5-15 min later). The Strava window is typically
+            // fully contained within the HK window. A start-time or duration comparison alone
+            // misses these. Instead, require ≥50% of the shorter session to overlap.
+            let stravaEnd = stravaActivity.startDate.addingTimeInterval(stravaActivity.duration)
+            let overlapStart = max(hkWorkout.startDate, stravaActivity.startDate)
+            let overlapEnd   = min(hkEnd, stravaEnd)
+            guard overlapStart < overlapEnd else { continue }
+
+            let overlapDuration = overlapEnd.timeIntervalSince(overlapStart)
+            let minDuration     = min(hkWorkout.duration, stravaActivity.duration)
+            guard overlapDuration >= minDuration * 0.5 else { continue }
+
             return stravaActivity
         }
         return nil
