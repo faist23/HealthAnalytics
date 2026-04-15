@@ -166,6 +166,9 @@ struct SettingsView: View {
                     // MARK: - Training Zones (FTP)
                     FTPSettingsCard()
 
+                    // MARK: - Strain Sensitivity
+                    StrainSensitivityCard()
+
                     // MARK: - Analysis Settings
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Analysis Settings")
@@ -482,6 +485,92 @@ private struct FTPSettingsCard: View {
             fetchMessage = "Could not reach Strava. Check your connection."
         }
         isFetching = false
+    }
+}
+
+private struct StrainSensitivityCard: View {
+    @AppStorage("strainSensitivityOffset") private var offset: Double = 0.0
+
+    /// Representative raw strain for a hard 90-min effort at baseline normalization 70.
+    /// rawStrain ≈ 50 units → baseline score of 15.0 at normalization 70.
+    private static let referenceRawStrain: Double = 50.0
+    private static let baselineNorm: Double = 70.0
+
+    private var previewScore: Double {
+        let clampedOffset = max(-0.2, min(0.2, offset))
+        let effectiveNorm = Self.baselineNorm * (1.0 - clampedOffset)
+        return min(21.0, Self.referenceRawStrain / effectiveNorm * 21.0)
+    }
+
+    private var offsetLabel: String {
+        if offset < -0.05 { return "Less sensitive" }
+        if offset > 0.05  { return "More sensitive" }
+        return "Default"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Strain Sensitivity")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Reset") { offset = 0.0 }
+                    .font(.caption)
+                    .foregroundStyle(Color.accent)
+                    .opacity(abs(offset) < 0.01 ? 0 : 1)
+            }
+
+            Text("Adjust how heavily cardiovascular effort maps to your 0–21 strain score.")
+                .font(.caption)
+                .foregroundStyle(Color.textSecondary)
+
+            VStack(spacing: 6) {
+                Slider(value: $offset, in: -0.2...0.2, step: 0.01)
+                    .tint(Color.accent)
+
+                HStack {
+                    Text("Lower")
+                        .font(.caption2)
+                        .foregroundStyle(Color.textTertiary)
+                    Spacer()
+                    Text(offsetLabel)
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.accent)
+                    Spacer()
+                    Text("Higher")
+                        .font(.caption2)
+                        .foregroundStyle(Color.textTertiary)
+                }
+            }
+
+            Divider()
+
+            HStack {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.caption)
+                    .foregroundStyle(Color.textSecondary)
+                Text("A hard 90-min effort would score")
+                    .font(.caption)
+                    .foregroundStyle(Color.textSecondary)
+                Spacer()
+                HStack(spacing: 4) {
+                    Text("~15")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color.textTertiary)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.textTertiary)
+                    Text(String(format: "%.1f", previewScore))
+                        .font(.system(.caption, design: .monospaced))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(CardiovascularStrainService.color(for: previewScore))
+                }
+            }
+        }
+        .padding()
+        .cardStyle(for: .info)
     }
 }
 

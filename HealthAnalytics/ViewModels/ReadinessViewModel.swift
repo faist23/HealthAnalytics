@@ -306,10 +306,12 @@ class ReadinessViewModel: ObservableObject {
         let hrSamples = (try? await hrSamplesTask) ?? []
         let restingHR = rhrData.last?.value ?? 55.0
 
+        let sensitivityOffset = UserDefaults.standard.double(forKey: "strainSensitivityOffset")
         cardiovascularStrain = CardiovascularStrainService().compute(
             todayHRSamples: hrSamples,
             estimatedMaxHR: maxHR,
-            restingHR: restingHR
+            restingHR: restingHR,
+            sensitivityOffset: sensitivityOffset
         )
     }
 

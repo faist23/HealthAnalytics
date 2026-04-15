@@ -64,7 +64,8 @@ struct CardiovascularStrainService {
     func compute(
         todayHRSamples: [(date: Date, bpm: Double)],
         estimatedMaxHR: Double,
-        restingHR: Double
+        restingHR: Double,
+        sensitivityOffset: Double = 0.0
     ) -> Result {
         let hrRange = estimatedMaxHR - restingHR
 
@@ -100,7 +101,9 @@ struct CardiovascularStrainService {
             rawStrain += pow(hrr, 2) * timeDeltaMinutes
         }
 
-        let strain = min(21.0, rawStrain / Self.normalization * 21.0)
+        let clampedOffset = max(-0.2, min(0.2, sensitivityOffset))
+        let effectiveNorm = Self.normalization * (1.0 - clampedOffset)
+        let strain = min(21.0, rawStrain / effectiveNorm * 21.0)
 
         let quality: Result.Quality
         switch sorted.count {
