@@ -109,6 +109,8 @@ class SyncManager: ObservableObject {
 
             // STEP 4: Backfill power zone distribution for cycling workouts missing stream data.
             // Runs after primary sync so it doesn't block the UI. Rate-limited to ~1 req/sec.
+            // Task.detached escapes MainActor, but backfillPowerZones() is @MainActor-isolated
+            // (implicit from class). The `await` below hops back to MainActor before entry.
             Task.detached(priority: .background) { [weak self] in
                 await self?.backfillPowerZones()
             }
@@ -566,7 +568,7 @@ class SyncManager: ObservableObject {
     /// Clears powerZoneSecondsCSV (and zoneComputedAtFTP) for every Strava cycling workout
     /// whose stored FTP no longer matches the currently resolved FTP for its date.
     /// Then triggers backfillPowerZones() to re-fetch streams for the cleared workouts.
-    func invalidateZones(affectedAfter date: Date) async {
+    @MainActor func invalidateZones(affectedAfter date: Date) async {
         let context = HealthDataContainer.shared.mainContext
 
         // Fetch all FTP snapshots for resolution

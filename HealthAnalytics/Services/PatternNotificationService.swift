@@ -34,9 +34,17 @@ actor PatternNotificationService {
         guard settings.authorizationStatus == .authorized else { return }
 
         for pattern in patterns where !pattern.notificationSent {
+            let bodyText = body(for: pattern.patternType)
+            guard !bodyText.isEmpty else {
+                // Pattern types with empty body (e.g. .tapering) are planning tools —
+                // intentionally suppressed from user notification.
+                pattern.notificationSent = true
+                continue
+            }
+
             let content = UNMutableNotificationContent()
             content.title = "Training DNA found"
-            content.body = body(for: pattern.patternType)
+            content.body = bodyText
             content.sound = .default
 
             let request = UNNotificationRequest(

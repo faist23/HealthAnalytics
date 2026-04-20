@@ -41,7 +41,6 @@ final class StoredWorkout {
         self.totalEnergyBurned = energy
         self.source = source
         self.averageHeartRate = hr
-        self.source = source
     }
 
     /// Decoded zone seconds [z1, z2, z3, z4, z5, z6, z7]. nil if stream not yet fetched.

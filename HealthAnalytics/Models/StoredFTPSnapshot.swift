@@ -35,7 +35,7 @@ extension StoredFTPSnapshot {
     @discardableResult
     static func upsertIfChanged(watts: Int, source: String, context: ModelContext) -> Bool {
         let today = Calendar.current.startOfDay(for: Date())
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
         var descriptor = FetchDescriptor<StoredFTPSnapshot>(
             predicate: #Predicate<StoredFTPSnapshot> { $0.date >= today && $0.date < tomorrow }
         )
