@@ -31,6 +31,12 @@ class SyncManager: ObservableObject {
     @Published var isBackfillingHistory: Bool = false
     @Published var backfillProgress: Double = 0
     @Published var zoneBackfillProgress: (current: Int, total: Int)? = nil
+    @Published var zoneBackfillError: String? = nil
+
+    // Re-entrancy guards: set synchronously before the first `await` so concurrent callers
+    // can see the flag before the actor suspends.
+    private var isMigrating = false
+    private var isBackfillingZones = false
     
     private let healthKitManager = HealthKitManager.shared
     private let stravaManager = StravaManager.shared
@@ -59,9 +65,14 @@ class SyncManager: ObservableObject {
             await migrateMetricNames(dataHandler: dataHandler)
             hasMigratedMetricNames = true
         }
-        if !hasDeduplicatedWorkouts {
+        // isMigrating is set synchronously before the first `await` so a concurrent
+        // performSmartSync() call that arrives during the dedup pass sees the flag as true
+        // and skips the migration — preventing double-deletion of workouts.
+        if !hasDeduplicatedWorkouts && !isMigrating {
+            isMigrating = true
             await dataHandler.removeDuplicateWorkouts()
             hasDeduplicatedWorkouts = true
+            isMigrating = false
         }
 
         // Prevent redundant syncs - only sync if 30+ minutes have passed
@@ -483,6 +494,13 @@ class SyncManager: ObservableObject {
     /// Processes up to 50 activities per call, sleeping 1 second between requests to
     /// stay well within Strava's 100-requests/15-min rate limit.
     private func backfillPowerZones() async {
+        // Re-entrancy guard: set synchronously on MainActor before the first `await`.
+        // Prevents concurrent FTP edits from spawning multiple parallel backfill passes
+        // that would double Strava API calls and produce torn writes to powerZoneSecondsCSV.
+        guard !isBackfillingZones else { return }
+        isBackfillingZones = true
+        defer { isBackfillingZones = false }
+
         guard StravaManager.shared.isAuthenticated else { return }
 
         let context = HealthDataContainer.shared.mainContext
@@ -515,6 +533,8 @@ class SyncManager: ObservableObject {
 
         let total = workoutTuples.count
         var fetched = 0
+        var consecutiveErrors = 0
+        zoneBackfillError = nil
         for (workoutID, startDate) in workoutTuples {
             guard let activityId = Int(workoutID) else { continue }
 
@@ -536,12 +556,20 @@ class SyncManager: ObservableObject {
                         }
                     }
                     fetched += 1
+                    consecutiveErrors = 0
                     self.zoneBackfillProgress = (current: fetched, total: total)
                 }
             } catch {
+                consecutiveErrors += 1
                 #if DEBUG
                 print("   ⚠️ Zone fetch failed for \(activityId): \(error.localizedDescription)")
                 #endif
+                // Surface repeated failures (likely rate-limit) so FTPHistoryView can show feedback.
+                // Three consecutive errors suggests a 429 or connectivity issue — stop and tell the user.
+                if consecutiveErrors >= 3 {
+                    self.zoneBackfillError = "Zone update paused — Strava rate limit or network issue. Try again later."
+                    break
+                }
             }
 
             // Rate limit: 1 req/sec → well under 100/15 min

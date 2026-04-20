@@ -16,6 +16,15 @@ See `GEMINI.md` for the full engineering mandate. Key rules:
 - Use `DataFingerprint` caching to prevent score drift
 - ACWR sweet spot: 0.8–1.3
 
+### Key extension points (v0.1.0.0)
+- **New patterns** — extend `PatternType` enum in `Models/TrainingPattern.swift`, add a `detectX()` method to `Services/Analytics/TrainingDNAAnalyzer.swift`, wire it in `upsertPatterns()`. Pattern data flows through `StoredDailyScore` snapshots (upserted after every analysis run via `ReadinessRepository.upsertDailyScore()`).
+- **FTP history** — `Models/StoredFTPSnapshot.swift`. Use `StoredFTPSnapshot.resolved(for:snapshots:)` to get the FTP value in effect for any historical workout date. Default 200W when no snapshot exists.
+- **7-day forecast** — `Views/Recovery/ReadinessForecastChart.swift` + `ReadinessRepository.compute7DayForecast()`. Requires 14 days of `StoredDailyScore`.
+- **Workout load calculation** — `Services/Analytics/PredictiveReadinessService.calculateWorkoutLoad()` uses three-path priority: zone-weighted power → NP/avg-power TSS → duration × sport multiplier.
+- **Strain sensitivity** — `CardiovascularStrainService.compute(sensitivityOffset:)`. Offset read from `UserDefaults["strainSensitivityOffset"]` (range −0.2 to +0.2, default 0.0). Normalization constant is 70.0.
+- **HeuristicIntentClassifier** — power-zone path takes priority over HR for cycling when `powerZoneSeconds` stream data is present. Only classifies workouts owned by the user (not third-party HealthKit sources).
+- **WorkoutAuditView** — debug view in Settings → Today's Workouts showing all stored workouts with source, FTP, and zone data.
+
 ## Known Compiler Patterns
 
 ### SourceKit "Cannot find X in scope" — always noise

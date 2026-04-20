@@ -61,6 +61,20 @@ struct FTPHistoryView: View {
                 }
             }
 
+            // Zone backfill error (rate limit or network failure)
+            if let errorMsg = syncManager.zoneBackfillError {
+                Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "wifi.exclamationmark")
+                            .font(.caption)
+                            .foregroundStyle(Color.statusWarning)
+                        Text(errorMsg)
+                            .font(.caption)
+                            .foregroundStyle(Color.statusWarning)
+                    }
+                }
+            }
+
             // Pending-changes banner
             if pendingChangeCount > 0 && syncManager.zoneBackfillProgress == nil {
                 Section {

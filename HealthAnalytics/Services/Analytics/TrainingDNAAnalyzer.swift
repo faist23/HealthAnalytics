@@ -533,12 +533,17 @@ actor TrainingDNAAnalyzer {
 
         let calendar = Calendar.current
 
-        // Build a day-keyed lookup for O(1) access
+        // Build a day-keyed lookup for O(1) access.
+        // uniquingKeysWith: { $1 } — last writer wins when the DB contains duplicate-day rows
+        // (possible if a prior bug or race wrote two StoredDailyScores for the same calendar day).
+        // uniqueKeysWithValues: would trap on duplicates; the safe form silently deduplicates.
         let scoreByDate: [String: Int] = Dictionary(
-            uniqueKeysWithValues: scores.map { (formatDay($0.date), $0.readinessScore) }
+            scores.map { (formatDay($0.date), $0.readinessScore) },
+            uniquingKeysWith: { $1 }
         )
         let workoutByDate: [String: Int] = Dictionary(
-            uniqueKeysWithValues: scores.map { (formatDay($0.date), $0.workoutCount) }
+            scores.map { (formatDay($0.date), $0.workoutCount) },
+            uniquingKeysWith: { $1 }
         )
 
         // Identify back-to-back hard days: two consecutive days each with >= 1 workout.
@@ -620,7 +625,10 @@ actor TrainingDNAAnalyzer {
     }
 
     private func formatDay(_ date: Date) -> String {
-        dayFormatter.string(from: date)
+        // Refresh timeZone on every call so a mid-session timezone change (travel)
+        // doesn't produce stale offsets that mismatch Calendar.current day boundaries.
+        dayFormatter.timeZone = TimeZone.current
+        return dayFormatter.string(from: date)
     }
 
     // MARK: - Pattern 5: Performance Peak

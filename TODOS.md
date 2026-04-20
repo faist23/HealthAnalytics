@@ -1,21 +1,8 @@
 # TODOS
 
-## P3 — Strain Sensitivity Calibration UI (Phase 3)
+## ~~P3 — Strain Sensitivity Calibration UI~~ ✅ DONE v0.1.0.0 (2026-04-20)
 
-**What:** A user-adjustable sensitivity slider in Settings for the cardiovascular strain score. Maps to a ±20% offset on the normalization constant in `CardiovascularStrainService`. Range: "Less sensitive" → "More sensitive." No hex values exposed to user.
-
-**Why:** The "transparent science" positioning means target users (who have read Gabbett 2016) will notice when their strain score doesn't match their perceived effort. Allowing calibration is an act of trust — and trust is the moat. The current normalization (70.0) is calibrated for a hard 60-min zone 4-5 effort. Athletes with higher fitness base or unusual HR profiles may need adjustment.
-
-**Implementation notes:**
-- `UserDefaults["strainSensitivityOffset"]` → Double in range [-0.2, +0.2], default 0.0
-- `normalization` in `CardiovascularStrainService` becomes `70.0 * (1.0 - offset)` — higher offset = higher sensitivity = higher strain scores
-- `ReadinessViewModel.computeCardiovascularStrain()` reads `UserDefaults` at compute time
-- SettingsView gets a `Slider` row: "Strain Sensitivity" with labels "Lower" / "Higher"
-- Show a preview: "Your hard workout would score: ~15 → ~16" as offset changes
-
-**Effort:** S (human: ~2h / CC+gstack: ~10 min)
-
-**Priority:** P3 — after strain tab is fully validated in production (3+ months). Not blocking Phase 2b or 2c.
+`StrainSensitivityCard` added to `SettingsView`. `CardiovascularStrainService.compute()` accepts `sensitivityOffset: Double` (default 0.0). `ReadinessViewModel.computeCardiovascularStrain()` reads `UserDefaults["strainSensitivityOffset"]` at compute time. Normalization recalibrated from 90.0 → 70.0 (hard 60-min zone 4-5 effort = ~16-18 STRENUOUS). Slider range: ±20%, labels "Lower / Higher", Reset button, live preview showing adjusted score.
 
 ---
 
