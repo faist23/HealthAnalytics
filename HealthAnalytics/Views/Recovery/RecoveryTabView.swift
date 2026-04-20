@@ -145,6 +145,12 @@ struct RecoveryTabView: View {
                 await viewModel.analyze(modelContext: modelContext)
                 isFirstLoad = false
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
+                // Re-analyze after sync so today's workouts are always current on first open.
+                // Without this, the initial .task races with performSmartSync() and wins — reading
+                // SwiftData before today's workout is written, then never refreshing.
+                Task { await viewModel.analyze(modelContext: modelContext) }
+            }
             .refreshable {
                 await viewModel.analyze(modelContext: modelContext)
             }

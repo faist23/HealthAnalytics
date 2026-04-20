@@ -13,13 +13,10 @@ struct StrainTabView: View {
     @State private var isFirstLoad = true
     @State private var showStrainDetails = false
     @State private var showACWRDetail = false
+    @State private var maxHR: Double = 185.0   // seeded once in .task; updated via cardiovascularStrain
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) var colorScheme
     @ObservedObject var syncManager = SyncManager.shared
-
-    private var maxHR: Double {
-        220.0 - Double(HealthKitManager.shared.getUserAge() ?? 35)
-    }
     
     private func formatDuration(_ interval: TimeInterval) -> String {
         let hours = Int(interval) / 3600
@@ -297,7 +294,19 @@ struct StrainTabView: View {
                     viewModel.configure(container: modelContext.container)
                 }
                 await viewModel.analyze(modelContext: modelContext)
+                // Seed maxHR once after first analyze. cardiovascularStrain.estimatedMaxHR uses
+                // the ViewModel's 7-day cached personal maxHR — fall back to age formula only
+                // when the cache is cold. Either way, getUserAge() is called at most once here,
+                // not on every SwiftUI render.
+                if let cv = viewModel.cardiovascularStrain {
+                    maxHR = cv.estimatedMaxHR
+                } else {
+                    maxHR = 220.0 - Double(HealthKitManager.shared.getUserAge() ?? 35)
+                }
                 isFirstLoad = false
+            }
+            .onChange(of: viewModel.cardiovascularStrain) { _, cv in
+                if let cv { maxHR = cv.estimatedMaxHR }
             }
             .refreshable {
                 await viewModel.analyze(modelContext: modelContext)
