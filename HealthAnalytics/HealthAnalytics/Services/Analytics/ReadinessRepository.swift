@@ -584,7 +584,9 @@ class ReadinessRepository: ObservableObject {
     /// Computes a 7-day readiness forecast from the last 14 StoredDailyScore entries.
     /// Returns nil when fewer than 14 stored scores exist (insufficient trend window).
     /// Published as `self.forecast` at the end of performFullAnalysis().
-    func compute7DayForecast(modelContext: ModelContext) -> [ReadinessForecastDay]? {
+    /// `overrideACWR` is exposed for unit testing only — pass nil in production.
+    /// In production the ACWR is read from `currentReadiness?.readinessAssessment?.acwr`.
+    func compute7DayForecast(modelContext: ModelContext, overrideACWR: Double? = nil) -> [ReadinessForecastDay]? {
         let calendar = Calendar.current
         let cutoff = calendar.date(byAdding: .day, value: -14, to: Date()) ?? Date()
         let predicate = #Predicate<StoredDailyScore> { $0.date >= cutoff }
@@ -604,8 +606,8 @@ class ReadinessRepository: ObservableObject {
         let variance = yVals.map { ($0 - meanY) * ($0 - meanY) }.reduce(0, +) / Double(yVals.count)
         let baselineSigma = (variance > 0 ? sqrt(variance) : 5.0) / 2.0
 
-        // ACWR modifier from current published readiness
-        let acwr = currentReadiness?.readinessAssessment?.acwr
+        // ACWR modifier from current published readiness (or test override)
+        let acwr = overrideACWR ?? currentReadiness?.readinessAssessment?.acwr
 
         var days: [ReadinessForecastDay] = []
         for d in 1...7 {

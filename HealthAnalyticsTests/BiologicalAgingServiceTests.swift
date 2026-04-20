@@ -88,9 +88,10 @@ final class BiologicalAgingServiceTests: XCTestCase {
 
     func test_vo2Nil_gracefulFallback_HRVRHRBlend() {
         // With no VO2 data, weights should be HRV 60% + RHR 40%.
-        // A neutral HRV (at standard) with perfect RHR should still produce positive alpha.
+        // A neutral HRV (at standard for age 40 = max(25, 65 - 20*0.8) = 49ms)
+        // with a good RHR (55bpm, 5 below anchor of 60) should produce positive alpha.
         let (_, alpha, vo2MaxRetained) = BiologicalAgingService.computeBiologicalAge(
-            chronoAge: 40, currentHRV: 45, currentRHR: 55, currentVO2: nil
+            chronoAge: 40, currentHRV: 49, currentRHR: 55, currentVO2: nil
         )
         XCTAssertNil(vo2MaxRetained, "vo2MaxRetained should be nil when no VO2 data")
         XCTAssertGreaterThan(alpha, 0, "Perfect RHR should produce positive alpha even without VO2")
