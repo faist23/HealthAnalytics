@@ -21,7 +21,7 @@ import SwiftUI
 
 struct CardiovascularStrainService {
 
-    struct Result {
+    struct Result: Equatable {
         /// Cardiovascular strain on the 0–21 scale.
         let strain: Double
         /// The max HR value used for this calculation (bpm).
