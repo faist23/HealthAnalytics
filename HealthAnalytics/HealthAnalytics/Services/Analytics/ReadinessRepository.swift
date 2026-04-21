@@ -63,7 +63,23 @@ class ReadinessRepository: ObservableObject {
 
     private var analysisTask: Task<Void, Never>?
 
+    private static let dailyScoreDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone.current
+        return f
+    }()
+
     private init() {}
+
+    #if DEBUG
+    /// Resets published state to a clean baseline. Use in unit tests to prevent
+    /// cross-test contamination through ReadinessRepository.shared.
+    func resetForTesting() {
+        currentReadiness = nil
+        forecast = nil
+    }
+    #endif
 
     // MARK: - Pattern Analysis (Phase 2)
 
@@ -180,6 +196,10 @@ class ReadinessRepository: ObservableObject {
     // MARK: - Core Analysis Logic
     
     private func performFullAnalysis(modelContext: ModelContext, fingerprint: PredictionCache.DataFingerprint) async {
+        // Re-entrancy guard: multiple views call refreshIfNecessary simultaneously on first load.
+        // All pass the currentReadiness == nil check before any run sets it — without this guard
+        // all three enter here concurrently, producing interleaved SwiftData writes.
+        guard !isAnalyzing else { return }
         isAnalyzing = true
         analysisError = nil
 
@@ -555,10 +575,7 @@ class ReadinessRepository: ObservableObject {
         workoutCount: Int,
         modelContext: ModelContext
     ) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone.current
-        let dateStr = formatter.string(from: date)
+        let dateStr = Self.dailyScoreDateFormatter.string(from: date)
 
         // Fetch only today's record via predicate rather than all records.
         let predicate = #Predicate<StoredDailyScore> { $0.dateString == dateStr }
@@ -593,8 +610,14 @@ class ReadinessRepository: ObservableObject {
         var descriptor = FetchDescriptor(predicate: predicate)
         descriptor.sortBy = [SortDescriptor(\.date)]
         let recent = (try? modelContext.fetch(descriptor)) ?? []
-        guard recent.count >= 14 else { return nil }
-        let last14 = Array(recent.suffix(14))
+        // Deduplicate by calendar day — duplicate-day rows from a race condition or
+        // schema migration would corrupt the OLS input (two identical X-coords).
+        let deduped = Dictionary(
+            recent.map { (Self.dailyScoreDateFormatter.string(from: $0.date), $0) },
+            uniquingKeysWith: { $1 }
+        ).values.sorted { $0.date < $1.date }
+        guard deduped.count >= 14 else { return nil }
+        let last14 = Array(deduped.suffix(14))
 
         // Linear regression on last 14 readiness scores
         let xVals = (0..<14).map { Double($0) }

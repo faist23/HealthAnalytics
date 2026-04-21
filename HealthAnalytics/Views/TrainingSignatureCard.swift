@@ -202,7 +202,8 @@ struct TrainingSignatureCard: View {
     /// normalized 0–1 (score / 100). Returns only sequences with all 4 points available.
     private func buildTrajectories(from pattern: TrainingPattern) -> [[Double]] {
         let scoreByDay = Dictionary(
-            uniqueKeysWithValues: allScores.map { (dayKey($0.date), $0.readinessScore) }
+            allScores.map { (dayKey($0.date), $0.readinessScore) },
+            uniquingKeysWith: { $1 }
         )
         let calendar = Calendar.current
         var result: [[Double]] = []

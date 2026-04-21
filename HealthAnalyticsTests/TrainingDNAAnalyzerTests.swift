@@ -501,16 +501,12 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
-        // At n=10, yesRate=40% is at the boundary but without a high lag-r
-        // the combined gate should not fire. Verify lagCorrelation either nil or < 0.55.
-        if let p = patterns.first(where: { $0.patternType == .backToBackCrash }) {
-            let r = p.lagCorrelation ?? 0
-            XCTAssertLessThan(r, 0.55,
-                "n=10: if pattern fires with 4/10 confirmed, lagCorrelation must be >= 0.55")
-        }
-        // Either no pattern, or (rare) pattern with r >= 0.55 — both are valid outcomes
-        // depending on random noise in the fixture layout. The main assertion is that
-        // the gate logic is exercised; we just verify internal consistency.
+        // yesRate=40% with a step-down drop sequence (4×22.5 then 6×5.5) → Pearson r is negative
+        // → combined gate (yesRate>=40% AND lagR>=0.55) must fail → no pattern.
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "n=10: 4/10 yesRate=40% with step-down drops → lagR negative → combined gate must fail"
+        )
     }
 
     // MARK: - Fixture Generators

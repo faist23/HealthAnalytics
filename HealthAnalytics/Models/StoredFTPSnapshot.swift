@@ -42,10 +42,14 @@ extension StoredFTPSnapshot {
         descriptor.fetchLimit = 1
         let existing = (try? context.fetch(descriptor)) ?? []
 
-        // Skip if today already has a snapshot with the same watts
-        if existing.first?.watts == watts { return false }
-
-        context.insert(StoredFTPSnapshot(date: today, watts: watts, source: source))
+        if let snapshot = existing.first {
+            // Same calendar day — update in place to avoid duplicate rows
+            if snapshot.watts == watts { return false }
+            snapshot.watts = watts
+            snapshot.source = source
+        } else {
+            context.insert(StoredFTPSnapshot(date: today, watts: watts, source: source))
+        }
         try? context.save()
 
         // Keep UserDefaults in sync for the legacy FTP display in StravaConnectionView

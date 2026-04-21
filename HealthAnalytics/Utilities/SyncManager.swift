@@ -573,7 +573,8 @@ class SyncManager: ObservableObject {
             }
 
             // Rate limit: 1 req/sec → well under 100/15 min
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            // Propagate cancellation so app-backgrounding can interrupt the loop cleanly.
+            do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { break }
         }
 
         if fetched > 0 {
@@ -602,10 +603,10 @@ class SyncManager: ObservableObject {
         // Fetch all FTP snapshots for resolution
         let snapshots = (try? context.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
 
-        // Fetch all Strava cycling workouts that already have zone data
-        var descriptor = FetchDescriptor<StoredWorkout>(
+        // Fetch Strava cycling workouts on or after `date` that already have zone data
+        let descriptor = FetchDescriptor<StoredWorkout>(
             predicate: #Predicate<StoredWorkout> {
-                $0.source == "Strava" && $0.powerZoneSecondsCSV != nil
+                $0.source == "Strava" && $0.powerZoneSecondsCSV != nil && $0.startDate >= date
             },
             sortBy: [SortDescriptor(\.startDate, order: .reverse)]
         )

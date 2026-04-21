@@ -232,11 +232,15 @@ struct FTPHistoryView: View {
         Task { await SyncManager.shared.invalidateZones(affectedAfter: date) }
     }
 
-    private func dayKey(_ date: Date) -> String {
+    private static let dayKeyFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.timeZone = TimeZone.current
-        return f.string(from: date)
+        return f
+    }()
+
+    private func dayKey(_ date: Date) -> String {
+        Self.dayKeyFormatter.string(from: date)
     }
 
     private func sourceLabel(_ source: String) -> String {

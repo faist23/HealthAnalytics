@@ -130,9 +130,7 @@ struct ReadinessForecastChart: View {
     // MARK: - Helpers
 
     private func dayAbbrev(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "EEE"
-        return f.string(from: date)
+        date.formatted(.dateTime.weekday(.abbreviated))
     }
 
     private func coachingAbbrev(_ coaching: String) -> String {

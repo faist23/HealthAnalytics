@@ -19,6 +19,10 @@ import SwiftData
 @MainActor
 final class PredictiveIntelligenceTests: XCTestCase {
 
+    override func setUp() async throws {
+        ReadinessRepository.shared.resetForTesting()
+    }
+
     // MARK: - Shared Helpers
 
     private let ref = Calendar.current.startOfDay(for: Date())

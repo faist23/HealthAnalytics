@@ -524,10 +524,10 @@ actor TrainingDNAAnalyzer {
     /// (StoredDailyScore is in the shared schema since HealthDataContainer was updated).
     private func detectBackToBackReadinessCrash() async throws -> TrainingPattern? {
         let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
-        let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
-        let scores = allScores
-            .filter { $0.date >= cutoff }
-            .sorted { $0.date < $1.date }
+        let predicate = #Predicate<StoredDailyScore> { $0.date >= cutoff }
+        let scores = (try? modelContext.fetch(
+            FetchDescriptor<StoredDailyScore>(predicate: predicate, sortBy: [SortDescriptor(\.date)])
+        )) ?? []
 
         guard scores.count >= 14 else { return nil }
 
@@ -646,21 +646,41 @@ actor TrainingDNAAnalyzer {
 
         // ACWR streak from StoredDailyScore (same source as detectBackToBackReadinessCrash)
         let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
-        let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
-        let scores = allScores.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
+        let predicate90 = #Predicate<StoredDailyScore> { $0.date >= cutoff }
+        let scores = (try? modelContext.fetch(
+            FetchDescriptor<StoredDailyScore>(predicate: predicate90, sortBy: [SortDescriptor(\.date)])
+        )) ?? []
 
         // HRV elevation streak: consecutive trailing days in top 20% of 90-day range
         let sortedHRV = hrvHistory.map(\.hrv).sorted()
         let p80idx = Int(Double(sortedHRV.count) * 0.80)
         let p80threshold = sortedHRV[min(p80idx, sortedHRV.count - 1)]
 
+        // CV guard: if all HRV samples are nearly identical (malfunctioning/missing sensor
+        // where Apple Health backfills a constant estimate), p80threshold == every value and
+        // the streak runs to 90 days — triggering a permanent "Peak Form" notification.
+        // Require meaningful variability (CV >= 2%) before trusting the streak.
+        let mean = sortedHRV.reduce(0, +) / Double(sortedHRV.count)
+        if mean > 0 {
+            let variance = sortedHRV.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(sortedHRV.count)
+            let cv = sqrt(variance) / mean
+            guard cv >= 0.02 else { return nil }
+        }
+
         let sortedHRVByDate = hrvHistory.sorted { $0.date > $1.date } // newest first
         var hrvStreakDays = 0
+        var previousDate: Date? = nil
         for entry in sortedHRVByDate {
+            // Break on calendar gap: a missed measurement day ends the physiological streak.
+            if let prev = previousDate {
+                let daysBetween = Calendar.current.dateComponents([.day], from: entry.date, to: prev).day ?? 0
+                if daysBetween > 1 { break }
+            }
             if entry.hrv >= p80threshold {
                 hrvStreakDays += 1
+                previousDate = entry.date
             } else {
-                break  // missing day or below threshold — streak ends
+                break  // below threshold — streak ends
             }
         }
 
@@ -706,8 +726,10 @@ actor TrainingDNAAnalyzer {
     /// Predicted peak date: today + 14 days (Mujika & Padilla 2003 — recreational athletes).
     private func detectTaperUnderway(sourcePreference: HRVSourcePreference) async throws -> TrainingPattern? {
         let cutoff28 = Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? Date()
-        let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
-        let scores28 = allScores.filter { $0.date >= cutoff28 }.sorted { $0.date < $1.date }
+        let predicate28 = #Predicate<StoredDailyScore> { $0.date >= cutoff28 }
+        let scores28 = (try? modelContext.fetch(
+            FetchDescriptor<StoredDailyScore>(predicate: predicate28, sortBy: [SortDescriptor(\.date)])
+        )) ?? []
         guard scores28.count >= 28 else { return nil }
 
         // Load drop: mean ACWR last 7 days vs mean ACWR days 8–28
@@ -726,15 +748,15 @@ actor TrainingDNAAnalyzer {
         let sortedHRV = hrvHistory.sorted { $0.date < $1.date }
         let hrvValues = sortedHRV.map(\.hrv)
         let xVals = (0..<hrvValues.count).map { Double($0) }
-        let hrv_slope_positive: Bool
+        let hrvSlopePositive: Bool
         if let reg = StatisticalValidator.linearRegression(x: xVals, y: hrvValues) {
-            hrv_slope_positive = reg.slope > 0
+            hrvSlopePositive = reg.slope > 0
         } else {
-            hrv_slope_positive = false
+            hrvSlopePositive = false
         }
 
         let loadConfidence = min(1.0, dropPct / 0.30) * 0.60
-        let hrvConfidence  = hrv_slope_positive ? 0.40 : 0.0
+        let hrvConfidence  = hrvSlopePositive ? 0.40 : 0.0
         let probability    = loadConfidence + hrvConfidence
         guard probability >= 0.80 else { return nil }
 
@@ -742,10 +764,7 @@ actor TrainingDNAAnalyzer {
         let peakDate = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
 
         let loadDropPct = Int((dropPct * 100).rounded())
-        let peakFormatter = DateFormatter()
-        peakFormatter.dateStyle = .medium
-        peakFormatter.timeStyle = .none
-        let peakDateStr = peakFormatter.string(from: peakDate)
+        let peakDateStr = peakDate.formatted(date: .abbreviated, time: .omitted)
 
         return TrainingPattern(
             patternType: .tapering,
