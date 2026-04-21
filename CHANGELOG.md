@@ -53,3 +53,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `StoredFTPSnapshot` marked `Sendable` to silence actor-isolation warnings.
 - Duplicate `self.source = source` assignment in `StoredWorkout.init` removed.
 - Force-unwrap on calendar arithmetic in `StoredFTPSnapshot.upsertIfChanged` replaced with safe unwrap.
+- `StoredFTPSnapshot.upsertIfChanged` now updates in place on same-day FTP change instead of inserting a duplicate row. Previous behavior caused two rows to exist for the same day when FTP changed.
+- `SyncManager.invalidateZones(affectedAfter:)` date predicate was silently ignored — the fetch returned all Strava workouts regardless of `date`. Fixed with a `#Predicate` gate.
+- Three unbounded `FetchDescriptor<StoredDailyScore>` full-table scans in `TrainingDNAAnalyzer` replaced with date-bounded predicates (90-day and 28-day windows).
+- Forecast dedup added in `ReadinessRepository.compute7DayForecast` to prevent corrupted OLS regression input from duplicate-day `StoredDailyScore` rows.
+- `ReadinessRepository.shared` singleton contamination in `PredictiveIntelligenceTests` fixed by adding a `#if DEBUG resetForTesting()` escape hatch called from `setUp`.
+- Vacuous test `testBackToBackCrash_n10_lowLagR_fails` replaced with unconditional assertion (previously always passed regardless of implementation).
+- Test `test_upsertIfChanged_sameDayDifferentWatts_inserts` renamed to `updatesInPlace` and updated to assert count=1 (was asserting the old buggy duplicate-row behavior).
+- `ScienceCitationTests.testIsStale_logic` fixed to route through `CitationDatabase.citation(for:)` instead of `fileprivate ScienceCitation.hrv` (inaccessible via `@testable import`).
