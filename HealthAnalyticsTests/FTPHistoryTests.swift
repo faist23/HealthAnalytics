@@ -133,18 +133,19 @@ final class StoredFTPSnapshotUpsertTests: XCTestCase {
         XCTAssertEqual(all.count, 1, "No duplicate should be created")
     }
 
-    // Same day, different watts → insert (FTP changed today, e.g. manual correction)
-    func test_upsertIfChanged_sameDayDifferentWatts_inserts() throws {
+    // Same day, different watts → update in place (no duplicate row created)
+    func test_upsertIfChanged_sameDayDifferentWatts_updatesInPlace() throws {
         let context = try makeInMemoryContext()
         let today = Calendar.current.startOfDay(for: Date())
         context.insert(StoredFTPSnapshot(date: today, watts: 250, source: "strava_profile"))
         try context.save()
 
-        let inserted = StoredFTPSnapshot.upsertIfChanged(watts: 260, source: "strava_profile", context: context)
+        let updated = StoredFTPSnapshot.upsertIfChanged(watts: 260, source: "strava_profile", context: context)
 
-        XCTAssertTrue(inserted, "Should insert when watts differ on same day")
+        XCTAssertTrue(updated, "Should return true when watts changed on same day")
         let all = try context.fetch(FetchDescriptor<StoredFTPSnapshot>())
-        XCTAssertEqual(all.count, 2)
+        XCTAssertEqual(all.count, 1, "Must update in place — no duplicate row")
+        XCTAssertEqual(all.first?.watts, 260, "Watts must reflect the updated value")
     }
 
     // Different day, same watts → insert.

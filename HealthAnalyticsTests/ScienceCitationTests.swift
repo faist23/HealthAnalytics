@@ -113,10 +113,12 @@ final class ScienceCitationTests: XCTestCase {
     func testIsStale_logic() throws {
         // Verify the isStale predicate using explicit reference years, not wall-clock Date().
         // This avoids a time-bomb failure when currentYear - 2026 > 2 (i.e. after 2028).
+        // Use CitationDatabase.citation(for:) — ScienceCitation static properties are fileprivate.
         let currentYear = Calendar.current.component(.year, from: Date())
-        let recentCitation = ScienceCitation.hrv.withLastVerified(currentYear - 1)
+        let base = try XCTUnwrap(CitationDatabase.citation(for: .hrv))
+        let recentCitation = base.withLastVerified(currentYear - 1)
         XCTAssertFalse(CitationDatabase.isStale(recentCitation), "1-year-old citation should not be stale")
-        let staleCitation = ScienceCitation.hrv.withLastVerified(currentYear - 3)
+        let staleCitation = base.withLastVerified(currentYear - 3)
         XCTAssertTrue(CitationDatabase.isStale(staleCitation), "3-year-old citation should be stale")
     }
 }
