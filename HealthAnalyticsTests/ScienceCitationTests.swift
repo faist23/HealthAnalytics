@@ -110,11 +110,30 @@ final class ScienceCitationTests: XCTestCase {
         XCTAssertEqual(sleep.shortCitation, "Simpson '17")
     }
 
-    func testIsStaleReturnsFalseFor2026() throws {
-        // 2026 is ≤ 2 years ago — no citation should be stale at time of writing.
-        for signal in SignalType.allCases {
-            guard let c = CitationDatabase.citation(for: signal) else { continue }
-            XCTAssertFalse(CitationDatabase.isStale(c), "\(signal) citation flagged as stale but was verified in 2026")
-        }
+    func testIsStale_logic() throws {
+        // Verify the isStale predicate using explicit reference years, not wall-clock Date().
+        // This avoids a time-bomb failure when currentYear - 2026 > 2 (i.e. after 2028).
+        // Use CitationDatabase.citation(for:) — ScienceCitation static properties are fileprivate.
+        let currentYear = Calendar.current.component(.year, from: Date())
+        let base = try XCTUnwrap(CitationDatabase.citation(for: .hrv))
+        let recentCitation = base.withLastVerified(currentYear - 1)
+        XCTAssertFalse(CitationDatabase.isStale(recentCitation), "1-year-old citation should not be stale")
+        let staleCitation = base.withLastVerified(currentYear - 3)
+        XCTAssertTrue(CitationDatabase.isStale(staleCitation), "3-year-old citation should be stale")
+    }
+}
+
+// MARK: - Test helpers
+
+private extension ScienceCitation {
+    /// Returns a copy of the citation with a different lastVerified year — used to test
+    /// CitationDatabase.isStale() without depending on the wall-clock date.
+    func withLastVerified(_ year: Int) -> ScienceCitation {
+        ScienceCitation(
+            signal: signal, author: author, year: self.year, finding: finding,
+            studyPopulation: studyPopulation, lowerBound: lowerBound, upperBound: upperBound,
+            dangerAbove: dangerAbove, optimalRange: optimalRange, unit: unit,
+            referenceURL: referenceURL, lastVerified: year
+        )
     }
 }

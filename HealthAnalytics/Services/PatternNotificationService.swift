@@ -34,9 +34,17 @@ actor PatternNotificationService {
         guard settings.authorizationStatus == .authorized else { return }
 
         for pattern in patterns where !pattern.notificationSent {
+            let bodyText = body(for: pattern.patternType)
+            guard !bodyText.isEmpty else {
+                // Pattern types with empty body (e.g. .tapering) are planning tools —
+                // intentionally suppressed from user notification.
+                pattern.notificationSent = true
+                continue
+            }
+
             let content = UNMutableNotificationContent()
             content.title = "Training DNA found"
-            content.body = body(for: pattern.patternType)
+            content.body = bodyText
             content.sound = .default
 
             let request = UNNotificationRequest(
@@ -58,6 +66,13 @@ actor PatternNotificationService {
             return "Your HRV drops 36–72h before illness — you have a detectable warning signature."
         case .sleepFragmentation:
             return "Your sleep fragments after sustained high training loads. Open the app to see the pattern."
+        case .backToBackCrash:
+            return "Your readiness drops predictably after back-to-back hard sessions. Open the app to see your pattern."
+        case .performancePeak:
+            return "You're in peak form \u{1F3C5} — great week for a race or benchmark effort."
+        case .tapering:
+            return ""  // Tapering never dispatches a notification (planning tool, not a surprise insight)
+                       // Case required for exhaustive switch compliance only.
         }
     }
 }

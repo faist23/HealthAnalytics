@@ -18,7 +18,10 @@ public enum HealthDataContainer {
             StoredWorkout.self,
             StoredHealthMetric.self,
             StoredNutrition.self,
-            StoredIntentLabel.self
+            StoredIntentLabel.self,
+            TrainingPattern.self,     // Phase 2a — pattern engine persistence
+            StoredDailyScore.self,    // Phase 2b — 90-day readiness score history
+            StoredFTPSnapshot.self    // FTP history — time-aware intensity calculations
         ])
         
 /*        let appGroupID = "group.com.ridepro.HealthAnalytics"

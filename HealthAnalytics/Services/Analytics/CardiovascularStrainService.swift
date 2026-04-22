@@ -17,10 +17,11 @@
 //
 
 import Foundation
+import SwiftUI
 
 struct CardiovascularStrainService {
 
-    struct Result {
+    struct Result: Equatable {
         /// Cardiovascular strain on the 0–21 scale.
         let strain: Double
         /// The max HR value used for this calculation (bpm).
@@ -48,8 +49,9 @@ struct CardiovascularStrainService {
     private static let hrrFloor: Double = 0.20
 
     /// Raw units that map to 21 strain points.
-    /// Derived: 90-min hard workout (80% HRR) + light waking activity ≈ 90 raw → 21 pts.
-    private static let normalization: Double = 90.0
+    /// Calibrated so a hard 60-min zone 4-5 effort (≈90% HRR) scores ~16-18 (STRENUOUS),
+    /// a 90-min hard workout hits the 21-point cap, and a rest day lands 2-5 (LIGHT).
+    private static let normalization: Double = 70.0
 
     // MARK: - Main entry point
 
@@ -62,7 +64,8 @@ struct CardiovascularStrainService {
     func compute(
         todayHRSamples: [(date: Date, bpm: Double)],
         estimatedMaxHR: Double,
-        restingHR: Double
+        restingHR: Double,
+        sensitivityOffset: Double = 0.0
     ) -> Result {
         let hrRange = estimatedMaxHR - restingHR
 
@@ -98,7 +101,9 @@ struct CardiovascularStrainService {
             rawStrain += pow(hrr, 2) * timeDeltaMinutes
         }
 
-        let strain = min(21.0, rawStrain / Self.normalization * 21.0)
+        let clampedOffset = max(-0.2, min(0.2, sensitivityOffset))
+        let effectiveNorm = Self.normalization * (1.0 - clampedOffset)
+        let strain = min(21.0, rawStrain / effectiveNorm * 21.0)
 
         let quality: Result.Quality
         switch sorted.count {
@@ -116,14 +121,19 @@ struct CardiovascularStrainService {
         )
     }
 
-    // MARK: - Strain label (mirrors WHOOP scale)
+    // MARK: - Strain label + color
 
-    static func label(for strain: Double) -> String {
+    /// Single source of truth for zone thresholds.
+    /// Both label(for:) and color(for:) delegate here — they cannot disagree.
+    private static func zone(for strain: Double) -> (label: String, color: Color) {
         switch strain {
-        case 0..<10:  return "LIGHT"
-        case 10..<14: return "MODERATE"
-        case 14..<18: return "STRENUOUS"
-        default:      return "ALL-OUT"
+        case 0..<7:   return ("LIGHT",     Color.statusOptimal)
+        case 7..<13:  return ("MODERATE",  Color.statusMonitoring)
+        case 13..<18: return ("STRENUOUS", Color.statusWarning)
+        default:      return ("ALL-OUT",   Color.statusAllOut)
         }
     }
+
+    static func label(for strain: Double) -> String { zone(for: strain).label }
+    static func color(for strain: Double) -> Color  { zone(for: strain).color }
 }

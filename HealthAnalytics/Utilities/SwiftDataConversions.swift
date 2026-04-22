@@ -22,8 +22,10 @@ extension WorkoutData {
             totalEnergyBurned: stored.totalEnergyBurned,
             totalDistance: stored.distance,
             averagePower: stored.averagePower,
+            normalizedPower: stored.normalizedPower,
+            powerZoneSeconds: stored.powerZoneSeconds,
             averageHeartRate: stored.averageHeartRate,
-            source: stored.source == "strava" ? .strava : (stored.source == "appleWatch" ? .appleWatch : .other)
+            source: stored.source.lowercased() == "strava" ? .strava : (stored.source.lowercased() == "applewatch" ? .appleWatch : .other)
         )
     }
 }

@@ -19,6 +19,7 @@ class SyncManager: ObservableObject {
     @AppStorage("lastSyncDate") private var lastSyncTimestamp: Double = 0
     @AppStorage("hasCompletedHistoricalBackfill") private var hasCompletedHistoricalBackfill: Bool = false
     @AppStorage("hasMigratedMetricNames") private var hasMigratedMetricNames: Bool = false
+    @AppStorage("hasDeduplicatedWorkoutsV4") private var hasDeduplicatedWorkouts: Bool = false
     
     var lastSyncDate: Date? {
         get { lastSyncTimestamp == 0 ? nil : Date(timeIntervalSince1970: lastSyncTimestamp) }
@@ -29,6 +30,13 @@ class SyncManager: ObservableObject {
     @Published var syncProgress: String = ""
     @Published var isBackfillingHistory: Bool = false
     @Published var backfillProgress: Double = 0
+    @Published var zoneBackfillProgress: (current: Int, total: Int)? = nil
+    @Published var zoneBackfillError: String? = nil
+
+    // Re-entrancy guards: set synchronously before the first `await` so concurrent callers
+    // can see the flag before the actor suspends.
+    private var isMigrating = false
+    private var isBackfillingZones = false
     
     private let healthKitManager = HealthKitManager.shared
     private let stravaManager = StravaManager.shared
@@ -48,6 +56,25 @@ class SyncManager: ObservableObject {
         }
         #endif
         
+        // Run one-time migrations before the throttle guard so they always execute
+        // on the first launch after an app update, regardless of last sync time.
+        let container = HealthDataContainer.shared
+        let dataHandler = DataPersistenceActor(modelContainer: container)
+
+        if !hasMigratedMetricNames {
+            await migrateMetricNames(dataHandler: dataHandler)
+            hasMigratedMetricNames = true
+        }
+        // isMigrating is set synchronously before the first `await` so a concurrent
+        // performSmartSync() call that arrives during the dedup pass sees the flag as true
+        // and skips the migration — preventing double-deletion of workouts.
+        if !hasDeduplicatedWorkouts && !isMigrating {
+            isMigrating = true
+            await dataHandler.removeDuplicateWorkouts()
+            hasDeduplicatedWorkouts = true
+            isMigrating = false
+        }
+
         // Prevent redundant syncs - only sync if 30+ minutes have passed
         if let last = lastSyncDate, Date().timeIntervalSince(last) < 1800 {
             #if DEBUG
@@ -62,18 +89,10 @@ class SyncManager: ObservableObject {
             #endif
             return
         }
-        
+
         isSyncing = true
-        
-        let container = HealthDataContainer.shared
-        let dataHandler = DataPersistenceActor(modelContainer: container)
-        
+
         do {
-            // MIGRATION: Update old metric type names to new standardized names
-            if !hasMigratedMetricNames {
-                await migrateMetricNames(dataHandler: dataHandler)
-                hasMigratedMetricNames = true
-            }
             
             // STEP 1: Determine what we need to sync
             let syncPlan = await determineSyncPlan(dataHandler: dataHandler)
@@ -98,6 +117,14 @@ class SyncManager: ObservableObject {
             #if DEBUG
             print("✅ Smart Sync Complete")
             #endif
+
+            // STEP 4: Backfill power zone distribution for cycling workouts missing stream data.
+            // Runs after primary sync so it doesn't block the UI. Rate-limited to ~1 req/sec.
+            // Task.detached escapes MainActor, but backfillPowerZones() is @MainActor-isolated
+            // (implicit from class). The `await` below hops back to MainActor before entry.
+            Task.detached(priority: .background) { [weak self] in
+                await self?.backfillPowerZones()
+            }
 
             // Notify views that new data is available
             NotificationCenter.default.post(name: NSNotification.Name("DataSyncCompleted"), object: nil)
@@ -460,8 +487,159 @@ class SyncManager: ObservableObject {
         }
     }
     
+    // MARK: - Power Zone Backfill
+
+    /// Fetches the Strava power stream for any cycling StoredWorkout that has a Strava ID,
+    /// has average power recorded, but is missing zone distribution data.
+    /// Processes up to 50 activities per call, sleeping 1 second between requests to
+    /// stay well within Strava's 100-requests/15-min rate limit.
+    private func backfillPowerZones() async {
+        // Re-entrancy guard: set synchronously on MainActor before the first `await`.
+        // Prevents concurrent FTP edits from spawning multiple parallel backfill passes
+        // that would double Strava API calls and produce torn writes to powerZoneSecondsCSV.
+        guard !isBackfillingZones else { return }
+        isBackfillingZones = true
+        defer { isBackfillingZones = false }
+
+        guard StravaManager.shared.isAuthenticated else { return }
+
+        let context = HealthDataContainer.shared.mainContext
+        var descriptor = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate<StoredWorkout> {
+                $0.source == "Strava" &&
+                $0.averagePower != nil &&
+                $0.powerZoneSecondsCSV == nil
+            },
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 50
+
+        // Capture value-type tuples before leaving MainActor — @Model objects are not Sendable
+        let workoutTuples: [(id: String, startDate: Date)] = await MainActor.run {
+            ((try? context.fetch(descriptor)) ?? []).map { ($0.id, $0.startDate) }
+        }
+        guard !workoutTuples.isEmpty else { return }
+
+        #if DEBUG
+        print("⚡️ Power zone backfill: \(workoutTuples.count) cycling workouts need stream data")
+        #endif
+
+        // FTP snapshots for time-aware zone boundaries.
+        // Extracted as value tuples on MainActor — @Model objects are not Sendable.
+        let ftpValues: [(date: Date, watts: Int)] = await MainActor.run {
+            let snaps = (try? context.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+            return snaps.map { ($0.date, $0.watts) }
+        }
+
+        let total = workoutTuples.count
+        var fetched = 0
+        var consecutiveErrors = 0
+        zoneBackfillError = nil
+        for (workoutID, startDate) in workoutTuples {
+            guard let activityId = Int(workoutID) else { continue }
+
+            let ftp = ftpValues.isEmpty
+                ? PredictiveReadinessService.resolvedFTP()
+                : StoredFTPSnapshot.resolved(for: startDate, ftpValues: ftpValues)
+
+            do {
+                if let zoneSecs = try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: ftp) {
+                    let csv = zoneSecs.map { String(Int($0)) }.joined(separator: ",")
+                    await MainActor.run {
+                        var desc = FetchDescriptor<StoredWorkout>(
+                            predicate: #Predicate { $0.id == workoutID }
+                        )
+                        desc.fetchLimit = 1
+                        if let w = try? context.fetch(desc).first {
+                            w.powerZoneSecondsCSV = csv
+                            w.zoneComputedAtFTP = ftp
+                        }
+                    }
+                    fetched += 1
+                    consecutiveErrors = 0
+                    self.zoneBackfillProgress = (current: fetched, total: total)
+                }
+            } catch {
+                consecutiveErrors += 1
+                #if DEBUG
+                print("   ⚠️ Zone fetch failed for \(activityId): \(error.localizedDescription)")
+                #endif
+                // Surface repeated failures (likely rate-limit) so FTPHistoryView can show feedback.
+                // Three consecutive errors suggests a 429 or connectivity issue — stop and tell the user.
+                if consecutiveErrors >= 3 {
+                    self.zoneBackfillError = "Zone update paused — Strava rate limit or network issue. Try again later."
+                    break
+                }
+            }
+
+            // Rate limit: 1 req/sec → well under 100/15 min
+            // Propagate cancellation so app-backgrounding can interrupt the loop cleanly.
+            do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { break }
+        }
+
+        if fetched > 0 {
+            await MainActor.run { try? context.save() }
+            #if DEBUG
+            print("⚡️ Power zone backfill complete: \(fetched) workouts updated")
+            #endif
+            // Re-classify cycling workouts whose zones just changed — power zones
+            // are more accurate than HR for intent (captures interval structure).
+            let classifyActor = await MainActor.run { DataPersistenceActor(modelContainer: HealthDataContainer.shared) }
+            await classifyActor.autoClassifyWorkoutIntents()
+            NotificationCenter.default.post(name: NSNotification.Name("DataSyncCompleted"), object: nil)
+        }
+        self.zoneBackfillProgress = nil
+    }
+
+    // MARK: - Zone Invalidation
+
+    /// Called by FTPHistoryView after any FTP snapshot insert, edit, or delete.
+    /// Clears powerZoneSecondsCSV (and zoneComputedAtFTP) for every Strava cycling workout
+    /// whose stored FTP no longer matches the currently resolved FTP for its date.
+    /// Then triggers backfillPowerZones() to re-fetch streams for the cleared workouts.
+    @MainActor func invalidateZones(affectedAfter date: Date) async {
+        let context = HealthDataContainer.shared.mainContext
+
+        // Fetch all FTP snapshots for resolution
+        let snapshots = (try? context.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+
+        // Fetch Strava cycling workouts on or after `date` that already have zone data
+        let descriptor = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate<StoredWorkout> {
+                $0.source == "Strava" && $0.powerZoneSecondsCSV != nil && $0.startDate >= date
+            },
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        let workouts = (try? context.fetch(descriptor)) ?? []
+
+        var invalidated = 0
+        for workout in workouts {
+            let resolvedFTP = snapshots.isEmpty
+                ? PredictiveReadinessService.resolvedFTP()
+                : StoredFTPSnapshot.resolved(for: workout.startDate, snapshots: snapshots)
+
+            // Clear if the FTP used to compute zones no longer matches what's resolved for that date
+            if workout.zoneComputedAtFTP != resolvedFTP {
+                workout.powerZoneSecondsCSV = nil
+                workout.zoneComputedAtFTP = nil
+                invalidated += 1
+            }
+        }
+
+        if invalidated > 0 {
+            try? context.save()
+            #if DEBUG
+            print("⚡️ Zone invalidation: \(invalidated) workouts cleared for re-zoning")
+            #endif
+        }
+
+        // Re-fetch stream data for all cleared workouts
+        guard StravaManager.shared.isAuthenticated else { return }
+        await backfillPowerZones()
+    }
+
     // MARK: - Manual Operations
-    
+
     func performFullResync() async {
         #if DEBUG
         print("🔄 Forcing full resync...")
@@ -534,6 +712,7 @@ class SyncManager: ObservableObject {
             duration: Double(activity.elapsedTime),
             distance: activity.distance,
             power: activity.averageWatts,
+            normalizedPower: activity.weightedAverageWatts,
             energy: energy,
             averageHeartRate: activity.averageHeartrate
         )
@@ -583,6 +762,61 @@ actor DataPersistenceActor {
         }
     }
     
+    // MARK: - Workout Deduplication Migration
+
+    /// One-time pass: removes stale HealthKit-UUID records that survived alongside their
+    /// Strava-matched counterpart from syncs that ran before the upsertRecentData fix.
+    /// Uses temporal overlap (≥50% of the shorter session) rather than start-time delta,
+    /// because HealthKit records elapsed time while Strava records moving time — the Strava
+    /// window often starts 5–15 min later and is fully contained within the HK window.
+    func removeDuplicateWorkouts() {
+        let descriptor = FetchDescriptor<StoredWorkout>(sortBy: [SortDescriptor(\.startDate)])
+        guard let all = try? modelContext.fetch(descriptor) else { return }
+
+        var toDelete = Set<ObjectIdentifier>()
+
+        for i in 0..<all.count {
+            let a = all[i]
+            if toDelete.contains(ObjectIdentifier(a)) { continue }
+            let aEnd = a.startDate.addingTimeInterval(a.duration)
+
+            for j in (i + 1)..<all.count {
+                let b = all[j]
+                if toDelete.contains(ObjectIdentifier(b)) { continue }
+                // Sorted by startDate: once b starts after a ends, no further overlaps possible
+                if b.startDate >= aEnd { break }
+                guard a.workoutTypeInt == b.workoutTypeInt else { continue }
+
+                let bEnd = b.startDate.addingTimeInterval(b.duration)
+                let overlapStart = max(a.startDate, b.startDate)
+                let overlapEnd   = min(aEnd, bEnd)
+                guard overlapStart < overlapEnd else { continue }
+
+                let overlapDuration = overlapEnd.timeIntervalSince(overlapStart)
+                let minDuration     = min(a.duration, b.duration)
+                guard overlapDuration >= minDuration * 0.5 else { continue }
+
+                // Keep the better record: power data wins, then Strava source, then keep a
+                let keepA: Bool
+                if (a.averagePower != nil) != (b.averagePower != nil) {
+                    keepA = a.averagePower != nil
+                } else {
+                    keepA = a.source == "Strava" || b.source != "Strava"
+                }
+                toDelete.insert(ObjectIdentifier(keepA ? b : a))
+            }
+        }
+
+        guard !toDelete.isEmpty else { return }
+        for workout in all where toDelete.contains(ObjectIdentifier(workout)) {
+            modelContext.delete(workout)
+        }
+        try? modelContext.save()
+        #if DEBUG
+        print("🧹 Workout dedup migration: removed \(toDelete.count) duplicate record(s)")
+        #endif
+    }
+
     // MARK: - Data Summary
     
     struct DataSummary {
@@ -663,6 +897,15 @@ actor DataPersistenceActor {
             let workoutID = hkWorkout.id.uuidString
             
             if let match = WorkoutMatcher.findMatch(for: hkWorkout, in: strava) {
+                // Delete any stale HK-UUID record so the Strava version is the only copy.
+                // Without this, a workout saved under its HK UUID on a previous sync persists
+                // alongside the Strava-ID record, causing double-counting in readiness/strain.
+                let hkDescriptor = FetchDescriptor<StoredWorkout>(
+                    predicate: #Predicate { $0.id == workoutID }
+                )
+                if let staleHK = try? modelContext.fetch(hkDescriptor).first {
+                    modelContext.delete(staleHK)
+                }
                 upsertWorkout(
                     id: match.id,
                     title: match.title,
@@ -671,6 +914,7 @@ actor DataPersistenceActor {
                     duration: match.duration,
                     distance: match.distance,
                     power: match.power,
+                    normalizedPower: match.normalizedPower,
                     energy: match.energy,
                     hr: match.averageHeartRate,
                     source: "Strava"
@@ -691,7 +935,7 @@ actor DataPersistenceActor {
                 )
             }
         }
-        
+
         for activity in strava where !matchedStravaIds.contains(activity.id) {
             upsertWorkout(
                 id: activity.id,
@@ -701,6 +945,7 @@ actor DataPersistenceActor {
                 duration: activity.duration,
                 distance: activity.distance,
                 power: activity.power,
+                normalizedPower: activity.normalizedPower,
                 energy: activity.energy,
                 hr: activity.averageHeartRate,
                 source: "Strava"
@@ -893,6 +1138,7 @@ actor DataPersistenceActor {
         duration: TimeInterval,
         distance: Double?,
         power: Double?,
+        normalizedPower: Double? = nil,
         energy: Double?,
         hr: Double?,
         source: String
@@ -900,12 +1146,13 @@ actor DataPersistenceActor {
         let descriptor = FetchDescriptor<StoredWorkout>(
             predicate: #Predicate { $0.id == id }
         )
-        
+
         if let existing = try? modelContext.fetch(descriptor).first {
             existing.title = title
             existing.duration = duration
             existing.distance = distance
             existing.averagePower = power
+            if let np = normalizedPower { existing.normalizedPower = np }
             existing.totalEnergyBurned = energy
             existing.averageHeartRate = hr
         } else {
@@ -917,6 +1164,7 @@ actor DataPersistenceActor {
                 duration: duration,
                 distance: distance,
                 power: power,
+                normalizedPower: normalizedPower,
                 energy: energy,
                 hr: hr,
                 source: source
@@ -1014,7 +1262,6 @@ actor DataPersistenceActor {
         print("🧠 Auto-classifying workout intents...")
         #endif
 
-        // Fetch all workouts
         let workoutDescriptor = FetchDescriptor<StoredWorkout>()
         guard let allWorkouts = try? modelContext.fetch(workoutDescriptor) else {
             #if DEBUG
@@ -1022,39 +1269,62 @@ actor DataPersistenceActor {
             #endif
             return
         }
-        
-        // Fetch existing labels
+
         let labelDescriptor = FetchDescriptor<StoredIntentLabel>()
         let existingLabels = (try? modelContext.fetch(labelDescriptor)) ?? []
         let existingLabelIds = Set(existingLabels.map { $0.workoutId })
-        
-        // Classify unlabeled workouts
+
+        // IDs whose label came from heuristic/HR — eligible for power-zone upgrade.
+        // Manual and ML Model labels are never overwritten.
+        let heuristicLabeledIds = Set(
+            existingLabels
+                .filter { $0.source == .heuristic || $0.source == .powerZone }
+                .map { $0.workoutId }
+        )
+
         let results = HeuristicIntentClassifier.classifyAll(
             workouts: allWorkouts,
-            existingLabels: existingLabelIds
+            existingLabels: existingLabelIds,
+            heuristicLabeledIds: heuristicLabeledIds
         )
-        
-        // Save new labels
-        var newLabelsCount = 0
-        for (workoutId, intent, confidence) in results {
-            let label = StoredIntentLabel(
-                workoutId: workoutId,
-                intent: intent,
-                confidence: confidence,
-                source: .heuristic
-            )
-            modelContext.insert(label)
-            newLabelsCount += 1
+
+        // Build a lookup for upserts
+        let labelByWorkoutId = Dictionary(uniqueKeysWithValues: existingLabels.map { ($0.workoutId, $0) })
+
+        var newCount = 0
+        var upgradeCount = 0
+        for (workoutId, intent, confidence, isReclassification) in results {
+            let source: StoredIntentLabel.LabelSource = {
+                // Determine whether classification came from power zones or HR heuristic
+                let workout = allWorkouts.first { $0.id == workoutId }
+                return (workout?.powerZoneSeconds != nil && workout?.workoutType == .cycling)
+                    ? .powerZone
+                    : .heuristic
+            }()
+
+            if isReclassification, let existing = labelByWorkoutId[workoutId] {
+                existing.update(intent: intent, confidence: confidence)
+                existing.source = source
+                upgradeCount += 1
+            } else {
+                modelContext.insert(StoredIntentLabel(
+                    workoutId: workoutId,
+                    intent: intent,
+                    confidence: confidence,
+                    source: source
+                ))
+                newCount += 1
+            }
         }
-        
+
         if modelContext.hasChanges {
             try? modelContext.save()
             #if DEBUG
-            print("   ✅ Auto-classified \(newLabelsCount) workouts")
+            print("   ✅ Intent labels: \(newCount) new, \(upgradeCount) power-zone upgrades")
             #endif
         } else {
             #if DEBUG
-            print("   ℹ️ No new workouts to classify")
+            print("   ℹ️ No intent label changes")
             #endif
         }
     }

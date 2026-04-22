@@ -19,8 +19,15 @@ class BiologicalAgingService {
         let hrvRetained: Double // % of expected HRV for age
         let rhrStability: Double // Trend in RHR over 5+ years
         let yearlyHRVDecline: Double // User's specific decline rate
-        let averageHRVDecline: Double = 1.5 // Standard human decline (ms/year)
-        
+        let averageHRVDecline: Double = 0.8 // RMSSD decline rate ~0.8ms/year (Malik et al. 1996)
+        // Signal pillar inputs for SIGNAL INPUTS UI card
+        let currentHRV: Double
+        let standardHRVForAge: Double
+        let currentRHR: Double
+        let standardVO2ForAge: Double
+        let currentVO2: Double?         // nil when no Apple Watch VO2 Max data in last 180 days
+        let vo2MaxRetained: Double?     // (currentVO2 / standardVO2ForAge) * 100; nil if no data
+
         var status: AgingStatus {
             if agingAlpha >= 5 { return .excellent }
             if agingAlpha >= 0 { return .good }
@@ -37,10 +44,10 @@ class BiologicalAgingService {
         
         var color: Color {
             switch self {
-            case .excellent: return .purple
-            case .good: return .green
-            case .moderate: return .blue
-            case .accelerated: return .orange
+            case .excellent:   return Color.accent           // Terracotta — exceptional
+            case .good:        return Color.statusOptimal    // Bio-green — good health
+            case .moderate:    return Color.statusMonitoring // Amber — monitoring zone
+            case .accelerated: return Color.statusWarning    // Ember — requires attention
             }
         }
         
@@ -55,7 +62,9 @@ class BiologicalAgingService {
     }
     
     // MARK: - Main Assessment Logic
-    
+
+    internal static let minimumHRVSamples = 30
+
     func calculateAgingAlpha(modelContext: ModelContext) async -> AgingAssessment? {
         // 1. Get Chronological Age from HealthKit
         guard let chronoAge = HealthKitManager.shared.getUserAge() else {
@@ -82,7 +91,7 @@ class BiologicalAgingService {
             let hrvData = metrics.filter { $0.type == "HRV" }
             let rhrData = metrics.filter { $0.type == "RHR" }
             
-            guard hrvData.count > 30 else { // Need at least a month of data to start
+            guard hrvData.count > Self.minimumHRVSamples else { // Need at least a month of data to start
                 #if DEBUG
                 print("⚠️ BiologicalAgingService: Insufficient historical data")
                 #endif
@@ -99,9 +108,11 @@ class BiologicalAgingService {
             let userDeclineRate = calculateDeclineRate(yearlyAverages: yearlyAverages)
             
             // 6. Compare Current HRV to Population Standard
-            // Model: Standard 25-year-old HRV (SDNN) is roughly 65-70ms. 
-            // It drops ~1.5ms per year.
-            let standardHRVForAge = max(10.0, 70.0 - (Double(chronoAge - 25) * 1.5))
+            // Calibrated for Apple Watch RMSSD output (HealthKit HRV type).
+            // Decline rate (~0.8ms/year) derived from Malik et al. 1996 age-stratified norms.
+            // Floor 25ms reflects realistic RMSSD lower bound for active older adults.
+            // Age 30 → 57ms, age 40 → 49ms, age 50 → 41ms, age 65 → 29ms
+            let standardHRVForAge = max(25.0, 65.0 - Double(max(0, chronoAge - 20)) * 0.8)
             
             // Biological Age Calculation (Primary Driver: HRV Efficiency)
             // If current HRV is higher than standard, you are biologically younger.
@@ -111,25 +122,56 @@ class BiologicalAgingService {
             // RHR Adjustment (Lower is better, typically stable RHR is 60)
             // Every 3bpm below 60 is roughly 1 "bonus" biological year
             let rhrAgeAdjustment = (60.0 - currentRHR) / 3.0
-            
-            let totalAdjustment = hrvAgeAdjustment + rhrAgeAdjustment
-            
-            // Cap maximum adjustment to 25% of chronological age or 15 years to remain realistic
-            let maxAdjustment = min(Double(chronoAge) * 0.25, 15.0)
-            let minAdjustment = max(-Double(chronoAge) * 0.25, -15.0)
-            
+
+            // VO2 Max Pillar (30% weight when available)
+            // Apple Watch estimates VO2 from outdoor walking/running — 180-day window avoids
+            // cliff for users who run outdoors less than monthly.
+            let oneEightyDaysAgo = calendar.date(byAdding: .day, value: -180, to: now)!
+            let vo2Data = metrics.filter { $0.type == "VO2max" && $0.date >= oneEightyDaysAgo }
+            let currentVO2: Double? = vo2Data.isEmpty ? nil : vo2Data.map(\.value).reduce(0, +) / Double(vo2Data.count)
+
+            // ACSM sex-stratified VO2 Max norms. getUserSex() already authorized via .biologicalSex.
+            // Male: Age 20 → 45, Age 65 → 22.5 ml/kg/min
+            // Female: Age 20 → 40, Age 65 → 19.5 ml/kg/min (~10% lower, per ACSM)
+            let sex = HealthKitManager.shared.getUserBiologicalSex()
+            let baseVO2 = sex == "female" ? 40.0 : 45.0
+            let standardVO2ForAge = max(18.0, baseVO2 - Double(max(0, chronoAge - 20)) * 0.5)
+
+            // 1 biological year per 3 ml/kg/min above/below standard
+            let vo2AgeAdjustment: Double? = currentVO2.map { ($0 - standardVO2ForAge) / 3.0 }
+            let vo2MaxRetained: Double? = currentVO2.map { ($0 / max(standardVO2ForAge, 1)) * 100 }
+
+            // Weighted blend — falls back gracefully if VO2 unavailable
+            let totalAdjustment: Double
+            if let vo2Adj = vo2AgeAdjustment {
+                totalAdjustment = (hrvAgeAdjustment * 0.45) + (rhrAgeAdjustment * 0.25) + (vo2Adj * 0.30)
+            } else {
+                // VO2 Max not available — redistribute to HRV + RHR
+                totalAdjustment = (hrvAgeAdjustment * 0.60) + (rhrAgeAdjustment * 0.40)
+            }
+
+            // ±8 years: research-defensible range for lifestyle intervention impact
+            let maxAdjustment = 8.0
+            let minAdjustment = -8.0
+
             let clampedAdjustment = max(min(totalAdjustment, maxAdjustment), minAdjustment)
-            
+
             let biologicalAge = Double(chronoAge) - clampedAdjustment
             let agingAlpha = clampedAdjustment
-            
+
             return AgingAssessment(
                 chronologicalAge: chronoAge,
                 biologicalAge: biologicalAge,
                 agingAlpha: agingAlpha,
                 hrvRetained: (currentHRV / standardHRVForAge) * 100,
                 rhrStability: calculateRHRStability(rhrData: rhrData),
-                yearlyHRVDecline: userDeclineRate
+                yearlyHRVDecline: userDeclineRate,
+                currentHRV: currentHRV,
+                standardHRVForAge: standardHRVForAge,
+                currentRHR: currentRHR,
+                standardVO2ForAge: standardVO2ForAge,
+                currentVO2: currentVO2,
+                vo2MaxRetained: vo2MaxRetained
             )
             
         } catch {
@@ -140,6 +182,38 @@ class BiologicalAgingService {
         }
     }
     
+    // MARK: - Testable Core Algorithm (internal for unit tests)
+
+    /// Pure-math calculation of biological age from raw metric values.
+    /// Bypasses HealthKit and SwiftData — suitable for unit testing.
+    internal static func computeBiologicalAge(
+        chronoAge: Int,
+        currentHRV: Double,
+        currentRHR: Double,
+        currentVO2: Double? = nil,
+        sex: String = "male"
+    ) -> (biologicalAge: Double, agingAlpha: Double, vo2MaxRetained: Double?) {
+        let standardHRVForAge = max(25.0, 65.0 - Double(max(0, chronoAge - 20)) * 0.8)
+        let hrvDifference = currentHRV - standardHRVForAge
+        let hrvAgeAdjustment = hrvDifference / 2.5
+        let rhrAgeAdjustment = (60.0 - currentRHR) / 3.0
+
+        let baseVO2 = sex == "female" ? 40.0 : 45.0
+        let standardVO2ForAge = max(18.0, baseVO2 - Double(max(0, chronoAge - 20)) * 0.5)
+        let vo2AgeAdjustment: Double? = currentVO2.map { ($0 - standardVO2ForAge) / 3.0 }
+        let vo2MaxRetained: Double? = currentVO2.map { ($0 / max(standardVO2ForAge, 1)) * 100 }
+
+        let totalAdjustment: Double
+        if let vo2Adj = vo2AgeAdjustment {
+            totalAdjustment = (hrvAgeAdjustment * 0.45) + (rhrAgeAdjustment * 0.25) + (vo2Adj * 0.30)
+        } else {
+            totalAdjustment = (hrvAgeAdjustment * 0.60) + (rhrAgeAdjustment * 0.40)
+        }
+
+        let clamped = max(min(totalAdjustment, 8.0), -8.0)
+        return (Double(chronoAge) - clamped, clamped, vo2MaxRetained)
+    }
+
     // MARK: - Mathematical Helpers
     
     private func calculateYearlyAverages(hrvData: [StoredHealthMetric]) -> [Int: Double] {
@@ -156,7 +230,7 @@ class BiologicalAgingService {
     }
     
     private func calculateDeclineRate(yearlyAverages: [Int: Double]) -> Double {
-        guard yearlyAverages.count >= 2 else { return 1.5 } // Fallback to standard
+        guard yearlyAverages.count >= 2 else { return 0.8 } // Fallback to Malik et al. RMSSD rate
         
         let sortedYears = yearlyAverages.keys.sorted()
         let firstYear = sortedYears.first!
@@ -168,7 +242,7 @@ class BiologicalAgingService {
         let totalDrop = firstAvg - lastAvg
         let yearSpan = lastYear - firstYear
         
-        guard yearSpan > 0 else { return 1.5 }
+        guard yearSpan > 0 else { return 0.8 }
         return totalDrop / Double(yearSpan)
     }
     

@@ -83,6 +83,7 @@ final class StoredIntentLabel {
         case manual = "Manual"
         case mlModel = "ML Model"
         case heuristic = "Rule-based"
+        case powerZone = "Power Zones"  // zone-distribution classification — more accurate than HR for cycling
     }
     
     init(workoutId: String, intent: ActivityIntent, confidence: Double, source: LabelSource) {

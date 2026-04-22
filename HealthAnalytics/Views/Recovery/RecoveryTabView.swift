@@ -7,6 +7,8 @@ import SwiftUI
 import SwiftData
 
 struct RecoveryTabView: View {
+    @Binding var showSettings: Bool
+    @Binding var showInsights: Bool
     @StateObject private var viewModel = ReadinessViewModel()
     @State private var isFirstLoad = true
     @State private var showBreakdown = false
@@ -96,7 +98,13 @@ struct RecoveryTabView: View {
                                         priorDayFatigueImpact: Double(30 - readiness.breakdown.fatigueScore),
                                         todayWorkouts: viewModel.todayWorkouts
                                     )
-                                    
+
+                                    // 7-Day Readiness Forecast
+                                    ReadinessForecastChart()
+
+                                    // 14-Day Signature — back-to-back crash pattern
+                                    TrainingSignatureCard()
+
                                 } else {
                                     ReadinessEmptyState()
                                         .cardStyle(for: .info)
@@ -114,12 +122,34 @@ struct RecoveryTabView: View {
             }
             .navigationTitle("TODAY")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 12) {
+                        Button { showInsights = true } label: {
+                            Image(systemName: "chart.bar.xaxis")
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                        .accessibilityLabel("Insights")
+                        Button { showSettings = true } label: {
+                            Image(systemName: "gearshape")
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                        .accessibilityLabel("Settings")
+                    }
+                }
+            }
             .task {
                 if viewModel.modelContainer == nil {
                     viewModel.configure(container: modelContext.container)
                 }
                 await viewModel.analyze(modelContext: modelContext)
                 isFirstLoad = false
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
+                // Re-analyze after sync so today's workouts are always current on first open.
+                // Without this, the initial .task races with performSmartSync() and wins — reading
+                // SwiftData before today's workout is written, then never refreshing.
+                Task { await viewModel.analyze(modelContext: modelContext) }
             }
             .refreshable {
                 await viewModel.analyze(modelContext: modelContext)
@@ -145,12 +175,12 @@ struct RecoveryTabView: View {
     }
     
     private func scoreColor(for score: Int) -> Color {
-        if score >= 67 { return .green }
-        if score >= 34 { return .yellow }
-        return .red
+        if score >= 67 { return Color.statusOptimal }
+        if score >= 34 { return Color.statusMonitoring }
+        return Color.statusRest
     }
 }
 
 #Preview {
-    RecoveryTabView()
+    RecoveryTabView(showSettings: .constant(false), showInsights: .constant(false))
 }

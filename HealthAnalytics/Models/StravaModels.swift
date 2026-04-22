@@ -33,7 +33,8 @@ struct StravaAthlete: Codable {
     let username: String?
     let firstname: String?
     let lastname: String?
-    
+    let ftp: Int?   // watts; set by athlete in Strava; absent from token-embed response
+
     var fullName: String {
         let first = firstname ?? ""
         let last = lastname ?? ""
@@ -59,9 +60,10 @@ struct StravaActivity: Codable, Identifiable {
     let kilojoules: Double?
     let calories: Double? 
     let averageWatts: Double?
+    let weightedAverageWatts: Double?  // Strava's Normalized Power (NP) — use for TSS
     let maxWatts: Int?
     let sufferScore: Int?
-    
+
     enum CodingKeys: String, CodingKey {
         case id, name, type, distance
         case startDate = "start_date"
@@ -75,6 +77,7 @@ struct StravaActivity: Codable, Identifiable {
         case kilojoules
         case calories
         case averageWatts = "average_watts"
+        case weightedAverageWatts = "weighted_average_watts"
         case maxWatts = "max_watts"
         case sufferScore = "suffer_score"
     }
@@ -117,48 +120,26 @@ struct StravaActivity: Codable, Identifiable {
     }
     
     func withAverageHR(_ hr: Double) -> StravaActivity {
-        // Create new instance with updated HR
-        // This is a workaround since StravaActivity is immutable
         return StravaActivity(
-            id: id,
-            name: name,
-            type: type,
-            startDate: startDate,
-            distance: distance,
-            movingTime: movingTime,
-            elapsedTime: elapsedTime,
-            totalElevationGain: totalElevationGain,
-            averageSpeed: averageSpeed,
-            maxSpeed: maxSpeed,
-            averageHeartrate: hr,  // ← Updated
-            maxHeartrate: maxHeartrate,
-            kilojoules: kilojoules,
-            calories: calories,
-            averageWatts: averageWatts,
-            maxWatts: maxWatts,
-            sufferScore: sufferScore
+            id: id, name: name, type: type, startDate: startDate,
+            distance: distance, movingTime: movingTime, elapsedTime: elapsedTime,
+            totalElevationGain: totalElevationGain, averageSpeed: averageSpeed,
+            maxSpeed: maxSpeed, averageHeartrate: hr, maxHeartrate: maxHeartrate,
+            kilojoules: kilojoules, calories: calories,
+            averageWatts: averageWatts, weightedAverageWatts: weightedAverageWatts,
+            maxWatts: maxWatts, sufferScore: sufferScore
         )
     }
 
     func withAveragePower(_ power: Double) -> StravaActivity {
         return StravaActivity(
-            id: id,
-            name: name,
-            type: type,
-            startDate: startDate,
-            distance: distance,
-            movingTime: movingTime,
-            elapsedTime: elapsedTime,
-            totalElevationGain: totalElevationGain,
-            averageSpeed: averageSpeed,
-            maxSpeed: maxSpeed,
-            averageHeartrate: averageHeartrate,
-            maxHeartrate: maxHeartrate,
-            kilojoules: kilojoules,
-            calories: calories,
-            averageWatts: power,
-            maxWatts: maxWatts,
-            sufferScore: sufferScore
+            id: id, name: name, type: type, startDate: startDate,
+            distance: distance, movingTime: movingTime, elapsedTime: elapsedTime,
+            totalElevationGain: totalElevationGain, averageSpeed: averageSpeed,
+            maxSpeed: maxSpeed, averageHeartrate: averageHeartrate, maxHeartrate: maxHeartrate,
+            kilojoules: kilojoules, calories: calories,
+            averageWatts: power, weightedAverageWatts: weightedAverageWatts,
+            maxWatts: maxWatts, sufferScore: sufferScore
         )
     }
 }

@@ -74,7 +74,22 @@ struct SettingsView: View {
                         NavigationLink {
                             StravaConnectionView()
                         } label: {
-                            Label("Strava", systemImage: "bicycle")
+                            HStack {
+                                Label("Strava", systemImage: "bicycle")
+                                Spacer()
+                                Text(StravaManager.shared.isAuthenticated
+                                     ? (StravaManager.shared.athlete?.fullName ?? "Connected")
+                                     : "Not connected")
+                                    .font(.caption)
+                                    .foregroundStyle(StravaManager.shared.isAuthenticated
+                                                     ? Color.statusOptimal : Color.textTertiary)
+                            }
+                        }
+
+                        NavigationLink {
+                            WorkoutAuditView()
+                        } label: {
+                            Label("Today's Workouts", systemImage: "figure.run.circle")
                         }
 
                         Divider()
@@ -147,6 +162,12 @@ struct SettingsView: View {
                     }
                     .padding()
                     .cardStyle(for: .info)
+
+                    // MARK: - Training Zones (FTP)
+                    FTPSettingsCard()
+
+                    // MARK: - Strain Sensitivity
+                    StrainSensitivityCard()
 
                     // MARK: - Analysis Settings
                     VStack(alignment: .leading, spacing: 12) {
@@ -347,6 +368,209 @@ struct SettingsView: View {
         NotificationCenter.default.post(name: NSNotification.Name("DataSyncCompleted"), object: nil)
         
         isClassifyingWorkouts = false
+    }
+}
+
+// MARK: - FTP Settings Card
+
+private struct FTPSettingsCard: View {
+    @Query(sort: \StoredFTPSnapshot.date, order: .reverse) private var snapshots: [StoredFTPSnapshot]
+    @Environment(\.modelContext) private var modelContext
+    @ObservedObject private var syncManager = SyncManager.shared
+    @State private var isFetching = false
+    @State private var fetchMessage: String?
+
+    private var currentFTP: Int {
+        snapshots.first?.watts ?? UserDefaults.standard.integer(forKey: "strava_ftp")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Training Zones")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if StravaManager.shared.isAuthenticated {
+                    Button {
+                        Task { await refreshFTP() }
+                    } label: {
+                        if isFetching {
+                            ProgressView().scaleEffect(0.8)
+                        } else {
+                            Label("Sync", systemImage: "arrow.clockwise")
+                                .font(.caption)
+                                .foregroundStyle(Color.accent)
+                        }
+                    }
+                    .disabled(isFetching)
+                }
+            }
+
+            HStack {
+                Label("FTP", systemImage: "bolt.fill")
+                Spacer()
+                if currentFTP > 0 {
+                    Text("\(currentFTP) W")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.accent)
+                } else {
+                    Text("Not set — using 200W default")
+                        .font(.caption)
+                        .foregroundStyle(Color.statusWarning)
+                }
+            }
+
+            if let msg = fetchMessage {
+                Text(msg)
+                    .font(.caption)
+                    .foregroundStyle(currentFTP > 0 ? Color.statusOptimal : Color.statusWarning)
+            } else if currentFTP > 0 {
+                Text("Used for zone-based load calculations on Strava cycling workouts.")
+                    .font(.caption)
+                    .foregroundStyle(Color.textSecondary)
+            } else {
+                Text("Set your FTP in Strava profile, then tap Sync. Zone-based intensity calculations will be used for all cycling workouts.")
+                    .font(.caption)
+                    .foregroundStyle(Color.textSecondary)
+            }
+
+            if let progress = syncManager.zoneBackfillProgress {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.75)
+                    Text("Re-computing zones (\(progress.current)/\(progress.total))...")
+                        .font(.caption)
+                        .foregroundStyle(Color.textSecondary)
+                }
+            }
+
+            Divider()
+
+            NavigationLink {
+                FTPHistoryView()
+            } label: {
+                HStack {
+                    Text("Manage FTP History")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.accent)
+                    Spacer()
+                    if !snapshots.isEmpty {
+                        Text("\(snapshots.count) \(snapshots.count == 1 ? "entry" : "entries")")
+                            .font(.caption)
+                            .foregroundStyle(Color.textTertiary)
+                    }
+                }
+            }
+        }
+        .padding()
+        .cardStyle(for: .info)
+    }
+
+    private func refreshFTP() async {
+        isFetching = true
+        fetchMessage = nil
+        // Clear the 24h guard so StravaConnectionView doesn't also skip on next open
+        UserDefaults.standard.removeObject(forKey: "strava_athlete_last_fetch")
+        do {
+            let watts = try await StravaManager.shared.fetchAthleteProfile()
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "strava_athlete_last_fetch")
+            if let w = watts {
+                StoredFTPSnapshot.upsertIfChanged(watts: w, source: "strava_profile", context: modelContext)
+                fetchMessage = "FTP updated: \(w)W"
+            } else {
+                fetchMessage = "Strava profile has no FTP set. Add it at strava.com/settings."
+            }
+        } catch {
+            fetchMessage = "Could not reach Strava. Check your connection."
+        }
+        isFetching = false
+    }
+}
+
+private struct StrainSensitivityCard: View {
+    @AppStorage("strainSensitivityOffset") private var offset: Double = 0.0
+
+    /// Representative raw strain for a hard 90-min effort at baseline normalization 70.
+    /// rawStrain ≈ 50 units → baseline score of 15.0 at normalization 70.
+    private static let referenceRawStrain: Double = 50.0
+    private static let baselineNorm: Double = 70.0
+
+    private var previewScore: Double {
+        let clampedOffset = max(-0.2, min(0.2, offset))
+        let effectiveNorm = Self.baselineNorm * (1.0 - clampedOffset)
+        return min(21.0, Self.referenceRawStrain / effectiveNorm * 21.0)
+    }
+
+    private var offsetLabel: String {
+        if offset < -0.05 { return "Less sensitive" }
+        if offset > 0.05  { return "More sensitive" }
+        return "Default"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Strain Sensitivity")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Reset") { offset = 0.0 }
+                    .font(.caption)
+                    .foregroundStyle(Color.accent)
+                    .opacity(abs(offset) < 0.01 ? 0 : 1)
+            }
+
+            Text("Adjust how heavily cardiovascular effort maps to your 0–21 strain score.")
+                .font(.caption)
+                .foregroundStyle(Color.textSecondary)
+
+            VStack(spacing: 6) {
+                Slider(value: $offset, in: -0.2...0.2, step: 0.01)
+                    .tint(Color.accent)
+
+                HStack {
+                    Text("Lower")
+                        .font(.caption2)
+                        .foregroundStyle(Color.textTertiary)
+                    Spacer()
+                    Text(offsetLabel)
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.accent)
+                    Spacer()
+                    Text("Higher")
+                        .font(.caption2)
+                        .foregroundStyle(Color.textTertiary)
+                }
+            }
+
+            Divider()
+
+            HStack {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.caption)
+                    .foregroundStyle(Color.textSecondary)
+                Text("A hard 90-min effort would score")
+                    .font(.caption)
+                    .foregroundStyle(Color.textSecondary)
+                Spacer()
+                HStack(spacing: 4) {
+                    Text("~15")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color.textTertiary)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.textTertiary)
+                    Text(String(format: "%.1f", previewScore))
+                        .font(.system(.caption, design: .monospaced))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(CardiovascularStrainService.color(for: previewScore))
+                }
+            }
+        }
+        .padding()
+        .cardStyle(for: .info)
     }
 }
 

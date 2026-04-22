@@ -13,23 +13,7 @@ import HealthKit
 struct ReadinessAnalyzer {
     
     // MARK: - Core Readiness Model
-    
-    /// Forward-looking trajectory
-    struct TrajectoryPoint: Identifiable {
-        let id = UUID()
-        let date: Date
-        let predictedReadiness: Int
-        let confidence: Double        // 0-1
-        let scenario: Scenario
-        
-        enum Scenario {
-            case planned              // Based on planned training
-            case ifRest              // If you take a rest day
-            case ifModerate          // If you do easy training
-            case ifHard              // If you do hard session
-        }
-    }
-    
+
     /// The main readiness assessment - what athletes actually care about
     struct ReadinessScore {
         let score: Int                    // 0-100 scale
@@ -37,7 +21,6 @@ struct ReadinessAnalyzer {
         let recommendation: String        // What to do today
         let confidence: Confidence        // How reliable is this
         let breakdown: ScoreBreakdown    // Why this score
-        let trajectory: [TrajectoryPoint] // Next 7 days forecast
         
         enum Trend {
             case improving      // Getting stronger/fresher
@@ -227,26 +210,18 @@ struct ReadinessAnalyzer {
             fatigueDetails: fatigue.details
         )
         
-        // Generate trajectory
-        let trajectory = generateTrajectory(
-            currentScore: totalScore,
-            trend: trend,
-            workoutHistory: workouts + stravaActivities.compactMap { WorkoutData(from: $0) }
-        )
-        
         #if DEBUG
         print("   ✅ Readiness Score: \(totalScore)/100")
         print("   📊 Breakdown: Recovery \(recovery.score), Fitness \(fitness.score), Fatigue \(fatigue.score)")
         print("   \(trend.emoji) Trend: \(trend)")
         #endif
-        
+
         return ReadinessScore(
             score: totalScore,
             trend: trend,
             recommendation: recommendation,
             confidence: confidence,
-            breakdown: breakdown,
-            trajectory: trajectory
+            breakdown: breakdown
         )
     }
     
@@ -555,49 +530,6 @@ struct ReadinessAnalyzer {
         }
     }
     
-    private func generateTrajectory(
-        currentScore: Int,
-        trend: ReadinessScore.Trend,
-        workoutHistory: [WorkoutData]
-    ) -> [ReadinessAnalyzer.TrajectoryPoint] {
-        
-        var trajectory: [ReadinessAnalyzer.TrajectoryPoint] = []
-        let calendar = Calendar.current
-        
-        // Simple 7-day forecast
-        for dayOffset in 1...7 {
-            guard let futureDate = calendar.date(byAdding: .day, value: dayOffset, to: Date()) else {
-                continue
-            }
-            
-            // Simplified prediction logic
-            let baselineChange: Int
-            switch trend {
-            case .improving:
-                baselineChange = dayOffset * 2
-            case .maintaining:
-                baselineChange = 0
-            case .declining:
-                baselineChange = -dayOffset * 2
-            case .peaking:
-                baselineChange = dayOffset > 3 ? -dayOffset : dayOffset
-            case .recovering:
-                baselineChange = dayOffset * 3
-            }
-            
-            let predictedReadiness = max(0, min(100, currentScore + baselineChange))
-            let confidence = 1.0 - (Double(dayOffset) * 0.1) // Decreases with distance
-            
-            trajectory.append(ReadinessAnalyzer.TrajectoryPoint(
-                date: futureDate,
-                predictedReadiness: predictedReadiness,
-                confidence: confidence,
-                scenario: .planned
-            ))
-        }
-        
-        return trajectory
-    }
 }
 
 // MARK: - Helper Extensions

@@ -145,8 +145,39 @@ class StravaManager: ObservableObject {
         return fetchedActivities
     }
     
+    // MARK: - Athlete Profile
+
+    /// Fetches full athlete profile including FTP. Call from StravaConnectionView on appear (24h guard).
+    /// Returns the fetched FTP in watts (nil if the athlete profile has no FTP set).
+    /// The caller is responsible for persisting an FTPSnapshot if the value changed.
+    @discardableResult
+    func fetchAthleteProfile() async throws -> Int? {
+        try await refreshTokenIfNeeded()
+        guard let token = accessToken else { throw StravaError.notAuthenticated }
+        var request = URLRequest(url: URL(string: "\(StravaConfig.apiBaseURL)/athlete")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw StravaError.apiError
+        }
+        #if DEBUG
+        if let raw = String(data: data, encoding: .utf8) {
+            print("🏃 /athlete raw response: \(raw.prefix(500))")
+        }
+        #endif
+        let fetched = try JSONDecoder().decode(StravaAthlete.self, from: data)
+        #if DEBUG
+        print("🏃 Decoded athlete: \(fetched.fullName), ftp=\(fetched.ftp.map(String.init) ?? "nil")")
+        #endif
+        if let ftp = fetched.ftp, ftp > 0 {
+            UserDefaults.standard.set(ftp, forKey: "strava_ftp")
+        }
+        await MainActor.run { self.athlete = fetched }
+        return fetched.ftp.flatMap { $0 > 0 ? $0 : nil }
+    }
+
     // MARK: - Sign Out
-    
+
     func signOut() {
         accessToken = nil
         refreshToken = nil
@@ -263,6 +294,55 @@ class StravaManager: ObservableObject {
         saveTokensToKeychain()
     }
     
+    /// Fetch raw watts stream for a cycling activity and return seconds spent in each of 7 power zones.
+    /// Zones are computed against `ftp`. Returns nil if the activity has no power data.
+    /// Zone boundaries: Z1 <55%, Z2 55-75%, Z3 76-90%, Z4 91-105%, Z5 106-120%, Z6 121-150%, Z7 >150%
+    func fetchPowerZoneSeconds(activityId: Int, ftp: Double) async throws -> [Double]? {
+        try await refreshTokenIfNeeded()
+        guard let token = accessToken else { throw StravaError.notAuthenticated }
+
+        let url = URL(string: "\(StravaConfig.apiBaseURL)/activities/\(activityId)/streams?keys=watts&key_by_type=true")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw StravaError.fetchFailed
+        }
+
+        struct WattsStream: Decodable {
+            struct StreamData: Decodable { let data: [Double?] }
+            let watts: StreamData?
+        }
+        let streams = try JSONDecoder().decode(WattsStream.self, from: data)
+        guard let samples = streams.watts?.data else { return nil }
+
+        // Boundaries as fraction of FTP
+        let boundaries: [Double] = [0.55, 0.75, 0.90, 1.05, 1.20, 1.50]
+        var zoneSecs = [Double](repeating: 0, count: 7)
+
+        for watts in samples.compactMap({ $0 }) {
+            let ratio = watts / ftp
+            let zone: Int
+            if      ratio < boundaries[0] { zone = 0 }
+            else if ratio < boundaries[1] { zone = 1 }
+            else if ratio < boundaries[2] { zone = 2 }
+            else if ratio < boundaries[3] { zone = 3 }
+            else if ratio < boundaries[4] { zone = 4 }
+            else if ratio < boundaries[5] { zone = 5 }
+            else                          { zone = 6 }
+            zoneSecs[zone] += 1  // each sample = 1 second
+        }
+
+        #if DEBUG
+        let total = zoneSecs.reduce(0, +)
+        let pcts = zoneSecs.map { String(format: "%.0f%%", total > 0 ? $0/total*100 : 0) }
+        print("📊 Zones for activity \(activityId): Z1=\(pcts[0]) Z2=\(pcts[1]) Z3=\(pcts[2]) Z4=\(pcts[3]) Z5=\(pcts[4]) Z6=\(pcts[5]) Z7=\(pcts[6])")
+        #endif
+
+        return zoneSecs
+    }
+
     /// Fetch detailed activity with streams (HR, power, etc.)
     func fetchActivityDetails(activityId: Int) async throws -> StravaActivityDetail {
         try await refreshTokenIfNeeded()
@@ -321,6 +401,7 @@ enum StravaError: Error, LocalizedError {
     case notAuthenticated
     case invalidURL
     case fetchFailed
+    case apiError
     
     var errorDescription: String? {
         switch self {
@@ -334,6 +415,8 @@ enum StravaError: Error, LocalizedError {
             return "Invalid URL"
         case .fetchFailed:
             return "Failed to fetch data from Strava"
+        case .apiError:
+            return "Strava API returned an error"
         }
     }
 }

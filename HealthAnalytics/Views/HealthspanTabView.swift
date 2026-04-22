@@ -7,6 +7,7 @@ import SwiftUI
 import SwiftData
 
 struct HealthspanTabView: View {
+    @Binding var showSettings: Bool
     @StateObject private var viewModel = InsightsViewModel()
     @State private var showHealthspanDetails = false
     @Environment(\.modelContext) private var modelContext
@@ -16,7 +17,7 @@ struct HealthspanTabView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(white: 0.05) // Dark Whoop-like background
+                Color.background
                     .ignoresSafeArea()
                 
                 if syncManager.isBackfillingHistory {
@@ -43,7 +44,52 @@ struct HealthspanTabView: View {
                                         progress: min(Double(aging.chronologicalAge) / aging.biologicalAge * 0.5, 1.0),
                                         color: aging.agingAlpha >= 0 ? AppColors.hrv : AppColors.error
                                     )
-                                    
+
+                                    // 1b. SIGNAL INPUTS card
+                                    VStack(alignment: .leading, spacing: .spacingMd) {
+                                        Text("SIGNAL INPUTS")
+                                            .font(.caption)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.secondary)
+                                            .tracking(1)
+
+                                        let hrvProgress = min(aging.currentHRV / max(aging.standardHRVForAge * 1.5, 1), 1.0)
+                                        SignalPillarRow(
+                                            label: "HRV",
+                                            value: String(format: "%.0fms / %.0fms std", aging.currentHRV, aging.standardHRVForAge),
+                                            progress: hrvProgress,
+                                            weight: vo2Available(aging) ? "45%" : "60%"
+                                        )
+
+                                        let rhrProgress = min(max((80.0 - aging.currentRHR) / 30.0, 0), 1.0)
+                                        SignalPillarRow(
+                                            label: "RHR",
+                                            value: String(format: "%.0f bpm", aging.currentRHR),
+                                            progress: rhrProgress,
+                                            weight: vo2Available(aging) ? "25%" : "40%"
+                                        )
+
+                                        if let vo2 = aging.currentVO2 {
+                                            let vo2Progress = min(vo2 / max(aging.standardVO2ForAge * 1.5, 1), 1.0)
+                                            SignalPillarRow(
+                                                label: "VO₂ Max",
+                                                value: String(format: "%.0f ml/kg/min", vo2),
+                                                progress: vo2Progress,
+                                                weight: "30%"
+                                            )
+                                        } else {
+                                            SignalPillarRow(
+                                                label: "VO₂ Max",
+                                                value: nil,
+                                                progress: 0,
+                                                weight: nil
+                                            )
+                                        }
+                                    }
+                                    .padding()
+                                    .solidCard()
+                                    .padding(.horizontal)
+
                                     // 2. Pace of Aging Section
                                     VStack(alignment: .leading, spacing: .spacingMd) {
                                         Text("PACE OF AGING")
@@ -129,6 +175,15 @@ struct HealthspanTabView: View {
             }
             .navigationTitle("HEALTHSPAN")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape")
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
             .task {
                 if viewModel.modelContainer == nil {
                     viewModel.configure(container: modelContext.container)
@@ -158,8 +213,49 @@ struct HealthspanTabView: View {
             }
         }
     }
+
+    private func vo2Available(_ aging: BiologicalAgingService.AgingAssessment) -> Bool {
+        aging.currentVO2 != nil
+    }
+}
+
+// MARK: - Signal Pillar Row
+
+private struct SignalPillarRow: View {
+    let label: String
+    let value: String?
+    let progress: Double
+    let weight: String?
+
+    var body: some View {
+        HStack(spacing: .spacingSm) {
+            Text(label)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(Color.textSecondary)
+                .frame(width: 60, alignment: .leading)
+            if let value {
+                ProgressView(value: progress)
+                    .progressViewStyle(LinearProgressViewStyle(tint: Color.statusOptimal))
+                    .frame(height: 4)
+                Text(value)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.textSecondary)
+                if let weight {
+                    Text(weight)
+                        .font(.caption2)
+                        .foregroundStyle(Color.textTertiary)
+                        .frame(width: 36, alignment: .trailing)
+                }
+            } else {
+                Text("— Not recorded by Apple Watch")
+                    .font(.caption)
+                    .foregroundStyle(Color.textTertiary)
+            }
+        }
+    }
 }
 
 #Preview {
-    HealthspanTabView()
+    HealthspanTabView(showSettings: .constant(false))
 }

@@ -55,6 +55,9 @@ extension Color {
     /// Ember — high risk, significant deviation (#F07240)
     static let statusWarning = Color(hex: 0xF07240)
 
+    /// Red — all-out effort, overreaching (#E53E3E)
+    static let statusAllOut = Color(hex: 0xE53E3E)
+
     // MARK: - Private init
 
     /// Initialise from a 6-digit hex integer, e.g. `Color(hex: 0xE8885A)`.

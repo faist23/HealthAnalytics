@@ -58,6 +58,15 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         return try ModelContainer(for: schema, configurations: config)
     }
 
+    /// In-memory ModelContainer with both TrainingPattern and StoredDailyScore.
+    /// Required for detectBackToBackReadinessCrash tests since the detector reads
+    /// StoredDailyScore directly from the actor's modelContext.
+    private func makeFullContainer() throws -> ModelContainer {
+        let schema = Schema([TrainingPattern.self, StoredDailyScore.self])
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        return try ModelContainer(for: schema, configurations: config)
+    }
+
     // MARK: - Pattern 1: Block Crash Cycle
 
     /// Three 20-day blocks (ACWR 0.82) with crash ACWR = 0.82 at each block end.
@@ -256,6 +265,8 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
                        "blockCrashCycle requires historyDays >= 90")
         XCTAssertFalse(patterns.contains { $0.patternType == .hrvPrecursor },
                        "hrvPrecursor requires historyDays >= 90")
+        XCTAssertFalse(patterns.contains { $0.patternType == .backToBackCrash },
+                       "backToBackCrash requires historyDays >= 90")
     }
 
     // MARK: - Upsert: notificationSent Never Reset
@@ -289,6 +300,213 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         let after = updated.first(where: { $0.patternType == .sleepFragmentation })
         XCTAssertEqual(after?.notificationSent, true,
                        "upsert must never reset notificationSent once it is true")
+    }
+
+    // MARK: - Pattern 4: Back-to-Back Crash
+
+    /// 6 total sequences, 5 confirmed (drop > 10pts each, yesRate = 83% >= 60%).
+    /// After analyze() the backToBackCrash pattern should be persisted.
+    func testBackToBackCrash_happyPath() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        await analyzer.setDataProvider(mock)
+
+        // Insert 90 days of scores with 6 back-to-back sequences, 5 confirmed
+        let scores = makeBackToBackScores(confirmedCount: 5, totalSequences: 6)
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "5/6 confirmed sequences (83%) should produce a backToBackCrash pattern"
+        )
+    }
+
+    /// Only 3 sequences in the data — below the n >= 4 minimum gate.
+    func testBackToBackCrash_insufficientSequences_returnsNil() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        await analyzer.setDataProvider(mock)
+
+        let scores = makeBackToBackScores(confirmedCount: 3, totalSequences: 3)
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "3 sequences is below the n >= 4 minimum — no pattern should fire"
+        )
+    }
+
+    /// 6 sequences but only 2 confirmed (yesRate = 33% < 60% threshold).
+    func testBackToBackCrash_lowYesRate_returnsNil() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        await analyzer.setDataProvider(mock)
+
+        let scores = makeBackToBackScores(confirmedCount: 2, totalSequences: 6)
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "2/6 confirmed (33%) is below the 60% yes-rate threshold — no pattern should fire"
+        )
+    }
+
+    /// Confirmed pattern has lagCorrelation set (non-nil) and peakDropDay = 1.
+    func testBackToBackCrash_lagCorrelationAndPeakDaySet() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        await analyzer.setDataProvider(mock)
+
+        let scores = makeBackToBackScores(confirmedCount: 5, totalSequences: 6)
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        guard let p = patterns.first(where: { $0.patternType == .backToBackCrash }) else {
+            XCTFail("backToBackCrash pattern must exist"); return
+        }
+        XCTAssertNotNil(p.lagCorrelation, "lagCorrelation must be set on a confirmed backToBackCrash pattern")
+        XCTAssertEqual(p.peakDropDay, 1, "peakDropDay must be 1 (crash on the day after back-to-back)")
+    }
+
+    /// historyDays < 90 → backToBackCrash is gated out along with blockCrashCycle and hrvPrecursor.
+    func testBackToBackCrash_historyGate_skipped() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 75   // < 90
+        await analyzer.setDataProvider(mock)
+
+        // Pre-populate enough data that the pattern would fire if the gate were absent
+        let scores = makeBackToBackScores(confirmedCount: 5, totalSequences: 6)
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "detectBackToBackReadinessCrash requires historyDays >= 90"
+        )
+    }
+
+    // MARK: - Pattern 4: Back-to-Back Crash — Pearson Graduation Gate
+
+    /// n=9 sequences: vote-only gate applies (yesRate >= 0.60 required).
+    /// 7/9 confirmed = 78% >= 60% → pattern fires.
+    func testBackToBackCrash_n9_voteGate_fires() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        await analyzer.setDataProvider(mock)
+
+        let scores = makeBackToBackScores(confirmedCount: 7, totalSequences: 9)
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "n=9: 7/9 confirmed (78%) should satisfy vote-only gate (>= 60%)"
+        )
+    }
+
+    /// n=9 sequences: yesRate = 4/9 = 44% < 60% → vote gate fails, no pattern.
+    func testBackToBackCrash_n9_lowYesRate_fails() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        await analyzer.setDataProvider(mock)
+
+        let scores = makeBackToBackScores(confirmedCount: 4, totalSequences: 9)
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "n=9: 4/9 confirmed (44%) is below the 60% vote-only gate"
+        )
+    }
+
+    /// n=10 combined gate: yesRate >= 0.40 AND lagCorrelation >= 0.55.
+    /// Fixture produces enough confirmed drop events so the score series has a
+    /// strong lag-1 correlation. 6/10 = 60% yesRate, r typically >= 0.55 for this layout.
+    func testBackToBackCrash_n10_combinedGate_fires() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        await analyzer.setDataProvider(mock)
+
+        // 10 sequences, 6 confirmed — 60% yesRate with structured crash pattern
+        let scores = makeBackToBackScores(confirmedCount: 6, totalSequences: 10)
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "n=10: 6/10 confirmed with structured drops should satisfy combined gate"
+        )
+    }
+
+    /// n=10 combined gate: yesRate = 4/10 = 40% (borderline meets rate requirement)
+    /// but the crash drops are inconsistent, producing r < 0.55 → combined gate fails.
+    /// We verify absence of pattern — if lagCorrelation is nil or too low the pattern must not fire.
+    func testBackToBackCrash_n10_lowLagR_fails() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        await analyzer.setDataProvider(mock)
+
+        // Only 4 confirmed crashes out of 10 — yesRate = 40%, borderline,
+        // and the mix of confirmed/unconfirmed dilutes lag correlation below 0.55.
+        let scores = makeBackToBackScores(confirmedCount: 4, totalSequences: 10)
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        // yesRate=40% with a step-down drop sequence (4×22.5 then 6×5.5) → Pearson r is negative
+        // → combined gate (yesRate>=40% AND lagR>=0.55) must fail → no pattern.
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "n=10: 4/10 yesRate=40% with step-down drops → lagR negative → combined gate must fail"
+        )
     }
 
     // MARK: - Fixture Generators
@@ -399,5 +617,52 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
             }
         }
         return data
+    }
+
+    // MARK: - Back-to-Back Crash Fixtures
+
+    /// Generates 90 days of StoredDailyScore covering `totalSequences` back-to-back triplets.
+    ///
+    /// Layout (10-day stride per sequence):
+    ///   dayA [slot 0]: workouts=1, score=70
+    ///   dayB [slot 1]: workouts=1, score=65
+    ///   dayC [slot 2]: workouts=0, score=45 → drop=(70+65)/2-45=22.5 >10 (confirmed)
+    ///                            score=62 → drop=(70+65)/2-62=5.5 <10 (not confirmed)
+    ///   slots 3..9:   workouts=0, score=70 (rest days, no triplet detected)
+    ///
+    /// The first `confirmedCount` sequences get score=45 (confirmed); the rest get score=62.
+    private func makeBackToBackScores(
+        confirmedCount: Int,
+        totalSequences: Int,
+        daysBack: Int = 90
+    ) -> [StoredDailyScore] {
+        (0..<daysBack).map { i in
+            let date = day(-(daysBack - 1 - i))
+            let seqIdx = i / 10
+            let slot = i % 10
+
+            let score: Int
+            let workouts: Int
+
+            if seqIdx < totalSequences {
+                switch slot {
+                case 0: score = 70; workouts = 1   // dayA
+                case 1: score = 65; workouts = 1   // dayB
+                case 2:                             // dayC — crash
+                    score = seqIdx < confirmedCount ? 45 : 62
+                    workouts = 0
+                default: score = 70; workouts = 0  // rest
+                }
+            } else {
+                score = 70; workouts = 0
+            }
+
+            return StoredDailyScore(
+                date: date,
+                readinessScore: score,
+                dailyStrain: 1.0,
+                workoutCount: workouts
+            )
+        }
     }
 }

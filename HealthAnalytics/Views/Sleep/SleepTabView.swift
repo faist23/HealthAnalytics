@@ -6,6 +6,7 @@
 import SwiftUI
 
 struct SleepTabView: View {
+    @Binding var showSettings: Bool
     @StateObject private var viewModel = SleepViewModel()
     @Environment(\.colorScheme) var colorScheme
 
@@ -90,6 +91,15 @@ struct SleepTabView: View {
             }
             .navigationTitle("TODAY")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape")
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
             .task {
                 await viewModel.fetchSleepData()
             }
@@ -101,5 +111,5 @@ struct SleepTabView: View {
 }
 
 #Preview {
-    SleepTabView()
+    SleepTabView(showSettings: .constant(false))
 }

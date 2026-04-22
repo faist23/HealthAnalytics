@@ -19,12 +19,15 @@ final class StoredWorkout {
     var startDate: Date
     var duration: TimeInterval
     var distance: Double?
-    var averagePower: Double?
+    var averagePower: Double?           // mean watts (for display)
+    var normalizedPower: Double?        // Strava weighted_average_watts (NP)
+    var powerZoneSecondsCSV: String?    // "z1,z2,z3,z4,z5,z6,z7" seconds from stream — nil until fetched
+    var zoneComputedAtFTP: Double?      // FTP used when powerZoneSecondsCSV was last computed; nil if zones not yet fetched
     var totalEnergyBurned: Double?
     var source: String
     var averageHeartRate: Double?
 
-    init(id: String, title: String? = nil, type: HKWorkoutActivityType, startDate: Date, duration: TimeInterval, distance: Double?, power: Double?, energy: Double?, hr: Double?, source: String) {
+    init(id: String, title: String? = nil, type: HKWorkoutActivityType, startDate: Date, duration: TimeInterval, distance: Double?, power: Double?, normalizedPower: Double? = nil, energy: Double?, hr: Double?, source: String) {
         self.id = id
         self.title = title
         self.workoutTypeInt = Int(type.rawValue)
@@ -32,10 +35,19 @@ final class StoredWorkout {
         self.duration = duration
         self.distance = distance
         self.averagePower = power
+        self.normalizedPower = normalizedPower
+        self.powerZoneSecondsCSV = nil
+        self.zoneComputedAtFTP = nil
         self.totalEnergyBurned = energy
         self.source = source
         self.averageHeartRate = hr
-        self.source = source
+    }
+
+    /// Decoded zone seconds [z1, z2, z3, z4, z5, z6, z7]. nil if stream not yet fetched.
+    var powerZoneSeconds: [Double]? {
+        guard let csv = powerZoneSecondsCSV else { return nil }
+        let vals = csv.split(separator: ",").compactMap { Double($0) }
+        return vals.count == 7 ? vals : nil
     }
     
     var workoutType: HKWorkoutActivityType {
@@ -80,5 +92,29 @@ final class StoredNutrition {
         self.protein = protein
         self.carbs = carbs
         self.fat = fat
+    }
+}
+
+/// Persists one readiness score per calendar day for 90-day pattern analysis.
+/// Uses plain UUID primary key (NOT @Attribute(.unique)) to avoid non-lightweight migration risk.
+/// Uniqueness is enforced in-memory via dateString dedup in ReadinessRepository.
+@Model
+final class StoredDailyScore {
+    var id: UUID = UUID()
+    var dateString: String      // "yyyy-MM-dd" — used for in-memory dedup
+    var date: Date
+    var readinessScore: Int     // 0–100
+    var dailyStrain: Double     // ACWR-based strain value
+    var workoutCount: Int       // number of workouts logged that day
+
+    init(date: Date, readinessScore: Int, dailyStrain: Double, workoutCount: Int) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        self.dateString = formatter.string(from: date)
+        self.date = date
+        self.readinessScore = readinessScore
+        self.dailyStrain = dailyStrain
+        self.workoutCount = workoutCount
     }
 }

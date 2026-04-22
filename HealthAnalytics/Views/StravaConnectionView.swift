@@ -7,12 +7,15 @@
 
 
 import SwiftUI
+import SwiftData
 
 struct StravaConnectionView: View {
     @StateObject private var stravaManager = StravaManager.shared
     @State private var isAuthenticating = false
     @State private var errorMessage: String?
+    @State private var fetchError: String?
     @Environment(\.openURL) private var openURL
+    @Environment(\.modelContext) private var modelContext
     
     var body: some View {
         VStack(spacing: 30) {
@@ -26,6 +29,20 @@ struct StravaConnectionView: View {
         }
         .padding()
         .navigationTitle("Strava")
+        .task {
+            guard stravaManager.isAuthenticated else { return }
+            let lastFetch = UserDefaults.standard.double(forKey: "strava_athlete_last_fetch")
+            guard Date().timeIntervalSince1970 - lastFetch > 86400 else { return }
+            do {
+                let fetchedFTP = try await StravaManager.shared.fetchAthleteProfile()
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "strava_athlete_last_fetch")
+                if let watts = fetchedFTP {
+                    StoredFTPSnapshot.upsertIfChanged(watts: watts, source: "strava_profile", context: modelContext)
+                }
+            } catch {
+                fetchError = "Could not refresh Strava data. Check your connection."
+            }
+        }
     }
     
     private var connectedView: some View {
@@ -44,7 +61,35 @@ struct StravaConnectionView: View {
                     .font(.headline)
                     .foregroundStyle(.secondary)
             }
-            
+
+            // FTP display
+            let ftp = UserDefaults.standard.integer(forKey: "strava_ftp")
+            if ftp > 0 {
+                HStack {
+                    Text("FTP")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.textSecondary)
+                    Spacer()
+                    Text("\(ftp)W")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                }
+                .padding(.horizontal, 4)
+            } else if stravaManager.isAuthenticated {
+                Text("Set your FTP in Strava to improve ride intensity calculations")
+                    .font(.caption)
+                    .foregroundStyle(Color.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            if let err = fetchError {
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(Color.statusWarning)
+                    .multilineTextAlignment(.center)
+            }
+
             Divider()
                 .padding(.vertical)
             

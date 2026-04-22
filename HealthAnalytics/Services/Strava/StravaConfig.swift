@@ -69,6 +69,6 @@ struct StravaConfig {
     static let tokenURL = "https://www.strava.com/oauth/token"
     static let apiBaseURL = "https://www.strava.com/api/v3"
     
-    // Scopes
-    static let scope = "read,activity:read_all"
+    // Scopes — profile:read_all is required to read ftp from the DetailedAthlete response
+    static let scope = "read,activity:read_all,profile:read_all"
 }

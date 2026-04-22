@@ -1,5 +1,11 @@
 # TODOS
 
+## ~~P3 — Strain Sensitivity Calibration UI~~ ✅ DONE v0.1.0.0 (2026-04-20)
+
+`StrainSensitivityCard` added to `SettingsView`. `CardiovascularStrainService.compute()` accepts `sensitivityOffset: Double` (default 0.0). `ReadinessViewModel.computeCardiovascularStrain()` reads `UserDefaults["strainSensitivityOffset"]` at compute time. Normalization recalibrated from 90.0 → 70.0 (hard 60-min zone 4-5 effort = ~16-18 STRENUOUS). Slider range: ±20%, labels "Lower / Higher", Reset button, live preview showing adjusted score.
+
+---
+
 ## ~~P3 — InsightsViewModel GEMINI.md Mandate Violation~~ ✅ DONE 2026-03-27
 
 `InsightsViewModel.analyzeData()` gutted from 370 → 78 lines. All 9 service calls (`CorrelationEngine`, `NutritionCorrelationEngine`, `BiologicalAgingService`, `ActionableRecommendations`, `PredictiveReadinessService`, `TrainingLoadCalculator`, `TrendDetector`, `InjuryRiskCalculator`, `TrainingLoadVisualizationService`) moved to `ReadinessRepository.performFullAnalysis()`. `UnifiedReadiness` gained 11 new fields. `InsightsViewModel.analyzeData()` now delegates to `ReadinessRepository.shared.refreshIfNecessary(modelContext:)` and assigns from `currentReadiness`. `InsightsView` unchanged. `weightData` fetch added to Repository; `trends` bug fix (was passing `stepData: []`, now passes real step data).
@@ -204,3 +210,31 @@
 **What:** Replace `default:` case in `ResearchThresholdBar.zone(for:)` with explicit `case .trainingBalance, .biologicalAge:`. (The `segments` and `markerFraction` switches were already exhaustive from the Phase 1 PR.)
 
 **Done:** `zone(for:)` at `ResearchThresholdBar.swift:56` now uses explicit cases — adding a new `SignalType` is a compile error.
+
+---
+
+## ~~P3 — Pattern Confirmation: Graduate from Vote-Based to Pearson at n >= 10~~ ✅ DONE 2026-04-13
+
+**What:** `detectBackToBackReadinessCrash()` combined gate: n < 10 → vote-only (yesRate >= 60%); n >= 10 → combined (yesRate >= 40% AND lagCorrelation >= 0.55). 4 unit tests added to `TrainingDNAAnalyzerTests.swift` covering both gate paths.
+
+**Done:** Combined gate implemented in `TrainingDNAAnalyzer.detectBackToBackReadinessCrash()`. Tests: `testBackToBackCrash_n9_voteGate_fires`, `testBackToBackCrash_n9_lowYesRate_fails`, `testBackToBackCrash_n10_combinedGate_fires`, `testBackToBackCrash_n10_lowLagR_fails`.
+
+---
+
+## P4 — Light Mode Token Sweep: TrainingSignatureCard
+
+**What:** When the light mode phase begins (per DESIGN.md roadmap), sweep `TrainingSignatureCard.swift` and `SpaghettiPlot` to verify all token-based colors render correctly in light mode. The Visual Spec section in the design plan uses dark-mode token values only.
+
+**Why:** All color tokens in the Visual Spec (e.g., `Color.surface` = `#1C1915`, `Color.surfaceRaised` = `#262118`) are specified as dark-mode hex values. Light mode requires `#FFFFFF` / `#F0EDE8` equivalents. If the token extension is updated correctly for light mode, the card should work automatically — but the spaghetti plot SVG line opacities and chart background may need review since they're tuned for dark contrast.
+
+**Pros:** Ensures the card doesn't look broken in light mode when that phase ships.
+
+**Cons:** Requires producing data-driven light mode designs for the spaghetti plot (terracotta on light gray may need opacity adjustment). Low priority until light mode phase is scoped.
+
+**Context:** Design review 2026-04-05. All elements use DESIGN.md tokens, so the sweep should be lightweight — verify tokens, check chart line contrast ratios, done.
+
+**Effort:** S (human: ~2h / CC: ~10 min)
+
+**Priority:** P4 — blocked on light mode phase (not scoped)
+
+**Depends on / blocked by:** Light mode design system phase. DESIGN.md must define light mode token values first.
