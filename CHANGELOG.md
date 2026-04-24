@@ -3,6 +3,17 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.1.0] - 2026-04-23
+
+### Added
+- **Dynamic Master Coach Engine** — a unified heuristic engine that generates human-like coaching advice dynamically throughout the day. It explicitly references the delta between your morning readiness baseline and current fatigue state (e.g., after logging a workout). 
+- `MasterCoachEngine.swift` introduces semantic tone rules and compositional pipeline string synthesis for consistent, non-contradictory advice.
+
+### Changed
+- Replaced fragmented instructions (`DailyInstructionCard`) in the `HeroReadinessCard` and `ReadinessView` with a single, synthesized `MasterCoachSummary` text.
+- `ReadinessRepository` functionally isolates `morningReadinessScore` calculations to omit same-day workouts for a static morning baseline.
+- `UnifiedReadiness` includes the new `coachAdvice` message, and `CachedAnalysis` supports it for iOS widgets.
+
 ## [0.1.0.0] - 2026-04-20
 
 ### Added
