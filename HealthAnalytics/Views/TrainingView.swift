@@ -94,6 +94,12 @@ struct TrainingView: View {
                         EmptyBalanceCard()
                             .padding(.horizontal)
                     }
+                    
+                    // Cycling Compound Score Card
+                    if let powerAnalysis = viewModel.compoundScoreAnalysis {
+                        CyclingCompoundScoreCard(analysis: powerAnalysis)
+                            .padding(.horizontal)
+                    }
                 }
                 
                 // Section 2: Load Management

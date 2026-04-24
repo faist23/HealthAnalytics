@@ -156,8 +156,14 @@ struct HealthspanTabView: View {
                                     }
                                     .padding(.horizontal)
                                     
+                                    // 4. Cycling Power Analysis
+                                    if let powerAnalysis = viewModel.compoundScoreAnalysis {
+                                        CyclingCompoundScoreCard(analysis: powerAnalysis)
+                                            .padding(.horizontal)
+                                    }
+                                    
                                 } else {
-                                    Text("Not enough data to calculate WHOOP Age.")
+                                    Text("Not enough data to calculate Biological Age.")
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                         .padding()

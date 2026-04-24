@@ -14,6 +14,7 @@ extension WorkoutData {
     init(from stored: StoredWorkout) {
         self.init(
             id: UUID(uuidString: stored.id) ?? UUID(),
+            originalId: stored.id,
             title: stored.title,
             workoutType: stored.workoutType,
             startDate: stored.startDate,

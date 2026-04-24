@@ -51,6 +51,7 @@ class ReadinessRepository: ObservableObject {
     private let nutritionEngine            = NutritionCorrelationEngine()
     private let agingService               = BiologicalAgingService()
     private let actionableRecommendations  = ActionableRecommendations()
+    private let cyclingPowerAnalyzer       = CyclingPowerAnalyzer()
 
     // Phase 2 — Pattern Engine sub-service
     private var trainingDNAAnalyzer: TrainingDNAAnalyzer?
@@ -124,6 +125,7 @@ class ReadinessRepository: ObservableObject {
 
     struct UnifiedReadiness {
         let score: Int
+        let morningScore: Int
         let level: ReadinessLevel
         let recommendation: DailyRecommendationService.DailyRecommendation
         let injuryRisk: InjuryRiskCalculator.InjuryRiskAssessment
@@ -166,6 +168,7 @@ class ReadinessRepository: ObservableObject {
         let carbPerformanceInsights: [NutritionCorrelationEngine.CarbPerformanceInsight]
         let recommendations: [ActionableRecommendations.Recommendation]
         let agingAssessment: BiologicalAgingService.AgingAssessment?
+        let compoundScoreAnalysis: CyclingPowerAnalyzer.CompoundScoreAnalysis?
     }
     
     // MARK: - Main Analysis Entry Point
@@ -495,10 +498,29 @@ class ReadinessRepository: ObservableObject {
                 injuryRisk: riskAssessment
             )
             let agingAssessment = await agingService.calculateAgingAlpha(modelContext: modelContext)
+            
+            let powerAnalysis = await cyclingPowerAnalyzer.analyzeCompoundScore(
+                workouts: workouts,
+                weightData: weightData
+            )
 
-            // 9. Update Published State
+            // 9. Generate Master Coach Message
+            let computedForecast = compute7DayForecast(modelContext: modelContext, overrideACWR: readinessAssessmentResult.acwr)
+            let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? Date()
+            let nextDayCoaching = computedForecast?.first(where: { calendar.isDate($0.date, inSameDayAs: nextDay) })?.coaching
+            let coachState = MasterCoachEngine.StateVector(
+                morningScore: baseReadiness.score,
+                currentScore: intraDay.currentScore,
+                nextDayForecast: nextDayCoaching,
+                acwr: readinessAssessmentResult.acwr,
+                injuryRisk: riskAssessment.riskLevel.label
+            )
+            let masterCoachMessage = MasterCoachEngine.generateMessage(state: coachState)
+
+            // 10. Update Published State
             self.currentReadiness = UnifiedReadiness(
                 score: intraDay.currentScore,
+                morningScore: baseReadiness.score,
                 level: mapScoreToLevel(intraDay.currentScore),
                 recommendation: reconciledRecommendation,
                 injuryRisk: riskAssessment,
@@ -506,7 +528,7 @@ class ReadinessRepository: ObservableObject {
                 trend: baseReadiness.trend,
                 date: now,
                 intraDay: intraDay,
-                coachAdvice: reconciledAdvice,
+                coachAdvice: masterCoachMessage,
                 mlPrediction: mlPrediction,
                 mlFeatureWeights: mlFeatureWeights,
                 mlError: mlError,
@@ -530,7 +552,8 @@ class ReadinessRepository: ObservableObject {
                 proteinPerformanceInsights: proteinPerformanceInsights,
                 carbPerformanceInsights: carbPerformanceInsights,
                 recommendations: insightsRecommendations,
-                agingAssessment: agingAssessment
+                agingAssessment: agingAssessment,
+                compoundScoreAnalysis: powerAnalysis
             )
 
             self.intraDayReadiness = intraDay
@@ -548,7 +571,7 @@ class ReadinessRepository: ObservableObject {
 
             // 7-day readiness forecast (requires 14 days of stored scores).
             // currentReadiness is already set above so the ACWR modifier reads correctly.
-            self.forecast = compute7DayForecast(modelContext: modelContext)
+            self.forecast = computedForecast
 
             #if DEBUG
             print("✅ ReadinessRepository: Unified Analysis Complete. Score: \(baseReadiness.score)")
