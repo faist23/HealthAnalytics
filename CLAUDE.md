@@ -16,7 +16,8 @@ See `GEMINI.md` for the full engineering mandate. Key rules:
 - Use `DataFingerprint` caching to prevent score drift
 - ACWR sweet spot: 0.8–1.3
 
-### Key extension points (v0.1.0.0)
+### Key extension points (v0.1.1.0)
+- **Dynamic Master Coach Engine** — `Services/Coaching/MasterCoachEngine.swift`. Generates a single, cohesive coaching paragraph. `ReadinessRepository` computes the `morningReadinessScore` by functionally omitting today's workouts, passing it to the engine to explicitly highlight intra-day fatigue deltas.
 - **New patterns** — extend `PatternType` enum in `Models/TrainingPattern.swift`, add a `detectX()` method to `Services/Analytics/TrainingDNAAnalyzer.swift`, wire it in `upsertPatterns()`. Pattern data flows through `StoredDailyScore` snapshots (upserted after every analysis run via `ReadinessRepository.upsertDailyScore()`).
 - **FTP history** — `Models/StoredFTPSnapshot.swift`. Use `StoredFTPSnapshot.resolved(for:snapshots:)` to get the FTP value in effect for any historical workout date. Default 200W when no snapshot exists.
 - **7-day forecast** — `Views/Recovery/ReadinessForecastChart.swift` + `ReadinessRepository.compute7DayForecast()`. Requires 14 days of `StoredDailyScore`.
