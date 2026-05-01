@@ -92,7 +92,7 @@ struct TrainingSignatureCard: View {
             Text("14-Day Signature")
                 .font(.cardTitle)
                 .foregroundStyle(Color.textPrimary)
-            Text("Not enough back-to-back training sequences detected yet. Keep logging workouts.")
+            Text("No consistent crash pattern detected. Your readiness holds up well after back-to-back sessions.")
                 .font(.coachGuidance)
                 .foregroundStyle(Color.textTertiary)
                 .multilineTextAlignment(.center)

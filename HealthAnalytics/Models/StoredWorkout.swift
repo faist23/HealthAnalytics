@@ -106,8 +106,9 @@ final class StoredDailyScore {
     var readinessScore: Int     // 0–100
     var dailyStrain: Double     // ACWR-based strain value
     var workoutCount: Int       // number of workouts logged that day
+    var dailyLoad: Double = 0.0 // total TSS-equivalent load for the day (lightweight migration — default 0.0)
 
-    init(date: Date, readinessScore: Int, dailyStrain: Double, workoutCount: Int) {
+    init(date: Date, readinessScore: Int, dailyStrain: Double, workoutCount: Int, dailyLoad: Double = 0.0) {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone.current
@@ -116,5 +117,6 @@ final class StoredDailyScore {
         self.readinessScore = readinessScore
         self.dailyStrain = dailyStrain
         self.workoutCount = workoutCount
+        self.dailyLoad = dailyLoad
     }
 }
