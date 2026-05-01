@@ -381,14 +381,26 @@ actor TrainingDNAAnalyzer {
     private func detectHRVPrecursor(sourcePreference: HRVSourcePreference) async throws -> TrainingPattern? {
         let hrvHistory = try await dataProvider.fetchDailyHRV(days: 180, sourcePreference: sourcePreference)
         let stepHistory = try await dataProvider.fetchDailySteps(days: 180)
-        let workoutDays = try await dataProvider.fetchWorkoutDays(days: 180)
 
         guard hrvHistory.count >= 30 else { return nil }
 
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
 
-        // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days AND no workout
+        // Load-gated workout days: only days with a real training session (load >= 0.5 TSS) count
+        // as "workout days" for sick-day proxy detection. Daily warmup spins (~0.17 TSS) are
+        // excluded so they don't block the proxy from firing on users who work out every day.
+        let cutoff = Calendar.current.date(byAdding: .day, value: -180, to: Date()) ?? Date()
+        let dailyScores = (try? modelContext.fetch(
+            FetchDescriptor<StoredDailyScore>(
+                predicate: #Predicate<StoredDailyScore> { $0.date >= cutoff }
+            )
+        )) ?? []
+        let significantWorkoutDays: Set<String> = Set(
+            dailyScores.filter { $0.dailyLoad >= 0.5 }.map { formatDay($0.date) }
+        )
+
+        // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days AND no significant workout
         let stepsSorted = stepHistory.sorted { $0.date < $1.date }
         var sickDayWindows: [Date] = []
         var i = 0
@@ -398,8 +410,8 @@ actor TrainingDNAAnalyzer {
                 b.date, inSameDayAs: Calendar.current.date(byAdding: .day, value: 1, to: a.date)!
             )
             if consecutive && a.steps < 2000 && b.steps < 2000
-                && !workoutDays.contains(fmt.string(from: a.date))
-                && !workoutDays.contains(fmt.string(from: b.date)) {
+                && !significantWorkoutDays.contains(fmt.string(from: a.date))
+                && !significantWorkoutDays.contains(fmt.string(from: b.date)) {
                 sickDayWindows.append(a.date)
                 i += 2; continue
             }
