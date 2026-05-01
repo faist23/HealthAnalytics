@@ -97,6 +97,7 @@ struct RecoveryTabView: View {
                                         baselineScore: readiness.score,
                                         priorDayFatigueImpact: Double(30 - readiness.breakdown.fatigueScore),
                                         todayWorkouts: viewModel.todayWorkouts,
+                                        todayStepExcessTSS: viewModel.todayStepExcessTSS,
                                         overnightRecoveryMultiplier: viewModel.overnightRecoveryMultiplier
                                     )
 

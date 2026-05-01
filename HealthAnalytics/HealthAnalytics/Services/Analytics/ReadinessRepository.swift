@@ -141,6 +141,10 @@ class ReadinessRepository: ObservableObject {
         /// Passed to EnergyBankChart so the projected curve reflects the same rate used for today's score.
         let overnightRecoveryMultiplier: Double
 
+        /// TSS-equivalent load from today's excess steps (above personal 30-day baseline).
+        /// Capped at 20% of today's workout TSS. Passed to EnergyBankChart for consistent curve rendering.
+        let todayStepExcessTSS: Double
+
         // ML sub-service outputs (owned by Repository, not ViewModel)
         let mlPrediction: PerformancePredictor.Prediction?
         let mlFeatureWeights: PerformancePredictor.FeatureWeights?
@@ -328,20 +332,33 @@ class ReadinessRepository: ObservableObject {
             let yesterdayWorkoutTSS = yesterdayWorkouts.reduce(0.0) { $0 + loadCalculator.calculateWorkoutLoad($1) }
             let thirtyDaysAgo = calendar.date(byAdding: .day, value: -30, to: today)!
             let recentSteps = stepData.filter { $0.date >= thirtyDaysAgo && $0.date < today }
-            let stepBaseline: Double = recentSteps.isEmpty ? 7500 : recentSteps.map(\.value).reduce(0, +) / Double(recentSteps.count)
+            let stepBaseline: Double = recentSteps.isEmpty ? 5000 : recentSteps.map(\.value).reduce(0, +) / Double(recentSteps.count)
             let yesterdayStepCount = stepData.first(where: { calendar.isDate($0.date, inSameDayAs: yesterday) })?.value ?? 0
             let yesterdayStepExcess = max(0, yesterdayStepCount - stepBaseline)
-            let cap = yesterdayWorkoutTSS > 0 ? yesterdayWorkoutTSS * 0.20 : 5.0
+            // Rest-day cap: 2.0 TSS absolute ceiling when no workout — steps are supporting load, not primary stress.
+            let cap = yesterdayWorkoutTSS > 0 ? yesterdayWorkoutTSS * 0.20 : 2.0
             let yesterdayStepExcessTSS = min(yesterdayStepExcess / 3000.0, cap)
             let recoveryMultiplier = RecoveryDecayService.overnightRecoveryMultiplier(
                 workoutTSS: yesterdayWorkoutTSS,
                 stepExcessTSS: yesterdayStepExcessTSS
             )
 
+            // Mechanism 1 (NEAT): today's excess steps above personal baseline add to intra-day strain.
+            // 3000 steps ≈ 1.0 TSS; capped at 20% of today's total workout TSS.
+            // Rest-day cap: 2.0 TSS absolute ceiling — steps are supporting load, not primary stress.
+            let todayStepCount = stepData.first(where: { calendar.isDate($0.date, inSameDayAs: today) })?.value ?? 0
+            let todayStepExcess = max(0, todayStepCount - stepBaseline)
+            let todayWorkoutTSS = workouts
+                .filter { calendar.isDate($0.startDate, inSameDayAs: today) }
+                .reduce(0.0) { $0 + loadCalculator.calculateWorkoutLoad($1) }
+            let todayStepCap = todayWorkoutTSS > 0 ? todayWorkoutTSS * 0.20 : 2.0
+            let todayStepExcessTSS = min(todayStepExcess / 3000.0, todayStepCap)
+
             let intraDay = recoveryService.calculateIntraDayReadiness(
                 baselineScore: baseReadiness.score,
                 todayWorkouts: workouts,
                 priorDayFatigueImpact: max(0, priorDayFatigueImpact),
+                todayStepExcessTSS: todayStepExcessTSS,
                 overnightRecoveryMultiplier: recoveryMultiplier
             )
 
@@ -558,6 +575,7 @@ class ReadinessRepository: ObservableObject {
                 intraDay: intraDay,
                 coachAdvice: masterCoachMessage,
                 overnightRecoveryMultiplier: recoveryMultiplier,
+                todayStepExcessTSS: todayStepExcessTSS,
                 mlPrediction: mlPrediction,
                 mlFeatureWeights: mlFeatureWeights,
                 mlError: mlError,

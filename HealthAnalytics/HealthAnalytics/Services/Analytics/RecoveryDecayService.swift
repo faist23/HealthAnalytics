@@ -49,6 +49,8 @@ class RecoveryDecayService {
     ///   - todayWorkouts: All known workouts; filtered internally to today only.
     ///   - priorDayFatigueImpact: Estimated fatigue points still owed from prior days.
     ///     Pass `Double(30 - breakdown.fatigueScore)` from the ScoreBreakdown. Defaults to 0.
+    ///   - todayStepExcessTSS: TSS-equivalent load from today's excess step activity (above personal baseline).
+    ///     Capped at 20% of today's workout TSS. Treated as a constant intra-day fatigue modifier.
     ///   - overnightRecoveryMultiplier: Rate modifier [0.5, 1.0] from yesterday's combined load.
     ///     Values < 1.0 slow prior-day fatigue decay. Use `RecoveryDecayService.overnightRecoveryMultiplier`.
     ///   - now: Defaults to the real current time; override for simulation.
@@ -56,6 +58,7 @@ class RecoveryDecayService {
         baselineScore: Int,
         todayWorkouts: [WorkoutData],
         priorDayFatigueImpact: Double = 0,
+        todayStepExcessTSS: Double = 0,
         overnightRecoveryMultiplier: Double = 1.0,
         now: Date = Date()
     ) -> IntraDayReadiness {
@@ -77,8 +80,8 @@ class RecoveryDecayService {
         // Filter workouts completed since midnight up to `now`.
         let completedToday = todayWorkouts.filter { $0.startDate >= startOfDay && $0.endDate <= now }
 
-        // Fast path: no today workouts and negligible carry-forward.
-        guard !completedToday.isEmpty || priorDayRemaining > 0.5 else {
+        // Fast path: no today workouts, negligible carry-forward, and no step excess.
+        guard !completedToday.isEmpty || priorDayRemaining > 0.5 || todayStepExcessTSS > 0 else {
             return IntraDayReadiness(
                 currentScore: baselineScore,
                 baselineScore: baselineScore,
@@ -109,6 +112,11 @@ class RecoveryDecayService {
                 latestRecoveryPoint = workoutRecoveryPoint
             }
         }
+
+        // NEAT Mechanism 1: excess step load adds constant intra-day fatigue.
+        // Steps accumulate throughout the day, so we treat them as a uniform background stressor
+        // rather than applying time-based decay to an unknown accumulation curve.
+        totalCurrentFatigue += todayStepExcessTSS
 
         // When will carry-forward prior-day fatigue drop below 1%?
         if priorDayFatigueImpact > 0 {

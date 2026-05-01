@@ -221,31 +221,16 @@
 
 ---
 
-## P3 — Dead Code Sweep: Delete Unused Swift Files
+## ~~P3 — Dead Code Sweep: Delete Unused Swift Files~~ ✅ DONE 2026-04-30
 
-**What:** Audit and delete Swift files that are no longer referenced anywhere in the app. The project has 127 `.swift` files; a meaningful fraction appear to be dead ML-experiment code, debug views, and replaced services.
+Deleted 5 confirmed-dead ML-experiment orphans from `ML-Components/`:
+- `TemporalInsightsCard.swift` — zero external refs
+- `IntentAwareReadinessTestView.swift` — debug view, zero external refs
+- `ActivityIntentLabelerView.swift` — zero external refs
+- `IntentAwareReadinessCard.swift` — superseded by `HeuristicIntentClassifier` path, zero refs
+- `EnhancedIntentReadinessCard.swift` — only referenced by the dead test view
 
-**Why:** Dead files slow down SourceKit indexing, increase build time, and create false confidence when searching for where logic lives. They also invite accidental reuse of superseded patterns.
-
-**Known candidates (verify before deleting):**
-- `ML-Components/TemporalInsightsCard.swift` — name suggests an old iteration; references exist only in other ML-Components files
-- `ML-Components/TemporalModelingService.swift` — same pattern
-- `ML-Components/IntentAwareReadinessTestView.swift` — debug test view, not in any navigation stack
-- `ML-Components/SampleSizeValidator.swift` — confirm nothing outside ML-Components references it
-- `ML-Components/StatisticalDashboardView.swift` — debug view; confirm not in any sheet or navigation
-- `ML-Components/ActivityIntentLabelerView.swift` / `IntentAwareReadinessCard.swift` — check if superseded by `HeuristicIntentClassifier` path
-- `ReadinessAnalyzer.generateTrajectory()` / `TrajectoryPoint` — confirmed dead (suppressed by `trajectory: []` hardcode in `ReadinessViewModel:71`; see pitfall memory)
-
-**How to apply:**
-1. For each candidate: `grep -rn "TypeName" HealthAnalytics/ --include="*.swift"` to verify zero references outside the file itself.
-2. Delete confirmed orphans. Xcode will catch any missed references at build time.
-3. Run full build + test suite after each batch.
-
-**Effort:** S (human: ~2h / CC+gstack: ~20 min)
-
-**Priority:** P3 — no user impact, but cleans up a 127-file codebase that's accumulating ML experiment residue
-
-**Depends on / blocked by:** Nothing. Safe to do in a standalone cleanup PR.
+Confirmed live and retained: `TemporalModelingService` (used by `ReadinessRepository`), `PerformanceProfiler` (used by `ReadinessViewModel`), `StatisticalDashboardView` (linked from `ReadinessView.swift:88`), `SampleSizeValidator` (used by `StatisticalDashboardView` and `StatisticalPerformancePatternAnalyzer`). `generateTrajectory` / `TrajectoryPoint` were already absent from `ReadinessAnalyzer`.
 
 ---
 
