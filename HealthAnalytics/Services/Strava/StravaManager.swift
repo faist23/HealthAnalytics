@@ -343,6 +343,49 @@ class StravaManager: ObservableObject {
         return zoneSecs
     }
 
+    /// Fetches the raw watts stream and calculates the maximum 5-minute rolling average power.
+    func fetchPeak5MinPower(activityId: Int) async throws -> Double? {
+        try await refreshTokenIfNeeded()
+        guard let token = accessToken else { throw StravaError.notAuthenticated }
+
+        let url = URL(string: "\(StravaConfig.apiBaseURL)/activities/\(activityId)/streams?keys=watts&key_by_type=true")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw StravaError.fetchFailed
+        }
+
+        struct WattsStream: Decodable {
+            struct StreamData: Decodable { let data: [Double?] }
+            let watts: StreamData?
+        }
+        let streams = try JSONDecoder().decode(WattsStream.self, from: data)
+        guard let rawSamples = streams.watts?.data else { return nil }
+
+        // Strava streams can contain nil, assume 0 for dropped connections/coasting to keep window time valid
+        let samples = rawSamples.map { $0 ?? 0.0 }
+        return StravaManager.peak5MinAverage(samples: samples)
+    }
+
+    /// Pure rolling-average algorithm — extracted for unit testability.
+    static func peak5MinAverage(samples: [Double], windowSize: Int = 300) -> Double? {
+        guard samples.count >= windowSize else { return nil }
+
+        var currentSum: Double = 0
+        for i in 0..<windowSize { currentSum += samples[i] }
+        var maxAvg = currentSum / Double(windowSize)
+
+        for i in windowSize..<samples.count {
+            currentSum += samples[i]
+            currentSum -= samples[i - windowSize]
+            let avg = currentSum / Double(windowSize)
+            if avg > maxAvg { maxAvg = avg }
+        }
+        return maxAvg > 0 ? maxAvg : nil
+    }
+
     /// Fetch detailed activity with streams (HR, power, etc.)
     func fetchActivityDetails(activityId: Int) async throws -> StravaActivityDetail {
         try await refreshTokenIfNeeded()

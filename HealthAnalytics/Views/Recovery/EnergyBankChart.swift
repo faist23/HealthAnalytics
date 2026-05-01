@@ -18,6 +18,8 @@ struct EnergyBankChart: View {
     let baselineScore: Int?
     let priorDayFatigueImpact: Double
     let todayWorkouts: [WorkoutData]
+    var todayStepExcessTSS: Double = 0
+    var overnightRecoveryMultiplier: Double = 1.0
     
     @Environment(\.colorScheme) var colorScheme
     
@@ -46,6 +48,8 @@ struct EnergyBankChart: View {
                 baselineScore: baseline,
                 todayWorkouts: todayWorkouts,
                 priorDayFatigueImpact: priorDayFatigueImpact,
+                todayStepExcessTSS: todayStepExcessTSS,
+                overnightRecoveryMultiplier: overnightRecoveryMultiplier,
                 now: currentTime
             )
             
@@ -63,6 +67,8 @@ struct EnergyBankChart: View {
             baselineScore: baseline,
             todayWorkouts: todayWorkouts,
             priorDayFatigueImpact: priorDayFatigueImpact,
+            todayStepExcessTSS: todayStepExcessTSS,
+            overnightRecoveryMultiplier: overnightRecoveryMultiplier,
             now: now
         )
         points.append(EnergyBankDataPoint(

@@ -27,6 +27,7 @@ final class CachedAnalysis {
     var headline: String
     var targetAction: String
     var statusColorHex: String
+    var masterCoachMessage: String?
 
     var lastUpdated: Date
 
@@ -34,7 +35,8 @@ final class CachedAnalysis {
         fingerprint: PredictionCache.DataFingerprint,
         headline: String,
         targetAction: String,
-        statusColorHex: String
+        statusColorHex: String,
+        masterCoachMessage: String? = nil
     ) {
         self.id = "singleton_cache"
         self.workoutCount = fingerprint.workoutCount
@@ -48,6 +50,7 @@ final class CachedAnalysis {
         self.headline = headline
         self.targetAction = targetAction
         self.statusColorHex = statusColorHex
+        self.masterCoachMessage = masterCoachMessage
         self.lastUpdated = Date()
     }
 }

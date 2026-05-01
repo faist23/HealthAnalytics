@@ -58,7 +58,7 @@ All typography uses the SF Pro system family — no external font loading requir
 | Hero Numeral | SF Pro Rounded | 64pt | Bold | Readiness score. One per screen. This is the first thing the eye lands on. |
 | Section Title | SF Pro Display | 28pt | Semibold | Tab/screen-level headings: "Today", "Readiness", "Training" |
 | Card Title | SF Pro Text | 17pt | Semibold | Card headers: "Health Signals", "Training Load", "HRV Trend" |
-| Coach Guidance | SF Pro Text | 15pt | Regular | The coaching voice. Sentence-level recommendations and explanations. Reads as a human speaking. |
+| Coach Guidance | SF Pro Text | 15pt | Regular | The coaching voice (`MasterCoachSummary`). Sentence-level recommendations explicitly addressing morning-vs-current delta. Preceded by a 3pt `Color.accent` leading border with 8pt padding. |
 | Metric Value (tile) | SF Pro Rounded | 22pt | Bold | Tile display values: "52ms", "7.4h", "1.04" |
 | Label / Caption | SF Pro Text | 12pt | Medium | Tile subtitles, chart axis labels, baseline callouts |
 | Data / Chart Axis | SF Pro Mono | 11pt | Regular | **Exclusively** for raw measurements, axis values, timestamps, ACWR decimals |

@@ -96,7 +96,9 @@ struct RecoveryTabView: View {
                                         intraDay: viewModel.intraDayReadiness,
                                         baselineScore: readiness.score,
                                         priorDayFatigueImpact: Double(30 - readiness.breakdown.fatigueScore),
-                                        todayWorkouts: viewModel.todayWorkouts
+                                        todayWorkouts: viewModel.todayWorkouts,
+                                        todayStepExcessTSS: viewModel.todayStepExcessTSS,
+                                        overnightRecoveryMultiplier: viewModel.overnightRecoveryMultiplier
                                     )
 
                                     // 7-Day Readiness Forecast
@@ -144,6 +146,11 @@ struct RecoveryTabView: View {
                 }
                 await viewModel.analyze(modelContext: modelContext)
                 isFirstLoad = false
+                // TrainingSignatureCard lives here but runPatternAnalysis was only wired
+                // to InsightsView (a sheet). Drive it from the tab that shows the card.
+                // force: true bypasses the 7-day staleness gate on every launch so the
+                // card reflects current StoredDailyScore data without waiting a week.
+                await ReadinessRepository.shared.runPatternAnalysis(container: modelContext.container, force: true)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
                 // Re-analyze after sync so today's workouts are always current on first open.

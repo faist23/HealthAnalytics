@@ -34,6 +34,7 @@ enum WorkoutSource: String {
 
 struct WorkoutData: Identifiable {
     let id: UUID
+    let originalId: String?             // Strava Activity ID or original HKUUID
     let title: String?
     let workoutType: HKWorkoutActivityType
     let startDate: Date
@@ -49,6 +50,7 @@ struct WorkoutData: Identifiable {
 
     init(
         id: UUID = UUID(), // Default for previews only
+        originalId: String? = nil,
         title: String? = nil,
         workoutType: HKWorkoutActivityType,
         startDate: Date,
@@ -63,6 +65,7 @@ struct WorkoutData: Identifiable {
         source: WorkoutSource
     ) {
         self.id = id
+        self.originalId = originalId
         self.title = title
         self.workoutType = workoutType
         self.startDate = startDate

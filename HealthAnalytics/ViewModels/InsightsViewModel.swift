@@ -33,6 +33,7 @@ class InsightsViewModel: ObservableObject {
     @Published var agingAssessment: BiologicalAgingService.AgingAssessment?
     @Published var carbPerformanceInsights: [NutritionCorrelationEngine.CarbPerformanceInsight] = []
     @Published var loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
+    @Published var compoundScoreAnalysis: CyclingPowerAnalyzer.CompoundScoreAnalysis?
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var primaryActivity: String = "Ride"
@@ -74,6 +75,7 @@ class InsightsViewModel: ObservableObject {
             carbPerformanceInsights     = r.carbPerformanceInsights
             agingAssessment             = r.agingAssessment
             loadVisualization           = r.loadVisualization
+            compoundScoreAnalysis       = r.compoundScoreAnalysis
             primaryActivity             = r.primaryActivity
         } else {
             let rawError = ReadinessRepository.shared.analysisError ?? "Analysis failed"

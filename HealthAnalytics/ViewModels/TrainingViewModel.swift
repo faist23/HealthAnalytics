@@ -25,10 +25,15 @@ class TrainingViewModel: ObservableObject {
     // Training Load
     @Published var trainingLoad: TrainingLoadCalculator.TrainingLoadSummary?
     
+    // Cycling Power
+    @Published var compoundScoreAnalysis: CyclingPowerAnalyzer.CompoundScoreAnalysis?
+    
     // Raw data
     @Published var workouts: [WorkoutData] = []
     @Published var stravaActivities: [StravaActivity] = []
     @Published var stepData: [HealthDataPoint] = []
+    @Published var weightData: [HealthDataPoint] = []
+    @Published var ftpSnapshots: [StoredFTPSnapshot] = []
     
     var modelContainer: ModelContainer?
     
@@ -54,6 +59,13 @@ class TrainingViewModel: ObservableObject {
             
             // Get step data (last 30 days)
             stepData = try dataAccess.fetchHealthMetrics(type: "Steps", from: thirtyDaysAgo, to: Date())
+            
+            // Get weight data
+            weightData = try dataAccess.fetchHealthMetrics(type: "Weight", from: thirtyDaysAgo, to: Date())
+            
+            // Get FTP snapshots
+            let descriptor = FetchDescriptor<StoredFTPSnapshot>()
+            ftpSnapshots = (try? modelContext.fetch(descriptor)) ?? []
             
             // TODO: Add Strava activities when available
             stravaActivities = []
@@ -92,6 +104,13 @@ class TrainingViewModel: ObservableObject {
             healthKitWorkouts: workouts,
             stravaActivities: stravaActivities,
             stepData: stepData
+        )
+        
+        // Cycling Power Analysis
+        let powerAnalyzer = CyclingPowerAnalyzer()
+        compoundScoreAnalysis = await powerAnalyzer.analyzeCompoundScore(
+            workouts: workouts,
+            weightData: weightData
         )
     }
 }

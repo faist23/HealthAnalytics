@@ -641,6 +641,7 @@ class HealthKitManager: ObservableObject {
                         
                         let data = WorkoutData(
                             id: workout.uuid,
+                            originalId: workout.uuid.uuidString,
                             workoutType: workout.workoutActivityType,
                             startDate: workout.startDate,
                             endDate: workout.endDate,
@@ -820,6 +821,59 @@ class HealthKitManager: ObservableObject {
         }
         
         healthStore.execute(query)
+    }
+    
+    /// Fetches the highest 5-minute rolling average power between two dates
+    func fetchPeak5MinPower(startDate: Date, endDate: Date) async throws -> Double? {
+        guard let powerType = HKQuantityType.quantityType(forIdentifier: .cyclingPower) else {
+            return nil
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: powerType,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [sortDescriptor]
+            ) { _, samples, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                guard let quantitySamples = samples as? [HKQuantitySample], !quantitySamples.isEmpty else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                var maxAvg: Double = 0
+                var windowSum: Double = 0
+                var windowQueue: [HKQuantitySample] = []
+                
+                for sample in quantitySamples {
+                    windowQueue.append(sample)
+                    windowSum += sample.quantity.doubleValue(for: .watt())
+                    
+                    while let first = windowQueue.first, sample.startDate.timeIntervalSince(first.startDate) > 300 {
+                        windowSum -= first.quantity.doubleValue(for: .watt())
+                        windowQueue.removeFirst()
+                    }
+                    
+                    if let first = windowQueue.first, sample.startDate.timeIntervalSince(first.startDate) >= 280 {
+                        let avg = windowSum / Double(windowQueue.count)
+                        if avg > maxAvg {
+                            maxAvg = avg
+                        }
+                    }
+                }
+                
+                continuation.resume(returning: maxAvg > 0 ? maxAvg : nil)
+            }
+            healthStore.execute(query)
+        }
     }
     
     // MARK: - Nutrition Data Fetching

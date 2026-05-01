@@ -3,6 +3,33 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+## [0.1.3.0] - 2026-04-30
+
+### Added
+- **Today's step activity now shows up in your energy bank** — if you walked or hiked significantly more than your personal 30-day average, that extra movement adds to your intra-day fatigue curve. The effect is proportional and capped: steps can contribute at most 20% of your workout strain (or 2 points on a rest day), so a long walk never dominates the chart the way a hard interval session does. `RecoveryDecayService.calculateIntraDayReadiness` accepts the new `todayStepExcessTSS` parameter; `ReadinessRepository` derives it from your rolling step baseline using a 3 000-steps-per-TSS conversion.
+
+### Removed
+- **Cleaned up 5 unused ML-experiment files** from `ML-Components/` — `TemporalInsightsCard`, `IntentAwareReadinessTestView`, `ActivityIntentLabelerView`, `IntentAwareReadinessCard`, and `EnhancedIntentReadinessCard` were superseded by the `HeuristicIntentClassifier` path and had zero references in active code. Removed to reduce SourceKit indexing overhead and eliminate false targets when searching where logic lives.
+
+## [0.1.2.0] - 2026-04-30
+
+### Added
+- **Overnight recovery now reflects yesterday's full load** — when you had a hard workout day AND high step activity, the app slows the overnight fatigue recovery curve accordingly (half-life stretches from 16h up to 32h). A rest day after a big day no longer bounces back unrealistically fast. Sleep still dominates — 9 hrs always beats 5 hrs, even on high-load days. `RecoveryDecayService.overnightRecoveryMultiplier(workoutTSS:stepExcessTSS:)` computes the [0.5, 1.0] rate multiplier; does not activate on step excess alone.
+- **Back-to-back crash detection no longer fires on warmup spins** — the pattern now requires a real training load (≥ 1.0 TSS, equivalent to a 60-min zone-2 ride) to count as a hard day. Short 20-min warmup sessions (≈ 0.17 TSS) are filtered out so they no longer suppress the signal by making every day look like heavy training. Existing records are backfilled on first launch. `hardDayLoadThreshold = 1.0`: 20-min zone-1 warmup ≈ 0.17 TSS; 60-min zone-2 base ride ≈ 1.0 TSS.
+
+## [0.1.1.0] - 2026-04-23
+
+### Added
+- **Dynamic Master Coach Engine** — the app now generates a single coaching paragraph that evolves throughout the day. It explicitly references the gap between your morning baseline and your current fatigue state after workouts, so advice stays coherent as your day unfolds. Semantic tone rules prevent contradictory guidance (e.g., "push hard" appearing after a flagged recovery deficit).
+- `MasterCoachEngine.swift` powers the synthesis pipeline; `coachAdvice` is now a first-class field in `UnifiedReadiness` and `CachedAnalysis` (widget-ready).
+
+### Changed
+- Replaced fragmented instructions (`DailyInstructionCard`) in the `HeroReadinessCard` and `ReadinessView` with a single, synthesized `MasterCoachSummary` text.
+- `ReadinessRepository` functionally isolates `morningReadinessScore` calculations to omit same-day workouts for a static morning baseline.
+- `UnifiedReadiness` includes the new `coachAdvice` message, and `CachedAnalysis` supports it for iOS widgets.
+
 ## [0.1.0.0] - 2026-04-20
 
 ### Added

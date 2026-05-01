@@ -7,7 +7,7 @@ This document serves as the "Source of Truth" for the HealthAnalytics project. A
 ### Centralized Analysis
 *   **The Brain:** All readiness, coaching, and injury risk logic **MUST** reside within `ReadinessRepository`. 
 *   **No Redundant Logic:** ViewModels (e.g., `DashboardViewModel`, `ReadinessViewModel`) must **NEVER** calculate their own readiness scores or status levels. They must subscribe to `@Published` properties in `ReadinessRepository`.
-*   **Reconciliation:** The `ReadinessRepository` acts as the "Master Coach." It is responsible for resolving conflicts between competing signals (e.g., high HRV but high injury risk).
+*   **Reconciliation:** The `ReadinessRepository` acts as the "Master Coach." It is responsible for resolving conflicts between competing signals (e.g., high HRV but high injury risk) and generating a single synthesized paragraph via `MasterCoachEngine`. It functionally isolates the morning readiness baseline to compare against the current intra-day fatigue state.
 
 ## 2. Data Integrity & Stability
 

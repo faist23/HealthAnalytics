@@ -312,18 +312,18 @@ struct ReadinessScoreHero: View {
             .background(trendColor.opacity(0.15))
             .clipShape(Capsule())
             
-            // Recommendation
+            // Master Coach Summary
             VStack(spacing: .spacingSm) {
-                Text("Today's Guidance")
-                    .font(.caption)
+                Text("Master Coach")
+                    .font(.labelCaption)
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .tracking(1)
                 
                 Text(readiness.recommendation)
-                    .font(.body)
-                    .fontWeight(.medium)
+                    .font(.coachGuidance)
                     .multilineTextAlignment(.center)
+                    .lineSpacing(4)
                     .foregroundStyle(.primary)
             }
             .padding()

@@ -16,8 +16,11 @@ See `GEMINI.md` for the full engineering mandate. Key rules:
 - Use `DataFingerprint` caching to prevent score drift
 - ACWR sweet spot: 0.8–1.3
 
-### Key extension points (v0.1.0.0)
-- **New patterns** — extend `PatternType` enum in `Models/TrainingPattern.swift`, add a `detectX()` method to `Services/Analytics/TrainingDNAAnalyzer.swift`, wire it in `upsertPatterns()`. Pattern data flows through `StoredDailyScore` snapshots (upserted after every analysis run via `ReadinessRepository.upsertDailyScore()`).
+### Key extension points (v0.1.3.0)
+- **Dynamic Master Coach Engine** — `Services/Coaching/MasterCoachEngine.swift`. Generates a single, cohesive coaching paragraph. `ReadinessRepository` computes the `morningReadinessScore` by functionally omitting today's workouts, passing it to the engine to explicitly highlight intra-day fatigue deltas.
+- **NEAT Mechanism 1 (excess steps add to intra-day strain)** — `RecoveryDecayService.calculateIntraDayReadiness(morningReadiness:workouts:sleepHours:todayStepExcessTSS:)` accepts a `todayStepExcessTSS` parameter. `ReadinessRepository` computes it as `min(excessSteps / 3000.0, cap)` where cap = 20% of today's workout TSS (or 2.0 on rest days). Step baseline is the 30-day rolling average daily step count; fallback `5000` when no history exists. Flows into `EnergyBankChart` via `UnifiedReadiness.todayStepExcessTSS`.
+- **NEAT Mechanism 2 (overnight recovery rate modifier)** — `RecoveryDecayService.overnightRecoveryMultiplier(workoutTSS:stepExcessTSS:)` returns a [0.5, 1.0] multiplier applied to the prior-day fatigue half-life (16h → up to 32h). Only activates when combined workout strain + step excess exceeds threshold. Does not activate on step excess alone. `ReadinessRepository` derives the multiplier from yesterday's load and flows it through `UnifiedReadiness` → `ReadinessViewModel` → `EnergyBankChart`.
+- **New patterns** — extend `PatternType` enum in `Models/TrainingPattern.swift`, add a `detectX()` method to `Services/Analytics/TrainingDNAAnalyzer.swift`, wire it in `upsertPatterns()`. Pattern data flows through `StoredDailyScore` snapshots (upserted after every analysis run via `ReadinessRepository.upsertDailyScore()`). `StoredDailyScore.dailyLoad` stores the total TSS-equivalent load for the day (sum of `calculateWorkoutLoad()` across all workouts). Hard-day detection in `detectBackToBackReadinessCrash()` uses `dailyLoad >= 1.0` — do not revert to `workoutCount >= 1` (warmup rides score < 0.5 TSS and must not count as training days).
 - **FTP history** — `Models/StoredFTPSnapshot.swift`. Use `StoredFTPSnapshot.resolved(for:snapshots:)` to get the FTP value in effect for any historical workout date. Default 200W when no snapshot exists.
 - **7-day forecast** — `Views/Recovery/ReadinessForecastChart.swift` + `ReadinessRepository.compute7DayForecast()`. Requires 14 days of `StoredDailyScore`.
 - **Workout load calculation** — `Services/Analytics/PredictiveReadinessService.calculateWorkoutLoad()` uses three-path priority: zone-weighted power → NP/avg-power TSS → duration × sport multiplier.
@@ -84,10 +87,10 @@ elevated muscle damage, depleted glycogen, suppressed HRV — that persists 24�
 - Use a mild linear ramp above threshold, capped so steps never exceed 20% of total daily strain.
 - Steps are supporting load, not primary training stress. A hard interval session always dominates.
 
-**Mechanism 1 — steps add to daily strain score:**
-- Compute excess steps = max(0, today_steps − 30day_avg_steps).
-- Map excess steps to fatigue points on a capped ramp (implementation details TBD).
-- Feed the result into `RecoveryDecayService` alongside workout fatigue.
+**Mechanism 1 — steps add to intra-day strain curve:**
+- Compute excess steps = max(0, today_steps − 30day_avg_steps). Baseline fallback when no history: 5000 steps.
+- Convert: `todayStepExcessTSS = min(excessSteps / 3000.0, cap)` where cap = 20% of today's workout TSS, or 2.0 on rest days.
+- Pass `todayStepExcessTSS` to `RecoveryDecayService.calculateIntraDayReadiness` — it adds directly to the intra-day fatigue accumulation alongside workout TSS.
 
 **Mechanism 2 — high daily movement reduces overnight recovery rate:**
 - Only activates when combined load (workout strain + step excess) exceeds a threshold.

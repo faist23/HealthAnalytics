@@ -107,10 +107,11 @@ struct HeroReadinessCard: View {
             
             // Daily Recommendation
             Text(recommendation)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.coachGuidance)
+                .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal)
+                .lineSpacing(4)
+                .padding(.horizontal, 24)
             
             // Score calculation explanation
             Text("Based on Recovery (0-40) + Fitness (0-30) + Fatigue (0-30)")

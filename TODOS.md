@@ -221,6 +221,19 @@
 
 ---
 
+## ~~P3 — Dead Code Sweep: Delete Unused Swift Files~~ ✅ DONE 2026-04-30
+
+Deleted 5 confirmed-dead ML-experiment orphans from `ML-Components/`:
+- `TemporalInsightsCard.swift` — zero external refs
+- `IntentAwareReadinessTestView.swift` — debug view, zero external refs
+- `ActivityIntentLabelerView.swift` — zero external refs
+- `IntentAwareReadinessCard.swift` — superseded by `HeuristicIntentClassifier` path, zero refs
+- `EnhancedIntentReadinessCard.swift` — only referenced by the dead test view
+
+Confirmed live and retained: `TemporalModelingService` (used by `ReadinessRepository`), `PerformanceProfiler` (used by `ReadinessViewModel`), `StatisticalDashboardView` (linked from `ReadinessView.swift:88`), `SampleSizeValidator` (used by `StatisticalDashboardView` and `StatisticalPerformancePatternAnalyzer`). `generateTrajectory` / `TrajectoryPoint` were already absent from `ReadinessAnalyzer`.
+
+---
+
 ## P4 — Light Mode Token Sweep: TrainingSignatureCard
 
 **What:** When the light mode phase begins (per DESIGN.md roadmap), sweep `TrainingSignatureCard.swift` and `SpaghettiPlot` to verify all token-based colors render correctly in light mode. The Visual Spec section in the design plan uses dark-mode token values only.

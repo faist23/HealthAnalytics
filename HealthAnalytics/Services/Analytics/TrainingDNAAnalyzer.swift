@@ -537,17 +537,22 @@ actor TrainingDNAAnalyzer {
         // uniquingKeysWith: { $1 } — last writer wins when the DB contains duplicate-day rows
         // (possible if a prior bug or race wrote two StoredDailyScores for the same calendar day).
         // uniqueKeysWithValues: would trap on duplicates; the safe form silently deduplicates.
+        // TSS >= 1.0 separates real training sessions from warm-up rides.
+        // A 20-min zone-1 warmup scores ~0.17; a 60-min zone-2 base ride scores ~1.0.
+        let hardDayLoadThreshold = 1.0
+
         let scoreByDate: [String: Int] = Dictionary(
             scores.map { (formatDay($0.date), $0.readinessScore) },
             uniquingKeysWith: { $1 }
         )
-        let workoutByDate: [String: Int] = Dictionary(
-            scores.map { (formatDay($0.date), $0.workoutCount) },
+        let loadByDate: [String: Double] = Dictionary(
+            scores.map { (formatDay($0.date), $0.dailyLoad) },
             uniquingKeysWith: { $1 }
         )
 
-        // Identify back-to-back hard days: two consecutive days each with >= 1 workout.
-        // "Hard" proxy = workoutCount >= 1 on both days. We look at Day+1 and Day+2 crash.
+        // Identify back-to-back hard days: two consecutive days each with dailyLoad >= hardDayLoadThreshold.
+        // Using TSS-equivalent load rather than workout count so that short warmup sessions
+        // (< 1.0 TSS) don't falsely register as training days.
         var sequences: [(crashDate: Date, dropMagnitude: Double)] = []
 
         for i in 1..<(scores.count - 1) {
@@ -565,9 +570,9 @@ actor TrainingDNAAnalyzer {
                   let nextB = calendar.date(byAdding: .day, value: 1, to: dayB.date),
                   calendar.isDate(nextB, inSameDayAs: dayC.date) else { continue }
 
-            // Both A and B must have workouts (back-to-back hard days)
-            guard (workoutByDate[keyA] ?? 0) >= 1,
-                  (workoutByDate[keyB] ?? 0) >= 1 else { continue }
+            // Both A and B must be hard training days (dailyLoad >= threshold).
+            guard (loadByDate[keyA] ?? 0) >= hardDayLoadThreshold,
+                  (loadByDate[keyB] ?? 0) >= hardDayLoadThreshold else { continue }
 
             let scoreA = Double(scoreByDate[keyA] ?? 50)
             let scoreC = Double(scoreByDate[keyC] ?? 50)
