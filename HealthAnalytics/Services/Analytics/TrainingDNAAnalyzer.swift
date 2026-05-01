@@ -397,7 +397,7 @@ actor TrainingDNAAnalyzer {
             )
         )) ?? []
         let significantWorkoutDays: Set<String> = Set(
-            dailyScores.filter { $0.dailyLoad >= 0.5 }.map { formatDay($0.date) }
+            dailyScores.filter { $0.dailyLoad >= 0.5 }.map { fmt.string(from: $0.date) }
         )
 
         // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days AND no significant workout
