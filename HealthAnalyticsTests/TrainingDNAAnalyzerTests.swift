@@ -624,13 +624,14 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
     /// Generates 90 days of StoredDailyScore covering `totalSequences` back-to-back triplets.
     ///
     /// Layout (10-day stride per sequence):
-    ///   dayA [slot 0]: workouts=1, score=70
-    ///   dayB [slot 1]: workouts=1, score=65
-    ///   dayC [slot 2]: workouts=0, score=45 → drop=(70+65)/2-45=22.5 >10 (confirmed)
-    ///                            score=62 → drop=(70+65)/2-62=5.5 <10 (not confirmed)
-    ///   slots 3..9:   workouts=0, score=70 (rest days, no triplet detected)
+    ///   dayA [slot 0]: dailyLoad=1.5, score=70
+    ///   dayB [slot 1]: dailyLoad=1.5, score=65
+    ///   dayC [slot 2]: dailyLoad=0.0, score=45 → drop=(70+65)/2-45=22.5 >10 (confirmed)
+    ///                                 score=62 → drop=(70+65)/2-62=5.5 <10 (not confirmed)
+    ///   slots 3..9:   dailyLoad=0.0, score=70 (rest days, no triplet detected)
     ///
     /// The first `confirmedCount` sequences get score=45 (confirmed); the rest get score=62.
+    /// dailyLoad=1.5 is 50% above the hardDayLoadThreshold=1.0 — clearly in real-training territory.
     private func makeBackToBackScores(
         confirmedCount: Int,
         totalSequences: Int,
@@ -642,27 +643,63 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
             let slot = i % 10
 
             let score: Int
-            let workouts: Int
+            let load: Double
 
             if seqIdx < totalSequences {
                 switch slot {
-                case 0: score = 70; workouts = 1   // dayA
-                case 1: score = 65; workouts = 1   // dayB
-                case 2:                             // dayC — crash
+                case 0: score = 70; load = 1.5   // dayA — hard training day
+                case 1: score = 65; load = 1.5   // dayB — hard training day
+                case 2:                            // dayC — crash day
                     score = seqIdx < confirmedCount ? 45 : 62
-                    workouts = 0
-                default: score = 70; workouts = 0  // rest
+                    load = 0.0
+                default: score = 70; load = 0.0  // rest days
                 }
             } else {
-                score = 70; workouts = 0
+                score = 70; load = 0.0
             }
 
             return StoredDailyScore(
                 date: date,
                 readinessScore: score,
                 dailyStrain: 1.0,
-                workoutCount: workouts
+                workoutCount: load > 0 ? 1 : 0,
+                dailyLoad: load
             )
         }
+    }
+
+    /// 90 days of daily warmup rides (workoutCount=1, dailyLoad=0.3 — below 1.0 threshold).
+    /// No day should qualify as a "hard day" so the detector must return nil regardless of readiness drops.
+    func testWarmupDaysDoNotCountAsHardDays() async throws {
+        let scores = (0..<90).map { i -> StoredDailyScore in
+            let date = day(-(89 - i))
+            // Alternate score to create apparent readiness drops — these should be ignored
+            // because the dailyLoad never reaches hardDayLoadThreshold (1.0).
+            let score = i % 3 == 2 ? 45 : 70
+            return StoredDailyScore(
+                date: date,
+                readinessScore: score,
+                dailyStrain: 1.0,
+                workoutCount: 1,   // warmup logged every day
+                dailyLoad: 0.3    // well below 1.0 threshold
+            )
+        }
+
+        let container = try makeContainer()
+        let ctx = ModelContext(container)
+        scores.forEach { ctx.insert($0) }
+        try ctx.save()
+
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 90
+        await analyzer.setDataProvider(mock)
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "Warmup-only days (dailyLoad=0.3) must not qualify as hard days — no back-to-back crash pattern should be detected"
+        )
     }
 }

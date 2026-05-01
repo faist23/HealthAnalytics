@@ -84,7 +84,7 @@ struct CyclingPowerAnalyzer {
         )
     }
     
-    private func determinePhenotype(absolute: Double, relative: Double, weightKg: Double) -> String {
+    func determinePhenotype(absolute: Double, relative: Double, weightKg: Double) -> String {
         if relative > 4.5 && weightKg < 70 {
             return "Climber"
         } else if absolute > 350 && relative < 4.0 {
@@ -96,7 +96,7 @@ struct CyclingPowerAnalyzer {
         }
     }
     
-    private func determineLevel(compoundScore: Double) -> String {
+    func determineLevel(compoundScore: Double) -> String {
         if compoundScore >= 1600 {
             return "Elite / Pro"
         } else if compoundScore >= 1100 {
@@ -110,7 +110,7 @@ struct CyclingPowerAnalyzer {
         }
     }
     
-    private func generateInsight(compoundScore: Double, relativeFTP: Double, absoluteFTP: Double, phenotype: String) -> String {
+    func generateInsight(compoundScore: Double, relativeFTP: Double, absoluteFTP: Double, phenotype: String) -> String {
         if relativeFTP >= 4.0 && absoluteFTP >= 300 {
             return "Excellent Compound Score. Strong balance of raw power for flats and efficiency for climbs."
         } else if relativeFTP > 4.5 {

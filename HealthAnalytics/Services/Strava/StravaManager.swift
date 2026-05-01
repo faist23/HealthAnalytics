@@ -366,29 +366,23 @@ class StravaManager: ObservableObject {
 
         // Strava streams can contain nil, assume 0 for dropped connections/coasting to keep window time valid
         let samples = rawSamples.map { $0 ?? 0.0 }
-        
-        // 5-minute rolling average (300 samples, assuming 1 sample = 1 second)
-        let windowSize = 300
+        return StravaManager.peak5MinAverage(samples: samples)
+    }
+
+    /// Pure rolling-average algorithm — extracted for unit testability.
+    static func peak5MinAverage(samples: [Double], windowSize: Int = 300) -> Double? {
         guard samples.count >= windowSize else { return nil }
 
         var currentSum: Double = 0
-        // Initial window sum
-        for i in 0..<windowSize {
-            currentSum += samples[i]
-        }
-        
-        var maxAvg: Double = currentSum / Double(windowSize)
+        for i in 0..<windowSize { currentSum += samples[i] }
+        var maxAvg = currentSum / Double(windowSize)
 
-        // Slide window
         for i in windowSize..<samples.count {
             currentSum += samples[i]
             currentSum -= samples[i - windowSize]
             let avg = currentSum / Double(windowSize)
-            if avg > maxAvg {
-                maxAvg = avg
-            }
+            if avg > maxAvg { maxAvg = avg }
         }
-
         return maxAvg > 0 ? maxAvg : nil
     }
 
