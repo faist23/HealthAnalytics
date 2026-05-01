@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.3.1] - 2026-04-30
+
+### Fixed
+- **HRV precursor pattern now fires for daily-workout users** — the sick-day proxy previously required two consecutive low-step days with *no workout at all*, so users who do a daily warmup session (even a short 10-min spin) were permanently blocked from the pattern. The workout filter now uses a load threshold of ≥ 0.5 TSS (sourced from `StoredDailyScore.dailyLoad`), so warmup rides (~0.17 TSS) are excluded while real training sessions are still respected. `detectHRVPrecursor` now fetches significant workout days directly from SwiftData rather than via HealthKit's `fetchWorkoutDays`. Formatter consistency fix: both construction and lookup of the `significantWorkoutDays` set use the same local `fmt` DateFormatter instance to prevent timezone drift.
+
 ## [0.1.3.0] - 2026-04-30
 
 ### Added
