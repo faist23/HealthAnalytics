@@ -221,6 +221,34 @@
 
 ---
 
+## P3 — Dead Code Sweep: Delete Unused Swift Files
+
+**What:** Audit and delete Swift files that are no longer referenced anywhere in the app. The project has 127 `.swift` files; a meaningful fraction appear to be dead ML-experiment code, debug views, and replaced services.
+
+**Why:** Dead files slow down SourceKit indexing, increase build time, and create false confidence when searching for where logic lives. They also invite accidental reuse of superseded patterns.
+
+**Known candidates (verify before deleting):**
+- `ML-Components/TemporalInsightsCard.swift` — name suggests an old iteration; references exist only in other ML-Components files
+- `ML-Components/TemporalModelingService.swift` — same pattern
+- `ML-Components/IntentAwareReadinessTestView.swift` — debug test view, not in any navigation stack
+- `ML-Components/SampleSizeValidator.swift` — confirm nothing outside ML-Components references it
+- `ML-Components/StatisticalDashboardView.swift` — debug view; confirm not in any sheet or navigation
+- `ML-Components/ActivityIntentLabelerView.swift` / `IntentAwareReadinessCard.swift` — check if superseded by `HeuristicIntentClassifier` path
+- `ReadinessAnalyzer.generateTrajectory()` / `TrajectoryPoint` — confirmed dead (suppressed by `trajectory: []` hardcode in `ReadinessViewModel:71`; see pitfall memory)
+
+**How to apply:**
+1. For each candidate: `grep -rn "TypeName" HealthAnalytics/ --include="*.swift"` to verify zero references outside the file itself.
+2. Delete confirmed orphans. Xcode will catch any missed references at build time.
+3. Run full build + test suite after each batch.
+
+**Effort:** S (human: ~2h / CC+gstack: ~20 min)
+
+**Priority:** P3 — no user impact, but cleans up a 127-file codebase that's accumulating ML experiment residue
+
+**Depends on / blocked by:** Nothing. Safe to do in a standalone cleanup PR.
+
+---
+
 ## P4 — Light Mode Token Sweep: TrainingSignatureCard
 
 **What:** When the light mode phase begins (per DESIGN.md roadmap), sweep `TrainingSignatureCard.swift` and `SpaghettiPlot` to verify all token-based colors render correctly in light mode. The Visual Spec section in the design plan uses dark-mode token values only.

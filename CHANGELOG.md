@@ -3,6 +3,14 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+## [0.1.2.0] - 2026-04-30
+
+### Added
+- **NEAT Mechanism 2 — overnight recovery rate modifier** — high combined load from yesterday (workout strain + excess step load above 30-day personal baseline) now reduces how quickly prior-day fatigue resolves overnight. Implemented as a percentage reduction on the prior-day fatigue half-life (16h → up to 32h at 0.5× floor), not a flat points deduction, preserving the sleep-duration hierarchy. Does not activate on step excess alone. `RecoveryDecayService.overnightRecoveryMultiplier(workoutTSS:stepExcessTSS:)` computes the [0.5, 1.0] rate multiplier; `ReadinessRepository` derives it from yesterday's load each analysis run and flows it through to `EnergyBankChart` via `UnifiedReadiness` → `ReadinessViewModel`.
+- **Intensity-gated back-to-back crash detection** — `StoredDailyScore` gains a `dailyLoad: Double` field (total TSS-equivalent load per day). The back-to-back crash pattern now uses `dailyLoad >= 1.0` to identify hard training days instead of `workoutCount >= 1`, filtering out short warmup sessions (< 0.5 TSS) that were causing every day to register as a training day and suppressing the signal. A one-time migration (`backfillDailyLoad()`) populates `dailyLoad` on existing records from `StoredWorkout` on first launch. `hardDayLoadThreshold = 1.0`: 20-min zone-1 warmup ≈ 0.17 TSS; 60-min zone-2 base ride ≈ 1.0 TSS.
+
 ## [0.1.1.0] - 2026-04-23
 
 ### Added
