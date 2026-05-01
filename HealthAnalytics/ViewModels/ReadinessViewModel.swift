@@ -92,6 +92,7 @@ class ReadinessViewModel: ObservableObject {
 
         // Coaching output — now owned by ReadinessRepository (GEMINI.md mandate)
         self.dailyInstruction = unified.dailyInstruction
+        self.overnightRecoveryMultiplier = unified.overnightRecoveryMultiplier
     }
     
     // Training Load (moved from InsightsViewModel)
@@ -105,6 +106,7 @@ class ReadinessViewModel: ObservableObject {
     @Published var todayWorkouts: [WorkoutData] = []
     @Published var cardiovascularStrain: CardiovascularStrainService.Result?
     @Published var todaySteps: Int = 0
+    @Published var overnightRecoveryMultiplier: Double = 1.0
 
     // UserDefaults keys for maxHR cache (refresh weekly — doesn't change fast).
     private static let maxHRCacheKey = "cachedPersonalMaxHR"

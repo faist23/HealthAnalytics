@@ -137,6 +137,10 @@ class ReadinessRepository: ObservableObject {
         // RECONCILED MESSAGE: The single "Master Coach" advice
         let coachAdvice: String
 
+        /// Overnight recovery rate multiplier derived from yesterday's combined load.
+        /// Passed to EnergyBankChart so the projected curve reflects the same rate used for today's score.
+        let overnightRecoveryMultiplier: Double
+
         // ML sub-service outputs (owned by Repository, not ViewModel)
         let mlPrediction: PerformancePredictor.Prediction?
         let mlFeatureWeights: PerformancePredictor.FeatureWeights?
@@ -174,6 +178,11 @@ class ReadinessRepository: ObservableObject {
     // MARK: - Main Analysis Entry Point
     
     func refreshIfNecessary(modelContext: ModelContext) async {
+        // Backfill StoredDailyScore from HealthKit history on first launch.
+        await backfillHistoricalScores(modelContext: modelContext)
+        // One-time migration: populate dailyLoad on existing rows (default was 0.0 from schema add).
+        backfillDailyLoad(modelContext: modelContext)
+
         // 1. Calculate current data fingerprint
         guard let fingerprint = try? calculateFingerprint(context: modelContext) else { return }
         
@@ -311,10 +320,29 @@ class ReadinessRepository: ObservableObject {
             // 4. Intra-Day Recovery Decay (Dynamic Score)
             // Carry-forward: fatigueScore of 30 = no debt; less than 30 = points suppressed by prior strain.
             let priorDayFatigueImpact = Double(30 - baseReadiness.breakdown.fatigueScore)
+
+            // Mechanism 2 (NEAT): yesterday's combined load (workout + step excess) may impair
+            // overnight recovery, slowing how quickly prior-day fatigue resolves today.
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
+            let yesterdayWorkouts = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: yesterday) }
+            let yesterdayWorkoutTSS = yesterdayWorkouts.reduce(0.0) { $0 + loadCalculator.calculateWorkoutLoad($1) }
+            let thirtyDaysAgo = calendar.date(byAdding: .day, value: -30, to: today)!
+            let recentSteps = stepData.filter { $0.date >= thirtyDaysAgo && $0.date < today }
+            let stepBaseline: Double = recentSteps.isEmpty ? 7500 : recentSteps.map(\.value).reduce(0, +) / Double(recentSteps.count)
+            let yesterdayStepCount = stepData.first(where: { calendar.isDate($0.date, inSameDayAs: yesterday) })?.value ?? 0
+            let yesterdayStepExcess = max(0, yesterdayStepCount - stepBaseline)
+            let cap = yesterdayWorkoutTSS > 0 ? yesterdayWorkoutTSS * 0.20 : 5.0
+            let yesterdayStepExcessTSS = min(yesterdayStepExcess / 3000.0, cap)
+            let recoveryMultiplier = RecoveryDecayService.overnightRecoveryMultiplier(
+                workoutTSS: yesterdayWorkoutTSS,
+                stepExcessTSS: yesterdayStepExcessTSS
+            )
+
             let intraDay = recoveryService.calculateIntraDayReadiness(
                 baselineScore: baseReadiness.score,
                 todayWorkouts: workouts,
-                priorDayFatigueImpact: max(0, priorDayFatigueImpact)
+                priorDayFatigueImpact: max(0, priorDayFatigueImpact),
+                overnightRecoveryMultiplier: recoveryMultiplier
             )
 
             // 5. ML Sub-services (moved from ReadinessViewModel per GEMINI.md)
@@ -529,6 +557,7 @@ class ReadinessRepository: ObservableObject {
                 date: now,
                 intraDay: intraDay,
                 coachAdvice: masterCoachMessage,
+                overnightRecoveryMultiplier: recoveryMultiplier,
                 mlPrediction: mlPrediction,
                 mlFeatureWeights: mlFeatureWeights,
                 mlError: mlError,
@@ -561,11 +590,17 @@ class ReadinessRepository: ObservableObject {
             self.lastAnalysisDate = now
 
             // Persist today's readiness score for 90-day back-to-back crash pattern detection.
+            let todayWorkoutsForLoad = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
+            let ftpSnapshotsForLoad = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+            let todayTotalLoad = todayWorkoutsForLoad.reduce(0.0) {
+                $0 + predictiveReadinessService.calculateWorkoutLoad($1, ftpSnapshots: ftpSnapshotsForLoad)
+            }
             upsertDailyScore(
                 date: today,
                 score: baseReadiness.score,
                 acwr: readinessAssessmentResult.acwr,
-                workoutCount: workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }.count,
+                workoutCount: todayWorkoutsForLoad.count,
+                dailyLoad: todayTotalLoad,
                 modelContext: modelContext
             )
 
@@ -596,6 +631,7 @@ class ReadinessRepository: ObservableObject {
         score: Int,
         acwr: Double,
         workoutCount: Int,
+        dailyLoad: Double,
         modelContext: ModelContext
     ) {
         let dateStr = Self.dailyScoreDateFormatter.string(from: date)
@@ -607,16 +643,170 @@ class ReadinessRepository: ObservableObject {
             existing.readinessScore = score
             existing.dailyStrain = acwr
             existing.workoutCount = workoutCount
+            existing.dailyLoad = dailyLoad
         } else {
             let record = StoredDailyScore(
                 date: date,
                 readinessScore: score,
                 dailyStrain: acwr,
-                workoutCount: workoutCount
+                workoutCount: workoutCount,
+                dailyLoad: dailyLoad
             )
             modelContext.insert(record)
         }
         try? modelContext.save()
+    }
+
+    // MARK: - Historical Score Backfill
+
+    /// Populates StoredDailyScore for the last 90 days from already-synced SwiftData records.
+    /// Runs once on first launch (UserDefaults gate) and re-runs whenever fewer than 14 records
+    /// exist (e.g. after a data clear). This unlocks the 7-day forecast and 14-Day Signature
+    /// without requiring 14 consecutive days of app opens.
+    private func backfillHistoricalScores(modelContext: ModelContext) async {
+        // V5: diagnose existingDates vs per-day filter failure.
+        let udKey = "historicalScoreBackfillV5Done"
+        let existingCount = (try? modelContext.fetchCount(FetchDescriptor<StoredDailyScore>())) ?? 0
+        guard !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 else { return }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        guard let ninetyDaysAgo  = calendar.date(byAdding: .day, value: -90, to: today),
+              let yesterday       = calendar.date(byAdding: .day, value:  -1, to: today),
+              let fetchStart      = calendar.date(byAdding: .day, value: -28, to: ninetyDaysAgo)
+        else { return }
+
+        let hk = HealthKitManager.shared
+
+        // Pull 90+28 days of biometrics straight from HealthKit — this is the only source
+        // that has historical data predating the app install.
+        async let rhrFetch  = try? hk.fetchRestingHeartRate(startDate: fetchStart, endDate: today)
+        async let hrvFetch  = try? hk.fetchHeartRateVariability(startDate: fetchStart, endDate: today)
+        async let sleepFetch = try? hk.fetchSleepDuration(startDate: fetchStart, endDate: today)
+        async let hkWorkoutFetch = try? hk.fetchWorkouts(startDate: fetchStart, endDate: today)
+
+        let (allRHR, allHRV, allSleep, hkWorkouts) = await (
+            rhrFetch ?? [],
+            hrvFetch ?? [],
+            sleepFetch ?? [],
+            hkWorkoutFetch ?? []
+        )
+
+
+        // Workouts: merge HealthKit history with StoredWorkout (has Strava power data).
+        // StoredWorkout wins on overlap via date-key dedup so zone-weighted loads are preserved.
+        let workoutDescriptor = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate { $0.startDate >= fetchStart },
+            sortBy: [SortDescriptor(\.startDate)]
+        )
+        let storedWorkouts = (try? modelContext.fetch(workoutDescriptor)) ?? []
+        let ftpSnapshots   = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+
+        // Build a merged workout list: prefer StoredWorkout (richer data), fill gaps from HK.
+        let storedWorkoutDates = Set(storedWorkouts.map { calendar.startOfDay(for: $0.startDate) })
+        let hkOnlyWorkouts = hkWorkouts.filter { !storedWorkoutDates.contains(calendar.startOfDay(for: $0.startDate)) }
+        let allWorkouts = storedWorkouts.map { WorkoutData(from: $0) } + hkOnlyWorkouts
+
+        // Skip dates that already have a StoredDailyScore.
+        let allExisting  = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
+        let existingDates = Set(allExisting.map { $0.dateString })
+
+        let formatter = Self.dailyScoreDateFormatter
+        var inserted = 0
+
+        var day = ninetyDaysAgo
+        while day <= yesterday {
+            let dateStr = formatter.string(from: day)
+            defer { day = calendar.date(byAdding: .day, value: 1, to: day) ?? today }
+
+            guard !existingDates.contains(dateStr) else { continue }
+
+            guard let dayEnd          = calendar.date(byAdding: .day, value:  1, to: day),
+                  let window7Start    = calendar.date(byAdding: .day, value:  -7, to: day),
+                  let window28Start   = calendar.date(byAdding: .day, value: -28, to: day),
+                  let biometricStart  = calendar.date(byAdding: .day, value:  -1, to: day)
+            else { continue }
+
+            // ±1-day biometric window — HK records timestamps vary (midnight, morning, etc.)
+            let rhrDay   = allRHR.filter   { $0.date >= biometricStart && $0.date < dayEnd }
+            let hrvDay   = allHRV.filter   { $0.date >= biometricStart && $0.date < dayEnd }
+            let sleepDay = allSleep.filter { $0.date >= biometricStart && $0.date < dayEnd }
+
+            guard (!hrvDay.isEmpty || !rhrDay.isEmpty), !sleepDay.isEmpty else { continue }
+
+            let workoutsInWindow = allWorkouts.filter { $0.startDate >= window28Start && $0.startDate < dayEnd }
+            let todayWorkouts    = allWorkouts.filter { calendar.isDate($0.startDate, inSameDayAs: day) }
+
+            guard let readiness = readinessAnalyzer.analyzeReadiness(
+                restingHR: rhrDay,
+                hrv: hrvDay,
+                sleep: sleepDay,
+                workouts: workoutsInWindow,
+                stravaActivities: [],
+                nutrition: []
+            ) else { continue }
+
+            // ACWR computed with date-relative windows (PredictiveReadinessService uses Date()).
+            let acuteLoad   = allWorkouts.filter { $0.startDate >= window7Start  && $0.startDate < dayEnd }
+                .reduce(0.0) { $0 + predictiveReadinessService.calculateWorkoutLoad($1, ftpSnapshots: ftpSnapshots) } / 7.0
+            let chronicLoad = allWorkouts.filter { $0.startDate >= window28Start && $0.startDate < dayEnd }
+                .reduce(0.0) { $0 + predictiveReadinessService.calculateWorkoutLoad($1, ftpSnapshots: ftpSnapshots) } / 28.0
+            let acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1.0
+
+            let dayLoad = todayWorkouts.reduce(0.0) {
+                $0 + predictiveReadinessService.calculateWorkoutLoad($1, ftpSnapshots: ftpSnapshots)
+            }
+            modelContext.insert(StoredDailyScore(
+                date: day,
+                readinessScore: readiness.score,
+                dailyStrain: acwr,
+                workoutCount: todayWorkouts.count,
+                dailyLoad: dayLoad
+            ))
+            inserted += 1
+        }
+
+        if inserted > 0 {
+            try? modelContext.save()
+        }
+
+        UserDefaults.standard.removeObject(forKey: "lastPatternAnalysisDate")
+        UserDefaults.standard.set(true, forKey: udKey)
+
+        #if DEBUG
+        if inserted > 0 { print("📅 Backfill: inserted \(inserted) historical StoredDailyScore records") }
+        #endif
+    }
+
+    /// One-time migration: populates dailyLoad on all existing StoredDailyScore rows from StoredWorkout.
+    /// Existing rows got dailyLoad=0.0 from the lightweight SwiftData migration — this fixes them so
+    /// the back-to-back crash detector can distinguish warmups (< 1.0 TSS) from real training days.
+    private func backfillDailyLoad(modelContext: ModelContext) {
+        let udKey = "dailyLoadBackfillV1Done"
+        guard !UserDefaults.standard.bool(forKey: udKey) else { return }
+
+        let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
+        let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+        let storedWorkouts = (try? modelContext.fetch(FetchDescriptor<StoredWorkout>())) ?? []
+
+        #if DEBUG
+        if allScores.isEmpty { print("⚠️ backfillDailyLoad: no StoredDailyScore records found — migration skipped") }
+        #endif
+
+        let calendar = Calendar.current
+        for score in allScores {
+            let dayStart = calendar.startOfDay(for: score.date)
+            guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { continue }
+            let load = storedWorkouts
+                .filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
+                .reduce(0.0) {
+                    $0 + predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: $1), ftpSnapshots: ftpSnapshots)
+                }
+            score.dailyLoad = load
+        }
+
+        try? modelContext.save()
+        UserDefaults.standard.set(true, forKey: udKey)
     }
 
     // MARK: - 7-Day Readiness Forecast

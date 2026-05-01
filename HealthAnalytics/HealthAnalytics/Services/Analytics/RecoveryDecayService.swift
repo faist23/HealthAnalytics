@@ -27,6 +27,20 @@ class RecoveryDecayService {
         }
     }
 
+    /// Returns a multiplier [0.5, 1.0] for overnight recovery rate.
+    /// A value < 1.0 slows prior-day fatigue decay, modeling impaired overnight recovery
+    /// from high combined load (workout strain + excess step load).
+    /// Does not activate when workoutTSS is zero — step excess alone never impairs recovery.
+    static func overnightRecoveryMultiplier(workoutTSS: Double, stepExcessTSS: Double) -> Double {
+        guard workoutTSS > 0 else { return 1.0 }
+        let combinedLoad = workoutTSS + stepExcessTSS
+        let threshold = 25.0
+        guard combinedLoad > threshold else { return 1.0 }
+        // Linear ramp: at threshold → 1.0; at 2× threshold → 0.5; floor 0.5
+        let reduction = min(0.5, (combinedLoad - threshold) / threshold * 0.5)
+        return 1.0 - reduction
+    }
+
     /// Calculates the current dynamic readiness score based on workouts completed TODAY
     /// and any carry-forward fatigue from prior days.
     ///
@@ -35,11 +49,14 @@ class RecoveryDecayService {
     ///   - todayWorkouts: All known workouts; filtered internally to today only.
     ///   - priorDayFatigueImpact: Estimated fatigue points still owed from prior days.
     ///     Pass `Double(30 - breakdown.fatigueScore)` from the ScoreBreakdown. Defaults to 0.
+    ///   - overnightRecoveryMultiplier: Rate modifier [0.5, 1.0] from yesterday's combined load.
+    ///     Values < 1.0 slow prior-day fatigue decay. Use `RecoveryDecayService.overnightRecoveryMultiplier`.
     ///   - now: Defaults to the real current time; override for simulation.
     func calculateIntraDayReadiness(
         baselineScore: Int,
         todayWorkouts: [WorkoutData],
         priorDayFatigueImpact: Double = 0,
+        overnightRecoveryMultiplier: Double = 1.0,
         now: Date = Date()
     ) -> IntraDayReadiness {
         let calendar = Calendar.current
@@ -49,9 +66,11 @@ class RecoveryDecayService {
         let ceilingScore = min(100, baselineScore + Int(round(priorDayFatigueImpact)))
 
         // Prior-day carry-forward decays with a 16-hour half-life (slower than same-day fatigue).
-        // At 7 hours (mid-day after morning HRV read) ~26% has decayed; at 16h ~50%.
+        // A multiplier < 1.0 increases the effective half-life, slowing recovery when yesterday
+        // had high combined load (Mechanism 2: NEAT + workout strain impairs overnight recovery).
         let priorHalfLife: Double = 16 * 3600
-        let priorDecay = log(2.0) / priorHalfLife
+        let effectivePriorHalfLife = priorHalfLife / max(0.01, overnightRecoveryMultiplier)
+        let priorDecay = log(2.0) / effectivePriorHalfLife
         let elapsedSinceMidnight = max(0, now.timeIntervalSince(startOfDay))
         let priorDayRemaining = priorDayFatigueImpact * exp(-priorDecay * elapsedSinceMidnight)
 
