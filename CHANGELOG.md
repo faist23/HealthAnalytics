@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.3.0] - 2026-04-30
+
+### Added
+- **Today's step activity now shows up in your energy bank** — if you walked or hiked significantly more than your personal 30-day average, that extra movement adds to your intra-day fatigue curve. The effect is proportional and capped: steps can contribute at most 20% of your workout strain (or 2 points on a rest day), so a long walk never dominates the chart the way a hard interval session does. `RecoveryDecayService.calculateIntraDayReadiness` accepts the new `todayStepExcessTSS` parameter; `ReadinessRepository` derives it from your rolling step baseline using a 3 000-steps-per-TSS conversion.
+
+### Removed
+- **Cleaned up 5 unused ML-experiment files** from `ML-Components/` — `TemporalInsightsCard`, `IntentAwareReadinessTestView`, `ActivityIntentLabelerView`, `IntentAwareReadinessCard`, and `EnhancedIntentReadinessCard` were superseded by the `HeuristicIntentClassifier` path and had zero references in active code. Removed to reduce SourceKit indexing overhead and eliminate false targets when searching where logic lives.
+
 ## [0.1.2.0] - 2026-04-30
 
 ### Added
