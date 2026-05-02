@@ -553,12 +553,18 @@ class ReadinessRepository: ObservableObject {
             let computedForecast = compute7DayForecast(modelContext: modelContext, overrideACWR: readinessAssessmentResult.acwr)
             let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? Date()
             let nextDayCoaching = computedForecast?.first(where: { calendar.isDate($0.date, inSameDayAs: nextDay) })?.coaching
+            let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: today) ?? today
+            let allStoredPatterns = (try? modelContext.fetch(FetchDescriptor<TrainingPattern>())) ?? []
+            let activePatternTypes = allStoredPatterns
+                .filter { $0.detectedAt >= sevenDaysAgo }
+                .map(\.patternType)
             let coachState = MasterCoachEngine.StateVector(
                 morningScore: baseReadiness.score,
                 currentScore: intraDay.currentScore,
                 nextDayForecast: nextDayCoaching,
                 acwr: readinessAssessmentResult.acwr,
-                injuryRisk: riskAssessment.riskLevel.label
+                injuryRisk: riskAssessment.riskLevel.label,
+                activePatterns: activePatternTypes.map(\.rawValue)
             )
             let masterCoachMessage = MasterCoachEngine.generateMessage(state: coachState)
 

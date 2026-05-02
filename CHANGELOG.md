@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.4.0] - 2026-05-01
+
+### Added
+- **Pattern-aware coaching messages** — `MasterCoachEngine` now receives live pattern detection results from `ReadinessRepository` and uses them to personalise every coaching paragraph. Pattern priority hierarchy: HRV precursor overrides all positive signals; `backToBackCrash` and `blockCrashCycle` append a load-specific warning; `sleepFragmentation` appends a sleep note; `performancePeak` and `tapering` upgrade the baseline readiness message tier. Patterns are scoped to the past 7 days so stale detections don't affect current advice. `StateVector.activePatterns` is typed `[String]` (raw `PatternType` values) to keep the engine a pure Foundation struct with no SwiftData dependency. `ReadinessRepository` passes `activePatternTypes.map(\.rawValue)` at the call site.
+- **8 new unit tests for pattern-aware coaching** — covers HRV precursor override, performance peak upgrade, taper upgrade, back-to-back crash load note, sleep fragmentation note, and all three existing baseline cases.
+
 ## [0.1.3.1] - 2026-04-30
 
 ### Fixed
