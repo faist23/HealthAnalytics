@@ -69,6 +69,15 @@ enum PatternType: String, Codable, CaseIterable {
         }
     }
 
+    /// Render priority for UI tie-breaking (0 = highest priority).
+    static func displayPriority(_ type: PatternType) -> Int {
+        let order: [PatternType] = [
+            .hrvPrecursor, .backToBackCrash, .blockCrashCycle,
+            .sleepFragmentation, .performancePeak, .tapering
+        ]
+        return order.firstIndex(of: type) ?? 99
+    }
+
     /// Default citation key for this pattern type
     nonisolated var citationKey: String {
         switch self {
