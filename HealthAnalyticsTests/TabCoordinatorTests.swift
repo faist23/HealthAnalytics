@@ -8,30 +8,42 @@ import XCTest
 
 final class TabCoordinatorTests: XCTestCase {
 
-    func testInitialState() {
-        let coordinator = TabCoordinator()
-        XCTAssertEqual(coordinator.selectedTab, TabCoordinator.recoveryTab)
-        XCTAssertNil(coordinator.pendingScrollPattern)
+    func testInitialState() async {
+        let (tab, pattern) = await MainActor.run {
+            let c = TabCoordinator()
+            return (c.selectedTab, c.pendingScrollPattern)
+        }
+        XCTAssertEqual(tab, TabCoordinator.recoveryTab)
+        XCTAssertNil(pattern)
     }
 
-    func testNavigateToIntelligenceWithPattern() {
-        let coordinator = TabCoordinator()
-        coordinator.navigate(to: TabCoordinator.intelligenceTab, scrollTo: .hrvPrecursor)
-        XCTAssertEqual(coordinator.selectedTab, TabCoordinator.intelligenceTab)
-        XCTAssertEqual(coordinator.pendingScrollPattern, .hrvPrecursor)
+    func testNavigateToIntelligenceWithPattern() async {
+        let (tab, pattern) = await MainActor.run {
+            let c = TabCoordinator()
+            c.navigate(to: TabCoordinator.intelligenceTab, scrollTo: .hrvPrecursor)
+            return (c.selectedTab, c.pendingScrollPattern)
+        }
+        XCTAssertEqual(tab, TabCoordinator.intelligenceTab)
+        XCTAssertEqual(pattern, .hrvPrecursor)
     }
 
-    func testNavigateWithNilPattern() {
-        let coordinator = TabCoordinator()
-        coordinator.navigate(to: TabCoordinator.intelligenceTab, scrollTo: nil)
-        XCTAssertEqual(coordinator.selectedTab, TabCoordinator.intelligenceTab)
-        XCTAssertNil(coordinator.pendingScrollPattern)
+    func testNavigateWithNilPattern() async {
+        let (tab, pattern) = await MainActor.run {
+            let c = TabCoordinator()
+            c.navigate(to: TabCoordinator.intelligenceTab, scrollTo: nil)
+            return (c.selectedTab, c.pendingScrollPattern)
+        }
+        XCTAssertEqual(tab, TabCoordinator.intelligenceTab)
+        XCTAssertNil(pattern)
     }
 
-    func testNavigateTwiceOverwritesFirst() {
-        let coordinator = TabCoordinator()
-        coordinator.navigate(to: TabCoordinator.intelligenceTab, scrollTo: .performancePeak)
-        coordinator.navigate(to: TabCoordinator.intelligenceTab, scrollTo: .tapering)
-        XCTAssertEqual(coordinator.pendingScrollPattern, .tapering)
+    func testNavigateTwiceOverwritesFirst() async {
+        let pattern = await MainActor.run {
+            let c = TabCoordinator()
+            c.navigate(to: TabCoordinator.intelligenceTab, scrollTo: .performancePeak)
+            c.navigate(to: TabCoordinator.intelligenceTab, scrollTo: .tapering)
+            return c.pendingScrollPattern
+        }
+        XCTAssertEqual(pattern, .tapering)
     }
 }
