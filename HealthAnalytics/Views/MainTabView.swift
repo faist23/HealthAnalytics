@@ -8,14 +8,13 @@ import SwiftUI
 struct MainTabView: View {
     @State private var selectedTab = 0
     @State private var showSettings = false
-    @State private var showInsights = false
     @ObservedObject var syncManager = SyncManager.shared
     @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
         ZStack {
             TabView(selection: $selectedTab) {
-                RecoveryTabView(showSettings: $showSettings, showInsights: $showInsights)
+                RecoveryTabView(showSettings: $showSettings)
                     .tabItem {
                         Label("Recovery", systemImage: "battery.100")
                     }
@@ -38,6 +37,12 @@ struct MainTabView: View {
                         Label("Healthspan", systemImage: "heart.text.square.fill")
                     }
                     .tag(3)
+
+                InsightsView()
+                    .tabItem {
+                        Label("Intelligence", systemImage: "sparkles")
+                    }
+                    .tag(4)
             }
             .tint(AppColors.accentColor(for: selectedTab))
 
@@ -51,16 +56,6 @@ struct MainTabView: View {
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Done") { showSettings = false }
-                        }
-                    }
-            }
-        }
-        .sheet(isPresented: $showInsights) {
-            NavigationStack {
-                InsightsView()
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showInsights = false }
                         }
                     }
             }

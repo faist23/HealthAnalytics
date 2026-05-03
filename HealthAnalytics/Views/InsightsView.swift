@@ -20,8 +20,11 @@ struct InsightsView: View {
     // Reactive SwiftData read — updates automatically when TrainingDNAAnalyzer persists
     @Query(sort: \TrainingPattern.confidenceNumerator, order: .reverse)
     private var detectedPatterns: [TrainingPattern]
-    
+
+    @ObservedObject private var repo = ReadinessRepository.shared
+
     var body: some View {
+        NavigationStack {
         ZStack {
             TabBackgroundColor.insights(for: colorScheme)
                 .ignoresSafeArea()
@@ -35,6 +38,7 @@ struct InsightsView: View {
                         }
                         .cardStyle(for: .error)
                     } else if !viewModel.isLoading && !isFirstLoad {
+                        todayInsightCard
                         // 2. Main Dashboard Content (Broken into groups to fix compiler timeout)
                         dashboardContent
                     }
@@ -49,7 +53,7 @@ struct InsightsView: View {
                 LoadingOverlay(message: "Analyzing your data...")
             }
         }
-        .navigationTitle("Analysis")
+        .navigationTitle("Intelligence")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -90,6 +94,72 @@ struct InsightsView: View {
             Task {
                 await viewModel.analyzeData()
             }
+        }
+        } // NavigationStack
+    }
+
+    // MARK: - Today Signal Card
+
+    @ViewBuilder
+    private var todayInsightCard: some View {
+        if let readiness = repo.currentReadiness {
+            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+            let activePatterns = detectedPatterns.filter { $0.detectedAt >= sevenDaysAgo }
+            let priorityOrder: [PatternType] = [
+                .hrvPrecursor, .backToBackCrash, .blockCrashCycle,
+                .sleepFragmentation, .performancePeak, .tapering
+            ]
+            let topPattern = activePatterns.min(by: {
+                (priorityOrder.firstIndex(of: $0.patternType) ?? 99) <
+                (priorityOrder.firstIndex(of: $1.patternType) ?? 99)
+            })
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("TODAY'S SIGNAL")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.textSecondary)
+                    .tracking(1.5)
+                    .textCase(.uppercase)
+
+                if activePatterns.isEmpty {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 20))
+                            .foregroundStyle(Color.textSecondary)
+                            .accessibilityHidden(true)
+                        Text("All signals quiet — everything looks good.")
+                            .font(.system(size: 15, weight: .regular))
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 20))
+                            .foregroundStyle(Color.accent)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(readiness.coachAdvice)
+                                .font(.system(size: 15, weight: .regular))
+                                .foregroundStyle(Color.textPrimary)
+                            if let top = topPattern {
+                                Text("\(top.patternType.displayName) detected")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(Color.textSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.accentDim)
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.accent)
+                    .frame(width: 3)
+            }
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -1169,9 +1239,7 @@ extension NutritionCorrelationEngine.CarbPerformanceInsight.AnalysisType: Identi
 }
 
 #Preview {
-    NavigationStack {
-        InsightsView()
-    }
+    InsightsView()
 }
 
 

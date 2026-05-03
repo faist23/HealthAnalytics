@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.5.0] - 2026-05-03
+
+### Added
+- **Intelligence tab** — the app's richest analysis (Training DNA patterns, biological aging, performance correlations, MasterCoachEngine synthesis) is now a permanent 5th tab with a `sparkles` icon, not a hidden toolbar sheet. Users can navigate directly to it without ever opening the Recovery tab first.
+- **"Today's Signal" card** — surfaces at the top of the Intelligence tab on every launch. When active patterns exist (within 7 days), it shows the MasterCoachEngine coaching paragraph with a left-edge terracotta accent stripe and a subtitle naming the top detected pattern. When signals are quiet, it shows "All signals quiet — everything looks good." The card is hidden until data loads.
+
+### Changed
+- Renamed "Analysis" → "Intelligence" throughout (tab label, navigation title). The `sparkles` icon signals synthesis, not raw data.
+- Removed the `chart.bar.xaxis` toolbar button from the Recovery tab — one path to the Intelligence content is better than two competing entry points.
+
+### Fixed
+- Corrects missed VERSION file bump from the v0.1.4.0 commit (CHANGELOG was updated but VERSION stayed at 0.1.3.1).
+
 ## [0.1.4.0] - 2026-05-01
 
 ### Added
