@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.6.0] - 2026-05-03
+
+### Added
+- **Coach → Pattern deep-link (E3)** — tapping a pattern reference in the Recovery tab's coaching message navigates directly to the Intelligence tab, scrolled to the corresponding Training DNA card. Powered by a new `TabCoordinator` environment object (`selectedTab` / `pendingScrollPattern`), injected at app root and consumed by `RecoveryTabView` and `InsightsView`. `InsightBox` gains optional `navigationText` / `navigationAction` params for the cross-tab CTA.
+- `PatternType.displayPriority` — static method providing canonical priority ordering (`[.hrvPrecursor, .backToBackCrash, .blockCrashCycle, .sleepFragmentation, .performancePeak, .tapering]`), shared by `RecoveryTabView` (top pattern selection) and `InsightsView` (today's signal card).
+- 4 new `TabCoordinatorTests` covering initial state, navigation with/without pattern, and double-navigation overwrite.
+
 ## [0.1.5.0] - 2026-05-03
 
 ### Added
