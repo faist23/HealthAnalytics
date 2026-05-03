@@ -8,12 +8,21 @@ import SwiftData
 
 struct RecoveryTabView: View {
     @Binding var showSettings: Bool
+    @EnvironmentObject var coordinator: TabCoordinator
     @StateObject private var viewModel = ReadinessViewModel()
     @State private var isFirstLoad = true
     @State private var showBreakdown = false
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) var colorScheme
     @ObservedObject var syncManager = SyncManager.shared
+    @Query private var detectedPatterns: [TrainingPattern]
+
+    private var topActivePattern: TrainingPattern? {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        return detectedPatterns
+            .filter { $0.detectedAt >= cutoff }
+            .min { PatternType.displayPriority($0.patternType) < PatternType.displayPriority($1.patternType) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -82,10 +91,13 @@ struct RecoveryTabView: View {
                                     // 3. Insight Box
                                     InsightBox(
                                         text: readiness.recommendation,
-                                        actionText: "BREAK DOWN MY RECOVERY"
-                                    ) {
-                                        showBreakdown = true
-                                    }
+                                        actionText: "BREAK DOWN MY RECOVERY",
+                                        action: { showBreakdown = true },
+                                        navigationText: topActivePattern.map { "See \($0.patternType.displayName) in Intelligence →" },
+                                        navigationAction: topActivePattern.map { pattern in
+                                            { coordinator.navigate(to: TabCoordinator.intelligenceTab, scrollTo: pattern.patternType) }
+                                        }
+                                    )
                                     .padding(.horizontal)
                                     
                                     // Keep Energy Bank Chart
