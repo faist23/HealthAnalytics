@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.6.1] - 2026-05-03
+
+### Fixed
+- Loading overlay on Intelligence tab now reads "Opening [Pattern Name]..." instead of "Analyzing your data..." when the tab opens cold via a deep-link tap from the Recovery tab. Eliminates the blank-context skeleton gap introduced in E3.
+
 ## [0.1.6.0] - 2026-05-03
 
 ### Added

@@ -298,20 +298,6 @@ Confirmed live and retained: `TemporalModelingService` (used by `ReadinessReposi
 
 **Depends on / blocked by:** /plan-design-review pass recommended first for full context.
 
-## P3 — E3 Deep-Link: Cold-Tap Loading Affordance
+## ~~P3 — E3 Deep-Link: Cold-Tap Loading Affordance~~ ✅ DONE v0.1.6.1 (2026-05-03)
 
-**What:** When the user taps InsightBox to deep-link to a pattern card and the Intelligence tab opens cold (first session visit), the tab shows a loading skeleton with no visual indication that a scroll-to-pattern action is pending.
-
-**Why:** Users expect feedback after a tap. The scroll executes correctly after load, but the gap (150–400ms skeleton state) provides no context for why the tab opened.
-
-**Pros:** Closes the last UX gap in the deep-link flow. Prevents user confusion on cold open.
-
-**Cons:** Small scope. Risk of over-engineering — on modern hardware the load is near-instant and the skeleton may not be visible long enough to matter.
-
-**Context:** Flagged during Intelligence Tab E3 plan-eng-review (2026-05-03). Options: brief shimmer on the target card after scroll lands, or a lightweight "Navigating to [pattern]..." overlay during the skeleton state. Defer until E3 ships so real-device timing can be observed before committing to a design.
-
-**Effort:** S (human: ~1h / CC+gstack: ~10 min)
-
-**Priority:** P3
-
-**Depends on / blocked by:** E3 deep-link must ship first.
+`InsightsView` loading overlay message is now context-aware: when `pendingScroll` is set (cold deep-link open), shows "Opening [Pattern Name]..." instead of "Analyzing your data...". One-line change to `LoadingOverlay(message:)` call in `InsightsView.body`.

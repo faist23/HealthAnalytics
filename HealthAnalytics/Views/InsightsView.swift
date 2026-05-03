@@ -70,9 +70,9 @@ struct InsightsView: View {
                 }
             }
 
-            // Loading overlay
+            // Loading overlay — show pattern name when navigating from deep-link
             if viewModel.isLoading || isFirstLoad {
-                LoadingOverlay(message: "Analyzing your data...")
+                LoadingOverlay(message: pendingScroll.map { "Opening \($0.displayName)..." } ?? "Analyzing your data...")
             }
         }
         .navigationTitle("Intelligence")
