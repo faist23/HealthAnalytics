@@ -119,7 +119,9 @@ struct InsightBox: View {
     let text: String
     let actionText: String?
     var action: (() -> Void)? = nil
-    
+    var navigationText: String? = nil
+    var navigationAction: (() -> Void)? = nil
+
     var body: some View {
         Group {
             if let action = action {
@@ -132,7 +134,7 @@ struct InsightBox: View {
             }
         }
     }
-    
+
     private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(text)
@@ -140,18 +142,33 @@ struct InsightBox: View {
                 .foregroundStyle(.primary)
                 .lineSpacing(4)
                 .multilineTextAlignment(.leading)
-            
+
             if let actionText = actionText {
                 HStack(spacing: .spacingXs) {
                     Text(actionText.uppercased())
                         .font(.system(size: 13, weight: .bold))
                         .tracking(1)
-                    
+
                     Image(systemName: "arrow.right")
                         .font(.system(size: 12, weight: .bold))
                 }
-                .foregroundStyle(Color(red: 0.6, green: 0.6, blue: 1.0)) // Purplish accent
+                .foregroundStyle(Color(red: 0.6, green: 0.6, blue: 1.0))
                 .padding(.top, 4)
+            }
+
+            if let navText = navigationText, let navAction = navigationAction {
+                Button(action: navAction) {
+                    HStack(spacing: .spacingXs) {
+                        Text(navText)
+                            .font(.system(size: 13, weight: .semibold))
+
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundStyle(Color.accent)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
             }
         }
         .padding(20)
