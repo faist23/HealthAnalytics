@@ -251,3 +251,63 @@ Confirmed live and retained: `TemporalModelingService` (used by `ReadinessReposi
 **Priority:** P4 — blocked on light mode phase (not scoped)
 
 **Depends on / blocked by:** Light mode design system phase. DESIGN.md must define light mode token values first.
+
+---
+
+## P2 — Intelligence Tab: Coach Message → Pattern Deep-Link (E3)
+
+**What:** Tapping a pattern reference in the Recovery tab's coaching message navigates directly to the Intelligence tab, scrolled to the corresponding Training DNA card.
+
+**Why:** The MasterCoachEngine now says things like "your HRV shows an early warning pattern" but the user has no path from that sentence to the evidence. The Intelligence tab (shipping in this PR cycle) has the Training DNA card, but there's no bridge. This closes the loop: coach says it → tap → see the data behind it.
+
+**Pros:** Completes the intelligence narrative. Users understand why the coach said what it said. Differentiates from WHOOP/Oura where coaching and evidence are also siloed.
+
+**Cons:** Requires lifting `selectedTab` to app-level state (or `@EnvironmentObject` coordinator) so `RecoveryTabView` can drive tab selection in `MainTabView`. Non-trivial. Needs careful design so tapping feels natural, not like an in-app link.
+
+**Context:** Expansion E3 from the Intelligence Tab CEO review (2026-05-02). Deferred because it needs the tab to stabilize first. The architecture: lift `@State private var selectedTab` from `MainTabView` to an `@EnvironmentObject TabCoordinator`, inject into `RecoveryTabView`, let it programmatically switch tabs and post a `scrollToPattern: PatternType` notification that `InsightsView` listens to.
+
+**Effort:** L (human: ~2 days / CC+gstack: ~1 hour)
+
+**Priority:** P2
+
+**Depends on / blocked by:** Intelligence tab (E1/E2/E5) must ship first.
+
+---
+
+## P3 — Intelligence Tab: Pattern Confidence Badge (E4)
+
+**What:** Show "85% confidence · 14 days of data" on each Training DNA pattern card in the Intelligence tab.
+
+**Why:** Users don't know if a pattern is "I've been tracking you for 3 days" or "I've been tracking you for 90 days." Confidence stamping builds trust and helps users interpret pattern signals correctly.
+
+**Pros:** Builds credibility for the pattern engine. Gives power users the context they want. Data is already available in `TrainingPattern` (via `confidenceNumerator`/`confidenceDenominator` and `detectedAt`).
+
+**Cons:** Needs a design pass to not clutter the card. `confidenceNumerator`/`confidenceDenominator` may need a display mapping (e.g., 7/10 votes → "70% confidence"). The badge pattern should be consistent with any future confidence displays.
+
+**Context:** Expansion E4 from the Intelligence Tab CEO review (2026-05-02). Deferred for design pass.
+
+**Effort:** M (human: ~2h / CC+gstack: ~20 min)
+
+**Priority:** P3
+
+**Depends on / blocked by:** Intelligence tab must ship. Design pass needed first.
+
+---
+
+## P3 — InsightBox Design Token Sweep
+
+**What:** Replace hardcoded colors in `InsightBox` (`GaugeStyleComponents.swift:153-173`) with design system tokens: `Color.surface` or `Color.accentDim` for background, `Color.accentBorder` for stroke, `Color.accent` for action text.
+
+**Why:** `InsightBox` currently uses `Color(white: 0.1)` background and a purple gradient border (`Color(red: 0.6, green: 0.4, blue: 1.0)` → `Color(red: 0.4, green: 0.8, blue: 1.0)`). The Warm Signal design direction is terracotta (`#E8885A`), not violet. Every other card in the Intelligence tab (TrainingDNACard, TrainingSignatureCard) already uses `accentDim`/`accentBorder`. The inconsistency is visible across all four tabs (Recovery, Strain, Sleep, Healthspan) where InsightBox appears.
+
+**Pros:** Eliminates the one remaining hardcoded-color pattern from the visible UI. Makes all coaching cards consistent with the Warm Signal palette. Unblocks clean pass for /plan-design-review.
+
+**Cons:** Small visual regression risk — users accustomed to the purple gradient may notice the change. Should be bundled with a broader /plan-design-review pass to avoid isolated token changes that look incomplete.
+
+**Context:** Flagged during Intelligence Tab eng review (2026-05-02). The `todayInsightCard` in InsightsView uses proper tokens (accentDim/accentBorder); InsightBox in the other tabs does not. The gap was deferred to a design review pass rather than fixed in this PR.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10 min)
+
+**Priority:** P3
+
+**Depends on / blocked by:** /plan-design-review pass recommended first for full context.
