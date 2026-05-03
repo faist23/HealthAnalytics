@@ -10,10 +10,12 @@ import SwiftData
 import Charts
 
 struct InsightsView: View {
+    @EnvironmentObject var coordinator: TabCoordinator
     @StateObject private var viewModel = InsightsViewModel()
     @State private var isFirstLoad = true
     @State private var isPatternAnalyzing = false
     @State private var patternAnalysisError: String?
+    @State private var pendingScroll: PatternType? = nil
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
 
@@ -28,26 +30,46 @@ struct InsightsView: View {
         ZStack {
             TabBackgroundColor.insights(for: colorScheme)
                 .ignoresSafeArea()
-            
-            ScrollView {
-                VStack(spacing: 20) {
-                    // 1. Handle Error States
-                    if let error = viewModel.errorMessage {
-                        ErrorView(message: error) {
-                            Task { await viewModel.analyzeData() }
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // 1. Handle Error States
+                        if let error = viewModel.errorMessage {
+                            ErrorView(message: error) {
+                                Task { await viewModel.analyzeData() }
+                            }
+                            .cardStyle(for: .error)
+                        } else if !viewModel.isLoading && !isFirstLoad {
+                            todayInsightCard
+                            // 2. Main Dashboard Content (Broken into groups to fix compiler timeout)
+                            dashboardContent
                         }
-                        .cardStyle(for: .error)
-                    } else if !viewModel.isLoading && !isFirstLoad {
-                        todayInsightCard
-                        // 2. Main Dashboard Content (Broken into groups to fix compiler timeout)
-                        dashboardContent
+
+                        Spacer()
                     }
-                    
-                    Spacer()
+                    .padding()
                 }
-                .padding()
+                .onChange(of: coordinator.pendingScrollPattern) { _, newPattern in
+                    guard let pattern = newPattern else { return }
+                    coordinator.pendingScrollPattern = nil
+                    if isFirstLoad {
+                        pendingScroll = pattern
+                    } else {
+                        Task { @MainActor in
+                            withAnimation { proxy.scrollTo(pattern, anchor: .top) }
+                        }
+                    }
+                }
+                .onChange(of: isFirstLoad) { _, loaded in
+                    guard !loaded, let pattern = pendingScroll else { return }
+                    pendingScroll = nil
+                    Task { @MainActor in
+                        withAnimation { proxy.scrollTo(pattern, anchor: .top) }
+                    }
+                }
             }
-            
+
             // Loading overlay
             if viewModel.isLoading || isFirstLoad {
                 LoadingOverlay(message: "Analyzing your data...")
@@ -105,13 +127,9 @@ struct InsightsView: View {
         if let readiness = repo.currentReadiness {
             let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
             let activePatterns = detectedPatterns.filter { $0.detectedAt >= sevenDaysAgo }
-            let priorityOrder: [PatternType] = [
-                .hrvPrecursor, .backToBackCrash, .blockCrashCycle,
-                .sleepFragmentation, .performancePeak, .tapering
-            ]
             let topPattern = activePatterns.min(by: {
-                (priorityOrder.firstIndex(of: $0.patternType) ?? 99) <
-                (priorityOrder.firstIndex(of: $1.patternType) ?? 99)
+                PatternType.displayPriority($0.patternType) <
+                PatternType.displayPriority($1.patternType)
             })
 
             VStack(alignment: .leading, spacing: 8) {
@@ -229,6 +247,7 @@ struct InsightsView: View {
                     VStack(spacing: .spacingMd) {
                         ForEach(detectedPatterns) { pattern in
                             TrainingDNACard(pattern: pattern)
+                                .id(pattern.patternType)
                         }
                     }
 
