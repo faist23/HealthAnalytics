@@ -13,13 +13,15 @@ import BackgroundTasks
 @main
 struct HealthAnalyticsApp: App {
     @AppStorage("isOnboardingComplete") private var isOnboardingComplete = false
-    
+    @StateObject private var tabCoordinator = TabCoordinator()
+
     @Environment(\.scenePhase) private var scenePhase
-    
+
     var body: some Scene {
         WindowGroup {
             if isOnboardingComplete {
                 MainTabView()
+                    .environmentObject(tabCoordinator)
                     .onOpenURL { url in
                         handleIncomingURL(url)
                     }

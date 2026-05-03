@@ -6,14 +6,14 @@
 import SwiftUI
 
 struct MainTabView: View {
-    @State private var selectedTab = 0
+    @EnvironmentObject var coordinator: TabCoordinator
     @State private var showSettings = false
     @ObservedObject var syncManager = SyncManager.shared
     @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
         ZStack {
-            TabView(selection: $selectedTab) {
+            TabView(selection: $coordinator.selectedTab) {
                 RecoveryTabView(showSettings: $showSettings)
                     .tabItem {
                         Label("Recovery", systemImage: "battery.100")
@@ -44,7 +44,7 @@ struct MainTabView: View {
                     }
                     .tag(4)
             }
-            .tint(AppColors.accentColor(for: selectedTab))
+            .tint(AppColors.accentColor(for: coordinator.selectedTab))
 
             if syncManager.isSyncing {
                 LoadingOverlay(message: syncManager.syncProgress)
