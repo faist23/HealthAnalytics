@@ -2,7 +2,7 @@
 //  Color+DesignTokens.swift
 //  HealthAnalytics
 //
-//  Design token Color extensions from DESIGN.md (Warm Signal system).
+//  Design token Color extensions from DESIGN.md (Signal Indigo system).
 //  Never use system defaults (Color.green, .blue, etc.) — use these tokens.
 //
 
@@ -12,34 +12,34 @@ extension Color {
 
     // MARK: - Foundation (Dark Mode)
 
-    /// App background — near-black with brown warmth (#0F0D0B)
-    static let background = Color(hex: 0x0F0D0B)
+    /// App background — cool near-black, indigo undertone (#09090E)
+    static let background = Color(hex: 0x09090E)
 
-    /// Cards, sheets, list rows (#1C1915)
-    static let surface = Color(hex: 0x1C1915)
+    /// Cards, sheets, list rows (#0F0F18)
+    static let surface = Color(hex: 0x0F0F18)
 
-    /// Elevated sheets, modal backgrounds, separators (#262118)
-    static let surfaceRaised = Color(hex: 0x262118)
+    /// Elevated sheets, modal backgrounds, separators (#1A1A2E)
+    static let surfaceRaised = Color(hex: 0x1A1A2E)
 
-    /// Main text — warm white, slight cream (#F2EDE6)
-    static let textPrimary = Color(hex: 0xF2EDE6)
+    /// Main text — cool white, slight indigo cast (#EDEDFF)
+    static let textPrimary = Color(hex: 0xEDEDFF)
 
-    /// Supporting text, labels, captions (#8C8078)
-    static let textSecondary = Color(hex: 0x8C8078)
+    /// Supporting text, labels, captions (#8A8AA8)
+    static let textSecondary = Color(hex: 0x8A8AA8)
 
-    /// Deemphasized text, axis labels, timestamps (#4D4540)
-    static let textTertiary = Color(hex: 0x4D4540)
+    /// Deemphasized text, axis labels, timestamps (#4A4A65)
+    static let textTertiary = Color(hex: 0x4A4A65)
 
     // MARK: - Brand Accent
 
-    /// Terracotta — score ring, CTA buttons, active tab indicator (#E8885A)
-    static let accent = Color(hex: 0xE8885A)
+    /// Electric violet — score ring, CTA buttons, active tab indicator (#7C5CFC)
+    static let accent = Color(hex: 0x7C5CFC)
 
     /// Accent tinted background for coach recommendation cards
-    static let accentDim = Color(hex: 0xE8885A).opacity(0.12)
+    static let accentDim = Color(hex: 0x7C5CFC).opacity(0.12)
 
     /// Accent card border
-    static let accentBorder = Color(hex: 0xE8885A).opacity(0.22)
+    static let accentBorder = Color(hex: 0x7C5CFC).opacity(0.22)
 
     // MARK: - Semantic Status
 
