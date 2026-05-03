@@ -254,23 +254,9 @@ Confirmed live and retained: `TemporalModelingService` (used by `ReadinessReposi
 
 ---
 
-## P2 — Intelligence Tab: Coach Message → Pattern Deep-Link (E3)
+## ~~P2 — Intelligence Tab: Coach Message → Pattern Deep-Link (E3)~~ ✅ DONE v0.1.6.0 (2026-05-03)
 
-**What:** Tapping a pattern reference in the Recovery tab's coaching message navigates directly to the Intelligence tab, scrolled to the corresponding Training DNA card.
-
-**Why:** The MasterCoachEngine now says things like "your HRV shows an early warning pattern" but the user has no path from that sentence to the evidence. The Intelligence tab (shipping in this PR cycle) has the Training DNA card, but there's no bridge. This closes the loop: coach says it → tap → see the data behind it.
-
-**Pros:** Completes the intelligence narrative. Users understand why the coach said what it said. Differentiates from WHOOP/Oura where coaching and evidence are also siloed.
-
-**Cons:** Requires lifting `selectedTab` to app-level state (or `@EnvironmentObject` coordinator) so `RecoveryTabView` can drive tab selection in `MainTabView`. Non-trivial. Needs careful design so tapping feels natural, not like an in-app link.
-
-**Context:** Expansion E3 from the Intelligence Tab CEO review (2026-05-02). Deferred because it needs the tab to stabilize first. The architecture: lift `@State private var selectedTab` from `MainTabView` to an `@EnvironmentObject TabCoordinator`, inject into `RecoveryTabView`, let it programmatically switch tabs and post a `scrollToPattern: PatternType` notification that `InsightsView` listens to.
-
-**Effort:** L (human: ~2 days / CC+gstack: ~1 hour)
-
-**Priority:** P2
-
-**Depends on / blocked by:** Intelligence tab (E1/E2/E5) must ship first.
+`TabCoordinator` (`ObservableObject`, Combine-only) injected at app root via `@StateObject` + `.environmentObject()`. `MainTabView` lifts `selectedTab` from local `@State` to `coordinator.selectedTab`. `RecoveryTabView` adds `@EnvironmentObject var coordinator` + `@Query private var detectedPatterns` + `topActivePattern` (7-day window, min by `PatternType.displayPriority`). `InsightBox` gains optional `navigationText`/`navigationAction` params. `InsightsView` wraps scroll content in `ScrollViewReader`, adds `.id(pattern.patternType)` to each `TrainingDNACard`, defers scroll via `pendingScroll` state on cold load. `PatternType.displayPriority` extracted as single source of truth used by both views. 4 `TabCoordinatorTests` (async/MainActor.run to satisfy Swift 6 actor isolation).
 
 ---
 
@@ -311,3 +297,21 @@ Confirmed live and retained: `TemporalModelingService` (used by `ReadinessReposi
 **Priority:** P3
 
 **Depends on / blocked by:** /plan-design-review pass recommended first for full context.
+
+## P3 — E3 Deep-Link: Cold-Tap Loading Affordance
+
+**What:** When the user taps InsightBox to deep-link to a pattern card and the Intelligence tab opens cold (first session visit), the tab shows a loading skeleton with no visual indication that a scroll-to-pattern action is pending.
+
+**Why:** Users expect feedback after a tap. The scroll executes correctly after load, but the gap (150–400ms skeleton state) provides no context for why the tab opened.
+
+**Pros:** Closes the last UX gap in the deep-link flow. Prevents user confusion on cold open.
+
+**Cons:** Small scope. Risk of over-engineering — on modern hardware the load is near-instant and the skeleton may not be visible long enough to matter.
+
+**Context:** Flagged during Intelligence Tab E3 plan-eng-review (2026-05-03). Options: brief shimmer on the target card after scroll lands, or a lightweight "Navigating to [pattern]..." overlay during the skeleton state. Defer until E3 ships so real-device timing can be observed before committing to a design.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10 min)
+
+**Priority:** P3
+
+**Depends on / blocked by:** E3 deep-link must ship first.
