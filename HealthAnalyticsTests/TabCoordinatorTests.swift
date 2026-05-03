@@ -6,7 +6,6 @@
 import XCTest
 @testable import HealthAnalytics
 
-@MainActor
 final class TabCoordinatorTests: XCTestCase {
 
     func testInitialState() {
