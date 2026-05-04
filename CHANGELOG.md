@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.7.0] - 2026-05-03
+
+### Added
+- **Pattern Confidence Badge (E4)** — each Training DNA card in the Intelligence tab now shows a color-coded confidence pill (Consistent / Mixed / Tentative) alongside a count-and-duration line (e.g., "7 of 9 blocks · 14 days"). The badge maps directly to detection quality: green means the pattern is well-established, amber means it's emerging, gray means tentative early data. Accessible label covers tier, count, and tracked duration.
+
+### Changed
+- **Signal Indigo design system** — replaced the Warm Signal (terracotta / earthy) palette with Signal Indigo across the entire app. Background moves from warm near-black to cool near-black (`#09090E`); accent shifts from terracotta (`#E8885A`) to electric violet (`#7C5CFC`). All text tokens gain an indigo cast for a cooler, more precise feel. Status colors (green / amber / ember / sky blue) are unchanged.
+- **InsightBox and MetricList token sweep** — hardcoded colors and gradient borders replaced with `Color.surface`, `Color.surfaceRaised`, `Color.accent`, and `Color.accentBorder` design tokens. Consistent with every other card in the app.
+
 ## [0.1.6.1] - 2026-05-03
 
 ### Fixed
