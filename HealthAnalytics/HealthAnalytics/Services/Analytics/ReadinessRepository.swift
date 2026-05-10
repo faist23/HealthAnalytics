@@ -629,8 +629,13 @@ class ReadinessRepository: ObservableObject {
             )
 
             // 7-day readiness forecast (requires 14 days of stored scores).
-            // currentReadiness is already set above so the ACWR modifier reads correctly.
-            self.forecast = computedForecast
+            // If nil, force a HealthKit backfill to fill any gaps and retry once.
+            if let f = computedForecast {
+                self.forecast = f
+            } else {
+                await backfillHistoricalScores(modelContext: modelContext, force: true)
+                self.forecast = compute7DayForecast(modelContext: modelContext, overrideACWR: readinessAssessmentResult.acwr)
+            }
 
             #if DEBUG
             print("✅ ReadinessRepository: Unified Analysis Complete. Score: \(baseReadiness.score)")
@@ -687,11 +692,22 @@ class ReadinessRepository: ObservableObject {
     /// Runs once on first launch (UserDefaults gate) and re-runs whenever fewer than 14 records
     /// exist (e.g. after a data clear). This unlocks the 7-day forecast and 14-Day Signature
     /// without requiring 14 consecutive days of app opens.
-    private func backfillHistoricalScores(modelContext: ModelContext) async {
+    private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false) async {
         // V5: diagnose existingDates vs per-day filter failure.
         let udKey = "historicalScoreBackfillV5Done"
         let existingCount = (try? modelContext.fetchCount(FetchDescriptor<StoredDailyScore>())) ?? 0
-        guard !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 else { return }
+
+        // Re-run if there are gap days since the last stored score — covers the case where
+        // the user doesn't open the app every day and recent history has holes.
+        let hasRecentGap: Bool = {
+            let cal = Calendar.current
+            let yday = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: Date())) ?? Date()
+            let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
+            guard let lastDate = allScores.map({ cal.startOfDay(for: $0.date) }).max() else { return true }
+            return (cal.dateComponents([.day], from: lastDate, to: yday).day ?? 0) >= 1
+        }()
+
+        guard force || !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 || hasRecentGap else { return }
 
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
