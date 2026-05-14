@@ -295,20 +295,27 @@ struct ReadinessAnalyzer {
         // Sleep Analysis (0-10 points)
         if !sleep.isEmpty {
             let recent7Days = Array(sleep.suffix(7))
-            let avgSleep = recent7Days.map(\.value).reduce(0, +) / Double(recent7Days.count)
             
-            if avgSleep >= 8.0 {
+            // Fitbit-style cumulative sleep debt (target: 8.0h per night)
+            let baselineSleep = 8.0
+            let totalSleep = recent7Days.map(\.value).reduce(0, +)
+            let targetSleep = baselineSleep * Double(recent7Days.count)
+            let sleepDebt = max(0, targetSleep - totalSleep)
+            let avgSleep = totalSleep / Double(recent7Days.count)
+            
+            if sleepDebt <= 2.0 {
                 score += 10
-                factors.append("Sleep excellent (\(String(format: "%.1f", avgSleep))h)")
-            } else if avgSleep >= 7.0 {
+                factors.append("No sleep debt (Avg \(String(format: "%.1f", avgSleep))h)")
+            } else if sleepDebt <= 5.0 {
                 score += 7
-                factors.append("Sleep adequate (\(String(format: "%.1f", avgSleep))h)")
-            } else if avgSleep >= 6.0 {
-                score += 4
-                factors.append("Sleep suboptimal (\(String(format: "%.1f", avgSleep))h)")
+                factors.append("Minor sleep debt (\(String(format: "%.1f", sleepDebt))h deficit)")
+            } else if sleepDebt <= 10.0 {
+                score += 3
+                factors.append("Significant sleep debt (\(String(format: "%.1f", sleepDebt))h deficit)")
             } else {
-                score += 1
-                factors.append("Sleep insufficient (\(String(format: "%.1f", avgSleep))h)")
+                // Severe penalty for high sleep debt
+                score += 0
+                factors.append("Severe sleep debt (\(String(format: "%.1f", sleepDebt))h deficit)")
             }
         }
         

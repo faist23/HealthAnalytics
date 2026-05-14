@@ -163,6 +163,9 @@ class ReadinessRepository: ObservableObject {
 
         // Coaching output (moved from ReadinessViewModel per GEMINI.md mandate)
         let dailyInstruction: CoachingService.DailyInstruction?
+        
+        // Phase 4: Smart Routing Activity Readiness
+        let activityReadiness: [String: Int]?
 
         // Insights sub-service outputs (moved from InsightsViewModel per GEMINI.md mandate)
         let metricTrends: [MetricTrend]
@@ -480,11 +483,19 @@ class ReadinessRepository: ObservableObject {
                 restingHRData: rhrData,
                 hrvData: hrvData
             )
+            
+            let storedDailyScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
+            let dailyReadinessDict = storedDailyScores.reduce(into: [Date: Int]()) { result, score in
+                let day = calendar.startOfDay(for: score.date)
+                result[day] = score.readinessScore
+            }
+            
             let trainingLoadSummary = loadCalculator.calculateTrainingLoad(
                 healthKitWorkouts: workouts,
                 stravaActivities: [],
                 stepData: stepData,
-                recoveryInsights: recoveryInsights
+                recoveryInsights: recoveryInsights,
+                dailyReadiness: dailyReadinessDict
             )
 
             let acwrTrend = calculateImprovedACWRTrend(workouts: workouts, ftpSnapshots: ftpSnapshots)
@@ -558,15 +569,22 @@ class ReadinessRepository: ObservableObject {
             let activePatternTypes = allStoredPatterns
                 .filter { $0.detectedAt >= sevenDaysAgo }
                 .map(\.patternType)
+            
+            let allMemories = (try? modelContext.fetch(FetchDescriptor<CoachMemoryNote>())) ?? []
+            
             let coachState = MasterCoachEngine.StateVector(
                 morningScore: baseReadiness.score,
                 currentScore: intraDay.currentScore,
                 nextDayForecast: nextDayCoaching,
                 acwr: readinessAssessmentResult.acwr,
                 injuryRisk: riskAssessment.riskLevel.label,
-                activePatterns: activePatternTypes.map(\.rawValue)
+                activePatterns: activePatternTypes.map(\.rawValue),
+                memories: allMemories
             )
             let masterCoachMessage = MasterCoachEngine.generateMessage(state: coachState)
+            
+            // Phase 4: Smart Routing Activity Readiness
+            let activityReadinessScores = SmartRoutingEngine.generateActivityReadiness(baseScore: intraDay.currentScore, memories: allMemories)
 
             // 10. Update Published State
             self.currentReadiness = UnifiedReadiness(
@@ -595,6 +613,7 @@ class ReadinessRepository: ObservableObject {
                 zoneAnalysis: zoneAnalysis,
                 fitnessAnalysis: fitnessAnalysis,
                 dailyInstruction: dailyInstruction,
+                activityReadiness: activityReadinessScores,
                 metricTrends: trends,
                 sleepPerformanceInsight: sleepPerformanceInsight,
                 activityTypeInsights: activityTypeInsights,

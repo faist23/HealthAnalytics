@@ -16,6 +16,7 @@ struct MasterCoachEngine {
         let acwr: Double
         let injuryRisk: String
         let activePatterns: [String]
+        let memories: [CoachMemoryNote]
 
         init(
             morningScore: Int,
@@ -23,7 +24,8 @@ struct MasterCoachEngine {
             nextDayForecast: String?,
             acwr: Double,
             injuryRisk: String,
-            activePatterns: [String] = []
+            activePatterns: [String] = [],
+            memories: [CoachMemoryNote] = []
         ) {
             self.morningScore = morningScore
             self.currentScore = currentScore
@@ -31,6 +33,7 @@ struct MasterCoachEngine {
             self.acwr = acwr
             self.injuryRisk = injuryRisk
             self.activePatterns = activePatterns
+            self.memories = memories
         }
     }
 
@@ -56,10 +59,17 @@ struct MasterCoachEngine {
         }
 
         let patterns = state.activePatterns
+        
+        let activeMemories = state.memories.filter { $0.isCurrentlyActive }
+        var memoryNote = ""
+        if !activeMemories.isEmpty {
+            let contextStrings = activeMemories.map { $0.context }.joined(separator: ", ")
+            memoryNote = " Keeping in mind: \(contextStrings)."
+        }
 
         // 1. Health alarm — overrides all other signals
         if patterns.contains("hrvPrecursor") {
-            return "Your HRV has shown an early warning pattern. Dial back intensity today and prioritize sleep — your body may be fighting something.\(forecastText)"
+            return "Your HRV has shown an early warning pattern. Dial back intensity today and prioritize sleep — your body may be fighting something.\(forecastText)\(memoryNote)"
         }
 
         // Load and sleep qualifiers (appended to the main sentence when relevant)
@@ -78,17 +88,17 @@ struct MasterCoachEngine {
         // 2. Intraday fatigue branch
         if isFatiguedIntraday {
             if state.morningScore >= 70 && state.currentScore < 50 {
-                return "You woke up primed at \(state.morningScore)%, and you used it well. Current readiness is \(state.currentScore)%, so take it easy the rest of the day.\(loadNote)\(sleepNote)\(forecastText)"
+                return "You woke up primed at \(state.morningScore)%, and you used it well. Current readiness is \(state.currentScore)%, so take it easy the rest of the day.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
             } else if state.morningScore >= 70 && state.currentScore >= 50 {
-                return "You woke up at \(state.morningScore)% and put in work. Current readiness is \(state.currentScore)%. Focus on active recovery now.\(loadNote)\(sleepNote)\(forecastText)"
+                return "You woke up at \(state.morningScore)% and put in work. Current readiness is \(state.currentScore)%. Focus on active recovery now.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
             } else {
-                return "You started the day fatigued at \(state.morningScore)%, and your recent effort dropped readiness to \(state.currentScore)%. Prioritize deep rest.\(loadNote)\(sleepNote)\(forecastText)"
+                return "You started the day fatigued at \(state.morningScore)%, and your recent effort dropped readiness to \(state.currentScore)%. Prioritize deep rest.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
             }
         }
 
         // 3. Injury risk
         if state.injuryRisk == "High" || state.injuryRisk == "Very High" {
-            return "Your readiness is \(state.currentScore)%, but injury risk is elevated from load spikes. Swap hard sessions for easy aerobic work.\(sleepNote)\(forecastText)"
+            return "Your readiness is \(state.currentScore)%, but injury risk is elevated from load spikes. Swap hard sessions for easy aerobic work.\(sleepNote)\(forecastText)\(memoryNote)"
         }
 
         // 4. Baseline readiness — performance windows upgrade the message
@@ -97,22 +107,22 @@ struct MasterCoachEngine {
 
         if state.currentScore >= 80 {
             if isPeaking {
-                return "Your readiness is excellent (\(state.currentScore)%) and your pattern engine shows you're in a peak form window — ideal timing for a race or benchmark effort.\(forecastText)"
+                return "Your readiness is excellent (\(state.currentScore)%) and your pattern engine shows you're in a peak form window — ideal timing for a race or benchmark effort.\(forecastText)\(memoryNote)"
             }
             if isTapering {
-                return "Your readiness is excellent (\(state.currentScore)%) and your load is tapering with HRV trending up. Trust the process — your peak window is approaching.\(forecastText)"
+                return "Your readiness is excellent (\(state.currentScore)%) and your load is tapering with HRV trending up. Trust the process — your peak window is approaching.\(forecastText)\(memoryNote)"
             }
-            return "Your readiness is excellent (\(state.currentScore)%). Your nervous system is primed for intensity today.\(loadNote)\(sleepNote)\(forecastText)"
+            return "Your readiness is excellent (\(state.currentScore)%). Your nervous system is primed for intensity today.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         } else if state.currentScore >= 60 {
             if isPeaking {
-                return "Your readiness is solid (\(state.currentScore)%) and your training data shows a peak form window forming — consider a quality session today.\(loadNote)\(forecastText)"
+                return "Your readiness is solid (\(state.currentScore)%) and your training data shows a peak form window forming — consider a quality session today.\(loadNote)\(forecastText)\(memoryNote)"
             }
             if isTapering {
-                return "Your readiness is solid (\(state.currentScore)%) and your taper is underway. Keep intensity but cut volume — fitness is locked in.\(loadNote)\(forecastText)"
+                return "Your readiness is solid (\(state.currentScore)%) and your taper is underway. Keep intensity but cut volume — fitness is locked in.\(loadNote)\(forecastText)\(memoryNote)"
             }
-            return "Your readiness is stable (\(state.currentScore)%). You can take on moderate training, but listen to your body.\(loadNote)\(sleepNote)\(forecastText)"
+            return "Your readiness is stable (\(state.currentScore)%). You can take on moderate training, but listen to your body.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         } else {
-            return "Your readiness is suppressed (\(state.currentScore)%). Prioritize rest and recovery to bounce back.\(loadNote)\(sleepNote)\(forecastText)"
+            return "Your readiness is suppressed (\(state.currentScore)%). Prioritize rest and recovery to bounce back.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         }
     }
 }

@@ -92,6 +92,12 @@ struct SettingsView: View {
                             Label("Today's Workouts", systemImage: "figure.run.circle")
                         }
 
+                        NavigationLink {
+                            CoachMemoryView()
+                        } label: {
+                            Label("Coach Memory", systemImage: "brain.head.profile")
+                        }
+
                         Divider()
 
                         // MARK: HRV Source Preference

@@ -53,7 +53,7 @@ struct RecoveryTabView: View {
                                     
                                     // 1. Whoop Circular Gauge
                                     CircularGauge(
-                                        title: "RECOVERY",
+                                        title: "READINESS",
                                         value: "\(readiness.score)%",
                                         subtitle: levelLabel,
                                         progress: Double(readiness.score) / 100.0,
@@ -64,7 +64,7 @@ struct RecoveryTabView: View {
                                     MetricList {
                                         GaugeMetricRow(
                                             icon: "waveform.path.ecg",
-                                            title: "RECOVERY SCORE",
+                                            title: "READINESS SCORE",
                                             value: "\(readiness.breakdown.recoveryScore)/40",
                                             trendIcon: "arrowtriangle.up.fill",
                                             trendColor: .green
@@ -72,7 +72,7 @@ struct RecoveryTabView: View {
                                         Divider().background(Color.white.opacity(0.1))
                                         GaugeMetricRow(
                                             icon: "figure.run",
-                                            title: "FITNESS BASE",
+                                            title: "CNS/AUTONOMIC READINESS",
                                             value: "\(readiness.breakdown.fitnessScore)/30",
                                             trendIcon: "arrowtriangle.up.fill",
                                             trendColor: .green
@@ -80,7 +80,7 @@ struct RecoveryTabView: View {
                                         Divider().background(Color.white.opacity(0.1))
                                         GaugeMetricRow(
                                             icon: "battery.50",
-                                            title: "FATIGUE MANAGEMENT",
+                                            title: "MUSCULAR FATIGUE",
                                             value: "\(readiness.breakdown.fatigueScore)/30",
                                             trendIcon: "circle.fill",
                                             trendColor: .gray
@@ -91,7 +91,7 @@ struct RecoveryTabView: View {
                                     // 3. Insight Box
                                     InsightBox(
                                         text: readiness.recommendation,
-                                        actionText: "BREAK DOWN MY RECOVERY",
+                                        actionText: "BREAK DOWN MY READINESS",
                                         action: { showBreakdown = true },
                                         navigationText: topActivePattern.map { "See \($0.patternType.displayName) in Intelligence →" },
                                         navigationAction: topActivePattern.map { pattern in

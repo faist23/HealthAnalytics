@@ -126,7 +126,7 @@ struct StrainTabView: View {
                         )
                         .padding()
                     }
-                    .navigationTitle("Strain Details")
+                    .navigationTitle("Load Details")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
@@ -208,7 +208,7 @@ struct StrainTabView: View {
         let strainLabel = CardiovascularStrainService.label(for: strainValue)
         return VStack(spacing: .spacingSm) {
             CircularGauge(
-                title: "STRAIN",
+                title: "CARDIO LOAD",
                 value: String(format: "%.1f", strainValue),
                 subtitle: strainLabel,
                 progress: strainValue / 21.0,
@@ -295,11 +295,11 @@ struct StrainTabView: View {
 
     private var strainScaleCard: some View {
         VStack(alignment: .leading, spacing: .spacingMd) {
-            Text("STRAIN SCALE")
+            Text("CARDIO LOAD SCALE")
                 .font(.caption)
                 .fontWeight(.bold)
                 .foregroundStyle(.secondary)
-                .tracking(1)
+                .tracking(1.0)
             VStack(spacing: 1) {
                 ScaleRow(label: "0 – 6.9",   description: "Light",     color: Color.statusOptimal)
                 ScaleRow(label: "7 – 12.9",  description: "Moderate",  color: Color.statusMonitoring)
@@ -352,10 +352,10 @@ struct StrainTabView: View {
     }
 
     private var insightSection: some View {
-        let defaultRecommendation = "Your current strain is in the strenuous zone. This level of activity requires significant cardiovascular adaptation."
+        let defaultRecommendation = "Your current cardio load is in the strenuous zone. This level of activity requires significant cardiovascular adaptation."
         return InsightBox(
             text: viewModel.dailyRecommendation?.guidance ?? defaultRecommendation,
-            actionText: "EXPLORE MY STRAIN"
+            actionText: "EXPLORE MY LOAD"
         ) {
             showStrainDetails = true
         }
