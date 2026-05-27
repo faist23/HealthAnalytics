@@ -11,6 +11,7 @@ struct CoachTabView: View {
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
     @ObservedObject var syncManager = SyncManager.shared
+    @State private var isFirstLoad = true
     
     var body: some View {
         NavigationStack {
@@ -30,15 +31,10 @@ struct CoachTabView: View {
                                     .font(.headline)
                             }
                             
-                            if viewModel.isLoading && viewModel.readinessRecommendation.isEmpty {
-                                ProgressView()
-                                    .padding()
-                            } else {
-                                Text(viewModel.readinessRecommendation.isEmpty ? "Gathering data to provide coaching insights..." : viewModel.readinessRecommendation)
-                                    .font(.system(.body, design: .rounded))
-                                    .fontWeight(.medium)
-                                    .lineSpacing(4)
-                            }
+                            Text(viewModel.readinessRecommendation.isEmpty ? "Gathering data to provide coaching insights..." : viewModel.readinessRecommendation)
+                                .font(.system(.body, design: .rounded))
+                                .fontWeight(.medium)
+                                .lineSpacing(4)
                         }
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -71,6 +67,10 @@ struct CoachTabView: View {
                     .padding(.top, 10)
                     .padding(.bottom, 30)
                 }
+                
+                if viewModel.isLoading || isFirstLoad {
+                    LoadingOverlay(message: "Analyzing your readiness...")
+                }
             }
             .navigationTitle("Today")
             .toolbar {
@@ -89,7 +89,16 @@ struct CoachTabView: View {
                     }
                 }
             }
-            .task { await viewModel.loadData() }
+            .task { 
+                await viewModel.loadData() 
+                isFirstLoad = false
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
+                // Re-analyze after sync so today's data is always current on first open.
+                // Without this, the initial .task races with performSmartSync() and wins — reading
+                // SwiftData before today's data is written, then never refreshing.
+                Task { await viewModel.loadData() }
+            }
         }
     }
 }

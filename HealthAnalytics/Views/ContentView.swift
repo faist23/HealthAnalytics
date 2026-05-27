@@ -150,6 +150,11 @@ struct ContentView: View {
                 await viewModel.loadData()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
+            Task {
+                await viewModel.loadData()
+            }
+        }
     }
 }
 

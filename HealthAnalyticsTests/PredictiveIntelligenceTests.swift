@@ -271,8 +271,8 @@ final class PredictiveIntelligenceTests: XCTestCase {
         try ctx.save()
 
         let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
-        XCTAssertTrue(result.allSatisfy { $0.coaching == "Hard effort OK" },
-                      "Score ≥ 80 must produce 'Hard effort OK'")
+        XCTAssertEqual(result[0].coaching, "Hard effort OK",
+                      "Score ≥ 80 must produce 'Hard effort OK' on day 1")
     }
 
     /// score in [70, 79] → coaching = "Moderate training"
@@ -286,8 +286,8 @@ final class PredictiveIntelligenceTests: XCTestCase {
         try ctx.save()
 
         let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
-        XCTAssertTrue(result.allSatisfy { $0.coaching == "Moderate training" },
-                      "Score in [70,79] must produce 'Moderate training'")
+        XCTAssertEqual(result[0].coaching, "Moderate training",
+                      "Score in [70,79] must produce 'Moderate training' on day 1")
     }
 
     /// score in [60, 69] → coaching = "Easy only"
@@ -301,8 +301,8 @@ final class PredictiveIntelligenceTests: XCTestCase {
         try ctx.save()
 
         let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
-        XCTAssertTrue(result.allSatisfy { $0.coaching == "Easy only" },
-                      "Score in [60,69] must produce 'Easy only'")
+        XCTAssertEqual(result[0].coaching, "Easy only",
+                      "Score in [60,69] must produce 'Easy only' on day 1")
     }
 
     /// score < 60 → coaching = "Rest recommended"
@@ -316,8 +316,8 @@ final class PredictiveIntelligenceTests: XCTestCase {
         try ctx.save()
 
         let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
-        XCTAssertTrue(result.allSatisfy { $0.coaching == "Rest recommended" },
-                      "Score < 60 must produce 'Rest recommended'")
+        XCTAssertEqual(result[0].coaching, "Rest recommended",
+                      "Score < 60 must produce 'Rest recommended' on day 1")
     }
 
     // MARK: - Part 4: detectTaperUnderway

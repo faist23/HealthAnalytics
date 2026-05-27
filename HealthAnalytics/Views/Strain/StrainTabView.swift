@@ -24,28 +24,12 @@ struct StrainTabView: View {
         return String(format: "%d:%02d", hours, minutes)
     }
 
-    private var estimatedZ1_3: TimeInterval {
-        var total: TimeInterval = 0
-        for workout in viewModel.todayWorkouts {
-            let hr = workout.averageHeartRate ?? (maxHR * 0.7)
-            let hrPercentage = hr / maxHR
-            if hrPercentage < 0.8 {
-                total += workout.duration
-            }
-        }
-        return total
+    private var granularZ1_3: TimeInterval {
+        viewModel.cardiovascularStrain?.timeInZ1_3 ?? 0
     }
 
-    private var estimatedZ4_5: TimeInterval {
-        var total: TimeInterval = 0
-        for workout in viewModel.todayWorkouts {
-            let hr = workout.averageHeartRate ?? (maxHR * 0.7)
-            let hrPercentage = hr / maxHR
-            if hrPercentage >= 0.8 {
-                total += workout.duration
-            }
-        }
-        return total
+    private var granularZ4_5: TimeInterval {
+        viewModel.cardiovascularStrain?.timeInZ4_5 ?? 0
     }
     
     private var strengthTime: TimeInterval {
@@ -234,7 +218,7 @@ struct StrainTabView: View {
             GaugeMetricRow(
                 icon: "heart.circle",
                 title: "HEART RATE ZONES 1-3",
-                value: formatDuration(estimatedZ1_3),
+                value: formatDuration(granularZ1_3),
                 trendIcon: "arrowtriangle.up.fill",
                 trendColor: .green
             )
@@ -242,7 +226,7 @@ struct StrainTabView: View {
             GaugeMetricRow(
                 icon: "heart.circle.fill",
                 title: "HEART RATE ZONES 4-5",
-                value: formatDuration(estimatedZ4_5),
+                value: formatDuration(granularZ4_5),
                 trendIcon: "arrowtriangle.down.fill",
                 trendColor: .green
             )

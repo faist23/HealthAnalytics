@@ -581,7 +581,7 @@ class ReadinessRepository: ObservableObject {
                 activePatterns: activePatternTypes.map(\.rawValue),
                 memories: allMemories
             )
-            let masterCoachMessage = MasterCoachEngine.generateMessage(state: coachState)
+            let masterCoachMessage = await MasterCoachEngine.generateMessage(state: coachState)
             
             // Phase 4: Smart Routing Activity Readiness
             let activityReadinessScores = SmartRoutingEngine.generateActivityReadiness(baseScore: intraDay.currentScore, memories: allMemories)
@@ -903,21 +903,43 @@ class ReadinessRepository: ObservableObject {
 
         // ACWR modifier from current published readiness (or test override)
         let acwr = overrideACWR ?? currentReadiness?.readinessAssessment?.acwr
+        
+        // Start the simulation from the most recent known score
+        var simulatedScore = yVals.last ?? 75.0
+        var cumulativeSimulatedFatigue = 0.0
 
         var days: [ReadinessForecastDay] = []
         for d in 1...7 {
             let xDay = Double(13 + d)  // extends the trend beyond the 14-day window
-            var predicted = reg.slope * xDay + reg.intercept
+            
+            // 1. Base prediction from the historical regression
+            var basePrediction = reg.slope * xDay + reg.intercept
 
+            // 2. Apply general ACWR load trends
             if let acwr {
                 if acwr > 1.3 {
-                    predicted -= predicted * 0.03 * Double(d)  // decay 3%/day under overload
+                    basePrediction -= basePrediction * 0.03 * Double(d)  // decay 3%/day under overload
                 } else if acwr < 0.8 {
-                    predicted += predicted * 0.02 * Double(d)  // improve 2%/day during underload
+                    basePrediction += basePrediction * 0.02 * Double(d)  // improve 2%/day during underload
+                } else {
+                    // Homeostasis: in the sweet spot, naturally drift back towards optimal baseline (75)
+                    let pull = (75.0 - basePrediction) * 0.10 * Double(d)
+                    basePrediction += pull
                 }
+            } else {
+                let pull = (75.0 - basePrediction) * 0.10 * Double(d)
+                basePrediction += pull
             }
+            
+            // 3. Blend historical trajectory with our live day-by-day simulation
+            // We pull the simulated score back toward the baseline prediction to mimic recovery
+            simulatedScore = (simulatedScore + basePrediction) / 2.0
+            
+            // Subtract the fatigue we accumulated from yesterday's simulated workout
+            simulatedScore -= cumulativeSimulatedFatigue
+            cumulativeSimulatedFatigue = 0.0 // reset for today
 
-            let clamped = max(20.0, min(100.0, predicted))
+            let clamped = max(20.0, min(100.0, simulatedScore))
             let sigma = min(15.0, baselineSigma * sqrt(Double(d)))
             let lo = max(0,   Int((clamped - sigma).rounded()))
             let hi = min(100, Int((clamped + sigma).rounded()))
@@ -926,12 +948,16 @@ class ReadinessRepository: ObservableObject {
             let score = Int(clamped.rounded())
             if score >= 80 {
                 coaching = "Hard effort OK"
+                cumulativeSimulatedFatigue = 25.0 // Doing a hard effort crashes readiness tomorrow
             } else if score >= 70 {
                 coaching = "Moderate training"
+                cumulativeSimulatedFatigue = 10.0 // Moderate effort causes mild fatigue
             } else if score >= 60 {
                 coaching = "Easy only"
+                cumulativeSimulatedFatigue = -10.0 // Active recovery builds readiness
             } else {
                 coaching = "Rest recommended"
+                cumulativeSimulatedFatigue = -20.0 // Complete rest heavily builds readiness
             }
 
             let date = calendar.date(byAdding: .day, value: d, to: calendar.startOfDay(for: Date())) ?? Date()

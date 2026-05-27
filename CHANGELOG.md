@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Phase 4: Structured Ontology** — `CoachMemoryNote` now supports anatomical tagging (e.g., "Lower Body: Knee") for injuries. Added `SmartRoutingEngine` to dynamically filter workout recommendations based on active injuries (e.g., zeroing out "Running" readiness for a knee injury while preserving "Upper Body Strength"). Exposed `activityReadiness` through the `ReadinessRepository`'s `UnifiedReadiness` state.
+- **Phase 5: Generative AI Integration** — Transformed `MasterCoachEngine` to support asynchronous LLM handoff for dynamic synthesis of the athlete's physiological state. The coaching paragraph is now generated dynamically using a `StateVector` encompassing readiness, load, injury risk, active patterns, memory notes, and forecasts. Migrated associated tests to `async/await`.
+
+### Changed
+- **Granular Cardio Load Zones** — The Strain tab's Time-in-Zone metrics (Zones 1-3 vs 4-5) are now calculated using exact granular heart rate samples from `CardiovascularStrainService` instead of an inaccurate estimate based on the workout's overall average heart rate.
+- **7-Day Forecast Homeostasis** — Rewrote the 7-day readiness forecast in `ReadinessRepository` to simulate cumulative fatigue and natural recovery. Instead of a flatline projection, the forecast now exhibits mean-reversion homeostasis, pulling the readiness toward a baseline of 75 while correctly compounding simulated fatigue on days a "Hard" or "Moderate" workout is recommended.
+
+### Fixed
+- **Startup Sync Race Condition** — Fixed an issue where the app would display a stale readiness score (e.g., 63) at launch before updating. `CoachTabView` and `ContentView` now correctly listen for the `DataSyncCompleted` notification and refresh their data seamlessly.
+- **Missing Loading Overlay on Launch** — Restored the full-screen `LoadingOverlay` ("Analyzing your readiness...") on the Coach tab to prevent the app from briefly flashing a "0" placeholder score during the initial data synchronization upon launch.
+
 ## [0.1.7.0] - 2026-05-03
 
 ### Added
