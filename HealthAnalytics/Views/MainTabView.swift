@@ -9,7 +9,6 @@ struct MainTabView: View {
     @EnvironmentObject var coordinator: TabCoordinator
     @ObservedObject var syncManager = SyncManager.shared
     @Environment(\.colorScheme) var colorScheme
-
     var body: some View {
         ZStack {
             TabView(selection: $coordinator.selectedTab) {
@@ -19,13 +18,13 @@ struct MainTabView: View {
                     }
                     .tag(0)
 
-                RecoveryTabView(showSettings: .constant(false))
+                RecoveryTabView()
                     .tabItem {
                         Label("Readiness", systemImage: "battery.100")
                     }
                     .tag(1)
 
-                StrainTabView(showSettings: .constant(false))
+                StrainTabView()
                     .tabItem {
                         Label("Load", systemImage: "flame.fill")
                     }

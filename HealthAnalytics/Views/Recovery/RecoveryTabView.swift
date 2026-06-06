@@ -7,7 +7,6 @@ import SwiftUI
 import SwiftData
 
 struct RecoveryTabView: View {
-    @Binding var showSettings: Bool
     @EnvironmentObject var coordinator: TabCoordinator
     @StateObject private var viewModel = ReadinessViewModel()
     @State private var isFirstLoad = true
@@ -137,7 +136,9 @@ struct RecoveryTabView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showSettings = true } label: {
+                    NavigationLink {
+                        SettingsView()
+                    } label: {
                         Image(systemName: "gearshape")
                             .foregroundStyle(Color.textSecondary)
                     }
@@ -193,5 +194,5 @@ struct RecoveryTabView: View {
 }
 
 #Preview {
-    RecoveryTabView(showSettings: .constant(false))
+    RecoveryTabView()
 }
