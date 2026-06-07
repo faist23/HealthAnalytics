@@ -141,14 +141,10 @@ struct InsightsView: View {
         }
 
         Group {
-            hrvPerformanceSection
-            proteinRecoverySection
-            proteinPerformanceSection
-            carbPerformanceSection
+            correlationsSection
         }
 
         Group {
-            activityInsightsSection
             dataCollectionSection
         }
 
@@ -414,97 +410,28 @@ struct InsightsView: View {
         }
     }
     
+    /// R.4 merge: five separate correlation sections (Sleep & Performance,
+    /// HRV & Performance, Protein & Recovery, Protein & Performance, Carbs &
+    /// Performance) collapsed into one CorrelationsCard with a segmented
+    /// control (Sleep / HRV / Protein / Carbs). The two protein sections
+    /// share the Protein segment.
     @ViewBuilder
-    private var hrvPerformanceSection: some View {
-        if !viewModel.hrvPerformanceInsights.isEmpty {
+    private var correlationsSection: some View {
+        let hasAny = !viewModel.activityTypeInsights.isEmpty
+            || !viewModel.hrvPerformanceInsights.isEmpty
+            || (viewModel.proteinRecoveryInsight != nil && viewModel.proteinRecoveryInsight?.confidence != .insufficient)
+            || !viewModel.proteinPerformanceInsights.isEmpty
+            || !viewModel.carbPerformanceInsights.isEmpty
+
+        if hasAny {
             Divider().padding(.vertical)
-            
-            Text("HRV & Performance")
-                .font(.title2)
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            ForEach(viewModel.hrvPerformanceInsights, id: \.activityType) { insight in
-                HRVInsightCard(insight: insight)
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private var proteinRecoverySection: some View {
-        if let proteinInsight = viewModel.proteinRecoveryInsight,
-           proteinInsight.confidence != .insufficient {
-            Divider().padding(.vertical)
-            
-            Text("Protein & Recovery")
-                .font(.title2)
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            ProteinRecoveryCard(insight: proteinInsight)
-        }
-    }
-    
-    @ViewBuilder
-    private var proteinPerformanceSection: some View {
-        if !viewModel.proteinPerformanceInsights.isEmpty {
-            Section(header: Text("Protein & Performance")) {
-                ForEach(viewModel.proteinPerformanceInsights, id: \.activityType) { insight in
-                    VStack(alignment: .leading, spacing: .spacingSm) {
-                        HStack {
-                            Image(systemName: insight.activityType == "Run" ? "figure.run" : "figure.outdoor.cycle")
-                            Text("\(insight.activityType) Performance")
-                                .font(.headline)
-                            Spacer()
-                            Text("\(String(format: "%.1f", insight.percentDifference))%")
-                                .foregroundStyle(insight.percentDifference >= 0 ? .green : .red)
-                                .bold()
-                        }
-                        
-                        Text(insight.recommendation)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        
-                        Text("Based on \(insight.sampleSize) workouts")
-                            .font(.caption2)
-                            .foregroundStyle(.gray)
-                    }
-                    .padding(.vertical, .spacingXs)
-                }
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private var carbPerformanceSection: some View {
-        if !viewModel.carbPerformanceInsights.isEmpty {
-            Divider().padding(.vertical)
-            
-            Text("Carbs & Performance")
-                .font(.title2)
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            ForEach(viewModel.carbPerformanceInsights, id: \.analysisType) { insight in
-                CarbPerformanceCard(insight: insight)
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private var activityInsightsSection: some View {
-        if !viewModel.activityTypeInsights.isEmpty {
-            Divider().padding(.vertical)
-            
-            Text("Sleep & Performance")
-                .font(.title2)
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            ForEach(viewModel.activityTypeInsights, id: \.activityType) { insight in
-                ActivityInsightCard(insight: insight)
-                    .cardStyle(for: .sleep)
-            }
+            CorrelationsCard(
+                activityInsights: viewModel.activityTypeInsights,
+                hrvInsights: viewModel.hrvPerformanceInsights,
+                proteinRecovery: viewModel.proteinRecoveryInsight,
+                proteinPerformance: viewModel.proteinPerformanceInsights,
+                carbInsights: viewModel.carbPerformanceInsights
+            )
         }
     }
     
@@ -725,6 +652,148 @@ struct DataCollectionCard: View {
         }
         .padding()
         .cardStyle(for: .info)
+    }
+}
+
+/// R.4 — unified correlations surface. Replaces five separate sections
+/// (Sleep & Performance, HRV & Performance, Protein & Recovery,
+/// Protein & Performance, Carbs & Performance) with one card and a
+/// segmented control. Each segment falls back to a brief empty state
+/// when its data isn't ready yet, so the user knows what's coming
+/// rather than wondering why a segment exists at all.
+struct CorrelationsCard: View {
+    let activityInsights: [CorrelationEngine.ActivityTypeInsight]
+    let hrvInsights: [CorrelationEngine.HRVPerformanceInsight]
+    let proteinRecovery: NutritionCorrelationEngine.ProteinRecoveryInsight?
+    let proteinPerformance: [NutritionCorrelationEngine.ProteinPerformanceInsight]
+    let carbInsights: [NutritionCorrelationEngine.CarbPerformanceInsight]
+
+    enum Segment: String, CaseIterable, Identifiable {
+        case sleep   = "Sleep"
+        case hrv     = "HRV"
+        case protein = "Protein"
+        case carbs   = "Carbs"
+        var id: String { rawValue }
+    }
+
+    @State private var selected: Segment
+
+    init(activityInsights: [CorrelationEngine.ActivityTypeInsight],
+         hrvInsights: [CorrelationEngine.HRVPerformanceInsight],
+         proteinRecovery: NutritionCorrelationEngine.ProteinRecoveryInsight?,
+         proteinPerformance: [NutritionCorrelationEngine.ProteinPerformanceInsight],
+         carbInsights: [NutritionCorrelationEngine.CarbPerformanceInsight]) {
+        self.activityInsights = activityInsights
+        self.hrvInsights = hrvInsights
+        self.proteinRecovery = proteinRecovery
+        self.proteinPerformance = proteinPerformance
+        self.carbInsights = carbInsights
+        // Default the segment to the first one that actually has data so the
+        // user lands on something useful instead of an empty placeholder.
+        let defaultSegment: Segment = {
+            if !activityInsights.isEmpty { return .sleep }
+            if !hrvInsights.isEmpty { return .hrv }
+            let proteinReady = (proteinRecovery != nil && proteinRecovery?.confidence != .insufficient)
+                || !proteinPerformance.isEmpty
+            if proteinReady { return .protein }
+            if !carbInsights.isEmpty { return .carbs }
+            return .sleep
+        }()
+        self._selected = State(initialValue: defaultSegment)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: .spacingMd) {
+            Text("Correlations")
+                .font(.title2)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Picker("", selection: $selected) {
+                ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+
+            Group {
+                switch selected {
+                case .sleep:   sleepContent
+                case .hrv:     hrvContent
+                case .protein: proteinContent
+                case .carbs:   carbsContent
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var sleepContent: some View {
+        if activityInsights.isEmpty {
+            emptyState("Log a few weeks of workouts and we'll show how your sleep affects them.")
+        } else {
+            ForEach(activityInsights, id: \.activityType) { insight in
+                ActivityInsightCard(insight: insight)
+                    .cardStyle(for: .sleep)
+            }
+        }
+    }
+
+    @ViewBuilder private var hrvContent: some View {
+        if hrvInsights.isEmpty {
+            emptyState("We need more HRV samples linked to workouts before we can show a pattern.")
+        } else {
+            ForEach(hrvInsights, id: \.activityType) { insight in
+                HRVInsightCard(insight: insight)
+            }
+        }
+    }
+
+    @ViewBuilder private var proteinContent: some View {
+        let recoveryReady = proteinRecovery != nil && proteinRecovery?.confidence != .insufficient
+        if !recoveryReady && proteinPerformance.isEmpty {
+            emptyState("Log a few weeks of nutrition data to see protein patterns.")
+        } else {
+            if let recovery = proteinRecovery, recovery.confidence != .insufficient {
+                ProteinRecoveryCard(insight: recovery)
+            }
+            ForEach(proteinPerformance, id: \.activityType) { insight in
+                VStack(alignment: .leading, spacing: .spacingSm) {
+                    HStack {
+                        Image(systemName: insight.activityType == "Run" ? "figure.run" : "figure.outdoor.cycle")
+                        Text("\(insight.activityType) Performance")
+                            .font(.headline)
+                        Spacer()
+                        Text("\(String(format: "%.1f", insight.percentDifference))%")
+                            .foregroundStyle(insight.percentDifference >= 0 ? .green : .red)
+                            .bold()
+                    }
+                    Text(insight.recommendation)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text("Based on \(insight.sampleSize) workouts")
+                        .font(.caption2)
+                        .foregroundStyle(.gray)
+                }
+                .padding(.vertical, .spacingXs)
+            }
+        }
+    }
+
+    @ViewBuilder private var carbsContent: some View {
+        if carbInsights.isEmpty {
+            emptyState("Log a few weeks of nutrition data to see carb patterns.")
+        } else {
+            ForEach(carbInsights, id: \.analysisType) { insight in
+                CarbPerformanceCard(insight: insight)
+            }
+        }
+    }
+
+    private func emptyState(_ message: String) -> some View {
+        Text(message)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, .spacingLg)
     }
 }
 
