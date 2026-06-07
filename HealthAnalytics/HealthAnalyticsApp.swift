@@ -28,6 +28,9 @@ struct HealthAnalyticsApp: App {
                     .task {
                         ReadinessRepository.shared.bootstrap()
                         await SyncManager.shared.performSmartSync()
+                        await ReadinessRepository.shared.refreshIfNecessary(
+                            modelContext: HealthDataContainer.shared.mainContext
+                        )
                         await PatternNotificationService.shared.requestAuthorizationIfNeeded()
                     }
             } else {
@@ -55,8 +58,10 @@ struct HealthAnalyticsApp: App {
                     #if DEBUG
                     print("🔄 App became active, triggering smart sync...")
                     #endif
-                    // ✅ CHANGED: Use smart sync instead of global sync
                     await SyncManager.shared.performSmartSync()
+                    await ReadinessRepository.shared.refreshIfNecessary(
+                        modelContext: HealthDataContainer.shared.mainContext
+                    )
                 }
             }
             if newPhase == .background && isOnboardingComplete {
@@ -90,6 +95,9 @@ struct HealthAnalyticsApp: App {
 
                     // After successful Strava auth, sync to get Strava activities
                     await SyncManager.shared.performSmartSync()
+                    await ReadinessRepository.shared.refreshIfNecessary(
+                        modelContext: HealthDataContainer.shared.mainContext
+                    )
                 } catch {
                     #if DEBUG
                     print("❌ Error handling Strava callback: \(error)")
