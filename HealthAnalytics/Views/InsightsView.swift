@@ -154,24 +154,44 @@ struct InsightsView: View {
                     // which is a dashboard, not a coach. Describe what patterns are
                     // active instead of rendering the MasterCoachEngine paragraph
                     // (which belongs only on the Coach tab).
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 20))
-                            .foregroundStyle(Color.accent)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(activePatterns.count == 1
-                                 ? "1 pattern detected in the past 7 days."
-                                 : "\(activePatterns.count) patterns detected in the past 7 days.")
-                                .font(.system(size: 15, weight: .regular))
-                                .foregroundStyle(Color.textPrimary)
-                            if let top = topPattern {
-                                Text("Top: \(top.patternType.displayName)")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(Color.textSecondary)
-                            }
+                    //
+                    // Tap = scroll to the top pattern's Training DNA card. Reuses
+                    // the same pendingScrollPattern channel that Recovery's
+                    // cross-tab deep-link uses, so the InsightsView .onChange at
+                    // line 53 handles the scroll without new wiring.
+                    Button {
+                        if let top = topPattern {
+                            coordinator.pendingScrollPattern = top.patternType
                         }
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 20))
+                                .foregroundStyle(Color.accent)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(activePatterns.count == 1
+                                     ? "1 pattern detected in the past 7 days."
+                                     : "\(activePatterns.count) patterns detected in the past 7 days.")
+                                    .font(.system(size: 15, weight: .regular))
+                                    .foregroundStyle(Color.textPrimary)
+                                if let top = topPattern {
+                                    HStack(spacing: 4) {
+                                        Text("Top: \(top.patternType.displayName)")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(Color.textSecondary)
+                                        Image(systemName: "arrow.down.circle")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(Color.accent)
+                                    }
+                                }
+                            }
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .disabled(topPattern == nil)
                 }
             }
             .padding(.horizontal, 16)
