@@ -127,13 +127,18 @@ struct ACWRTrendCard: View {
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5]))
                         .foregroundStyle(.gray.opacity(0.5))
                     
-                    // Actual trend line
+                    // Actual trend line. .monotone preserves monotonicity through
+                    // control points and never overshoots at the endpoints —
+                    // catmullRom synthesises phantom controls by reflection,
+                    // which pulled the leading tail below the y-domain when the
+                    // Mon→Tue tangent was steep (and the trailing tail above
+                    // on sharp Sat→Sun ramps).
                     ForEach(trend) { day in
                         LineMark(
                             x: .value("Date", day.date, unit: .day),
                             y: .value("Ratio", day.value)
                         )
-                        .interpolationMethod(.catmullRom)
+                        .interpolationMethod(.monotone)
                         .foregroundStyle(stateColor)
                         .lineStyle(StrokeStyle(lineWidth: 3))
                         
