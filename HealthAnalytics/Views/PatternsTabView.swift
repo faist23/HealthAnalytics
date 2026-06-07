@@ -2,22 +2,23 @@
 //  PatternsTabView.swift
 //  HealthAnalytics
 //
-//  Renamed from IntelligenceTabView during the v0.1.9.0 Intelligence redesign.
-//  "Patterns" is what's inside — the previous "Intelligence" label was about the
-//  engine, not the user-visible content. R.5 added the "Patterns active this
-//  week: N" header strip + tab-icon badge + collapsible "Data sources" footer.
-//  R.6 still owes the nested-ScrollView fix (this view's outer ScrollView still
-//  embeds InsightsView's inner one).
+//  R.6: this view now owns the only ScrollView on the Patterns tab —
+//  ScrollViewReader proxy.scrollTo(pattern) operates on the real scroll
+//  surface, so Recovery → Patterns deep-link auto-scrolls cleanly to
+//  the matching TrainingDNACard. InsightsView is a content producer.
 //
 
 import SwiftUI
 import SwiftData
 
 struct PatternsTabView: View {
+    @EnvironmentObject var coordinator: TabCoordinator
     @Environment(\.colorScheme) var colorScheme
     @ObservedObject private var repo = ReadinessRepository.shared
 
     @Query private var detectedPatterns: [TrainingPattern]
+
+    @State private var pendingScroll: PatternType? = nil
 
     private var activePatternCount: Int {
         let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
@@ -38,21 +39,39 @@ struct PatternsTabView: View {
                 TabBackgroundColor.insights(for: colorScheme)
                     .ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 20) {
-                        // R.5: plain-text index of active patterns. No card chrome,
-                        // no button — it's a header strip, not a hero.
-                        Text(headerStripText)
-                            .font(.subheadline)
-                            .foregroundStyle(Color.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            Text(headerStripText)
+                                .font(.subheadline)
+                                .foregroundStyle(Color.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal)
 
-                        InsightsView()
+                            InsightsView()
 
-                        dataSourcesFooter
+                            dataSourcesFooter
+                        }
+                        .padding(.vertical)
                     }
-                    .padding(.vertical)
+                    .onChange(of: coordinator.pendingScrollPattern) { _, newPattern in
+                        guard let pattern = newPattern else { return }
+                        coordinator.pendingScrollPattern = nil
+                        // If the pattern card is already in the @Query result,
+                        // scroll immediately. Otherwise stash and wait — the
+                        // .onChange below fires when the data lands.
+                        if detectedPatterns.contains(where: { $0.patternType == pattern }) {
+                            scroll(proxy: proxy, to: pattern)
+                        } else {
+                            pendingScroll = pattern
+                        }
+                    }
+                    .onChange(of: detectedPatterns.map(\.patternType)) { _, _ in
+                        guard let pattern = pendingScroll,
+                              detectedPatterns.contains(where: { $0.patternType == pattern }) else { return }
+                        pendingScroll = nil
+                        scroll(proxy: proxy, to: pattern)
+                    }
                 }
             }
             .navigationTitle("Patterns")
@@ -68,10 +87,13 @@ struct PatternsTabView: View {
         }
     }
 
-    /// R.5: collapsible "Data sources" footer. Status-style audit content moved
-    /// out of the InsightsView dashboard and tucked into a DisclosureGroup at
-    /// the bottom of Patterns. Discoverable by anyone curious enough to scroll
-    /// to the end, but doesn't compete for daily attention.
+    private func scroll(proxy: ScrollViewProxy, to pattern: PatternType) {
+        Task { @MainActor in
+            withAnimation { proxy.scrollTo(pattern, anchor: .top) }
+        }
+    }
+
+    /// R.5 footer — collapsed by default.
     @ViewBuilder
     private var dataSourcesFooter: some View {
         let summary = repo.currentReadiness?.dataSummary ?? []

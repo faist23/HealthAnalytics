@@ -10,12 +10,10 @@ import SwiftData
 import Charts
 
 struct InsightsView: View {
-    @EnvironmentObject var coordinator: TabCoordinator
     @StateObject private var viewModel = InsightsViewModel()
     @State private var isFirstLoad = true
     @State private var isPatternAnalyzing = false
     @State private var patternAnalysisError: String?
-    @State private var pendingScroll: PatternType? = nil
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
 
@@ -25,80 +23,40 @@ struct InsightsView: View {
 
     @ObservedObject private var repo = ReadinessRepository.shared
 
+    /// R.6: InsightsView is now a pure content producer. PatternsTabView owns
+    /// the NavigationStack, the ScrollView, the ScrollViewReader, the
+    /// background, the gear toolbar, and the cross-tab pattern-scroll handler.
+    /// This kills the nested-ScrollView bug where the deep-link `proxy.scrollTo`
+    /// fired against an inner ScrollView that wasn't actually scrolling.
     var body: some View {
-        NavigationStack {
-        ZStack {
-            TabBackgroundColor.insights(for: colorScheme)
-                .ignoresSafeArea()
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 20) {
-                        // 1. Handle Error States
-                        if let error = viewModel.errorMessage {
-                            ErrorView(message: error) {
-                                Task { await viewModel.analyzeData() }
-                            }
-                            .cardStyle(for: .error)
-                        } else if !viewModel.isLoading && !isFirstLoad {
-                            // Today's Signal card removed in R.3 — pattern count
-                            // moves to the tab icon badge + a header strip on the
-                            // Patterns tab itself (R.5).
-                            dashboardContent
-                        }
-
-                        Spacer()
-                    }
-                    .padding()
+        VStack(spacing: 20) {
+            if let error = viewModel.errorMessage {
+                ErrorView(message: error) {
+                    Task { await viewModel.analyzeData() }
                 }
-                .onChange(of: coordinator.pendingScrollPattern) { _, newPattern in
-                    guard let pattern = newPattern else { return }
-                    coordinator.pendingScrollPattern = nil
-                    if isFirstLoad {
-                        pendingScroll = pattern
-                    } else {
-                        Task { @MainActor in
-                            withAnimation { proxy.scrollTo(pattern, anchor: .top) }
-                        }
-                    }
+                .cardStyle(for: .error)
+            } else if viewModel.isLoading || isFirstLoad {
+                // Lightweight inline placeholder — PatternsTabView's header strip
+                // and Data sources disclosure stay visible above/below while
+                // the dashboard content loads.
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Loading patterns…")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.textSecondary)
                 }
-                .onChange(of: isFirstLoad) { _, loaded in
-                    guard !loaded, let pattern = pendingScroll else { return }
-                    pendingScroll = nil
-                    Task { @MainActor in
-                        withAnimation { proxy.scrollTo(pattern, anchor: .top) }
-                    }
-                }
-            }
-
-            // Loading overlay — show pattern name when navigating from deep-link
-            if viewModel.isLoading || isFirstLoad {
-                LoadingOverlay(message: pendingScroll.map { "Opening \($0.displayName)..." } ?? "Analyzing your data...")
+                .padding(.vertical, .spacingLg)
+            } else {
+                dashboardContent
             }
         }
-        .navigationTitle("Intelligence")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task {
-                        await viewModel.analyzeData()
-                        // Refresh button: force pattern re-analysis unconditionally
-                        UserDefaults.standard.removeObject(forKey: "lastPatternAnalysisDate")
-                        await triggerPatternAnalysis()
-                    }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .disabled(viewModel.isLoading || isPatternAnalyzing)
-            }
-        }
+        .padding()
         .task {
             if viewModel.modelContainer == nil {
                 viewModel.configure(container: modelContext.container)
             }
             await viewModel.analyzeData()
             isFirstLoad = false
-            // Pattern analysis: primary trigger — 7-day staleness check
             await triggerPatternAnalysis()
         }
         .onChange(of: modelContext) { _, _ in
@@ -107,18 +65,11 @@ struct InsightsView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
-            // Force recalculation when data window changes
-            Task {
-                await viewModel.analyzeData()
-            }
+            Task { await viewModel.analyzeData() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
-            // Refresh when new data is synced
-            Task {
-                await viewModel.analyzeData()
-            }
+            Task { await viewModel.analyzeData() }
         }
-        } // NavigationStack
     }
 
     // Today's Signal card removed in R.3 (v0.1.9.0 Intelligence redesign).
