@@ -5,17 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.8.0] - 2026-06-06
+
 ### Added
 - **Phase 4: Structured Ontology** — `CoachMemoryNote` now supports anatomical tagging (e.g., "Lower Body: Knee") for injuries. Added `SmartRoutingEngine` to dynamically filter workout recommendations based on active injuries (e.g., zeroing out "Running" readiness for a knee injury while preserving "Upper Body Strength"). Exposed `activityReadiness` through the `ReadinessRepository`'s `UnifiedReadiness` state.
 - **Phase 5: Generative AI Integration** — Transformed `MasterCoachEngine` to support asynchronous LLM handoff for dynamic synthesis of the athlete's physiological state. The coaching paragraph is now generated dynamically using a `StateVector` encompassing readiness, load, injury risk, active patterns, memory notes, and forecasts. Migrated associated tests to `async/await`.
+- **ACWR trend chart inline on Load tab** — the acute:chronic workload ratio chart is now the Load tab's hero card, rendered above the strain scale instead of buried behind an invisible sheet. A "More load detail" `NavigationLink` pushes the full `UnifiedTrainingLoadCard` for users who want the deeper view.
+- **Honest "needs watch data" empty state on Load** — when `CardiovascularStrainService` has no Apple Watch HR samples to work with, the Cardio Load gauge now says so plainly instead of fabricating a strain value.
+- **`REFACTOR_PLAN.md`** — architectural plan and decision log for the Phase 1–3 refactor, checked into the repo.
 
 ### Changed
+- **`ReadinessRepository` is now the single source of truth.** The repository owns the `DataSyncCompleted` subscription, the analysis trigger, and all per-tab computations (cardiovascular strain, holistic metrics, today's workouts, raw chart arrays). ViewModels reduced to thin subscribers. Tab views no longer fetch SwiftData, no longer trigger analysis, no longer listen for sync completion. Coach and Readiness can no longer show divergent readiness scores because there is exactly one engine producing the number.
+- **Coaching voice consolidated to the Coach tab only.** Recovery and Load now show factual descriptive captions of their respective metrics (e.g., "Your readiness is 73/100 — in the optimal range. Recovery 28/40 · autonomic 22/30 · fatigue 23/30") instead of MasterCoachEngine advisory prose. Intelligence's "Today's Signal" card shows pattern counts. The full coaching paragraph lives only on the Coach tab.
+- **Settings gear icon unified to push-navigation across all tabs.** Previously bound to `.constant(false)` on Readiness and Load — taps did nothing. Now matches the existing Coach/Intelligence pattern (`NavigationLink { SettingsView() }`).
 - **Granular Cardio Load Zones** — The Strain tab's Time-in-Zone metrics (Zones 1-3 vs 4-5) are now calculated using exact granular heart rate samples from `CardiovascularStrainService` instead of an inaccurate estimate based on the workout's overall average heart rate.
 - **7-Day Forecast Homeostasis** — Rewrote the 7-day readiness forecast in `ReadinessRepository` to simulate cumulative fatigue and natural recovery. Instead of a flatline projection, the forecast now exhibits mean-reversion homeostasis, pulling the readiness toward a baseline of 75 while correctly compounding simulated fatigue on days a "Hard" or "Moderate" workout is recommended.
 
 ### Fixed
-- **Startup Sync Race Condition** — Fixed an issue where the app would display a stale readiness score (e.g., 63) at launch before updating. `CoachTabView` and `ContentView` now correctly listen for the `DataSyncCompleted` notification and refresh their data seamlessly.
-- **Missing Loading Overlay on Launch** — Restored the full-screen `LoadingOverlay` ("Analyzing your readiness...") on the Coach tab to prevent the app from briefly flashing a "0" placeholder score during the initial data synchronization upon launch.
+- **Startup sync race condition (root-cause fix)** — the prior workaround used per-view `.onReceive(DataSyncCompleted)` listeners that each re-triggered `analyze()`, so the data only got refreshed on whichever tab the user happened to be on. The repository now listens for sync completion centrally and republishes once; every tab observes the same `UnifiedReadiness` state. No more "switch tabs to make the data update."
+- **Tab-switch spinner thrash** — tabs no longer re-run their own analyze pass on appear. After the first cold launch, switching between Coach / Readiness / Load / Intelligence is instant; the previous architecture lazily instantiated each tab's ViewModel and ran a fresh `.task { analyze() }` per tab.
+- **"EXPLORE MY LOAD" button went nowhere** — the button tried to present a sheet whose body was gated on `readinessAssessment != nil && !acwrTrend.isEmpty`. When either guard failed, SwiftUI presented an empty modal and the user perceived the tap as broken. The button is gone; the ACWR chart it was supposed to lead to is now inline above it.
+- **Lie-of-omission Cardio Load fallback** — the gauge silently displayed `acwr * 10` (capped at 21) as a fake strain value when watch data was missing. Users saw a number that looked authoritative but had no relationship to actual cardio load. Removed; honest empty state shown instead.
+- **Missing LoadingOverlay during re-analysis** — `ReadinessViewModel` and `DashboardViewModel` now forward `ReadinessRepository.shared.$isAnalyzing` to their own `isLoading` published state. Without this, the overlay never appeared after the initial cold load, so pull-to-refresh and post-sync recomputes looked frozen.
+- **MasterCoachEngine paragraph leaked onto Intelligence** — `InsightsView`'s "Today's Signal" card rendered `readiness.coachAdvice` when patterns were active, putting advisory prose on what should be a dashboard surface. Replaced with a descriptive pattern count.
+
+### Removed
+- **`ContentView.swift`** — 748 lines, unreachable from `@main`, dead code from a pre-`MainTabView` era. The `ErrorView` struct and `TimePeriod.xAxisStride` extension that live UI still consumed were extracted to dedicated locations.
+- **`ReadinessViewModel.analyze()` / `configure()` / `computeCardiovascularStrain()` / `resolvedMaxHR()`** — analysis logic moved into `ReadinessRepository.performFullAnalysis`. View `.task` blocks calling `analyze()` removed across `CoachTabView`, `RecoveryTabView`, `StrainTabView`.
+- **`DashboardViewModel.loadData()` and `holisticMetrics` computed property** — the latter was re-deriving ACWR/MET/training balance from its own fetched data, bypassing the repository's already-computed values. Both removed; `holisticMetrics` is now a `@Published` field populated via the repo subscription.
+- **Unused `@Published` vars on `ReadinessViewModel`** — `performanceWindows`, `optimalTimings`, `workoutSequences` had zero consumers (grep-verified) but were being computed on every analyze pass. Net result: less wasted CPU and a smaller VM surface.
+- **Per-view `.onReceive(NSNotification.Name("DataSyncCompleted"))` listeners** — replaced by a single subscription inside the repository. The `// Without this, the initial .task races with performSmartSync()` comment that documented the old workaround is gone along with the workaround itself.
 
 ## [0.1.7.0] - 2026-05-03
 
