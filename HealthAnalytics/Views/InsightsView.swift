@@ -144,9 +144,8 @@ struct InsightsView: View {
             correlationsSection
         }
 
-        Group {
-            dataCollectionSection
-        }
+        // R.5: dataCollectionSection moved to PatternsTabView's collapsible
+        // "Data sources" footer at the bottom of the tab.
 
         Group {
             trainingDNASection
@@ -435,15 +434,11 @@ struct InsightsView: View {
         }
     }
     
-    @ViewBuilder
-    private var dataCollectionSection: some View {
-        if !viewModel.dataSummary.isEmpty && viewModel.activityTypeInsights.isEmpty {
-            DataCollectionCard(summary: viewModel.dataSummary.map {
-                DataCollectionCard.ActivitySummary(activityType: $0.activityType, goodSleep: $0.goodSleep, poorSleep: $0.poorSleep)
-            })
-        }
-    }
-    
+    // dataCollectionSection moved to PatternsTabView's "Data sources" disclosure
+    // footer in R.5. DataCollectionCard itself stays defined in this file —
+    // PatternsTabView consumes it directly.
+
+
     private func trendLabel(for trend: PredictiveReadinessService.ReadinessAssessment.Trend) -> String {
         switch trend {
         case .building: return "Building"

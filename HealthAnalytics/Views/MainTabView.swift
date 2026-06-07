@@ -4,11 +4,23 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct MainTabView: View {
     @EnvironmentObject var coordinator: TabCoordinator
     @ObservedObject var syncManager = SyncManager.shared
     @Environment(\.colorScheme) var colorScheme
+
+    // R.5: count of patterns detected in the past 7 days drives a numeric
+    // badge on the Patterns tab icon — so users can see at a glance from any
+    // tab whether there's something new to look at on Patterns.
+    @Query private var detectedPatterns: [TrainingPattern]
+
+    private var activePatternCount: Int {
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        return detectedPatterns.filter { $0.detectedAt >= sevenDaysAgo }.count
+    }
+
     var body: some View {
         ZStack {
             TabView(selection: $coordinator.selectedTab) {
@@ -34,6 +46,7 @@ struct MainTabView: View {
                     .tabItem {
                         Label("Patterns", systemImage: "waveform.path.ecg")
                     }
+                    .badge(activePatternCount)
                     .tag(3)
 
                 LabsTabView()
