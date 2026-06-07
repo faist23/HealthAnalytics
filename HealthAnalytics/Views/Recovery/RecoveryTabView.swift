@@ -87,9 +87,11 @@ struct RecoveryTabView: View {
                                     }
                                     .padding(.horizontal)
                                     
-                                    // 3. Insight Box
+                                    // 3. Insight Box — descriptive only on this tab.
+                                    // Coaching advice lives on the Coach tab; here we describe
+                                    // what the score is, not what to do (Phase 2.4).
                                     InsightBox(
-                                        text: readiness.recommendation,
+                                        text: readinessDescription(for: readiness),
                                         actionText: "BREAK DOWN MY READINESS",
                                         action: { showBreakdown = true },
                                         navigationText: topActivePattern.map { "See \($0.patternType.displayName) in Intelligence →" },
@@ -181,6 +183,25 @@ struct RecoveryTabView: View {
         if score >= 67 { return Color.statusOptimal }
         if score >= 34 { return Color.statusMonitoring }
         return Color.statusRest
+    }
+
+    /// Descriptive caption for the readiness state. Phase 2.4: no action advice —
+    /// that lives on the Coach tab via the MasterCoachEngine paragraph. This text
+    /// just names what the score *is* in plain terms, derived from the breakdown.
+    private func readinessDescription(for readiness: ReadinessAnalyzer.ReadinessScore) -> String {
+        let level: String = {
+            if readiness.score >= 67 { return "in the optimal range" }
+            if readiness.score >= 34 { return "in the monitoring range" }
+            return "in the rest range"
+        }()
+
+        let breakdown = readiness.breakdown
+        let parts: [String] = [
+            "Recovery \(breakdown.recoveryScore)/40",
+            "autonomic \(breakdown.fitnessScore)/30",
+            "fatigue \(breakdown.fatigueScore)/30"
+        ]
+        return "Your readiness is \(readiness.score)/100 — \(level). \(parts.joined(separator: " · "))."
     }
 }
 

@@ -318,13 +318,34 @@ struct StrainTabView: View {
         }
     }
 
+    /// Descriptive caption for the load state. Phase 2.4: no action advice —
+    /// that lives on the Coach tab. This text describes the current ACWR
+    /// numerically and names the band; it does not tell the user what to do.
     private var insightSection: some View {
-        let defaultRecommendation = "Your current cardio load is in the strenuous zone. This level of activity requires significant cardiovascular adaptation."
-        return InsightBox(
-            text: viewModel.dailyRecommendation?.guidance ?? defaultRecommendation,
+        InsightBox(
+            text: loadDescription,
             actionText: nil
         )
         .padding(.horizontal)
+    }
+
+    private var loadDescription: String {
+        guard let acwr = viewModel.readinessAssessment?.acwr else {
+            return "Build up a week of workouts and we'll show your training load here."
+        }
+        let band: String = {
+            if acwr < 0.8 { return "below your maintenance baseline" }
+            if acwr <= 1.3 { return "in the sweet spot (0.8 – 1.3)" }
+            if acwr <= 1.5 { return "above sweet spot — acute load is climbing" }
+            return "well above sweet spot — acute load is high vs. your 28-day baseline"
+        }()
+        let cvLine: String
+        if let strain = viewModel.cardiovascularStrain?.strain {
+            cvLine = " Today's cardio load: \(String(format: "%.1f", strain))/21."
+        } else {
+            cvLine = ""
+        }
+        return "Acute:chronic ratio is \(String(format: "%.2f", acwr)) — \(band).\(cvLine)"
     }
 }
 
