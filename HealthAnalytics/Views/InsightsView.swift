@@ -41,8 +41,9 @@ struct InsightsView: View {
                             }
                             .cardStyle(for: .error)
                         } else if !viewModel.isLoading && !isFirstLoad {
-                            todayInsightCard
-                            // 2. Main Dashboard Content (Broken into groups to fix compiler timeout)
+                            // Today's Signal card removed in R.3 — pattern count
+                            // moves to the tab icon badge + a header strip on the
+                            // Patterns tab itself (R.5).
                             dashboardContent
                         }
 
@@ -120,123 +121,35 @@ struct InsightsView: View {
         } // NavigationStack
     }
 
-    // MARK: - Today Signal Card
-
-    @ViewBuilder
-    private var todayInsightCard: some View {
-        if let readiness = repo.currentReadiness {
-            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-            let activePatterns = detectedPatterns.filter { $0.detectedAt >= sevenDaysAgo }
-            let topPattern = activePatterns.min(by: {
-                PatternType.displayPriority($0.patternType) <
-                PatternType.displayPriority($1.patternType)
-            })
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("TODAY'S SIGNAL")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.textSecondary)
-                    .tracking(1.5)
-                    .textCase(.uppercase)
-
-                if activePatterns.isEmpty {
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark.circle")
-                            .font(.system(size: 20))
-                            .foregroundStyle(Color.textSecondary)
-                            .accessibilityHidden(true)
-                        Text("All signals quiet — everything looks good.")
-                            .font(.system(size: 15, weight: .regular))
-                            .foregroundStyle(Color.textSecondary)
-                    }
-                } else {
-                    // Phase 2.4 + Phase 3 fix: this card is on the Intelligence tab,
-                    // which is a dashboard, not a coach. Describe what patterns are
-                    // active instead of rendering the MasterCoachEngine paragraph
-                    // (which belongs only on the Coach tab).
-                    //
-                    // Tap = scroll to the top pattern's Training DNA card. Reuses
-                    // the same pendingScrollPattern channel that Recovery's
-                    // cross-tab deep-link uses, so the InsightsView .onChange at
-                    // line 53 handles the scroll without new wiring.
-                    Button {
-                        if let top = topPattern {
-                            coordinator.pendingScrollPattern = top.patternType
-                        }
-                    } label: {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 20))
-                                .foregroundStyle(Color.accent)
-                                .accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(activePatterns.count == 1
-                                     ? "1 pattern detected in the past 7 days."
-                                     : "\(activePatterns.count) patterns detected in the past 7 days.")
-                                    .font(.system(size: 15, weight: .regular))
-                                    .foregroundStyle(Color.textPrimary)
-                                if let top = topPattern {
-                                    HStack(spacing: 4) {
-                                        Text("Top: \(top.patternType.displayName)")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundStyle(Color.textSecondary)
-                                        Image(systemName: "arrow.down.circle")
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundStyle(Color.accent)
-                                    }
-                                }
-                            }
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(topPattern == nil)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.accentDim)
-            .overlay(alignment: .leading) {
-                Rectangle()
-                    .fill(Color.accent)
-                    .frame(width: 3)
-            }
-            .accessibilityElement(children: .combine)
-        }
-    }
+    // Today's Signal card removed in R.3 (v0.1.9.0 Intelligence redesign).
+    // Pattern count surfaces on the Patterns tab icon badge + a quiet header
+    // strip at the top of the tab (R.5). Coach owns advisory voice.
 
     // MARK: - Sub-View Groups
     // Breaking the body into these groups solves the "Expression too complex" error
     
     @ViewBuilder
     private var dashboardContent: some View {
-        // AgingAlphaCard moved to Labs tab in R.2 (v0.1.9.0 Intelligence redesign).
-        // Aging is interesting-but-not-prescriptive for a recreational athlete; it
-        // belongs in Labs rather than competing for attention on the primary
-        // pattern surface.
+        // R.2: AgingAlphaCard moved to Labs.
+        // R.3: recommendationsSection deleted (advisory voice — Coach owns prescription).
+        //      simpleInsightsSection + metricTrendsSection merged into whatsChangedSection
+        //      under one "What's changed" header in the SimpleInsightCard design.
+        //      ComingSoonCard ("Optimal Training Windows") deleted — never ship
+        //      coming-soon tiles in production.
+        Group {
+            whatsChangedSection
+        }
 
-        Group {
-            recommendationsSection
-        }
-        
-        Group {
-            simpleInsightsSection
-            metricTrendsSection
-        }
-        
         Group {
             hrvPerformanceSection
             proteinRecoverySection
             proteinPerformanceSection
             carbPerformanceSection
         }
-        
+
         Group {
             activityInsightsSection
             dataCollectionSection
-            ComingSoonCard(title: "Optimal Training Windows")
         }
 
         Group {
@@ -365,16 +278,12 @@ struct InsightsView: View {
     }
 
     // MARK: - Individual Sections
-    
-    @ViewBuilder
-    private var recommendationsSection: some View {
-        if !viewModel.recommendations.isEmpty {
-            ForEach(viewModel.recommendations, id: \.title) { recommendation in
-                RecommendationCard(recommendation: recommendation)
-            }
-            Divider().padding(.vertical)
-        }
-    }
+
+    // recommendationsSection removed in R.3 — RecommendationCard list duplicated
+    // the Master Coach paragraph's purpose in a different voice. Coach owns
+    // advisory prose on the Coach tab (Phase 2.4); no other tab should
+    // re-introduce it. The underlying ActionableRecommendations engine still
+    // runs (cheap) — its output is just no longer rendered.
     
     @ViewBuilder
     private var trainingLoadSection: some View {
@@ -391,31 +300,24 @@ struct InsightsView: View {
         }
     }
     
+    /// R.3 merge: the old `simpleInsightsSection` ("Your Health Trends") and
+    /// `metricTrendsSection` ("Trends") were rendered as separate sections with
+    /// near-duplicate purposes. Now collapsed under one "What's changed" header.
+    /// Keeps the SimpleInsightCard design (user preference) and renders both data
+    /// sources beneath it — SimpleInsight stories first (curated, narrative),
+    /// then MetricTrend rows (structured direction + status) as supporting detail.
     @ViewBuilder
-    private var simpleInsightsSection: some View {
-        if !viewModel.simpleInsights.isEmpty {
-            Text("Your Health Trends")
+    private var whatsChangedSection: some View {
+        if !viewModel.simpleInsights.isEmpty || !viewModel.metricTrends.isEmpty {
+            Text("What's changed")
                 .font(.title2)
                 .fontWeight(.bold)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            
+
             ForEach(viewModel.simpleInsights, id: \.title) { insight in
                 SimpleInsightCard(insight: insight)
             }
-        }
-    }
-    
 
-    @ViewBuilder
-    private var metricTrendsSection: some View {
-        if !viewModel.metricTrends.isEmpty {
-            Divider().padding(.vertical)
-            
-            Text("Trends")
-                .font(.title2)
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
             ForEach(viewModel.metricTrends, id: \.metricName) { trend in
                 TrendCard(trend: trend)
             }
