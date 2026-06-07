@@ -56,10 +56,6 @@ struct StrainTabView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarItems }
                 .task {
-                    if viewModel.modelContainer == nil {
-                        viewModel.configure(container: modelContext.container)
-                    }
-                    await viewModel.analyze(modelContext: modelContext)
                     if let cv = viewModel.cardiovascularStrain {
                         maxHR = cv.estimatedMaxHR
                     } else {
@@ -71,7 +67,8 @@ struct StrainTabView: View {
                     if let cv { maxHR = cv.estimatedMaxHR }
                 }
                 .refreshable {
-                    await viewModel.analyze(modelContext: modelContext)
+                    await SyncManager.shared.performSmartSync()
+                    await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
                 }
         }
         .sheet(isPresented: $showACWRDetail) {
@@ -139,7 +136,10 @@ struct StrainTabView: View {
                     VStack(spacing: .spacingLg) {
                         if let error = viewModel.errorMessage {
                             ErrorView(message: error) {
-                                Task { await viewModel.analyze(modelContext: modelContext) }
+                                Task {
+                                    await SyncManager.shared.performSmartSync()
+                                    await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
+                                }
                             }
                             .cardStyle(for: .error)
                         }

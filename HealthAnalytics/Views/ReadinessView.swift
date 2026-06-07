@@ -23,27 +23,10 @@ struct ReadinessView: View {
         mainView
             .navigationTitle("Readiness")
             .toolbar { toolbarItems }
-            .onChange(of: viewModel.selectedPeriod) { _, _ in
-                Task { await viewModel.analyze(modelContext: modelContext) }
-            }
-            .task {
-                if viewModel.modelContainer == nil {
-                    viewModel.configure(container: modelContext.container)
-                }
-                await viewModel.analyze(modelContext: modelContext)
-                isFirstLoad = false
-            }
-            .onChange(of: modelContext) { _, _ in
-                if viewModel.modelContainer == nil {
-                    viewModel.configure(container: modelContext.container)
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataWindowChanged"))) { _ in
-                Task { await viewModel.analyze(modelContext: modelContext) }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
-                Task { await viewModel.analyze(modelContext: modelContext) }
-            }
+            // Deprecated view: analysis is now driven entirely by ReadinessRepository.
+            // Period changes don't re-trigger because analyze() is gone. This view is
+            // unreferenced from live UI (replaced by MainTabView sub-tabs).
+            .task { isFirstLoad = false }
     }
 
     private var mainView: some View {
@@ -174,7 +157,8 @@ struct ReadinessView: View {
     private var refreshButton: some View {
         Button {
             Task {
-                await viewModel.analyze(modelContext: modelContext)
+                await SyncManager.shared.performSmartSync()
+                await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
             }
         } label: {
             Image(systemName: "arrow.clockwise")

@@ -47,10 +47,10 @@ struct WorkoutAuditView: View {
         .navigationTitle("Today's Workouts")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            if viewModel.modelContainer == nil {
-                viewModel.configure(container: modelContext.container)
-            }
-            await viewModel.analyze(modelContext: modelContext)
+            // Phase 1.4: ReadinessViewModel no longer fetches; subscription to
+            // ReadinessRepository populates todayWorkouts. Just trigger a refresh
+            // in case the user dropped into this debug view before the repo ran.
+            await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
         }
     }
 }

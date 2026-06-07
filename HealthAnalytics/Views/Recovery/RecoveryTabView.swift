@@ -146,10 +146,6 @@ struct RecoveryTabView: View {
                 }
             }
             .task {
-                if viewModel.modelContainer == nil {
-                    viewModel.configure(container: modelContext.container)
-                }
-                await viewModel.analyze(modelContext: modelContext)
                 isFirstLoad = false
                 // TrainingSignatureCard lives here but runPatternAnalysis was only wired
                 // to InsightsView (a sheet). Drive it from the tab that shows the card.
@@ -157,14 +153,9 @@ struct RecoveryTabView: View {
                 // card reflects current StoredDailyScore data without waiting a week.
                 await ReadinessRepository.shared.runPatternAnalysis(container: modelContext.container, force: true)
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
-                // Re-analyze after sync so today's workouts are always current on first open.
-                // Without this, the initial .task races with performSmartSync() and wins — reading
-                // SwiftData before today's workout is written, then never refreshing.
-                Task { await viewModel.analyze(modelContext: modelContext) }
-            }
             .refreshable {
-                await viewModel.analyze(modelContext: modelContext)
+                await SyncManager.shared.performSmartSync()
+                await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
             }
         }
         .sheet(isPresented: $showBreakdown) {
