@@ -300,27 +300,98 @@ struct InsightsView: View {
         }
     }
     
-    /// R.3 merge: the old `simpleInsightsSection` ("Your Health Trends") and
-    /// `metricTrendsSection` ("Trends") were rendered as separate sections with
-    /// near-duplicate purposes. Now collapsed under one "What's changed" header.
-    /// Keeps the SimpleInsightCard design (user preference) and renders both data
-    /// sources beneath it — SimpleInsight stories first (curated, narrative),
-    /// then MetricTrend rows (structured direction + status) as supporting detail.
+    /// "What's changed" section — dedupe-by-metric merge of MetricTrend +
+    /// SimpleInsight data. For metrics that both sources compute (RHR, HRV,
+    /// Sleep Duration, Steps, Weight, Training Frequency), MetricTrend wins —
+    /// it has structured baseline + % change + direction. SimpleInsight
+    /// supplies the unique narrative entries (e.g. Sleep Consistency).
+    /// All cards render in the SimpleInsightCard design with explicit
+    /// "vs your 21-day baseline" language so the user always knows what the
+    /// number is being compared to.
     @ViewBuilder
     private var whatsChangedSection: some View {
-        if !viewModel.simpleInsights.isEmpty || !viewModel.metricTrends.isEmpty {
+        let mappedTrends = viewModel.metricTrends.map(mapTrendToInsight)
+        let coveredDomains = Set(viewModel.metricTrends.map { domainKey(forMetricTrend: $0.metricName) })
+        let uniqueStories = viewModel.simpleInsights.filter { insight in
+            !coveredDomains.contains(domainKey(forSimpleInsightTitle: insight.title))
+        }
+        if !mappedTrends.isEmpty || !uniqueStories.isEmpty {
             Text("What's changed")
                 .font(.title2)
                 .fontWeight(.bold)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            ForEach(viewModel.simpleInsights, id: \.title) { insight in
+            ForEach(mappedTrends, id: \.title) { insight in
                 SimpleInsightCard(insight: insight)
             }
-
-            ForEach(viewModel.metricTrends, id: \.metricName) { trend in
-                TrendCard(trend: trend)
+            ForEach(uniqueStories, id: \.title) { insight in
+                SimpleInsightCard(insight: insight)
             }
+        }
+    }
+
+    /// Map a structured MetricTrend into a SimpleInsight whose description
+    /// names the baseline window in plain English. Drives the unified render.
+    private func mapTrendToInsight(_ trend: MetricTrend) -> CorrelationEngine.SimpleInsight {
+        let style = metricStyle(for: trend.metricName)
+        let formattedValue = style.formatter(trend.currentValue)
+
+        let description: String
+        // Training Frequency has no baseline comparison — keep its raw context.
+        if trend.metricName == "Training Frequency" {
+            description = trend.context
+        } else if let baseline = trend.baselineValue, abs(trend.percentageChange) >= 1.0 {
+            let direction = trend.percentageChange > 0 ? "Up" : "Down"
+            let absPct = Int(abs(trend.percentageChange).rounded())
+            let baselineFormatted = style.formatter(baseline)
+            description = "\(direction) \(absPct)% vs your 21-day baseline (\(baselineFormatted))"
+        } else if let baseline = trend.baselineValue {
+            // < 1% change — call it stable, but still name the baseline.
+            description = "Stable vs your 21-day baseline (\(style.formatter(baseline)))"
+        } else {
+            description = trend.context
+        }
+
+        return CorrelationEngine.SimpleInsight(
+            title: trend.metricName,
+            value: formattedValue,
+            description: description,
+            icon: style.icon,
+            iconColor: style.color
+        )
+    }
+
+    /// Visual style per metric — icon glyph, value formatter (units), and
+    /// SimpleInsightCard color key. New metric names should be added here.
+    private func metricStyle(for name: String) -> (icon: String, formatter: (Double) -> String, color: String) {
+        switch name {
+        case "Resting Heart Rate":
+            return ("heart.fill", { String(format: "%.0f bpm", $0) }, "red")
+        case "HRV":
+            return ("waveform.path.ecg", { String(format: "%.0f ms", $0) }, "green")
+        case "Sleep Duration":
+            return ("bed.double.fill", { String(format: "%.1f hrs", $0) }, "blue")
+        case "Daily Steps":
+            return ("figure.walk", { String(format: "%.0f", $0.rounded()) }, "orange")
+        case "Body Weight":
+            return ("scalemass.fill", { String(format: "%.1f lbs", $0) }, "orange")
+        case "Training Frequency":
+            return ("figure.run", { String(format: "%.1f/wk", $0) }, "orange")
+        default:
+            return ("chart.line.uptrend.xyaxis", { String(format: "%.1f", $0) }, "gray")
+        }
+    }
+
+    /// Canonical domain key for dedupe between MetricTrend.metricName and
+    /// SimpleInsight.title (which name the same metric differently — e.g.
+    /// MetricTrend "HRV" vs SimpleInsight "Recovery Status").
+    private func domainKey(forMetricTrend name: String) -> String { name }
+    private func domainKey(forSimpleInsightTitle title: String) -> String {
+        switch title {
+        case "Recovery Status":      return "HRV"
+        case "Resting Heart Rate":   return "Resting Heart Rate"
+        case "Training Frequency":   return "Training Frequency"
+        default:                     return title // unique stories (e.g. "Sleep Consistency") stay distinct
         }
     }
     
