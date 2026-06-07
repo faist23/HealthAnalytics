@@ -113,6 +113,11 @@ struct StrainTabView: View {
                                 )
                                 .cardStyle(for: .workouts)
                             }
+                            // Phase R.2: Performance Audit is a load retrospective —
+                            // "why did you perform better 3 weeks ago?" Lives at the
+                            // bottom of Load as a deeper drill-in below the strain /
+                            // load / TSS story above.
+                            performanceAuditCard
                         }
                     }
                     .padding(.vertical)
@@ -359,6 +364,34 @@ struct StrainTabView: View {
             todayLine = ""
         }
         return weekTrend + todayLine
+    }
+
+    /// Performance Audit retrospective — moved from the old Intelligence tab
+    /// into Load during the v0.1.9.0 redesign (Phase R.2). Pushes to a separate
+    /// PerformanceAuditView with the full audit content.
+    private var performanceAuditCard: some View {
+        NavigationLink {
+            PerformanceAuditView()
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Performance Audit")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text("Why did you perform better?")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+            .background(Color.surface)
+            .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
+            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        }
+        .padding(.horizontal)
     }
 }
 

@@ -212,11 +212,11 @@ struct InsightsView: View {
     
     @ViewBuilder
     private var dashboardContent: some View {
-        if let aging = viewModel.agingAssessment {
-            AgingAlphaCard(assessment: aging)
-                .padding(.bottom, 10)
-        }
-        
+        // AgingAlphaCard moved to Labs tab in R.2 (v0.1.9.0 Intelligence redesign).
+        // Aging is interesting-but-not-prescriptive for a recreational athlete; it
+        // belongs in Labs rather than competing for attention on the primary
+        // pattern surface.
+
         Group {
             recommendationsSection
         }

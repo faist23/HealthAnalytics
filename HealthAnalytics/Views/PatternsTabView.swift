@@ -24,31 +24,9 @@ struct PatternsTabView: View {
 
                 ScrollView {
                     VStack(spacing: 20) {
-                        NavigationLink {
-                            PerformanceAuditView()
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Performance Audit")
-                                        .font(.headline)
-                                        .foregroundStyle(.primary)
-                                    Text("Why did you perform better?")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding()
-                            .background(Color.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
-                        }
-                        .padding(.horizontal)
-
-                        // InsightsView still embedded for now — Phase R.3 starts
-                        // gutting it and R.6 inlines the survivors directly here.
+                        // Performance Audit moved to Load tab in R.2.
+                        // InsightsView still embedded for now — R.3 guts it
+                        // and R.6 inlines the survivors directly here.
                         InsightsView()
                     }
                     .padding(.vertical)
