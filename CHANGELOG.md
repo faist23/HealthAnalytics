@@ -5,6 +5,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.9.0] - 2026-06-07
+
+The Intelligence redesign. Renamed the tab, killed clutter that didn't earn its slot, added a 5th tab (Labs) for experimental signals so they're discoverable without competing for primary attention. Plus a round of ACWR chart corrections and UX repairs that surfaced during the redesign.
+
+### Added
+
+- **5th tab: Labs.** Experimental signals get a dedicated home instead of cluttering primary surfaces or hiding in Settings. Initial residents: biological aging (`AgingAlphaCard`) and cycling compound score (`CyclingCompoundScoreCard`). Empty state shown when neither has enough data yet. Future Labs additions should announce themselves as exploration — this tab is intentional, not a graveyard.
+- **Patterns tab icon badge.** Numeric count of patterns detected in the past 7 days. Driven by `@Query` directly in `MainTabView`; `.badge(0)` hides when there's nothing to see.
+- **"Patterns active this week: N" header strip** at the top of the Patterns tab. Plain text — no card chrome.
+- **Collapsible "Data sources" footer** at the bottom of Patterns. The `DataCollectionCard` (formerly an always-on row in the dashboard) is now a `DisclosureGroup` collapsed by default.
+- **Pull-to-refresh on Coach and Patterns.** Both gestures force a sync and a force repo refresh so a deliberate pull always does visible work.
+
+### Changed
+
+- **Intelligence tab renamed to Patterns.** Tells the user what's inside before they tap. The previous "Intelligence" label was about the engine, not the user-visible content.
+- **Performance Audit relocated** from the top of the old Intelligence tab to the bottom of Load (`StrainTabView`). Load retrospective belongs with the other load-historical content (`TSSChartCard`, `StrainRecoveryBalancePlot`).
+- **"What's changed" section** consolidates the prior "Your Health Trends" + "Trends" duplication into one section using the `SimpleInsightCard` design. Dedupe by metric domain: HRV/RHR/Sleep Duration/Steps/Weight/Training Frequency come from `MetricTrend` (with explicit "7-day average. Up 19% vs your 21-day baseline (29.8 ms)." language); Sleep Consistency stays as a `SimpleInsight` and renders adjacent to Sleep Duration. Every card names both its averaging window and its baseline window.
+- **"Correlations" card** collapses 5 prior sections (Sleep & Performance, HRV & Performance, Protein & Recovery, Protein & Performance, Carbs & Performance) into one card with a segmented control (Sleep / HRV / Protein / Carbs). Empty segments show a plain-English placeholder ("Log a few weeks of nutrition data to see protein patterns") instead of being absent. The card defaults to the first non-empty segment.
+- **`SyncManager.performSmartSync`** now takes a `force: Bool = false` parameter that bypasses the 30-minute throttle. User-initiated refreshes (Coach toolbar button + both pull-to-refresh gestures) pass `force: true`.
+- **Coach toolbar refresh button** now calls `ReadinessRepository.forceRefresh` (bypasses fingerprint cache) so the LoadingOverlay always fires on tap.
+
+### Fixed
+
+- **ACWR chart Monday point no longer plots at ~0.** `PredictiveReadinessService.calculateReadiness` hardcoded `Date()` as the windowing reference; the historical-trend caller filtered workouts to `<= targetDate` but the inner methods still windowed `[today-7, today]` / `[today-28, today]`. For Monday's perspective the intersection collapsed to "Monday only" — empty on rest days, yielding ACWR = 0/N = 0. Added an optional `referenceDate: Date = Date()` parameter; historical callers (the trend chart, `PerformancePredictor` training rows) now pass the date they're asking about. Default keeps current-assessment callers behavior-stable.
+- **ACWR sweet-spot band extends through the full week.** The band's `xEnd` was bounded by `trend.last.date` = `startOfDay(today)` while `LineMark` used `unit: .day` (renders dots mid-day-bucket). The band ended at Saturday's column visually. Extended `xEnd` by one day so the band covers the full last bucket.
+- **ACWR chart line no longer dips below the y-domain at endpoints.** Replaced `.catmullRom` interpolation (synthesises phantom control points by reflection, overshoots at endpoints) with `.monotone`.
+- **Recovery → Patterns deep link** now lands on the right tab and auto-scrolls to the matching Training DNA card. Two interlocking bugs:
+  - `TabCoordinator.intelligenceTab` was `= 4` but Intelligence sat at tag `3`; tap fell back to tag `0` (Coach). Constants renamed and corrected.
+  - PatternsTabView had a nested-ScrollView issue (outer ScrollView embedded `InsightsView`'s inner one); `ScrollViewReader.proxy.scrollTo` fired against a non-scrolling inner view, so even when the right tab was reached, no scroll happened. Collapsed to a single ScrollView in PatternsTabView (R.6).
+- **Recovery tab's pattern deep-link label** said "See <pattern> in Intelligence →" after the rename. Now says "Patterns".
+- **Loading overlay reappears during repo re-analysis.** `ReadinessViewModel` and `DashboardViewModel` now forward `ReadinessRepository.$isAnalyzing` to their own `isLoading` via a Combine subscription. Previously `isLoading` was `@Published` but nothing flipped it after `analyze()`/`loadData()` were deleted in v0.1.8.0; the screen looked frozen during repo recomputes.
+- **"What's changed" cards** no longer show conflicting values for the same metric. HRV and RHR previously rendered twice with different precision (36 vs 36.2) and different baseline windows, in two different card designs. Dedupe by metric domain — `MetricTrend` wins on shared domains, `SimpleInsight` covers the rest.
+
+### Removed
+
+- **Today's Signal card** from the old Intelligence/Patterns tab. Patterns aren't a today concept; the count now surfaces on the tab icon badge + the header strip.
+- **Recommendations section** (`RecommendationCard` list). Advisory voice on a non-Coach tab violated the Phase 2.4 IA rule. The underlying `ActionableRecommendations` engine still runs; its output just no longer renders.
+- **"Coming Soon: Optimal Training Windows" tile.** Don't ship coming-soon tiles in production.
+- **AgingAlphaCard from `InsightsView`** (moved to Labs).
+- **Two duplicate trend sections** ("Your Health Trends" + "Trends") merged into "What's changed".
+- **Five duplicate correlation sections** merged into one segmented `CorrelationsCard`.
+
 ## [0.1.8.0] - 2026-06-06
 
 ### Added
