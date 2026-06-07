@@ -83,10 +83,10 @@ In `StrainTabView`:
 - Coach tab keeps the full coaching paragraph
 - **Single highest-leverage change for the "app repeats itself" complaint**
 
-### 2.5 Redistribute Intelligence (~half day)
-- Pattern detections → Recovery (they explain *why* readiness is where it is). `RecoveryTabView.swift:95–98` already navigates to a pattern; expand to inline list.
-- Performance Audit → Load (load retrospective)
-- Then evaluate: kill the tab itself, or keep as power-user surface?
+### 2.5 Redistribute Intelligence — **DEFERRED**
+Reason: the consultant's own caveat — "I am assuming Intelligence has low engagement; if Pattern detections are your highest-rated insights in user feedback, killing the tab is wrong." We have no usage data. Phase 1 + 2.2/2.3/2.4 already deliver the bulk of the IA wins (single source of truth, ACWR surfaced, coaching voice deduped). Test the current state on device before deciding whether to disturb Intelligence.
+
+Plan was: pattern detections → Recovery (inline list, expanding the existing `coordinator.navigate(to: intelligenceTab, scrollTo:)` link at `RecoveryTabView.swift:95-98`), Performance Audit → Load.
 
 ---
 
