@@ -13,19 +13,24 @@ import BackgroundTasks
 @main
 struct HealthAnalyticsApp: App {
     @AppStorage("isOnboardingComplete") private var isOnboardingComplete = false
-    
+    @StateObject private var tabCoordinator = TabCoordinator()
+
     @Environment(\.scenePhase) private var scenePhase
-    
+
     var body: some Scene {
         WindowGroup {
             if isOnboardingComplete {
                 MainTabView()
+                    .environmentObject(tabCoordinator)
                     .onOpenURL { url in
                         handleIncomingURL(url)
                     }
                     .task {
-                        // ✅ CHANGED: Use smart sync instead of global sync
+                        ReadinessRepository.shared.bootstrap()
                         await SyncManager.shared.performSmartSync()
+                        await ReadinessRepository.shared.refreshIfNecessary(
+                            modelContext: HealthDataContainer.shared.mainContext
+                        )
                         await PatternNotificationService.shared.requestAuthorizationIfNeeded()
                     }
             } else {
@@ -53,8 +58,10 @@ struct HealthAnalyticsApp: App {
                     #if DEBUG
                     print("🔄 App became active, triggering smart sync...")
                     #endif
-                    // ✅ CHANGED: Use smart sync instead of global sync
                     await SyncManager.shared.performSmartSync()
+                    await ReadinessRepository.shared.refreshIfNecessary(
+                        modelContext: HealthDataContainer.shared.mainContext
+                    )
                 }
             }
             if newPhase == .background && isOnboardingComplete {
@@ -88,6 +95,9 @@ struct HealthAnalyticsApp: App {
 
                     // After successful Strava auth, sync to get Strava activities
                     await SyncManager.shared.performSmartSync()
+                    await ReadinessRepository.shared.refreshIfNecessary(
+                        modelContext: HealthDataContainer.shared.mainContext
+                    )
                 } catch {
                     #if DEBUG
                     print("❌ Error handling Strava callback: \(error)")

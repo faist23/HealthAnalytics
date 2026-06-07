@@ -25,7 +25,7 @@ struct TrainingDNACard: View {
                 .background(Color.surfaceRaised)
                 .padding(.bottom, 10)
 
-            confidenceLine
+            confidenceBadgeRow
                 .padding(.bottom, .spacingSm)
 
             TrainingPatternTimelineView(pattern: pattern)
@@ -114,19 +114,95 @@ struct TrainingDNACard: View {
             )
     }
 
-    // MARK: - Confidence Line
+    // MARK: - Confidence Badge Row
 
-    private var confidenceLine: some View {
-        HStack(spacing: 0) {
-            Text(pattern.confidenceQualifier + " · ")
+    private var confidenceBadgeRow: some View {
+        HStack(spacing: 8) {
+            confidencePill
+                .accessibilityHidden(true)
+
+            Text(confidenceCountAndDuration)
                 .font(.system(size: 13, weight: .medium, design: .default))
                 .foregroundStyle(Color.textSecondary)
-            Text(pattern.confidenceCountText)
-                .font(.system(size: 13, weight: .medium, design: .default))
-                .foregroundStyle(Color.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
             Spacer()
         }
-        .accessibilityLabel("\(pattern.confidenceQualifier), \(pattern.confidenceCountText)")
+        .accessibilityLabel(confidenceAccessibilityLabel)
+    }
+
+    private var confidencePill: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(confidenceSignalColor)
+                .frame(width: 6, height: 6)
+            Text(pattern.confidenceQualifier)
+                .font(.system(size: 11, weight: .semibold, design: .default))
+                .foregroundStyle(confidenceSignalColor)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(confidenceFillColor, in: RoundedRectangle(cornerRadius: .radiusSm))
+        .overlay(
+            RoundedRectangle(cornerRadius: .radiusSm)
+                .stroke(confidenceBorderColor, lineWidth: 1)
+        )
+    }
+
+    private enum ConfidenceTier { case consistent, mixed, tentative }
+
+    private var confidenceTier: ConfidenceTier {
+        let ratio = pattern.confidenceDenominator > 0
+            ? Double(pattern.confidenceNumerator) / Double(pattern.confidenceDenominator)
+            : 0
+        if pattern.confidenceNumerator > 3 && ratio >= 0.75 { return .consistent }
+        if pattern.confidenceNumerator > 3 { return .mixed }
+        return .tentative
+    }
+
+    private var confidenceSignalColor: Color {
+        switch confidenceTier {
+        case .consistent: return Color.statusOptimal
+        case .mixed:      return Color.statusMonitoring
+        case .tentative:  return Color.textSecondary
+        }
+    }
+
+    private var confidenceFillColor: Color {
+        switch confidenceTier {
+        case .consistent: return Color.statusOptimal.opacity(0.12)
+        case .mixed:      return Color.statusMonitoring.opacity(0.12)
+        case .tentative:  return Color.surfaceRaised
+        }
+    }
+
+    private var confidenceBorderColor: Color {
+        switch confidenceTier {
+        case .consistent: return Color.statusOptimal.opacity(0.22)
+        case .mixed:      return Color.statusMonitoring.opacity(0.22)
+        case .tentative:  return Color.textTertiary
+        }
+    }
+
+    private var instanceDateSpan: String? {
+        let dates = pattern.instanceDates
+        guard dates.count >= 2 else { return nil }
+        let sorted = dates.sorted()
+        let days = Calendar.current.dateComponents([.day], from: sorted.first!, to: sorted.last!).day ?? 0
+        guard days > 0 else { return nil }
+        return "\(days) days"
+    }
+
+    private var confidenceCountAndDuration: String {
+        guard let span = instanceDateSpan else { return pattern.confidenceCountText }
+        return "\(pattern.confidenceCountText) · \(span)"
+    }
+
+    private var confidenceAccessibilityLabel: String {
+        let base = "Pattern confidence: \(pattern.confidenceQualifier), \(pattern.confidenceCountText)"
+        guard let span = instanceDateSpan else { return base }
+        return "\(base), tracked over \(span)"
     }
 
     // MARK: - Coaching Row (accent border rule)

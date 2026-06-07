@@ -7,32 +7,32 @@
 - **Project type:** iOS native SwiftUI app — dark-first, data-forward, used primarily in the morning and evening
 
 ## Aesthetic Direction
-- **Direction:** Warm Signal
+- **Direction:** Signal Indigo
 - **Decoration level:** Minimal — typography, color semantics, and the score ring carry all the visual weight. No gradients as decoration, no icon grids, no blobs.
-- **Mood:** Biological warmth meets quiet precision. The morning open feels like picking up a journal, not reading a monitor. Not WHOOP's cold data-lab aggression, not Oura's passive luxury. A knowledgeable friend who already knows your body.
-- **Positioning:** Every competitor chose cold-dark (WHOOP/Garmin) or warm-light (Oura/Apple Fitness). Warm-dark is the gap — approachable and credible simultaneously.
+- **Mood:** Cool-dark precision with violet intelligence. The morning open feels like a serious performance tool. Not WHOOP's cold data-lab aggression, not Oura's passive luxury. Analytical and sharp.
+- **Positioning:** Every competitor chose warm-dark (earthy/terracotta) or cold-gray. Cool-dark violet is the gap — premium data feel without sterile gray.
 
 ## Color System
 
 ### Foundation (Dark Mode — Primary)
 | Token | Hex | Role |
 |-------|-----|------|
-| `background` | `#0F0D0B` | App background — near-black with brown warmth, not cold gray/black |
-| `surface` | `#1C1915` | Cards, sheets, list rows |
-| `surfaceRaised` | `#262118` | Elevated sheets, modal backgrounds, separators |
-| `textPrimary` | `#F2EDE6` | Main text — warm white, slight cream (not stark `#FFFFFF`) |
-| `textSecondary` | `#8C8078` | Supporting text, labels, captions |
-| `textTertiary` | `#4D4540` | Deemphasized text, axis labels, timestamps |
+| `background` | `#09090E` | App background — cool near-black with indigo undertone |
+| `surface` | `#0F0F18` | Cards, sheets, list rows |
+| `surfaceRaised` | `#1A1A2E` | Elevated sheets, modal backgrounds, separators |
+| `textPrimary` | `#EDEDFF` | Main text — cool white, slight indigo cast |
+| `textSecondary` | `#8A8AA8` | Supporting text, labels, captions |
+| `textTertiary` | `#4A4A65` | Deemphasized text, axis labels, timestamps |
 
 ### Brand Accent
 | Token | Hex | Rationale |
 |-------|-----|-----------|
-| `accent` | `#E8885A` | Terracotta — communicates energy without aggression. Sunrise vibes. Neither WHOOP's punishment-red nor Garmin's corporate blue. Used on: score ring (high readiness), CTA buttons, active tab indicator, progress bars |
-| `accentDim` | `rgba(232,136,90,0.12)` | Accent tinted background for coach recommendation cards |
-| `accentBorder` | `rgba(232,136,90,0.22)` | Accent card border |
+| `accent` | `#7C5CFC` | Electric violet — signals intelligence and precision. Used on: score ring (high readiness), coaching border stripe, CTA buttons, active tab indicator, progress bars |
+| `accentDim` | `rgba(124,92,252,0.12)` | Accent tinted background for coach recommendation cards |
+| `accentBorder` | `rgba(124,92,252,0.22)` | Accent card border |
 
 ### Semantic Status Colors
-These map directly to the existing Blue/Green/Yellow/Orange coaching logic in GEMINI.md. All hues are warm-shifted from system defaults.
+These map directly to the existing Blue/Green/Yellow/Orange coaching logic in GEMINI.md. Unchanged from prior system.
 
 | Token | Hex | Meaning | Maps from |
 |-------|-----|---------|-----------|
@@ -42,11 +42,11 @@ These map directly to the existing Blue/Green/Yellow/Orange coaching logic in GE
 | `statusWarning` | `#F07240` | Ember — high risk, significant deviation | System `.orange` |
 
 ### Dark Mode Strategy
-Warm-dark is the primary mode. Dark surfaces with the warm undertone look better for chart rendering and morning/evening use. If light mode is added in a future phase:
-- Background: `#FAF7F2` (warm off-white)
+Cool-dark is the primary mode. If light mode is added in a future phase:
+- Background: `#F4F4FF` (cool off-white, indigo hint)
 - Surface: `#FFFFFF`
-- Surface Raised: `#F0EDE8`
-- Text primary: `#1A1612`
+- Surface Raised: `#EBEBF8`
+- Text primary: `#0A0A18`
 - Keep all semantic and accent colors; reduce saturation by ~10%
 
 ## Typography
@@ -139,18 +139,21 @@ All typography uses the SF Pro system family — no external font loading requir
 Define a `DesignTokens` namespace (or `AppColors`/`AppFonts` structs) as the single source of truth for all tokens. ViewModels should never hardcode hex values or font sizes.
 
 ```swift
-// Recommended structure
+// Recommended structure (Signal Indigo)
 extension Color {
-    static let background = Color(red: 0.059, green: 0.051, blue: 0.043)  // #0F0D0B
-    static let surface = Color(red: 0.110, green: 0.098, blue: 0.082)     // #1C1915
-    static let surfaceRaised = Color(red: 0.149, green: 0.129, blue: 0.094) // #262118
-    static let textPrimary = Color(red: 0.949, green: 0.929, blue: 0.902)  // #F2EDE6
-    static let textSecondary = Color(red: 0.549, green: 0.502, blue: 0.471) // #8C8078
-    static let accent = Color(red: 0.910, green: 0.533, blue: 0.353)       // #E8885A
-    static let statusOptimal = Color(red: 0.290, green: 0.867, blue: 0.561) // #4ADE8F
-    static let statusMonitoring = Color(red: 0.961, green: 0.784, blue: 0.255) // #F5C842
-    static let statusWarning = Color(red: 0.941, green: 0.447, blue: 0.251)  // #F07240
-    static let statusRest = Color(red: 0.357, green: 0.659, blue: 1.0)     // #5BA8FF
+    static let background    = Color(hex: 0x09090E)  // cool near-black
+    static let surface       = Color(hex: 0x0F0F18)  // dark indigo-gray card
+    static let surfaceRaised = Color(hex: 0x1A1A2E)  // lifted card bg
+    static let textPrimary   = Color(hex: 0xEDEDFF)  // cool white
+    static let textSecondary = Color(hex: 0x8A8AA8)  // muted violet-gray
+    static let textTertiary  = Color(hex: 0x4A4A65)  // dim violet
+    static let accent        = Color(hex: 0x7C5CFC)  // electric violet
+    static let accentDim     = Color(hex: 0x7C5CFC).opacity(0.12)
+    static let accentBorder  = Color(hex: 0x7C5CFC).opacity(0.22)
+    static let statusOptimal    = Color(hex: 0x4ADE8F)
+    static let statusMonitoring = Color(hex: 0xF5C842)
+    static let statusWarning    = Color(hex: 0xF07240)
+    static let statusRest       = Color(hex: 0x5BA8FF)
 }
 ```
 
@@ -163,7 +166,6 @@ extension Color {
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-03-23 | Initial design system created | Generated by /design-consultation. Two voices (Claude main + Claude subagent) independently converged on warm-dark surfaces and terracotta accent. |
-| 2026-03-23 | Warm-dark background (#0F0D0B) chosen over cold dark | Differentiates from WHOOP/Garmin cold-dark; makes morning check-in feel like a journal not a monitor |
-| 2026-03-23 | Terracotta accent (#E8885A) chosen | Communicates energy without aggression. Category defaults are blue (corporate) and red (alarm). Terracotta = sunrise energy. |
 | 2026-03-23 | SF Pro Mono reserved for data only | Signals to user: mono = raw measurement, proportional = coaching voice |
 | 2026-03-23 | Morning/Evening mode navigation | Risk C deferred to future phase — see TODOS.md for UX architecture proposal |
+| 2026-05-03 | Replaced Warm Signal with Signal Indigo | Terracotta/earthy palette rejected by user (looks brown/lousy). Signal Indigo: #09090E background, #7C5CFC accent. Status colors unchanged. |

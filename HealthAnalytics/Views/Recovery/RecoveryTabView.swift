@@ -7,13 +7,21 @@ import SwiftUI
 import SwiftData
 
 struct RecoveryTabView: View {
-    @Binding var showSettings: Bool
+    @EnvironmentObject var coordinator: TabCoordinator
     @StateObject private var viewModel = ReadinessViewModel()
     @State private var isFirstLoad = true
     @State private var showBreakdown = false
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) var colorScheme
     @ObservedObject var syncManager = SyncManager.shared
+    @Query private var detectedPatterns: [TrainingPattern]
+
+    private var topActivePattern: TrainingPattern? {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        return detectedPatterns
+            .filter { $0.detectedAt >= cutoff }
+            .min { PatternType.displayPriority($0.patternType) < PatternType.displayPriority($1.patternType) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -44,7 +52,7 @@ struct RecoveryTabView: View {
                                     
                                     // 1. Whoop Circular Gauge
                                     CircularGauge(
-                                        title: "RECOVERY",
+                                        title: "READINESS",
                                         value: "\(readiness.score)%",
                                         subtitle: levelLabel,
                                         progress: Double(readiness.score) / 100.0,
@@ -55,7 +63,7 @@ struct RecoveryTabView: View {
                                     MetricList {
                                         GaugeMetricRow(
                                             icon: "waveform.path.ecg",
-                                            title: "RECOVERY SCORE",
+                                            title: "READINESS SCORE",
                                             value: "\(readiness.breakdown.recoveryScore)/40",
                                             trendIcon: "arrowtriangle.up.fill",
                                             trendColor: .green
@@ -63,7 +71,7 @@ struct RecoveryTabView: View {
                                         Divider().background(Color.white.opacity(0.1))
                                         GaugeMetricRow(
                                             icon: "figure.run",
-                                            title: "FITNESS BASE",
+                                            title: "CNS/AUTONOMIC READINESS",
                                             value: "\(readiness.breakdown.fitnessScore)/30",
                                             trendIcon: "arrowtriangle.up.fill",
                                             trendColor: .green
@@ -71,7 +79,7 @@ struct RecoveryTabView: View {
                                         Divider().background(Color.white.opacity(0.1))
                                         GaugeMetricRow(
                                             icon: "battery.50",
-                                            title: "FATIGUE MANAGEMENT",
+                                            title: "MUSCULAR FATIGUE",
                                             value: "\(readiness.breakdown.fatigueScore)/30",
                                             trendIcon: "circle.fill",
                                             trendColor: .gray
@@ -79,13 +87,18 @@ struct RecoveryTabView: View {
                                     }
                                     .padding(.horizontal)
                                     
-                                    // 3. Insight Box
+                                    // 3. Insight Box — descriptive only on this tab.
+                                    // Coaching advice lives on the Coach tab; here we describe
+                                    // what the score is, not what to do (Phase 2.4).
                                     InsightBox(
-                                        text: readiness.recommendation,
-                                        actionText: "BREAK DOWN MY RECOVERY"
-                                    ) {
-                                        showBreakdown = true
-                                    }
+                                        text: readinessDescription(for: readiness),
+                                        actionText: "BREAK DOWN MY READINESS",
+                                        action: { showBreakdown = true },
+                                        navigationText: topActivePattern.map { "See \($0.patternType.displayName) in Intelligence →" },
+                                        navigationAction: topActivePattern.map { pattern in
+                                            { coordinator.navigate(to: TabCoordinator.intelligenceTab, scrollTo: pattern.patternType) }
+                                        }
+                                    )
                                     .padding(.horizontal)
                                     
                                     // Keep Energy Bank Chart
@@ -125,7 +138,9 @@ struct RecoveryTabView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showSettings = true } label: {
+                    NavigationLink {
+                        SettingsView()
+                    } label: {
                         Image(systemName: "gearshape")
                             .foregroundStyle(Color.textSecondary)
                     }
@@ -133,10 +148,6 @@ struct RecoveryTabView: View {
                 }
             }
             .task {
-                if viewModel.modelContainer == nil {
-                    viewModel.configure(container: modelContext.container)
-                }
-                await viewModel.analyze(modelContext: modelContext)
                 isFirstLoad = false
                 // TrainingSignatureCard lives here but runPatternAnalysis was only wired
                 // to InsightsView (a sheet). Drive it from the tab that shows the card.
@@ -144,14 +155,9 @@ struct RecoveryTabView: View {
                 // card reflects current StoredDailyScore data without waiting a week.
                 await ReadinessRepository.shared.runPatternAnalysis(container: modelContext.container, force: true)
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataSyncCompleted"))) { _ in
-                // Re-analyze after sync so today's workouts are always current on first open.
-                // Without this, the initial .task races with performSmartSync() and wins — reading
-                // SwiftData before today's workout is written, then never refreshing.
-                Task { await viewModel.analyze(modelContext: modelContext) }
-            }
             .refreshable {
-                await viewModel.analyze(modelContext: modelContext)
+                await SyncManager.shared.performSmartSync()
+                await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
             }
         }
         .sheet(isPresented: $showBreakdown) {
@@ -178,8 +184,27 @@ struct RecoveryTabView: View {
         if score >= 34 { return Color.statusMonitoring }
         return Color.statusRest
     }
+
+    /// Descriptive caption for the readiness state. Phase 2.4: no action advice —
+    /// that lives on the Coach tab via the MasterCoachEngine paragraph. This text
+    /// just names what the score *is* in plain terms, derived from the breakdown.
+    private func readinessDescription(for readiness: ReadinessAnalyzer.ReadinessScore) -> String {
+        let level: String = {
+            if readiness.score >= 67 { return "in the optimal range" }
+            if readiness.score >= 34 { return "in the monitoring range" }
+            return "in the rest range"
+        }()
+
+        let breakdown = readiness.breakdown
+        let parts: [String] = [
+            "Recovery \(breakdown.recoveryScore)/40",
+            "autonomic \(breakdown.fitnessScore)/30",
+            "fatigue \(breakdown.fatigueScore)/30"
+        ]
+        return "Your readiness is \(readiness.score)/100 — \(level). \(parts.joined(separator: " · "))."
+    }
 }
 
 #Preview {
-    RecoveryTabView(showSettings: .constant(false))
+    RecoveryTabView()
 }

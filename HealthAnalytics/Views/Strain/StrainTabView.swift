@@ -8,11 +8,8 @@ import SwiftData
 import HealthKit
 
 struct StrainTabView: View {
-    @Binding var showSettings: Bool
     @StateObject private var viewModel = ReadinessViewModel()
     @State private var isFirstLoad = true
-    @State private var showStrainDetails = false
-    @State private var showACWRDetail = false
     @State private var maxHR: Double = 185.0   // seeded once in .task; updated via cardiovascularStrain
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) var colorScheme
@@ -24,28 +21,12 @@ struct StrainTabView: View {
         return String(format: "%d:%02d", hours, minutes)
     }
 
-    private var estimatedZ1_3: TimeInterval {
-        var total: TimeInterval = 0
-        for workout in viewModel.todayWorkouts {
-            let hr = workout.averageHeartRate ?? (maxHR * 0.7)
-            let hrPercentage = hr / maxHR
-            if hrPercentage < 0.8 {
-                total += workout.duration
-            }
-        }
-        return total
+    private var granularZ1_3: TimeInterval {
+        viewModel.cardiovascularStrain?.timeInZ1_3 ?? 0
     }
 
-    private var estimatedZ4_5: TimeInterval {
-        var total: TimeInterval = 0
-        for workout in viewModel.todayWorkouts {
-            let hr = workout.averageHeartRate ?? (maxHR * 0.7)
-            let hrPercentage = hr / maxHR
-            if hrPercentage >= 0.8 {
-                total += workout.duration
-            }
-        }
-        return total
+    private var granularZ4_5: TimeInterval {
+        viewModel.cardiovascularStrain?.timeInZ4_5 ?? 0
     }
     
     private var strengthTime: TimeInterval {
@@ -73,10 +54,6 @@ struct StrainTabView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarItems }
                 .task {
-                    if viewModel.modelContainer == nil {
-                        viewModel.configure(container: modelContext.container)
-                    }
-                    await viewModel.analyze(modelContext: modelContext)
                     if let cv = viewModel.cardiovascularStrain {
                         maxHR = cv.estimatedMaxHR
                     } else {
@@ -88,54 +65,9 @@ struct StrainTabView: View {
                     if let cv { maxHR = cv.estimatedMaxHR }
                 }
                 .refreshable {
-                    await viewModel.analyze(modelContext: modelContext)
+                    await SyncManager.shared.performSmartSync()
+                    await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
                 }
-        }
-        .sheet(isPresented: $showACWRDetail) {
-            if let assessment = viewModel.readinessAssessment, !viewModel.acwrTrend.isEmpty {
-                NavigationStack {
-                    ScrollView {
-                        ACWRTrendCard(
-                            trend: viewModel.acwrTrend,
-                            currentAssessment: assessment,
-                            primaryActivity: viewModel.primaryActivity
-                        )
-                        .padding()
-                    }
-                    .navigationTitle("Acute:Chronic Ratio")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showACWRDetail = false }
-                        }
-                    }
-                }
-                .presentationDetents([.medium, .large])
-            }
-        }
-        .sheet(isPresented: $showStrainDetails) {
-            if let assessment = viewModel.readinessAssessment, !viewModel.acwrTrend.isEmpty {
-                NavigationStack {
-                    ScrollView {
-                        UnifiedTrainingLoadCard(
-                            assessment: assessment,
-                            trend: viewModel.acwrTrend,
-                            summary: viewModel.trainingLoadSummary,
-                            primaryActivity: viewModel.primaryActivity,
-                            extendedData: viewModel.loadVisualization
-                        )
-                        .padding()
-                    }
-                    .navigationTitle("Strain Details")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showStrainDetails = false }
-                        }
-                    }
-                }
-                .presentationDetents([.large])
-            }
         }
     }
 
@@ -156,7 +88,10 @@ struct StrainTabView: View {
                     VStack(spacing: .spacingLg) {
                         if let error = viewModel.errorMessage {
                             ErrorView(message: error) {
-                                Task { await viewModel.analyze(modelContext: modelContext) }
+                                Task {
+                                    await SyncManager.shared.performSmartSync()
+                                    await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
+                                }
                             }
                             .cardStyle(for: .error)
                         }
@@ -194,7 +129,9 @@ struct StrainTabView: View {
     @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
-            Button { showSettings = true } label: {
+            NavigationLink {
+                SettingsView()
+            } label: {
                 Image(systemName: "gearshape")
                     .foregroundStyle(Color.textSecondary)
             }
@@ -202,31 +139,48 @@ struct StrainTabView: View {
         }
     }
 
+    @ViewBuilder
     private var strainGauge: some View {
-        let cvStrain = viewModel.cardiovascularStrain
-        let strainValue = cvStrain?.strain ?? min((viewModel.readinessAssessment?.acwr ?? 0) * 10.0, 21.0)
-        let strainLabel = CardiovascularStrainService.label(for: strainValue)
-        return VStack(spacing: .spacingSm) {
-            CircularGauge(
-                title: "STRAIN",
-                value: String(format: "%.1f", strainValue),
-                subtitle: strainLabel,
-                progress: strainValue / 21.0,
-                color: CardiovascularStrainService.color(for: strainValue)
-            )
-            if let quality = cvStrain?.dataQuality, quality == .insufficient {
-                Text("Wear your Apple Watch longer for an accurate score")
-                    .font(.caption2)
+        if let cvStrain = viewModel.cardiovascularStrain {
+            VStack(spacing: .spacingSm) {
+                CircularGauge(
+                    title: "CARDIO LOAD",
+                    value: String(format: "%.1f", cvStrain.strain),
+                    subtitle: CardiovascularStrainService.label(for: cvStrain.strain),
+                    progress: cvStrain.strain / 21.0,
+                    color: CardiovascularStrainService.color(for: cvStrain.strain)
+                )
+                if cvStrain.dataQuality == .insufficient {
+                    Text("Wear your Apple Watch longer for an accurate score")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
+                Text("Range: 0.0 — 21.0")
+                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .opacity(0.8)
+            }
+            .padding(.bottom, .spacingSm)
+        } else {
+            // No fabricated ACWR-derived strain. Cardio load needs raw HR samples
+            // from the watch; without them we say so plainly.
+            VStack(spacing: .spacingSm) {
+                Image(systemName: "applewatch")
+                    .font(.system(size: 36, weight: .light))
+                    .foregroundStyle(.secondary)
+                Text("Cardio load needs watch data")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text("Wear your Apple Watch during workouts so we can read heart rate samples. Your load score will appear here once we have enough data.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
             }
-            Text("Range: 0.0 — 21.0")
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .opacity(0.8)
+            .padding(.vertical, .spacingMd)
         }
-        .padding(.bottom, .spacingSm)
     }
 
     private var metricList: some View {
@@ -234,7 +188,7 @@ struct StrainTabView: View {
             GaugeMetricRow(
                 icon: "heart.circle",
                 title: "HEART RATE ZONES 1-3",
-                value: formatDuration(estimatedZ1_3),
+                value: formatDuration(granularZ1_3),
                 trendIcon: "arrowtriangle.up.fill",
                 trendColor: .green
             )
@@ -242,7 +196,7 @@ struct StrainTabView: View {
             GaugeMetricRow(
                 icon: "heart.circle.fill",
                 title: "HEART RATE ZONES 4-5",
-                value: formatDuration(estimatedZ4_5),
+                value: formatDuration(granularZ4_5),
                 trendIcon: "arrowtriangle.down.fill",
                 trendColor: .green
             )
@@ -276,30 +230,43 @@ struct StrainTabView: View {
                     .foregroundStyle(.secondary)
                     .tracking(1)
                     .padding(.horizontal)
-                Button { showACWRDetail = true } label: {
-                    MetricList {
-                        GaugeMetricRow(
-                            icon: "chart.line.uptrend.xyaxis",
-                            title: "ACUTE:CHRONIC RATIO",
-                            value: String(format: "%.2f", assessment.acwr),
-                            trendIcon: assessment.acwr > 1.3 ? "exclamationmark.triangle" : "checkmark.circle",
-                            trendColor: assessment.acwr > 1.3 ? .orange : .green
+                ACWRTrendCard(
+                    trend: viewModel.acwrTrend,
+                    currentAssessment: assessment,
+                    primaryActivity: viewModel.primaryActivity
+                )
+                .padding(.horizontal)
+                if viewModel.loadVisualization != nil || viewModel.trainingLoadSummary != nil {
+                    NavigationLink {
+                        LoadDetailsView(
+                            assessment: assessment,
+                            trend: viewModel.acwrTrend,
+                            summary: viewModel.trainingLoadSummary,
+                            primaryActivity: viewModel.primaryActivity,
+                            extendedData: viewModel.loadVisualization
                         )
+                    } label: {
+                        HStack(spacing: .spacingXs) {
+                            Text("More load detail")
+                                .font(.system(size: 13, weight: .semibold))
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 12, weight: .bold))
+                        }
+                        .foregroundStyle(Color.accent)
+                        .padding(.horizontal)
                     }
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal)
             }
         }
     }
 
     private var strainScaleCard: some View {
         VStack(alignment: .leading, spacing: .spacingMd) {
-            Text("STRAIN SCALE")
+            Text("CARDIO LOAD SCALE")
                 .font(.caption)
                 .fontWeight(.bold)
                 .foregroundStyle(.secondary)
-                .tracking(1)
+                .tracking(1.0)
             VStack(spacing: 1) {
                 ScaleRow(label: "0 – 6.9",   description: "Light",     color: Color.statusOptimal)
                 ScaleRow(label: "7 – 12.9",  description: "Moderate",  color: Color.statusMonitoring)
@@ -351,20 +318,64 @@ struct StrainTabView: View {
         }
     }
 
+    /// Descriptive caption for the load state. Phase 2.4: no action advice —
+    /// that lives on the Coach tab. This text describes the current ACWR
+    /// numerically and names the band; it does not tell the user what to do.
     private var insightSection: some View {
-        let defaultRecommendation = "Your current strain is in the strenuous zone. This level of activity requires significant cardiovascular adaptation."
-        return InsightBox(
-            text: viewModel.dailyRecommendation?.guidance ?? defaultRecommendation,
-            actionText: "EXPLORE MY STRAIN"
-        ) {
-            showStrainDetails = true
-        }
+        InsightBox(
+            text: loadDescription,
+            actionText: nil
+        )
         .padding(.horizontal)
+    }
+
+    private var loadDescription: String {
+        guard let acwr = viewModel.readinessAssessment?.acwr else {
+            return "Build up a week of workouts and we'll show your training load here."
+        }
+        let band: String = {
+            if acwr < 0.8 { return "below your maintenance baseline" }
+            if acwr <= 1.3 { return "in the sweet spot (0.8 – 1.3)" }
+            if acwr <= 1.5 { return "above sweet spot — acute load is climbing" }
+            return "well above sweet spot — acute load is high vs. your 28-day baseline"
+        }()
+        let cvLine: String
+        if let strain = viewModel.cardiovascularStrain?.strain {
+            cvLine = " Today's cardio load: \(String(format: "%.1f", strain))/21."
+        } else {
+            cvLine = ""
+        }
+        return "Acute:chronic ratio is \(String(format: "%.2f", acwr)) — \(band).\(cvLine)"
+    }
+}
+
+/// Push-navigation destination that hosts the legacy UnifiedTrainingLoadCard.
+/// Reachable from the "More load detail" link below the inline ACWR chart.
+private struct LoadDetailsView: View {
+    let assessment: PredictiveReadinessService.ReadinessAssessment
+    let trend: [ACWRDataPoint]
+    let summary: TrainingLoadCalculator.TrainingLoadSummary?
+    let primaryActivity: String
+    let extendedData: TrainingLoadVisualizationService.LoadVisualizationData?
+
+    var body: some View {
+        ScrollView {
+            UnifiedTrainingLoadCard(
+                assessment: assessment,
+                trend: trend,
+                summary: summary,
+                primaryActivity: primaryActivity,
+                extendedData: extendedData
+            )
+            .padding()
+        }
+        .navigationTitle("Load Details")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
 #Preview {
-    StrainTabView(showSettings: .constant(false))
+    StrainTabView()
 }
 
 struct ScaleRow: View {

@@ -6,58 +6,40 @@
 import SwiftUI
 
 struct MainTabView: View {
-    @State private var selectedTab = 0
-    @State private var showSettings = false
+    @EnvironmentObject var coordinator: TabCoordinator
     @ObservedObject var syncManager = SyncManager.shared
     @Environment(\.colorScheme) var colorScheme
-
     var body: some View {
         ZStack {
-            TabView(selection: $selectedTab) {
-                RecoveryTabView(showSettings: $showSettings)
+            TabView(selection: $coordinator.selectedTab) {
+                CoachTabView()
                     .tabItem {
-                        Label("Recovery", systemImage: "battery.100")
+                        Label("Coach", systemImage: "sparkles")
                     }
                     .tag(0)
 
-                StrainTabView(showSettings: $showSettings)
+                RecoveryTabView()
                     .tabItem {
-                        Label("Strain", systemImage: "flame.fill")
+                        Label("Readiness", systemImage: "battery.100")
                     }
                     .tag(1)
 
-                SleepTabView(showSettings: $showSettings)
+                StrainTabView()
                     .tabItem {
-                        Label("Sleep", systemImage: "moon.zzz.fill")
+                        Label("Load", systemImage: "flame.fill")
                     }
                     .tag(2)
 
-                HealthspanTabView(showSettings: $showSettings)
+                IntelligenceTabView()
                     .tabItem {
-                        Label("Healthspan", systemImage: "heart.text.square.fill")
+                        Label("Intelligence", systemImage: "brain.head.profile")
                     }
                     .tag(3)
-
-                InsightsView()
-                    .tabItem {
-                        Label("Intelligence", systemImage: "sparkles")
-                    }
-                    .tag(4)
             }
-            .tint(AppColors.accentColor(for: selectedTab))
+            .tint(AppColors.accentColor(for: coordinator.selectedTab))
 
             if syncManager.isSyncing {
                 LoadingOverlay(message: syncManager.syncProgress)
-            }
-        }
-        .sheet(isPresented: $showSettings) {
-            NavigationStack {
-                SettingsView()
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showSettings = false }
-                        }
-                    }
             }
         }
     }

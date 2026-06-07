@@ -746,4 +746,133 @@ class CorrelationEngine {
         
         return insights
     }
+    
+    // MARK: - Standout Workout Analysis (Why Did I Perform Better?)
+    
+    struct StandoutWorkoutInsight: Identifiable {
+        let id = UUID()
+        let workout: WorkoutData
+        let performanceMetric: Double
+        let baselinePerformance: Double
+        let performanceIncreasePercent: Double
+        
+        let avgSleep72h: Double
+        let hrvTrend: Double // percent difference vs baseline
+        
+        let identifiedContributors: [String]
+    }
+    
+    private func getPerformanceMetric(for workout: WorkoutData) -> Double? {
+        if workout.workoutType == .running || workout.workoutType == .walking {
+            guard let distance = workout.totalDistance, distance > 0, workout.duration > 0 else { return nil }
+            let speedMPS = distance / workout.duration
+            return speedMPS * 2.23694 // mph
+        } else if workout.workoutType == .cycling {
+            guard let watts = workout.averagePower, watts > 0 else { return nil }
+            return watts
+        }
+        return nil
+    }
+    
+    func analyzeStandoutWorkouts(
+        workouts: [WorkoutData],
+        sleepData: [HealthDataPoint],
+        hrvData: [HealthDataPoint],
+        dailyReadinessScores: [Date: Int] = [:]
+    ) -> [StandoutWorkoutInsight] {
+        var insights: [StandoutWorkoutInsight] = []
+        let calendar = Calendar.current
+        
+        var sleepByDate: [Date: Double] = [:]
+        for sleep in sleepData {
+            sleepByDate[calendar.startOfDay(for: sleep.date)] = sleep.value
+        }
+        
+        var hrvByDate: [Date: Double] = [:]
+        for hrv in hrvData {
+            hrvByDate[calendar.startOfDay(for: hrv.date)] = hrv.value
+        }
+        let baselineHRV = hrvData.isEmpty ? 0 : hrvData.map(\.value).reduce(0, +) / Double(hrvData.count)
+        let baselineSleep = sleepData.isEmpty ? 0 : sleepData.map(\.value).reduce(0, +) / Double(sleepData.count)
+
+        // Group workouts by type to find personal baseline performance
+        var workoutsByType: [String: [WorkoutData]] = [:]
+        for workout in workouts {
+            workoutsByType[workout.workoutType.name, default: []].append(workout)
+        }
+        
+        for (_, typeWorkouts) in workoutsByType {
+            guard typeWorkouts.count >= 5 else { continue }
+            
+            // Map workouts to their performance metric
+            let validWorkouts = typeWorkouts.compactMap { w -> (WorkoutData, Double)? in
+                guard let perf = getPerformanceMetric(for: w) else { return nil }
+                return (w, perf)
+            }
+            guard validWorkouts.count >= 5 else { continue }
+            
+            let avgPerformance = validWorkouts.map { $1 }.reduce(0, +) / Double(validWorkouts.count)
+            let standardDeviation = sqrt(validWorkouts.map { pow($1 - avgPerformance, 2) }.reduce(0, +) / Double(validWorkouts.count))
+            
+            // Standout is > 1 standard deviation above average
+            let standoutThreshold = avgPerformance + standardDeviation
+            
+            for (workout, perf) in validWorkouts where perf >= standoutThreshold {
+                let workoutDay = calendar.startOfDay(for: workout.startDate)
+                
+                // Get 72-hour data
+                var sleepSum = 0.0
+                var sleepDays = 0
+                var hrvSum = 0.0
+                var hrvDays = 0
+                
+                for i in 1...3 {
+                    guard let day = calendar.date(byAdding: .day, value: -i, to: workoutDay) else { continue }
+                    if let sleep = sleepByDate[day] {
+                        sleepSum += sleep
+                        sleepDays += 1
+                    }
+                    if let hrv = hrvByDate[day] {
+                        hrvSum += hrv
+                        hrvDays += 1
+                    }
+                }
+                
+                let avgSleep72h = sleepDays > 0 ? sleepSum / Double(sleepDays) : 0
+                let avgHRV72h = hrvDays > 0 ? hrvSum / Double(hrvDays) : 0
+                
+                let percentDiff = ((perf - avgPerformance) / avgPerformance) * 100
+                
+                var contributors: [String] = []
+                if avgSleep72h >= 7.0 && avgSleep72h >= baselineSleep {
+                    let diff = baselineSleep > 0 ? ((avgSleep72h - baselineSleep)/baselineSleep)*100 : 0
+                    contributors.append(String(format: "+ %.1fh avg sleep (%.0f%% vs baseline)", avgSleep72h, diff))
+                }
+                
+                if avgHRV72h > baselineHRV * 1.05 {
+                    contributors.append(String(format: "+ %.0fms HRV (%.0f%% vs baseline)", avgHRV72h, ((avgHRV72h - baselineHRV)/baselineHRV)*100))
+                }
+                
+                if let readiness = dailyReadinessScores[workoutDay], readiness >= 70 {
+                    contributors.append("+ High Readiness Score (\(readiness)%)")
+                }
+                
+                // Fallback contributor if nothing else popped
+                if contributors.isEmpty {
+                    contributors.append("+ Optimal fueling or reduced strain")
+                }
+                
+                insights.append(StandoutWorkoutInsight(
+                    workout: workout,
+                    performanceMetric: perf,
+                    baselinePerformance: avgPerformance,
+                    performanceIncreasePercent: percentDiff,
+                    avgSleep72h: avgSleep72h,
+                    hrvTrend: baselineHRV > 0 ? ((avgHRV72h - baselineHRV) / baselineHRV) * 100 : 0,
+                    identifiedContributors: contributors
+                ))
+            }
+        }
+        return insights.sorted { $0.workout.startDate > $1.workout.startDate }
+    }
 }

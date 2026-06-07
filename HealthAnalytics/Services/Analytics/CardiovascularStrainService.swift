@@ -31,6 +31,10 @@ struct CardiovascularStrainService {
         /// Number of raw HR samples that fed the calculation.
         let sampleCount: Int
         let dataQuality: Quality
+        /// Granular time spent in Zones 1-3 (seconds)
+        let timeInZ1_3: TimeInterval
+        /// Granular time spent in Zones 4-5 (seconds)
+        let timeInZ4_5: TimeInterval
 
         enum Quality {
             /// 500+ samples — Apple Watch worn most of the day.
@@ -75,12 +79,16 @@ struct CardiovascularStrainService {
                 estimatedMaxHR: estimatedMaxHR,
                 restingHRUsed: restingHR,
                 sampleCount: 0,
-                dataQuality: .insufficient
+                dataQuality: .insufficient,
+                timeInZ1_3: 0,
+                timeInZ4_5: 0
             )
         }
 
         let sorted = todayHRSamples.sorted { $0.date < $1.date }
         var rawStrain: Double = 0
+        var timeZ1_3: TimeInterval = 0
+        var timeZ4_5: TimeInterval = 0
 
         for i in 1..<sorted.count {
             let current = sorted[i]
@@ -99,6 +107,14 @@ struct CardiovascularStrainService {
             guard hrr >= Self.hrrFloor else { continue }
 
             rawStrain += pow(hrr, 2) * timeDeltaMinutes
+            
+            // Accumulate granular time in zones (in seconds)
+            let hrPercentage = avgBPM / estimatedMaxHR
+            if hrPercentage >= 0.8 {
+                timeZ4_5 += timeDeltaMinutes * 60.0
+            } else {
+                timeZ1_3 += timeDeltaMinutes * 60.0
+            }
         }
 
         let clampedOffset = max(-0.2, min(0.2, sensitivityOffset))
@@ -117,7 +133,9 @@ struct CardiovascularStrainService {
             estimatedMaxHR: estimatedMaxHR,
             restingHRUsed: restingHR,
             sampleCount: sorted.count,
-            dataQuality: quality
+            dataQuality: quality,
+            timeInZ1_3: timeZ1_3,
+            timeInZ4_5: timeZ4_5
         )
     }
 

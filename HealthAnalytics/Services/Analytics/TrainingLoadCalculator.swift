@@ -77,7 +77,8 @@ struct TrainingLoadCalculator {
         healthKitWorkouts: [WorkoutData],
         stravaActivities: [StravaActivity],
         stepData: [HealthDataPoint],
-        recoveryInsights: [CorrelationEngine.RecoveryInsight] = []
+        recoveryInsights: [CorrelationEngine.RecoveryInsight] = [],
+        dailyReadiness: [Date: Int] = [:]
     ) -> TrainingLoadSummary? {
         
         let calendar = Calendar.current
@@ -89,7 +90,7 @@ struct TrainingLoadCalculator {
         // Process HealthKit workouts
         for workout in healthKitWorkouts {
             let day = calendar.startOfDay(for: workout.startDate)
-            let load = calculateWorkoutLoad(workout)
+            let load = calculateWorkoutLoad(workout, dailyReadiness: dailyReadiness)
             dailyLoads[day, default: 0] += load
         }
         
@@ -97,7 +98,7 @@ struct TrainingLoadCalculator {
         for activity in stravaActivities {
             guard let startDate = activity.startDateFormatted else { continue }
             let day = calendar.startOfDay(for: startDate)
-            let load = calculateStravaLoad(activity)
+            let load = calculateStravaLoad(activity, dailyReadiness: dailyReadiness)
             dailyLoads[day, default: 0] += load
         }
         
@@ -247,8 +248,33 @@ struct TrainingLoadCalculator {
         return fatigueMarkers.count < (recoveryInsights.count / 2)
     }
     
-    func calculateWorkoutLoad(_ workout: WorkoutData) -> Double {
-        // Training Stress Score (TSS) estimation
+    // MARK: - True Cost Multiplier
+    
+    /// Calculates the physiological cost multiplier based on readiness state
+    /// If readiness is below 60%, the body pays a higher "tax" for the same external work.
+    private func calculateFatigueMultiplier(for date: Date, dailyReadiness: [Date: Int]) -> Double {
+        let day = Calendar.current.startOfDay(for: date)
+        guard let readiness = dailyReadiness[day] else { return 1.0 }
+        
+        // If readiness is 60 or above, no penalty (multiplier = 1.0)
+        // If readiness drops to 30, penalty is +30% (multiplier = 1.3)
+        // Max penalty capped at +50% (1.5)
+        if readiness < 60 {
+            let penalty = (60.0 - Double(readiness)) / 100.0
+            return min(1.5, 1.0 + penalty)
+        }
+        return 1.0
+    }
+    
+    func calculateWorkoutLoad(_ workout: WorkoutData, dailyReadiness: [Date: Int] = [:]) -> Double {
+        let multiplier = calculateFatigueMultiplier(for: workout.startDate, dailyReadiness: dailyReadiness)
+        
+        // Attempt TRIMP / Cardio Load calculation first if Heart Rate is available
+        if let trimpLoad = calculateCardioLoadTRIMP(durationSeconds: workout.duration, averageHeartRate: workout.averageHeartRate) {
+            return trimpLoad * multiplier
+        }
+        
+        // Fallback: Training Stress Score (TSS) estimation
         let durationHours = workout.duration / 3600.0
         
         // Base load on workout type and duration
@@ -276,15 +302,23 @@ struct TrainingLoadCalculator {
             baseLoad = durationHours * 50
         }
         
-        return baseLoad
+        return baseLoad * multiplier
     }
     
-    private func calculateStravaLoad(_ activity: StravaActivity) -> Double {
+    private func calculateStravaLoad(_ activity: StravaActivity, dailyReadiness: [Date: Int] = [:]) -> Double {
+        let date = activity.startDateFormatted ?? Date()
+        let multiplier = calculateFatigueMultiplier(for: date, dailyReadiness: dailyReadiness)
+        
         let durationHours = Double(activity.movingTime) / 3600.0
         
         // Use suffer score if available (Strava's built-in load metric)
         if let sufferScore = activity.sufferScore {
-            return Double(sufferScore)  // Convert from Double? to Double
+            return Double(sufferScore) * multiplier
+        }
+        
+        // Attempt TRIMP / Cardio Load calculation if Heart Rate is available
+        if let trimpLoad = calculateCardioLoadTRIMP(durationSeconds: Double(activity.movingTime), averageHeartRate: activity.averageHeartrate) {
+            return trimpLoad * multiplier
         }
         
         // Otherwise estimate based on type and duration
@@ -303,12 +337,38 @@ struct TrainingLoadCalculator {
             baseLoad = durationHours * 50
         }
         
-        return baseLoad
+        return baseLoad * multiplier
     }
     
     func calculateEWMA(currentValue: Double, previousAverage: Double, timeConstant: Int) -> Double {
         let alpha = 2.0 / (Double(timeConstant) + 1.0)
         return (currentValue * alpha) + (previousAverage * (1.0 - alpha))
+    }
+    
+    /// Calculates Cardio Load using a modified Banister TRIMP (TRaining IMPulse) model based on Heart Rate Reserve (HRR)
+    /// This exponentially weights time spent in higher heart rate zones to mirror physiological strain.
+    func calculateCardioLoadTRIMP(durationSeconds: TimeInterval, averageHeartRate: Double?, restingHR: Double = 60.0, maxHR: Double = 190.0) -> Double? {
+        guard let hr = averageHeartRate, hr > restingHR else { return nil }
+        let durationMinutes = durationSeconds / 60.0
+        
+        // Heart Rate Reserve (HRR) Intensity
+        let hrReserve = maxHR - restingHR
+        let hrIntensity = (hr - restingHR) / hrReserve
+        
+        guard hrIntensity > 0 else { return nil }
+        
+        // Banister TRIMP exponential weight
+        // Standard constant: 1.92 (approximate blend of male/female baseline constants)
+        let k = 1.92
+        let exponentialWeight = exp(k * hrIntensity)
+        
+        // TRIMP = duration * intensity * e^(k * intensity)
+        let trimp = durationMinutes * hrIntensity * exponentialWeight
+        
+        // Scale TRIMP roughly to match TSS expectations (1 hour all out ~ 100 TSS)
+        // 60 mins at max HR (intensity = 1.0) yields: 60 * 1.0 * exp(1.92) ≈ 409
+        // Dividing by 4 normalizes it roughly to the 1-100 scale per hour for comparison.
+        return trimp / 4.0
     }
     
     func getActivityLoad(activity: StravaActivity) -> Double {
@@ -322,10 +382,9 @@ struct TrainingLoadCalculator {
             return (intensityFactor * intensityFactor) * durationMinutes
         }
         
-        // 2. Fallback to Heart Rate
-        if let hr = activity.averageHeartrate, hr > 0 {
-            let hrFactor = (hr - 60) / 100.0 // Intensity above baseline
-            return (hrFactor * hrFactor) * durationMinutes
+        // 2. Fallback to TRIMP Heart Rate
+        if let trimpLoad = calculateCardioLoadTRIMP(durationSeconds: Double(activity.movingTime), averageHeartRate: activity.averageHeartrate) {
+            return trimpLoad
         }
         
         // 3. Fallback for Core/Maintenance

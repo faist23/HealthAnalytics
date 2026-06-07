@@ -53,6 +53,16 @@ class ReadinessRepository: ObservableObject {
     private let actionableRecommendations  = ActionableRecommendations()
     private let cyclingPowerAnalyzer       = CyclingPowerAnalyzer()
 
+    // Per-tab sub-services (moved from ReadinessViewModel + DashboardViewModel — Phase 1.2)
+    private let cardiovascularStrainService = CardiovascularStrainService()
+    private let metAnalyzer                 = METAnalyzer()
+    private let balanceAnalyzer             = BalancedTrainingAnalyzer()
+
+    // maxHR cache (was on ReadinessViewModel — Phase 1.2 migration)
+    private static let maxHRCacheKey = "cachedPersonalMaxHR"
+    private static let maxHRCacheDateKey = "cachedPersonalMaxHRDate"
+    private static let maxHRCacheTTL: TimeInterval = 7 * 86400 // 7 days
+
     // Phase 2 — Pattern Engine sub-service
     private var trainingDNAAnalyzer: TrainingDNAAnalyzer?
 
@@ -64,6 +74,8 @@ class ReadinessRepository: ObservableObject {
 
     private var analysisTask: Task<Void, Never>?
 
+    private var syncCompletedObserver: NSObjectProtocol?
+
     private static let dailyScoreDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
@@ -72,6 +84,26 @@ class ReadinessRepository: ObservableObject {
     }()
 
     private init() {}
+
+    /// Wires the repository to refresh whenever sync completes. Idempotent — safe
+    /// to call multiple times; only the first call subscribes. Pulls the model
+    /// context fresh from `HealthDataContainer.shared` at each refresh so a
+    /// `resetAllData()` flow doesn't leave us holding a stale context.
+    func bootstrap() {
+        guard syncCompletedObserver == nil else { return }
+        syncCompletedObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("DataSyncCompleted"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                await self.refreshIfNecessary(
+                    modelContext: HealthDataContainer.shared.mainContext
+                )
+            }
+        }
+    }
 
     #if DEBUG
     /// Resets published state to a clean baseline. Use in unit tests to prevent
@@ -163,6 +195,9 @@ class ReadinessRepository: ObservableObject {
 
         // Coaching output (moved from ReadinessViewModel per GEMINI.md mandate)
         let dailyInstruction: CoachingService.DailyInstruction?
+        
+        // Phase 4: Smart Routing Activity Readiness
+        let activityReadiness: [String: Int]?
 
         // Insights sub-service outputs (moved from InsightsViewModel per GEMINI.md mandate)
         let metricTrends: [MetricTrend]
@@ -177,6 +212,20 @@ class ReadinessRepository: ObservableObject {
         let recommendations: [ActionableRecommendations.Recommendation]
         let agingAssessment: BiologicalAgingService.AgingAssessment?
         let compoundScoreAnalysis: CyclingPowerAnalyzer.CompoundScoreAnalysis?
+
+        // Per-tab outputs (moved from ReadinessViewModel + DashboardViewModel — Phase 1.2)
+        let todayWorkouts: [WorkoutData]
+        let todaySteps: Int
+        let cardiovascularStrain: CardiovascularStrainService.Result?
+        let holisticMetrics: HealthMetrics?
+
+        // Raw chart-source arrays (consumed by view-derivation logic that depends on selectedPeriod)
+        let hrvData: [HealthDataPoint]
+        let rhrData: [HealthDataPoint]
+        let sleepData: [HealthDataPoint]
+        let stepCountData: [HealthDataPoint]
+        let workouts: [WorkoutData]
+        let weightData: [HealthDataPoint]
     }
     
     // MARK: - Main Analysis Entry Point
@@ -480,11 +529,19 @@ class ReadinessRepository: ObservableObject {
                 restingHRData: rhrData,
                 hrvData: hrvData
             )
+            
+            let storedDailyScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
+            let dailyReadinessDict = storedDailyScores.reduce(into: [Date: Int]()) { result, score in
+                let day = calendar.startOfDay(for: score.date)
+                result[day] = score.readinessScore
+            }
+            
             let trainingLoadSummary = loadCalculator.calculateTrainingLoad(
                 healthKitWorkouts: workouts,
                 stravaActivities: [],
                 stepData: stepData,
-                recoveryInsights: recoveryInsights
+                recoveryInsights: recoveryInsights,
+                dailyReadiness: dailyReadinessDict
             )
 
             let acwrTrend = calculateImprovedACWRTrend(workouts: workouts, ftpSnapshots: ftpSnapshots)
@@ -558,15 +615,39 @@ class ReadinessRepository: ObservableObject {
             let activePatternTypes = allStoredPatterns
                 .filter { $0.detectedAt >= sevenDaysAgo }
                 .map(\.patternType)
+            
+            let allMemories = (try? modelContext.fetch(FetchDescriptor<CoachMemoryNote>())) ?? []
+            
             let coachState = MasterCoachEngine.StateVector(
                 morningScore: baseReadiness.score,
                 currentScore: intraDay.currentScore,
                 nextDayForecast: nextDayCoaching,
                 acwr: readinessAssessmentResult.acwr,
                 injuryRisk: riskAssessment.riskLevel.label,
-                activePatterns: activePatternTypes.map(\.rawValue)
+                activePatterns: activePatternTypes.map(\.rawValue),
+                memories: allMemories
             )
-            let masterCoachMessage = MasterCoachEngine.generateMessage(state: coachState)
+            let masterCoachMessage = await MasterCoachEngine.generateMessage(state: coachState)
+            
+            // Phase 4: Smart Routing Activity Readiness
+            let activityReadinessScores = SmartRoutingEngine.generateActivityReadiness(baseScore: intraDay.currentScore, memories: allMemories)
+
+            // Per-tab outputs (Phase 1.2)
+            let todayWorkouts = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
+            let todayStepsValue = stepData
+                .filter { calendar.isDate($0.date, inSameDayAs: today) }
+                .map(\.value)
+                .reduce(0, +)
+            let todaySteps = Int(todayStepsValue)
+            let cardiovascularStrain = await computeCardiovascularStrain(rhrData: rhrData)
+            let holisticMetrics = buildHolisticMetrics(
+                workouts: workouts,
+                stepData: stepData,
+                hrvData: hrvData,
+                sleepData: sleepData,
+                trainingLoad: trainingLoad,
+                readinessScore: baseReadiness.score
+            )
 
             // 10. Update Published State
             self.currentReadiness = UnifiedReadiness(
@@ -595,6 +676,7 @@ class ReadinessRepository: ObservableObject {
                 zoneAnalysis: zoneAnalysis,
                 fitnessAnalysis: fitnessAnalysis,
                 dailyInstruction: dailyInstruction,
+                activityReadiness: activityReadinessScores,
                 metricTrends: trends,
                 sleepPerformanceInsight: sleepPerformanceInsight,
                 activityTypeInsights: activityTypeInsights,
@@ -606,7 +688,17 @@ class ReadinessRepository: ObservableObject {
                 carbPerformanceInsights: carbPerformanceInsights,
                 recommendations: insightsRecommendations,
                 agingAssessment: agingAssessment,
-                compoundScoreAnalysis: powerAnalysis
+                compoundScoreAnalysis: powerAnalysis,
+                todayWorkouts: todayWorkouts,
+                todaySteps: todaySteps,
+                cardiovascularStrain: cardiovascularStrain,
+                holisticMetrics: holisticMetrics,
+                hrvData: hrvData,
+                rhrData: rhrData,
+                sleepData: sleepData,
+                stepCountData: stepData,
+                workouts: workouts,
+                weightData: weightData
             )
 
             self.intraDayReadiness = intraDay
@@ -629,8 +721,13 @@ class ReadinessRepository: ObservableObject {
             )
 
             // 7-day readiness forecast (requires 14 days of stored scores).
-            // currentReadiness is already set above so the ACWR modifier reads correctly.
-            self.forecast = computedForecast
+            // If nil, force a HealthKit backfill to fill any gaps and retry once.
+            if let f = computedForecast {
+                self.forecast = f
+            } else {
+                await backfillHistoricalScores(modelContext: modelContext, force: true)
+                self.forecast = compute7DayForecast(modelContext: modelContext, overrideACWR: readinessAssessmentResult.acwr)
+            }
 
             #if DEBUG
             print("✅ ReadinessRepository: Unified Analysis Complete. Score: \(baseReadiness.score)")
@@ -687,11 +784,22 @@ class ReadinessRepository: ObservableObject {
     /// Runs once on first launch (UserDefaults gate) and re-runs whenever fewer than 14 records
     /// exist (e.g. after a data clear). This unlocks the 7-day forecast and 14-Day Signature
     /// without requiring 14 consecutive days of app opens.
-    private func backfillHistoricalScores(modelContext: ModelContext) async {
+    private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false) async {
         // V5: diagnose existingDates vs per-day filter failure.
         let udKey = "historicalScoreBackfillV5Done"
         let existingCount = (try? modelContext.fetchCount(FetchDescriptor<StoredDailyScore>())) ?? 0
-        guard !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 else { return }
+
+        // Re-run if there are gap days since the last stored score — covers the case where
+        // the user doesn't open the app every day and recent history has holes.
+        let hasRecentGap: Bool = {
+            let cal = Calendar.current
+            let yday = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: Date())) ?? Date()
+            let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
+            guard let lastDate = allScores.map({ cal.startOfDay(for: $0.date) }).max() else { return true }
+            return (cal.dateComponents([.day], from: lastDate, to: yday).day ?? 0) >= 1
+        }()
+
+        guard force || !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 || hasRecentGap else { return }
 
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -868,21 +976,43 @@ class ReadinessRepository: ObservableObject {
 
         // ACWR modifier from current published readiness (or test override)
         let acwr = overrideACWR ?? currentReadiness?.readinessAssessment?.acwr
+        
+        // Start the simulation from the most recent known score
+        var simulatedScore = yVals.last ?? 75.0
+        var cumulativeSimulatedFatigue = 0.0
 
         var days: [ReadinessForecastDay] = []
         for d in 1...7 {
             let xDay = Double(13 + d)  // extends the trend beyond the 14-day window
-            var predicted = reg.slope * xDay + reg.intercept
+            
+            // 1. Base prediction from the historical regression
+            var basePrediction = reg.slope * xDay + reg.intercept
 
+            // 2. Apply general ACWR load trends
             if let acwr {
                 if acwr > 1.3 {
-                    predicted -= predicted * 0.03 * Double(d)  // decay 3%/day under overload
+                    basePrediction -= basePrediction * 0.03 * Double(d)  // decay 3%/day under overload
                 } else if acwr < 0.8 {
-                    predicted += predicted * 0.02 * Double(d)  // improve 2%/day during underload
+                    basePrediction += basePrediction * 0.02 * Double(d)  // improve 2%/day during underload
+                } else {
+                    // Homeostasis: in the sweet spot, naturally drift back towards optimal baseline (75)
+                    let pull = (75.0 - basePrediction) * 0.10 * Double(d)
+                    basePrediction += pull
                 }
+            } else {
+                let pull = (75.0 - basePrediction) * 0.10 * Double(d)
+                basePrediction += pull
             }
+            
+            // 3. Blend historical trajectory with our live day-by-day simulation
+            // We pull the simulated score back toward the baseline prediction to mimic recovery
+            simulatedScore = (simulatedScore + basePrediction) / 2.0
+            
+            // Subtract the fatigue we accumulated from yesterday's simulated workout
+            simulatedScore -= cumulativeSimulatedFatigue
+            cumulativeSimulatedFatigue = 0.0 // reset for today
 
-            let clamped = max(20.0, min(100.0, predicted))
+            let clamped = max(20.0, min(100.0, simulatedScore))
             let sigma = min(15.0, baselineSigma * sqrt(Double(d)))
             let lo = max(0,   Int((clamped - sigma).rounded()))
             let hi = min(100, Int((clamped + sigma).rounded()))
@@ -891,12 +1021,16 @@ class ReadinessRepository: ObservableObject {
             let score = Int(clamped.rounded())
             if score >= 80 {
                 coaching = "Hard effort OK"
+                cumulativeSimulatedFatigue = 25.0 // Doing a hard effort crashes readiness tomorrow
             } else if score >= 70 {
                 coaching = "Moderate training"
+                cumulativeSimulatedFatigue = 10.0 // Moderate effort causes mild fatigue
             } else if score >= 60 {
                 coaching = "Easy only"
+                cumulativeSimulatedFatigue = -10.0 // Active recovery builds readiness
             } else {
                 coaching = "Rest recommended"
+                cumulativeSimulatedFatigue = -20.0 // Complete rest heavily builds readiness
             }
 
             let date = calendar.date(byAdding: .day, value: d, to: calendar.startOfDay(for: Date())) ?? Date()
@@ -1029,5 +1163,155 @@ class ReadinessRepository: ObservableObject {
         if score >= 70 { return .good }
         if score >= 60 { return .moderate }
         return .poor
+    }
+
+    // MARK: - Cardiovascular Strain (moved from ReadinessViewModel — Phase 1.2)
+
+    /// Returns maxHR from UserDefaults cache if < 7 days old, otherwise queries HealthKit
+    /// and refreshes the cache. Falls back to 220-age only if HealthKit returns no data.
+    private func resolvedMaxHR() async -> Double {
+        let defaults = UserDefaults.standard
+        let cacheDate = defaults.object(forKey: Self.maxHRCacheDateKey) as? Date ?? .distantPast
+        let isFresh = Date().timeIntervalSince(cacheDate) < Self.maxHRCacheTTL
+        let cached = defaults.double(forKey: Self.maxHRCacheKey)
+
+        if isFresh, cached > 100 {
+            return cached
+        }
+
+        if let personal = try? await HealthKitManager.shared.fetchPersonalMaxHR(over: 90), personal > 100 {
+            defaults.set(personal, forKey: Self.maxHRCacheKey)
+            defaults.set(Date(), forKey: Self.maxHRCacheDateKey)
+            return personal
+        }
+
+        let age = HealthKitManager.shared.getUserAge() ?? 35
+        return 220.0 - Double(age)
+    }
+
+    private func computeCardiovascularStrain(rhrData: [HealthDataPoint]) async -> CardiovascularStrainService.Result? {
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: Date())
+        let now = Date()
+
+        async let hrSamplesTask = HealthKitManager.shared.fetchRawHeartRateSamples(
+            startDate: todayStart, endDate: now
+        )
+        let maxHR = await resolvedMaxHR()
+        let hrSamples = (try? await hrSamplesTask) ?? []
+        let restingHR = rhrData.last?.value ?? 55.0
+
+        let sensitivityOffset = UserDefaults.standard.double(forKey: "strainSensitivityOffset")
+        return cardiovascularStrainService.compute(
+            todayHRSamples: hrSamples,
+            estimatedMaxHR: maxHR,
+            restingHR: restingHR,
+            sensitivityOffset: sensitivityOffset
+        )
+    }
+
+    // MARK: - Holistic Metrics (moved from DashboardViewModel — Phase 1.2)
+
+    private func buildHolisticMetrics(
+        workouts: [WorkoutData],
+        stepData: [HealthDataPoint],
+        hrvData: [HealthDataPoint],
+        sleepData: [HealthDataPoint],
+        trainingLoad: TrainingLoadCalculator.TrainingLoadSummary?,
+        readinessScore: Int
+    ) -> HealthMetrics {
+        let metSummary = metAnalyzer.analyzeMETActivity(
+            healthKitWorkouts: workouts,
+            stravaActivities: [],
+            stepData: stepData
+        )
+        let balance = balanceAnalyzer.analyzeTrainingBalance(
+            healthKitWorkouts: workouts,
+            stravaActivities: []
+        )
+
+        let metStatus: MetricStatus = {
+            guard let summary = metSummary else { return .needsAttention }
+            switch summary.status {
+            case .excellent: return .excellent
+            case .good: return .good
+            case .moderate: return .moderate
+            case .insufficient: return .needsAttention
+            }
+        }()
+
+        let trainingBalanceStatus: MetricStatus = {
+            guard let bal = balance else { return .needsAttention }
+            switch bal.balance {
+            case .optimal: return .excellent
+            case .enduranceDominant, .strengthDominant: return .moderate
+            case .missingStrength, .missingEndurance: return .needsAttention
+            case .needsMobility: return .good
+            }
+        }()
+
+        let hrvBaselineMs: Double? = {
+            let thirtyDayData = hrvData.suffix(30).map(\.value)
+            guard thirtyDayData.count >= 7 else { return nil }
+            return thirtyDayData.reduce(0, +) / Double(thirtyDayData.count)
+        }()
+
+        let hrvStatus: MetricStatus = {
+            let recentHRVData = hrvData.suffix(7).map(\.value)
+            guard !recentHRVData.isEmpty else { return .needsAttention }
+            let recentHRV = recentHRVData.reduce(0, +) / Double(recentHRVData.count)
+            if recentHRV >= 60 { return .excellent }
+            if recentHRV >= 45 { return .good }
+            if recentHRV >= 30 { return .moderate }
+            return .needsAttention
+        }()
+
+        let loadStatus: MetricStatus = {
+            guard let ld = trainingLoad else { return .good }
+            switch ld.status {
+            case .optimal: return .excellent
+            case .fresh: return .good
+            case .fatigued: return .moderate
+            case .overreaching: return .needsAttention
+            }
+        }()
+
+        let sleepStatus: MetricStatus = {
+            let recentSleepData = sleepData.suffix(7).map(\.value)
+            guard !recentSleepData.isEmpty else { return .needsAttention }
+            let avgSleep = recentSleepData.reduce(0, +) / Double(recentSleepData.count)
+            if avgSleep >= 8 { return .excellent }
+            if avgSleep >= 7 { return .good }
+            if avgSleep >= 6 { return .moderate }
+            return .needsAttention
+        }()
+
+        let readinessStatus: MetricStatus = {
+            if readinessScore >= 80 { return .excellent }
+            if readinessScore >= 70 { return .good }
+            if readinessScore >= 60 { return .moderate }
+            return .needsAttention
+        }()
+
+        let recentSleepWindow = sleepData.suffix(7).map(\.value)
+        let averageSleep = recentSleepWindow.isEmpty
+            ? 0
+            : recentSleepWindow.reduce(0, +) / Double(recentSleepWindow.count)
+
+        return HealthMetrics(
+            weeklyMETMinutes: metSummary?.weeklyMETMinutes ?? 0,
+            metStatus: metStatus,
+            strengthPercentage: balance?.strengthPercentage ?? 0,
+            trainingBalance: trainingBalanceStatus,
+            currentHRV: hrvData.last?.value ?? 0,
+            hrvStatus: hrvStatus,
+            hrvBaselineMs: hrvBaselineMs,
+            acwr: trainingLoad?.acuteChronicRatio ?? 1.0,
+            loadStatus: loadStatus,
+            averageSleep: averageSleep,
+            sleepStatus: sleepStatus,
+            readinessScore: readinessScore,
+            readinessStatus: readinessStatus
+        )
     }
 }

@@ -46,4 +46,16 @@ enum TimePeriod: String, CaseIterable, Identifiable {
         }
         return Calendar.current.date(byAdding: .day, value: -days, to: endDate) ?? endDate
     }
+
+    /// X-axis stride used by Charts. Moved here from the deleted ContentView.swift.
+    var xAxisStride: (component: Calendar.Component, count: Int) {
+        switch self {
+        case .week:      return (.day, 1)
+        case .month:     return (.day, 7)
+        case .quarter:   return (.day, 14)
+        case .sixMonths: return (.month, 1)
+        case .year:      return (.month, 2)
+        case .all:       return (.year, 1)
+        }
+    }
 }

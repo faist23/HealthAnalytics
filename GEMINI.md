@@ -58,5 +58,21 @@ When signals conflict, the following hierarchy applies:
 ### Performance Profiling
 *   Use `PerformanceProfiler` to wrap all major analysis blocks. This ensures we can identify bottlenecks in HealthKit fetching or ML processing.
 
+## 7. Upcoming Feature Roadmap: Coach Memory Evolution
+
+We are currently building toward a true "Physiological OS." Version 1.0 (Phase 1 & 2) established the `CoachMemoryNote` SwiftData model and the immediate UI Check-in.
+
+### Phase 3: Lifecycle Management (Solving the "Forever" Problem)
+*   **Time-to-Live (TTL):** Memories must gain a concept of time. "Travel" should expire in 24-48 hours.
+*   **Coach Interrogation:** For open-ended memories like "Injury" or "High Stress," the Coach should proactively prompt the user after 7 days to resolve or extend the status.
+
+### ~~Phase 4: Structured Ontology (Solving the "Generic" Problem)~~ ✅ DONE
+*   **Anatomical Tagging:** "Injury" must evolve from a generic string into a structured physiological map (e.g., Lower Body: Knee vs. Upper Body: Shoulder).
+*   **Smart Routing:** The engine must dynamically filter workout recommendations based on the specific injury (e.g., zero out "Running" readiness for a knee injury, but keep "Upper Body Strength" at 100%).
+
+### ~~Phase 5: Generative AI Integration (The Endgame)~~ ✅ DONE
+*   **Dynamic Synthesis:** Replace the hardcoded `if/else` heuristic strings in `MasterCoachEngine.swift`.
+*   **LLM Handoff:** Pass the entire `StateVector` (Readiness, Load, explicit Memories, and implicit Training Patterns) to an on-device LLM or cloud API to generate a unique, human-like coaching paragraph.
+
 ---
 *This document is a foundational mandate. If a proposed change contradicts these rules, the conflict must be resolved before implementation.*

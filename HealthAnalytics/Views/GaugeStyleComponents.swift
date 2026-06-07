@@ -104,13 +104,10 @@ struct MetricList<Content: View>: View {
         VStack(spacing: 0) {
             content
         }
-        .background(
-            RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
-                .fill(Color(white: 0.1).opacity(0.8))
-        )
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: .radiusMd, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                .stroke(Color.surfaceRaised, lineWidth: 1)
         )
     }
 }
@@ -119,7 +116,9 @@ struct InsightBox: View {
     let text: String
     let actionText: String?
     var action: (() -> Void)? = nil
-    
+    var navigationText: String? = nil
+    var navigationAction: (() -> Void)? = nil
+
     var body: some View {
         Group {
             if let action = action {
@@ -132,7 +131,7 @@ struct InsightBox: View {
             }
         }
     }
-    
+
     private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(text)
@@ -140,36 +139,41 @@ struct InsightBox: View {
                 .foregroundStyle(.primary)
                 .lineSpacing(4)
                 .multilineTextAlignment(.leading)
-            
+
             if let actionText = actionText {
                 HStack(spacing: .spacingXs) {
                     Text(actionText.uppercased())
                         .font(.system(size: 13, weight: .bold))
                         .tracking(1)
-                    
+
                     Image(systemName: "arrow.right")
                         .font(.system(size: 12, weight: .bold))
                 }
-                .foregroundStyle(Color(red: 0.6, green: 0.6, blue: 1.0)) // Purplish accent
+                .foregroundStyle(Color.accent)
                 .padding(.top, 4)
+            }
+
+            if let navText = navigationText, let navAction = navigationAction {
+                Button(action: navAction) {
+                    HStack(spacing: .spacingXs) {
+                        Text(navText)
+                            .font(.system(size: 13, weight: .semibold))
+
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundStyle(Color.accent)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(white: 0.1).opacity(0.8))
-        )
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: .radiusMd, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color(red: 0.6, green: 0.4, blue: 1.0), Color(red: 0.4, green: 0.8, blue: 1.0)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
+            RoundedRectangle(cornerRadius: .radiusMd, style: .continuous)
+                .stroke(Color.accentBorder, lineWidth: 1)
         )
     }
 }

@@ -5,6 +5,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.8.0] - 2026-06-06
+
+### Added
+- **Phase 4: Structured Ontology** — `CoachMemoryNote` now supports anatomical tagging (e.g., "Lower Body: Knee") for injuries. Added `SmartRoutingEngine` to dynamically filter workout recommendations based on active injuries (e.g., zeroing out "Running" readiness for a knee injury while preserving "Upper Body Strength"). Exposed `activityReadiness` through the `ReadinessRepository`'s `UnifiedReadiness` state.
+- **Phase 5: Generative AI Integration** — Transformed `MasterCoachEngine` to support asynchronous LLM handoff for dynamic synthesis of the athlete's physiological state. The coaching paragraph is now generated dynamically using a `StateVector` encompassing readiness, load, injury risk, active patterns, memory notes, and forecasts. Migrated associated tests to `async/await`.
+- **ACWR trend chart inline on Load tab** — the acute:chronic workload ratio chart is now the Load tab's hero card, rendered above the strain scale instead of buried behind an invisible sheet. A "More load detail" `NavigationLink` pushes the full `UnifiedTrainingLoadCard` for users who want the deeper view.
+- **Honest "needs watch data" empty state on Load** — when `CardiovascularStrainService` has no Apple Watch HR samples to work with, the Cardio Load gauge now says so plainly instead of fabricating a strain value.
+- **`REFACTOR_PLAN.md`** — architectural plan and decision log for the Phase 1–3 refactor, checked into the repo.
+
+### Changed
+- **`ReadinessRepository` is now the single source of truth.** The repository owns the `DataSyncCompleted` subscription, the analysis trigger, and all per-tab computations (cardiovascular strain, holistic metrics, today's workouts, raw chart arrays). ViewModels reduced to thin subscribers. Tab views no longer fetch SwiftData, no longer trigger analysis, no longer listen for sync completion. Coach and Readiness can no longer show divergent readiness scores because there is exactly one engine producing the number.
+- **Coaching voice consolidated to the Coach tab only.** Recovery and Load now show factual descriptive captions of their respective metrics (e.g., "Your readiness is 73/100 — in the optimal range. Recovery 28/40 · autonomic 22/30 · fatigue 23/30") instead of MasterCoachEngine advisory prose. Intelligence's "Today's Signal" card shows pattern counts. The full coaching paragraph lives only on the Coach tab.
+- **Settings gear icon unified to push-navigation across all tabs.** Previously bound to `.constant(false)` on Readiness and Load — taps did nothing. Now matches the existing Coach/Intelligence pattern (`NavigationLink { SettingsView() }`).
+- **Granular Cardio Load Zones** — The Strain tab's Time-in-Zone metrics (Zones 1-3 vs 4-5) are now calculated using exact granular heart rate samples from `CardiovascularStrainService` instead of an inaccurate estimate based on the workout's overall average heart rate.
+- **7-Day Forecast Homeostasis** — Rewrote the 7-day readiness forecast in `ReadinessRepository` to simulate cumulative fatigue and natural recovery. Instead of a flatline projection, the forecast now exhibits mean-reversion homeostasis, pulling the readiness toward a baseline of 75 while correctly compounding simulated fatigue on days a "Hard" or "Moderate" workout is recommended.
+
+### Fixed
+- **Startup sync race condition (root-cause fix)** — the prior workaround used per-view `.onReceive(DataSyncCompleted)` listeners that each re-triggered `analyze()`, so the data only got refreshed on whichever tab the user happened to be on. The repository now listens for sync completion centrally and republishes once; every tab observes the same `UnifiedReadiness` state. No more "switch tabs to make the data update."
+- **Tab-switch spinner thrash** — tabs no longer re-run their own analyze pass on appear. After the first cold launch, switching between Coach / Readiness / Load / Intelligence is instant; the previous architecture lazily instantiated each tab's ViewModel and ran a fresh `.task { analyze() }` per tab.
+- **"EXPLORE MY LOAD" button went nowhere** — the button tried to present a sheet whose body was gated on `readinessAssessment != nil && !acwrTrend.isEmpty`. When either guard failed, SwiftUI presented an empty modal and the user perceived the tap as broken. The button is gone; the ACWR chart it was supposed to lead to is now inline above it.
+- **Lie-of-omission Cardio Load fallback** — the gauge silently displayed `acwr * 10` (capped at 21) as a fake strain value when watch data was missing. Users saw a number that looked authoritative but had no relationship to actual cardio load. Removed; honest empty state shown instead.
+- **Missing LoadingOverlay during re-analysis** — `ReadinessViewModel` and `DashboardViewModel` now forward `ReadinessRepository.shared.$isAnalyzing` to their own `isLoading` published state. Without this, the overlay never appeared after the initial cold load, so pull-to-refresh and post-sync recomputes looked frozen.
+- **MasterCoachEngine paragraph leaked onto Intelligence** — `InsightsView`'s "Today's Signal" card rendered `readiness.coachAdvice` when patterns were active, putting advisory prose on what should be a dashboard surface. Replaced with a descriptive pattern count.
+
+### Removed
+- **`ContentView.swift`** — 748 lines, unreachable from `@main`, dead code from a pre-`MainTabView` era. The `ErrorView` struct and `TimePeriod.xAxisStride` extension that live UI still consumed were extracted to dedicated locations.
+- **`ReadinessViewModel.analyze()` / `configure()` / `computeCardiovascularStrain()` / `resolvedMaxHR()`** — analysis logic moved into `ReadinessRepository.performFullAnalysis`. View `.task` blocks calling `analyze()` removed across `CoachTabView`, `RecoveryTabView`, `StrainTabView`.
+- **`DashboardViewModel.loadData()` and `holisticMetrics` computed property** — the latter was re-deriving ACWR/MET/training balance from its own fetched data, bypassing the repository's already-computed values. Both removed; `holisticMetrics` is now a `@Published` field populated via the repo subscription.
+- **Unused `@Published` vars on `ReadinessViewModel`** — `performanceWindows`, `optimalTimings`, `workoutSequences` had zero consumers (grep-verified) but were being computed on every analyze pass. Net result: less wasted CPU and a smaller VM surface.
+- **Per-view `.onReceive(NSNotification.Name("DataSyncCompleted"))` listeners** — replaced by a single subscription inside the repository. The `// Without this, the initial .task races with performSmartSync()` comment that documented the old workaround is gone along with the workaround itself.
+
+## [0.1.7.0] - 2026-05-03
+
+### Added
+- **Pattern Confidence Badge (E4)** — each Training DNA card in the Intelligence tab now shows a color-coded confidence pill (Consistent / Mixed / Tentative) alongside a count-and-duration line (e.g., "7 of 9 blocks · 14 days"). The badge maps directly to detection quality: green means the pattern is well-established, amber means it's emerging, gray means tentative early data. Accessible label covers tier, count, and tracked duration.
+
+### Changed
+- **Signal Indigo design system** — replaced the Warm Signal (terracotta / earthy) palette with Signal Indigo across the entire app. Background moves from warm near-black to cool near-black (`#09090E`); accent shifts from terracotta (`#E8885A`) to electric violet (`#7C5CFC`). All text tokens gain an indigo cast for a cooler, more precise feel. Status colors (green / amber / ember / sky blue) are unchanged.
+- **InsightBox and MetricList token sweep** — hardcoded colors and gradient borders replaced with `Color.surface`, `Color.surfaceRaised`, `Color.accent`, and `Color.accentBorder` design tokens. Consistent with every other card in the app.
+
+## [0.1.6.1] - 2026-05-03
+
+### Fixed
+- Loading overlay on Intelligence tab now reads "Opening [Pattern Name]..." instead of "Analyzing your data..." when the tab opens cold via a deep-link tap from the Recovery tab. Eliminates the blank-context skeleton gap introduced in E3.
+
+## [0.1.6.0] - 2026-05-03
+
+### Added
+- **Coach → Pattern deep-link (E3)** — tapping a pattern reference in the Recovery tab's coaching message navigates directly to the Intelligence tab, scrolled to the corresponding Training DNA card. Powered by a new `TabCoordinator` environment object (`selectedTab` / `pendingScrollPattern`), injected at app root and consumed by `RecoveryTabView` and `InsightsView`. `InsightBox` gains optional `navigationText` / `navigationAction` params for the cross-tab CTA.
+- `PatternType.displayPriority` — static method providing canonical priority ordering (`[.hrvPrecursor, .backToBackCrash, .blockCrashCycle, .sleepFragmentation, .performancePeak, .tapering]`), shared by `RecoveryTabView` (top pattern selection) and `InsightsView` (today's signal card).
+- 4 new `TabCoordinatorTests` covering initial state, navigation with/without pattern, and double-navigation overwrite.
+
 ## [0.1.5.0] - 2026-05-03
 
 ### Added
