@@ -96,7 +96,7 @@ struct RecoveryTabView: View {
                                         action: { showBreakdown = true },
                                         navigationText: topActivePattern.map { "See \($0.patternType.displayName) in Intelligence →" },
                                         navigationAction: topActivePattern.map { pattern in
-                                            { coordinator.navigate(to: TabCoordinator.intelligenceTab, scrollTo: pattern.patternType) }
+                                            { coordinator.navigate(to: TabCoordinator.patternsTab, scrollTo: pattern.patternType) }
                                         }
                                     )
                                     .padding(.horizontal)

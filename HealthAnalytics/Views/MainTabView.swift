@@ -30,11 +30,17 @@ struct MainTabView: View {
                     }
                     .tag(2)
 
-                IntelligenceTabView()
+                PatternsTabView()
                     .tabItem {
-                        Label("Intelligence", systemImage: "brain.head.profile")
+                        Label("Patterns", systemImage: "waveform.path.ecg")
                     }
                     .tag(3)
+
+                LabsTabView()
+                    .tabItem {
+                        Label("Labs", systemImage: "flask")
+                    }
+                    .tag(4)
             }
             .tint(AppColors.accentColor(for: coordinator.selectedTab))
 
