@@ -322,10 +322,15 @@ struct PerformancePredictor {
         // Ensure we don't divide by zero or use empty workouts
         guard performanceMetric > 0, workout.duration > 0 else { return nil }
         
+        // Use the workout date as the reference so acute/chronic windows
+        // align to "as-of this workout" rather than "as-of today" — the filter
+        // alone (< workoutDate) is not enough because calculateReadiness
+        // otherwise windows on Date().
         let historicalHK = healthKitWorkouts.filter { $0.startDate < workoutDate }
         let assessment = readinessService.calculateReadiness(
             stravaActivities: [],
-            healthKitWorkouts: historicalHK
+            healthKitWorkouts: historicalHK,
+            referenceDate: workoutDate
         )
         
         let fallbackCarbs = getAverageCarbs(carbsByDate)

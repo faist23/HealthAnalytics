@@ -1068,11 +1068,16 @@ class ReadinessRepository: ObservableObject {
         var dataPoints: [ACWRDataPoint] = []
         for dayOffset in (0..<7).reversed() {
             guard let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
-            let workoutsUpToDate = workouts.filter { $0.startDate <= targetDate }
+            // Pass referenceDate so calculateReadiness windows [targetDate-7, targetDate]
+            // and [targetDate-28, targetDate] instead of [today-7, today] / [today-28, today].
+            // Without this the leftmost trend points were 0 because the "acute" window
+            // for, say, Monday's perspective was [today-7, today] filtered to workouts
+            // ≤ Monday — which left only Monday itself (often empty on rest days).
             let assessment = predictiveReadinessService.calculateReadiness(
                 stravaActivities: [],
-                healthKitWorkouts: workoutsUpToDate,
-                ftpSnapshots: ftpSnapshots
+                healthKitWorkouts: workouts,
+                ftpSnapshots: ftpSnapshots,
+                referenceDate: targetDate
             )
             dataPoints.append(ACWRDataPoint(date: targetDate, value: assessment.acwr))
         }

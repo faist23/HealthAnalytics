@@ -25,23 +25,28 @@ class PredictiveReadinessService {
     
     /// Calculate readiness metrics from workout history.
     /// `ftpSnapshots` is the full FTP history for time-aware power-zone calculations.
+    /// `referenceDate` is the "now" for window calculations (default `Date()`).
+    /// Pass an explicit date to compute ACWR as-of a historical day — the chart
+    /// trend and ML training rows both do this so each row's acute/chronic
+    /// windows align to that row's day, not today.
     /// Currently only HealthKit workouts are processed; Strava power path is wired but
     /// not yet active (stravaActivities is passed as [] from all call sites).
     func calculateReadiness(
         stravaActivities: [StravaActivity],
         healthKitWorkouts: [WorkoutData],
-        ftpSnapshots: [StoredFTPSnapshot] = []
+        ftpSnapshots: [StoredFTPSnapshot] = [],
+        referenceDate: Date = Date()
     ) -> ReadinessAssessment {
-        
+
         // Combine all workouts
         let allWorkouts = healthKitWorkouts
-        
+
         // Sort by date
         let sorted = allWorkouts.sorted { $0.startDate > $1.startDate }
-        
+
         // Calculate training loads
-        let chronicLoad = calculateChronicLoad(workouts: sorted, ftpSnapshots: ftpSnapshots)
-        let acuteLoad = calculateAcuteLoad(workouts: sorted, ftpSnapshots: ftpSnapshots)
+        let chronicLoad = calculateChronicLoad(workouts: sorted, ftpSnapshots: ftpSnapshots, referenceDate: referenceDate)
+        let acuteLoad = calculateAcuteLoad(workouts: sorted, ftpSnapshots: ftpSnapshots, referenceDate: referenceDate)
         
         // Calculate ratio
         let acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1.0
@@ -68,16 +73,17 @@ class PredictiveReadinessService {
     
     // MARK: - Load Calculations
 
-    /// Calculate chronic load (28-day rolling average)
-    private func calculateChronicLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot]) -> Double {
+    /// Calculate chronic load (28-day rolling average) as of `referenceDate`.
+    /// Window is `[referenceDate - 28 days, referenceDate]` and the daily average
+    /// divides by 28 regardless of how many workouts actually fall in the window.
+    private func calculateChronicLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot], referenceDate: Date) -> Double {
         let calendar = Calendar.current
-        let now = Date()
 
-        guard let twentyEightDaysAgo = calendar.date(byAdding: .day, value: -28, to: now) else {
+        guard let twentyEightDaysAgo = calendar.date(byAdding: .day, value: -28, to: referenceDate) else {
             return 0
         }
 
-        let recentWorkouts = workouts.filter { $0.startDate >= twentyEightDaysAgo }
+        let recentWorkouts = workouts.filter { $0.startDate >= twentyEightDaysAgo && $0.startDate <= referenceDate }
 
         guard !recentWorkouts.isEmpty else { return 0 }
 
@@ -89,16 +95,17 @@ class PredictiveReadinessService {
         return totalLoad / 28.0
     }
 
-    /// Calculate acute load (7-day rolling average)
-    private func calculateAcuteLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot]) -> Double {
+    /// Calculate acute load (7-day rolling average) as of `referenceDate`.
+    /// Window is `[referenceDate - 7 days, referenceDate]` and the daily average
+    /// divides by 7 regardless of how many workouts actually fall in the window.
+    private func calculateAcuteLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot], referenceDate: Date) -> Double {
         let calendar = Calendar.current
-        let now = Date()
 
-        guard let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: now) else {
+        guard let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: referenceDate) else {
             return 0
         }
 
-        let recentWorkouts = workouts.filter { $0.startDate >= sevenDaysAgo }
+        let recentWorkouts = workouts.filter { $0.startDate >= sevenDaysAgo && $0.startDate <= referenceDate }
 
         guard !recentWorkouts.isEmpty else { return 0 }
 
