@@ -187,21 +187,26 @@ struct RecoveryTabView: View {
 
     /// Descriptive caption for the readiness state. Phase 2.4: no action advice —
     /// that lives on the Coach tab via the MasterCoachEngine paragraph. This text
-    /// just names what the score *is* in plain terms, derived from the breakdown.
+    /// names the state in plain terms and calls out the standout signal from the
+    /// underlying breakdown, without quoting raw scores.
     private func readinessDescription(for readiness: ReadinessAnalyzer.ReadinessScore) -> String {
-        let level: String = {
-            if readiness.score >= 67 { return "in the optimal range" }
-            if readiness.score >= 34 { return "in the monitoring range" }
-            return "in the rest range"
-        }()
-
         let breakdown = readiness.breakdown
-        let parts: [String] = [
-            "Recovery \(breakdown.recoveryScore)/40",
-            "autonomic \(breakdown.fitnessScore)/30",
-            "fatigue \(breakdown.fatigueScore)/30"
+
+        // Each component normalised to a [0, 1] ratio against its own ceiling.
+        let signals: [(ratio: Double, name: String)] = [
+            (Double(breakdown.recoveryScore) / 40.0, "overnight recovery"),
+            (Double(breakdown.fitnessScore)  / 30.0, "nervous system"),
+            (Double(breakdown.fatigueScore)  / 30.0, "muscle freshness")
         ]
-        return "Your readiness is \(readiness.score)/100 — \(level). \(parts.joined(separator: " · "))."
+        let weakest = signals.min(by: { $0.ratio < $1.ratio })?.name ?? "overnight recovery"
+
+        if readiness.score >= 67 {
+            return "You're well-recovered across the board. Sleep, autonomic, and muscle signals all land in your normal range."
+        }
+        if readiness.score >= 34 {
+            return "You're in middle ground today. The signal pulling things down is your \(weakest)."
+        }
+        return "You're carrying real fatigue. The hardest hit signal is your \(weakest)."
     }
 }
 

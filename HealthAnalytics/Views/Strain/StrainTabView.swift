@@ -319,8 +319,9 @@ struct StrainTabView: View {
     }
 
     /// Descriptive caption for the load state. Phase 2.4: no action advice —
-    /// that lives on the Coach tab. This text describes the current ACWR
-    /// numerically and names the band; it does not tell the user what to do.
+    /// that lives on the Coach tab. Describes the past week's training relative
+    /// to the 28-day base in plain English (the ACWR chart above is the hero;
+    /// this text contextualises it) and names today's effort zone if available.
     private var insightSection: some View {
         InsightBox(
             text: loadDescription,
@@ -331,21 +332,33 @@ struct StrainTabView: View {
 
     private var loadDescription: String {
         guard let acwr = viewModel.readinessAssessment?.acwr else {
-            return "Build up a week of workouts and we'll show your training load here."
+            return "Add a week of workouts and we'll show your training load here."
         }
-        let band: String = {
-            if acwr < 0.8 { return "below your maintenance baseline" }
-            if acwr <= 1.3 { return "in the sweet spot (0.8 – 1.3)" }
-            if acwr <= 1.5 { return "above sweet spot — acute load is climbing" }
-            return "well above sweet spot — acute load is high vs. your 28-day baseline"
-        }()
-        let cvLine: String
-        if let strain = viewModel.cardiovascularStrain?.strain {
-            cvLine = " Today's cardio load: \(String(format: "%.1f", strain))/21."
+        let weekTrend: String
+        if acwr < 0.8 {
+            weekTrend = "The past week of training has been lighter than your 28-day base."
+        } else if acwr <= 1.3 {
+            weekTrend = "The past week of training tracks your 28-day base."
+        } else if acwr <= 1.5 {
+            weekTrend = "The past week of training is running ahead of your 28-day base."
         } else {
-            cvLine = ""
+            weekTrend = "The past week of training sits well above your 28-day base — a sharp ramp."
         }
-        return "Acute:chronic ratio is \(String(format: "%.2f", acwr)) — \(band).\(cvLine)"
+
+        let todayLine: String
+        if let strain = viewModel.cardiovascularStrain?.strain {
+            let zone: String
+            switch strain {
+            case ..<7:    zone = "light"
+            case ..<13:   zone = "moderate"
+            case ..<18:   zone = "strenuous"
+            default:      zone = "all-out"
+            }
+            todayLine = " Today's effort was \(zone)."
+        } else {
+            todayLine = ""
+        }
+        return weekTrend + todayLine
     }
 }
 
