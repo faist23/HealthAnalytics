@@ -310,24 +310,41 @@ struct InsightsView: View {
     /// number is being compared to.
     @ViewBuilder
     private var whatsChangedSection: some View {
-        let mappedTrends = viewModel.metricTrends.map(mapTrendToInsight)
-        let coveredDomains = Set(viewModel.metricTrends.map { domainKey(forMetricTrend: $0.metricName) })
-        let uniqueStories = viewModel.simpleInsights.filter { insight in
-            !coveredDomains.contains(domainKey(forSimpleInsightTitle: insight.title))
-        }
-        if !mappedTrends.isEmpty || !uniqueStories.isEmpty {
+        let ordered = orderedWhatsChanged
+        if !ordered.isEmpty {
             Text("What's changed")
                 .font(.title2)
                 .fontWeight(.bold)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            ForEach(mappedTrends, id: \.title) { insight in
-                SimpleInsightCard(insight: insight)
-            }
-            ForEach(uniqueStories, id: \.title) { insight in
+            ForEach(ordered, id: \.title) { insight in
                 SimpleInsightCard(insight: insight)
             }
         }
+    }
+
+    /// Build the ordered list of "What's changed" cards. MetricTrends drive
+    /// the primary order (RHR → HRV → Sleep Duration → Daily Steps → Weight →
+    /// Training Frequency). Sleep Consistency, the only meaningful unique
+    /// SimpleInsight after dedupe, is injected right after Sleep Duration so
+    /// the two sleep cards sit together. Any other future uniques fall at end.
+    private var orderedWhatsChanged: [CorrelationEngine.SimpleInsight] {
+        let coveredDomains = Set(viewModel.metricTrends.map { domainKey(forMetricTrend: $0.metricName) })
+        let uniqueStories = viewModel.simpleInsights.filter { insight in
+            !coveredDomains.contains(domainKey(forSimpleInsightTitle: insight.title))
+        }
+        var ordered: [CorrelationEngine.SimpleInsight] = []
+        for trend in viewModel.metricTrends {
+            ordered.append(mapTrendToInsight(trend))
+            if trend.metricName == "Sleep Duration",
+               let consistency = uniqueStories.first(where: { $0.title == "Sleep Consistency" }) {
+                ordered.append(consistency)
+            }
+        }
+        for story in uniqueStories where story.title != "Sleep Consistency" {
+            ordered.append(story)
+        }
+        return ordered
     }
 
     /// Map a structured MetricTrend into a SimpleInsight whose description
