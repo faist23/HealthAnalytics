@@ -54,6 +54,12 @@ struct PatternsTabView: View {
                         }
                         .padding(.vertical)
                     }
+                    .refreshable {
+                        await SyncManager.shared.performSmartSync(force: true)
+                        await ReadinessRepository.shared.forceRefresh(
+                            modelContext: HealthDataContainer.shared.mainContext
+                        )
+                    }
                     .onChange(of: coordinator.pendingScrollPattern) { _, newPattern in
                         guard let pattern = newPattern else { return }
                         coordinator.pendingScrollPattern = nil

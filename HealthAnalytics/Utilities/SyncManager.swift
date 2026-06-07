@@ -46,13 +46,16 @@ class SyncManager: ObservableObject {
     // MARK: - Smart Sync Entry Point
     
     /// Intelligently syncs only what's needed
-    func performSmartSync() async {
+    /// `force: true` bypasses the 30-minute throttle. Used by user-initiated
+    /// refreshes (pull-to-refresh + the Coach toolbar refresh button) so a
+    /// deliberate tap always does visible work.
+    func performSmartSync(force: Bool = false) async {
         #if DEBUG
         print("🔍 SYNC DEBUG:")
         print("   lastSyncDate: \(lastSyncDate?.formatted() ?? "nil")")
         if let last = lastSyncDate {
             print("   Time since last: \(Date().timeIntervalSince(last)) seconds")
-            print("   Should skip: \(Date().timeIntervalSince(last) < 1800)")
+            print("   Should skip: \(!force && Date().timeIntervalSince(last) < 1800)")
         }
         #endif
         
@@ -75,8 +78,9 @@ class SyncManager: ObservableObject {
             isMigrating = false
         }
 
-        // Prevent redundant syncs - only sync if 30+ minutes have passed
-        if let last = lastSyncDate, Date().timeIntervalSince(last) < 1800 {
+        // Prevent redundant syncs - only sync if 30+ minutes have passed.
+        // `force` bypasses for user-initiated refreshes.
+        if !force, let last = lastSyncDate, Date().timeIntervalSince(last) < 1800 {
             #if DEBUG
             print("🛡️ Sync Guard: Synced \(Int(Date().timeIntervalSince(last)/60))m ago. Skipping.")
             #endif

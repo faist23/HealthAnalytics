@@ -20,54 +20,15 @@ struct CoachTabView: View {
                     .ignoresSafeArea()
                 
                 ScrollView {
-                    VStack(spacing: 20) {
-                        
-                        // 1. The Master Coach Insight
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Image(systemName: "sparkles")
-                                    .foregroundStyle(Color.accent)
-                                Text("Master Coach")
-                                    .font(.headline)
-                            }
-                            
-                            Text(viewModel.readinessRecommendation.isEmpty ? "Gathering data to provide coaching insights..." : viewModel.readinessRecommendation)
-                                .font(.system(.body, design: .rounded))
-                                .fontWeight(.medium)
-                                .lineSpacing(4)
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color.surface : Color.white)
-                                .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
-                        )
-                        .padding(.horizontal)
-                        
-                        // 2. Quick Context Input (Coach Check-in)
-                        CoachCheckInView()
-                            .padding(.horizontal)
-                        
-                        // 3. Readiness Hero Card
-                        HeroReadinessCard(
-                            score: viewModel.readinessScore,
-                            level: viewModel.readinessLevel,
-                            recommendation: "", // We moved the recommendation to the top
-                            intraDay: viewModel.intraDayReadiness
-                        )
-                        .cardStyle(for: .recovery)
-                        .padding(.horizontal)
-                        
-                        if let metrics = viewModel.holisticMetrics {
-                            SupportingMetricsCard(metrics: metrics)
-                                .padding(.horizontal)
-                        }
-                    }
-                    .padding(.top, 10)
-                    .padding(.bottom, 30)
+                    refreshableContent
                 }
-                
+                .refreshable {
+                    await SyncManager.shared.performSmartSync(force: true)
+                    await ReadinessRepository.shared.forceRefresh(
+                        modelContext: HealthDataContainer.shared.mainContext
+                    )
+                }
+
                 if viewModel.isLoading || isFirstLoad {
                     LoadingOverlay(message: "Analyzing your readiness...")
                 }
@@ -84,8 +45,8 @@ struct CoachTabView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         Task {
-                            await SyncManager.shared.performSmartSync()
-                            await ReadinessRepository.shared.refreshIfNecessary(
+                            await SyncManager.shared.performSmartSync(force: true)
+                            await ReadinessRepository.shared.forceRefresh(
                                 modelContext: HealthDataContainer.shared.mainContext
                             )
                         }
@@ -96,6 +57,55 @@ struct CoachTabView: View {
             }
             .onAppear { isFirstLoad = false }
         }
+    }
+
+    @ViewBuilder
+    private var refreshableContent: some View {
+        VStack(spacing: 20) {
+            // 1. The Master Coach Insight
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(Color.accent)
+                    Text("Master Coach")
+                        .font(.headline)
+                }
+
+                Text(viewModel.readinessRecommendation.isEmpty ? "Gathering data to provide coaching insights..." : viewModel.readinessRecommendation)
+                    .font(.system(.body, design: .rounded))
+                    .fontWeight(.medium)
+                    .lineSpacing(4)
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(colorScheme == .dark ? Color.surface : Color.white)
+                    .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
+            )
+            .padding(.horizontal)
+
+            // 2. Quick Context Input (Coach Check-in)
+            CoachCheckInView()
+                .padding(.horizontal)
+
+            // 3. Readiness Hero Card
+            HeroReadinessCard(
+                score: viewModel.readinessScore,
+                level: viewModel.readinessLevel,
+                recommendation: "", // We moved the recommendation to the top
+                intraDay: viewModel.intraDayReadiness
+            )
+            .cardStyle(for: .recovery)
+            .padding(.horizontal)
+
+            if let metrics = viewModel.holisticMetrics {
+                SupportingMetricsCard(metrics: metrics)
+                    .padding(.horizontal)
+            }
+        }
+        .padding(.top, 10)
+        .padding(.bottom, 30)
     }
 }
 

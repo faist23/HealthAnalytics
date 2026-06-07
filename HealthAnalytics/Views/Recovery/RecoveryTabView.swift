@@ -94,7 +94,7 @@ struct RecoveryTabView: View {
                                         text: readinessDescription(for: readiness),
                                         actionText: "BREAK DOWN MY READINESS",
                                         action: { showBreakdown = true },
-                                        navigationText: topActivePattern.map { "See \($0.patternType.displayName) in Intelligence →" },
+                                        navigationText: topActivePattern.map { "See \($0.patternType.displayName) in Patterns →" },
                                         navigationAction: topActivePattern.map { pattern in
                                             { coordinator.navigate(to: TabCoordinator.patternsTab, scrollTo: pattern.patternType) }
                                         }
