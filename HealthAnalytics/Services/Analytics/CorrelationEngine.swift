@@ -431,7 +431,7 @@ class CorrelationEngine {
             insights.append(SimpleInsight(
                 title: "Sleep Consistency",
                 value: String(format: "%.1f hrs avg", avgSleep),
-                description: "Your sleep is \(consistency) (±\(String(format: "%.1f", stdDev)) hrs)",
+                description: "30-day average. Sleep is \(consistency) (±\(String(format: "%.1f", stdDev)) hrs).",
                 icon: "bed.double.fill",
                 iconColor: "blue"
             ))

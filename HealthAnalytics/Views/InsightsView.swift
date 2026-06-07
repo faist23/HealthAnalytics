@@ -331,25 +331,27 @@ struct InsightsView: View {
     }
 
     /// Map a structured MetricTrend into a SimpleInsight whose description
-    /// names the baseline window in plain English. Drives the unified render.
+    /// names the averaging window AND the baseline window in plain English.
+    /// The user shouldn't have to guess what "45 bpm" represents — it's a
+    /// 7-day rolling average, and the comparison is against the prior 21 days.
     private func mapTrendToInsight(_ trend: MetricTrend) -> CorrelationEngine.SimpleInsight {
         let style = metricStyle(for: trend.metricName)
         let formattedValue = style.formatter(trend.currentValue)
 
         let description: String
-        // Training Frequency has no baseline comparison — keep its raw context.
         if trend.metricName == "Training Frequency" {
-            description = trend.context
+            // Training Frequency is a per-week rate computed from a 30-day window.
+            description = "Averaged over the last 30 days."
         } else if let baseline = trend.baselineValue, abs(trend.percentageChange) >= 1.0 {
             let direction = trend.percentageChange > 0 ? "Up" : "Down"
             let absPct = Int(abs(trend.percentageChange).rounded())
             let baselineFormatted = style.formatter(baseline)
-            description = "\(direction) \(absPct)% vs your 21-day baseline (\(baselineFormatted))"
+            description = "7-day average. \(direction) \(absPct)% vs your 21-day baseline (\(baselineFormatted))."
         } else if let baseline = trend.baselineValue {
-            // < 1% change — call it stable, but still name the baseline.
-            description = "Stable vs your 21-day baseline (\(style.formatter(baseline)))"
+            // < 1% change — call it stable, but still name both windows.
+            description = "7-day average. Stable vs your 21-day baseline (\(style.formatter(baseline)))."
         } else {
-            description = trend.context
+            description = "7-day average. \(trend.context)"
         }
 
         return CorrelationEngine.SimpleInsight(
