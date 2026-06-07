@@ -105,11 +105,20 @@ struct ACWRTrendCard: View {
             
             // Chart - only show if there's actual variation
             if hasValidTrend {
+                // The LineMark/PointMark use unit: .day, which plots each data
+                // point at the centre of its day-bucket. The rectangle's xStart /
+                // xEnd are raw timestamps. trend.last.date is startOfDay(today),
+                // so the rectangle would end at midnight Sunday morning while
+                // Sunday's dot displays at mid-Sunday — 12 hours short visually.
+                // Extending xEnd by one day makes the band span the full
+                // Sunday bucket so the line and the band terminate together.
+                let bandStart = trend.first?.date ?? Date()
+                let bandEnd = (trend.last?.date ?? Date()).addingTimeInterval(86400)
                 Chart {
                     // Sweet spot zone (0.8 - 1.3)
                     RectangleMark(
-                        xStart: .value("Start", trend.first?.date ?? Date()),
-                        xEnd: .value("End", trend.last?.date ?? Date()),
+                        xStart: .value("Start", bandStart),
+                        xEnd: .value("End", bandEnd),
                         yStart: .value("Low", 0.8),
                         yEnd: .value("High", 1.3)
                     )
