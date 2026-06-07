@@ -94,6 +94,12 @@ class ReadinessViewModel: ObservableObject {
         self.dailyInstruction = unified.dailyInstruction
         self.overnightRecoveryMultiplier = unified.overnightRecoveryMultiplier
         self.todayStepExcessTSS = unified.todayStepExcessTSS
+
+        // Per-tab outputs (Phase 1.2 — now owned by ReadinessRepository)
+        self.todayWorkouts = unified.todayWorkouts
+        self.todaySteps = unified.todaySteps
+        self.cardiovascularStrain = unified.cardiovascularStrain
+        self.dailyTSSData = calculateDailyTSS(workouts: unified.workouts, stepData: unified.stepCountData)
     }
     
     // Training Load (moved from InsightsViewModel)

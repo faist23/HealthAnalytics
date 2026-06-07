@@ -53,6 +53,16 @@ class ReadinessRepository: ObservableObject {
     private let actionableRecommendations  = ActionableRecommendations()
     private let cyclingPowerAnalyzer       = CyclingPowerAnalyzer()
 
+    // Per-tab sub-services (moved from ReadinessViewModel + DashboardViewModel — Phase 1.2)
+    private let cardiovascularStrainService = CardiovascularStrainService()
+    private let metAnalyzer                 = METAnalyzer()
+    private let balanceAnalyzer             = BalancedTrainingAnalyzer()
+
+    // maxHR cache (was on ReadinessViewModel — Phase 1.2 migration)
+    private static let maxHRCacheKey = "cachedPersonalMaxHR"
+    private static let maxHRCacheDateKey = "cachedPersonalMaxHRDate"
+    private static let maxHRCacheTTL: TimeInterval = 7 * 86400 // 7 days
+
     // Phase 2 — Pattern Engine sub-service
     private var trainingDNAAnalyzer: TrainingDNAAnalyzer?
 
@@ -202,6 +212,20 @@ class ReadinessRepository: ObservableObject {
         let recommendations: [ActionableRecommendations.Recommendation]
         let agingAssessment: BiologicalAgingService.AgingAssessment?
         let compoundScoreAnalysis: CyclingPowerAnalyzer.CompoundScoreAnalysis?
+
+        // Per-tab outputs (moved from ReadinessViewModel + DashboardViewModel — Phase 1.2)
+        let todayWorkouts: [WorkoutData]
+        let todaySteps: Int
+        let cardiovascularStrain: CardiovascularStrainService.Result?
+        let holisticMetrics: HealthMetrics?
+
+        // Raw chart-source arrays (consumed by view-derivation logic that depends on selectedPeriod)
+        let hrvData: [HealthDataPoint]
+        let rhrData: [HealthDataPoint]
+        let sleepData: [HealthDataPoint]
+        let stepCountData: [HealthDataPoint]
+        let workouts: [WorkoutData]
+        let weightData: [HealthDataPoint]
     }
     
     // MARK: - Main Analysis Entry Point
@@ -608,6 +632,23 @@ class ReadinessRepository: ObservableObject {
             // Phase 4: Smart Routing Activity Readiness
             let activityReadinessScores = SmartRoutingEngine.generateActivityReadiness(baseScore: intraDay.currentScore, memories: allMemories)
 
+            // Per-tab outputs (Phase 1.2)
+            let todayWorkouts = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
+            let todayStepsValue = stepData
+                .filter { calendar.isDate($0.date, inSameDayAs: today) }
+                .map(\.value)
+                .reduce(0, +)
+            let todaySteps = Int(todayStepsValue)
+            let cardiovascularStrain = await computeCardiovascularStrain(rhrData: rhrData)
+            let holisticMetrics = buildHolisticMetrics(
+                workouts: workouts,
+                stepData: stepData,
+                hrvData: hrvData,
+                sleepData: sleepData,
+                trainingLoad: trainingLoad,
+                readinessScore: baseReadiness.score
+            )
+
             // 10. Update Published State
             self.currentReadiness = UnifiedReadiness(
                 score: intraDay.currentScore,
@@ -647,7 +688,17 @@ class ReadinessRepository: ObservableObject {
                 carbPerformanceInsights: carbPerformanceInsights,
                 recommendations: insightsRecommendations,
                 agingAssessment: agingAssessment,
-                compoundScoreAnalysis: powerAnalysis
+                compoundScoreAnalysis: powerAnalysis,
+                todayWorkouts: todayWorkouts,
+                todaySteps: todaySteps,
+                cardiovascularStrain: cardiovascularStrain,
+                holisticMetrics: holisticMetrics,
+                hrvData: hrvData,
+                rhrData: rhrData,
+                sleepData: sleepData,
+                stepCountData: stepData,
+                workouts: workouts,
+                weightData: weightData
             )
 
             self.intraDayReadiness = intraDay
@@ -1112,5 +1163,155 @@ class ReadinessRepository: ObservableObject {
         if score >= 70 { return .good }
         if score >= 60 { return .moderate }
         return .poor
+    }
+
+    // MARK: - Cardiovascular Strain (moved from ReadinessViewModel — Phase 1.2)
+
+    /// Returns maxHR from UserDefaults cache if < 7 days old, otherwise queries HealthKit
+    /// and refreshes the cache. Falls back to 220-age only if HealthKit returns no data.
+    private func resolvedMaxHR() async -> Double {
+        let defaults = UserDefaults.standard
+        let cacheDate = defaults.object(forKey: Self.maxHRCacheDateKey) as? Date ?? .distantPast
+        let isFresh = Date().timeIntervalSince(cacheDate) < Self.maxHRCacheTTL
+        let cached = defaults.double(forKey: Self.maxHRCacheKey)
+
+        if isFresh, cached > 100 {
+            return cached
+        }
+
+        if let personal = try? await HealthKitManager.shared.fetchPersonalMaxHR(over: 90), personal > 100 {
+            defaults.set(personal, forKey: Self.maxHRCacheKey)
+            defaults.set(Date(), forKey: Self.maxHRCacheDateKey)
+            return personal
+        }
+
+        let age = HealthKitManager.shared.getUserAge() ?? 35
+        return 220.0 - Double(age)
+    }
+
+    private func computeCardiovascularStrain(rhrData: [HealthDataPoint]) async -> CardiovascularStrainService.Result? {
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: Date())
+        let now = Date()
+
+        async let hrSamplesTask = HealthKitManager.shared.fetchRawHeartRateSamples(
+            startDate: todayStart, endDate: now
+        )
+        let maxHR = await resolvedMaxHR()
+        let hrSamples = (try? await hrSamplesTask) ?? []
+        let restingHR = rhrData.last?.value ?? 55.0
+
+        let sensitivityOffset = UserDefaults.standard.double(forKey: "strainSensitivityOffset")
+        return cardiovascularStrainService.compute(
+            todayHRSamples: hrSamples,
+            estimatedMaxHR: maxHR,
+            restingHR: restingHR,
+            sensitivityOffset: sensitivityOffset
+        )
+    }
+
+    // MARK: - Holistic Metrics (moved from DashboardViewModel — Phase 1.2)
+
+    private func buildHolisticMetrics(
+        workouts: [WorkoutData],
+        stepData: [HealthDataPoint],
+        hrvData: [HealthDataPoint],
+        sleepData: [HealthDataPoint],
+        trainingLoad: TrainingLoadCalculator.TrainingLoadSummary?,
+        readinessScore: Int
+    ) -> HealthMetrics {
+        let metSummary = metAnalyzer.analyzeMETActivity(
+            healthKitWorkouts: workouts,
+            stravaActivities: [],
+            stepData: stepData
+        )
+        let balance = balanceAnalyzer.analyzeTrainingBalance(
+            healthKitWorkouts: workouts,
+            stravaActivities: []
+        )
+
+        let metStatus: MetricStatus = {
+            guard let summary = metSummary else { return .needsAttention }
+            switch summary.status {
+            case .excellent: return .excellent
+            case .good: return .good
+            case .moderate: return .moderate
+            case .insufficient: return .needsAttention
+            }
+        }()
+
+        let trainingBalanceStatus: MetricStatus = {
+            guard let bal = balance else { return .needsAttention }
+            switch bal.balance {
+            case .optimal: return .excellent
+            case .enduranceDominant, .strengthDominant: return .moderate
+            case .missingStrength, .missingEndurance: return .needsAttention
+            case .needsMobility: return .good
+            }
+        }()
+
+        let hrvBaselineMs: Double? = {
+            let thirtyDayData = hrvData.suffix(30).map(\.value)
+            guard thirtyDayData.count >= 7 else { return nil }
+            return thirtyDayData.reduce(0, +) / Double(thirtyDayData.count)
+        }()
+
+        let hrvStatus: MetricStatus = {
+            let recentHRVData = hrvData.suffix(7).map(\.value)
+            guard !recentHRVData.isEmpty else { return .needsAttention }
+            let recentHRV = recentHRVData.reduce(0, +) / Double(recentHRVData.count)
+            if recentHRV >= 60 { return .excellent }
+            if recentHRV >= 45 { return .good }
+            if recentHRV >= 30 { return .moderate }
+            return .needsAttention
+        }()
+
+        let loadStatus: MetricStatus = {
+            guard let ld = trainingLoad else { return .good }
+            switch ld.status {
+            case .optimal: return .excellent
+            case .fresh: return .good
+            case .fatigued: return .moderate
+            case .overreaching: return .needsAttention
+            }
+        }()
+
+        let sleepStatus: MetricStatus = {
+            let recentSleepData = sleepData.suffix(7).map(\.value)
+            guard !recentSleepData.isEmpty else { return .needsAttention }
+            let avgSleep = recentSleepData.reduce(0, +) / Double(recentSleepData.count)
+            if avgSleep >= 8 { return .excellent }
+            if avgSleep >= 7 { return .good }
+            if avgSleep >= 6 { return .moderate }
+            return .needsAttention
+        }()
+
+        let readinessStatus: MetricStatus = {
+            if readinessScore >= 80 { return .excellent }
+            if readinessScore >= 70 { return .good }
+            if readinessScore >= 60 { return .moderate }
+            return .needsAttention
+        }()
+
+        let recentSleepWindow = sleepData.suffix(7).map(\.value)
+        let averageSleep = recentSleepWindow.isEmpty
+            ? 0
+            : recentSleepWindow.reduce(0, +) / Double(recentSleepWindow.count)
+
+        return HealthMetrics(
+            weeklyMETMinutes: metSummary?.weeklyMETMinutes ?? 0,
+            metStatus: metStatus,
+            strengthPercentage: balance?.strengthPercentage ?? 0,
+            trainingBalance: trainingBalanceStatus,
+            currentHRV: hrvData.last?.value ?? 0,
+            hrvStatus: hrvStatus,
+            hrvBaselineMs: hrvBaselineMs,
+            acwr: trainingLoad?.acuteChronicRatio ?? 1.0,
+            loadStatus: loadStatus,
+            averageSleep: averageSleep,
+            sleepStatus: sleepStatus,
+            readinessScore: readinessScore,
+            readinessStatus: readinessStatus
+        )
     }
 }
