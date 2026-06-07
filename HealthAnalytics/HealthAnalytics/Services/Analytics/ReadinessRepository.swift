@@ -64,6 +64,8 @@ class ReadinessRepository: ObservableObject {
 
     private var analysisTask: Task<Void, Never>?
 
+    private var syncCompletedObserver: NSObjectProtocol?
+
     private static let dailyScoreDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
@@ -72,6 +74,26 @@ class ReadinessRepository: ObservableObject {
     }()
 
     private init() {}
+
+    /// Wires the repository to refresh whenever sync completes. Idempotent — safe
+    /// to call multiple times; only the first call subscribes. Pulls the model
+    /// context fresh from `HealthDataContainer.shared` at each refresh so a
+    /// `resetAllData()` flow doesn't leave us holding a stale context.
+    func bootstrap() {
+        guard syncCompletedObserver == nil else { return }
+        syncCompletedObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("DataSyncCompleted"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                await self.refreshIfNecessary(
+                    modelContext: HealthDataContainer.shared.mainContext
+                )
+            }
+        }
+    }
 
     #if DEBUG
     /// Resets published state to a clean baseline. Use in unit tests to prevent

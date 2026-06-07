@@ -26,7 +26,7 @@ struct HealthAnalyticsApp: App {
                         handleIncomingURL(url)
                     }
                     .task {
-                        // ✅ CHANGED: Use smart sync instead of global sync
+                        ReadinessRepository.shared.bootstrap()
                         await SyncManager.shared.performSmartSync()
                         await PatternNotificationService.shared.requestAuthorizationIfNeeded()
                     }
