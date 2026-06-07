@@ -150,17 +150,23 @@ struct InsightsView: View {
                             .foregroundStyle(Color.textSecondary)
                     }
                 } else {
+                    // Phase 2.4 + Phase 3 fix: this card is on the Intelligence tab,
+                    // which is a dashboard, not a coach. Describe what patterns are
+                    // active instead of rendering the MasterCoachEngine paragraph
+                    // (which belongs only on the Coach tab).
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "sparkles")
                             .font(.system(size: 20))
                             .foregroundStyle(Color.accent)
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(readiness.coachAdvice)
+                            Text(activePatterns.count == 1
+                                 ? "1 pattern detected in the past 7 days."
+                                 : "\(activePatterns.count) patterns detected in the past 7 days.")
                                 .font(.system(size: 15, weight: .regular))
                                 .foregroundStyle(Color.textPrimary)
                             if let top = topPattern {
-                                Text("\(top.patternType.displayName) detected")
+                                Text("Top: \(top.patternType.displayName)")
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(Color.textSecondary)
                             }

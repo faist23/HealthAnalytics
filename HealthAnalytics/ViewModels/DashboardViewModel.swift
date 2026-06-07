@@ -61,6 +61,16 @@ class DashboardViewModel: ObservableObject {
                 self.weightData = unified.weightData
             }
             .store(in: &cancellables)
+
+        // Phase 3 fix: forward repo's isAnalyzing so the Coach tab's LoadingOverlay
+        // appears during analysis. Without this the screen looks frozen since
+        // loadData() (which set isLoading) was deleted in Phase 1.4.
+        ReadinessRepository.shared.$isAnalyzing
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] analyzing in
+                self?.isLoading = analyzing
+            }
+            .store(in: &cancellables)
     }
     
     // loadData() removed in Phase 1.4 — DashboardViewModel is now a pure

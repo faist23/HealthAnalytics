@@ -31,6 +31,7 @@ class ReadinessViewModel: ObservableObject {
     
     private var repositoryCancellable: AnyCancellable?
     private var repositoryErrorCancellable: AnyCancellable?
+    private var repositoryLoadingCancellable: AnyCancellable?
 
     init() {
         setupRepositorySubscription()
@@ -55,6 +56,16 @@ class ReadinessViewModel: ObservableObject {
                 self.errorMessage = error.contains("Insufficient data")
                     ? "Add some workouts and sleep data to see your readiness score."
                     : "Something went wrong. Pull to refresh or try again later."
+            }
+
+        // Phase 3 fix: forward repo's isAnalyzing → isLoading so the LoadingOverlay
+        // appears during repo re-analysis (after sync, after pull-to-refresh).
+        // Without this the screen looks frozen because nothing sets isLoading
+        // since analyze() was deleted in Phase 1.4.
+        repositoryLoadingCancellable = ReadinessRepository.shared.$isAnalyzing
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] analyzing in
+                self?.isLoading = analyzing
             }
     }
 

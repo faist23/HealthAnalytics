@@ -7,8 +7,7 @@ import SwiftUI
 
 struct IntelligenceTabView: View {
     @Environment(\.colorScheme) var colorScheme
-    @State private var showSettings = false
-    
+
     var body: some View {
         NavigationStack {
             ZStack {
