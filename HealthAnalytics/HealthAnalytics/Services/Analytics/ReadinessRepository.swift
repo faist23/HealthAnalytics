@@ -623,7 +623,7 @@ class ReadinessRepository: ObservableObject {
                 currentScore: intraDay.currentScore,
                 nextDayForecast: nextDayCoaching,
                 acwr: readinessAssessmentResult.acwr,
-                injuryRisk: riskAssessment.riskLevel.label,
+                injuryRisk: riskAssessment.riskLevel,
                 activePatterns: activePatternTypes.map(\.rawValue),
                 memories: allMemories
             )
@@ -976,43 +976,30 @@ class ReadinessRepository: ObservableObject {
 
         // ACWR modifier from current published readiness (or test override)
         let acwr = overrideACWR ?? currentReadiness?.readinessAssessment?.acwr
-        
-        // Start the simulation from the most recent known score
-        var simulatedScore = yVals.last ?? 75.0
-        var cumulativeSimulatedFatigue = 0.0
 
+        // Pure regression + ACWR modifier. No intra-forecast workout simulation:
+        // a coaching-label feedback loop here (hard day → -25 next day) turns a
+        // flat history into a sawtooth forecast and breaks the documented
+        // contract (flat trend → near baseline; ACWR>1.3 → monotonic decay).
         var days: [ReadinessForecastDay] = []
         for d in 1...7 {
             let xDay = Double(13 + d)  // extends the trend beyond the 14-day window
-            
-            // 1. Base prediction from the historical regression
-            var basePrediction = reg.slope * xDay + reg.intercept
+            var predicted = reg.slope * xDay + reg.intercept
 
-            // 2. Apply general ACWR load trends
             if let acwr {
                 if acwr > 1.3 {
-                    basePrediction -= basePrediction * 0.03 * Double(d)  // decay 3%/day under overload
+                    predicted -= predicted * 0.03 * Double(d)  // decay 3%/day under overload
                 } else if acwr < 0.8 {
-                    basePrediction += basePrediction * 0.02 * Double(d)  // improve 2%/day during underload
+                    predicted += predicted * 0.02 * Double(d)  // improve 2%/day during underload
                 } else {
                     // Homeostasis: in the sweet spot, naturally drift back towards optimal baseline (75)
-                    let pull = (75.0 - basePrediction) * 0.10 * Double(d)
-                    basePrediction += pull
+                    predicted += (75.0 - predicted) * 0.10 * Double(d)
                 }
             } else {
-                let pull = (75.0 - basePrediction) * 0.10 * Double(d)
-                basePrediction += pull
+                predicted += (75.0 - predicted) * 0.10 * Double(d)
             }
-            
-            // 3. Blend historical trajectory with our live day-by-day simulation
-            // We pull the simulated score back toward the baseline prediction to mimic recovery
-            simulatedScore = (simulatedScore + basePrediction) / 2.0
-            
-            // Subtract the fatigue we accumulated from yesterday's simulated workout
-            simulatedScore -= cumulativeSimulatedFatigue
-            cumulativeSimulatedFatigue = 0.0 // reset for today
 
-            let clamped = max(20.0, min(100.0, simulatedScore))
+            let clamped = max(20.0, min(100.0, predicted))
             let sigma = min(15.0, baselineSigma * sqrt(Double(d)))
             let lo = max(0,   Int((clamped - sigma).rounded()))
             let hi = min(100, Int((clamped + sigma).rounded()))
@@ -1021,16 +1008,12 @@ class ReadinessRepository: ObservableObject {
             let score = Int(clamped.rounded())
             if score >= 80 {
                 coaching = "Hard effort OK"
-                cumulativeSimulatedFatigue = 25.0 // Doing a hard effort crashes readiness tomorrow
             } else if score >= 70 {
                 coaching = "Moderate training"
-                cumulativeSimulatedFatigue = 10.0 // Moderate effort causes mild fatigue
             } else if score >= 60 {
                 coaching = "Easy only"
-                cumulativeSimulatedFatigue = -10.0 // Active recovery builds readiness
             } else {
                 coaching = "Rest recommended"
-                cumulativeSimulatedFatigue = -20.0 // Complete rest heavily builds readiness
             }
 
             let date = calendar.date(byAdding: .day, value: d, to: calendar.startOfDay(for: Date())) ?? Date()
