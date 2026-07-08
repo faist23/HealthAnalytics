@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.10.0] - 2026-07-08
+
+The vocabulary release. The score formerly labeled "Readiness" measures how recovered your body is — so now it says so. "Recovery" everywhere, and the only place you'll see "ready" is the Coach's verdict, where it belongs. Plus the Coach now actually warns you when your training load is risky, and the 7-day forecast stopped hallucinating sawtooth workouts you never planned.
+
+### Changed
+- The Readiness tab is now the **Recovery** tab — same battery icon, honest name. Score cards, gauges, charts, onboarding, and explainer sheets all say "Recovery" / "Recovery Score".
+- Coach messages speak plain English about recovery ("You're 69% recovered — enough for moderate work") instead of score-speak; "ready" verdict language now appears only on the Coach tab.
+- Load tab captions describe what your training-load ratio means ("You've done far more in the last week than your body is conditioned for") instead of issuing commands — advice stays with the Coach.
+- Recovery tab summary no longer overclaims "well-recovered across the board"; it reports what the recovery signals actually show.
+- The ACWR explainer sheet is titled "Training Load Explained" (it explains load, not readiness).
+
+### Fixed
+- The Coach's injury-risk warning now fires: when your recovery looks fine but your training load spikes into high-risk territory, the Coach says so ("You're 69% recovered, but injury risk is elevated from load spikes") instead of recommending moderate training. A type mismatch had silently disabled this branch in production.
+- The 7-day forecast no longer oscillates: a simulated-workout feedback loop could turn a flat recovery history into a sawtooth (75 → 65 → 84 → 53) prediction. The forecast is back to a smooth trend from your actual history plus your current load ratio.
+- The test target compiles again (a stale tab-constant reference had broken it since v0.1.9.0), and 21 new tests cover both Master Coach message paths, the injury-risk levels, and the forecast's clamp/homeostasis behavior.
+
 ## [0.1.9.0] - 2026-06-07
 
 The Intelligence redesign. Renamed the tab, killed clutter that didn't earn its slot, added a 5th tab (Labs) for experimental signals so they're discoverable without competing for primary attention. Plus a round of ACWR chart corrections and UX repairs that surfaced during the redesign.
