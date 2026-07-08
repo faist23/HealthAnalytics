@@ -108,9 +108,9 @@ struct SupportingMetricsCard: View {
                     selectedConfig = makeConfig(signal: .sleep)
                 }
 
-                // Readiness — composite ML estimate
+                // Recovery — composite ML estimate
                 MetricTileView(
-                    title: "Readiness",
+                    title: "Recovery",
                     value: "\(metrics.readinessScore)",
                     status: metrics.readinessStatus,
                     icon: "heart.fill",
@@ -297,7 +297,7 @@ struct SupportingMetricsCard: View {
         case .biologicalAge:
             return MetricDisplayConfig(
                 id: "readiness",
-                title: "Readiness Score",
+                title: "Recovery Score",
                 icon: "heart.fill",
                 currentValueFormatted: "\(metrics.readinessScore)",
                 status: metrics.readinessStatus,
@@ -358,8 +358,8 @@ struct SupportingMetricsCard: View {
     private var readinessConditionReasoning: String {
         switch metrics.readinessStatus {
         case .excellent: return "All systems are green. Your biometrics and training load are perfectly aligned for peak performance."
-        case .good: return "Your overall readiness is strong. You have the capacity for quality training efforts today."
-        case .moderate: return "Readiness is tempered. Some metrics suggest you are still adapting to recent stress or training load."
+        case .good: return "Your overall recovery is strong. You have the capacity for quality training efforts today."
+        case .moderate: return "Recovery is tempered. Some metrics suggest you are still adapting to recent stress or training load."
         case .needsAttention: return "Your body is signaling a need for rest. Multiple recovery markers are suppressed, and the risk of injury or illness is elevated."
         }
     }
@@ -458,7 +458,7 @@ private struct DetailedReadinessExplanationView: View {
 
                     // Introduction
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Your readiness score combines five validated health signals — each grounded in peer-reviewed sport science.")
+                        Text("Your recovery score combines five validated health signals — each grounded in peer-reviewed sport science.")
                             .font(.body)
                             .foregroundStyle(Color.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -515,7 +515,7 @@ private struct DetailedReadinessExplanationView: View {
                 }
                 .padding(.vertical)
             }
-            .navigationTitle("Readiness Explained")
+            .navigationTitle("Recovery Explained")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

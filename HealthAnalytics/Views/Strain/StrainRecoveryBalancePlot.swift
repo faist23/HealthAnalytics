@@ -27,8 +27,8 @@ struct StrainRecoveryBalancePlot: View {
                     
                     // Optimal Zone
                     RectangleMark(
-                        xStart: .value("Readiness Min", 40),
-                        xEnd: .value("Readiness Max", 100),
+                        xStart: .value("Recovery Min", 40),
+                        xEnd: .value("Recovery Max", 100),
                         yStart: .value("ACWR Min", 0.8),
                         yEnd: .value("ACWR Max", 1.3)
                     )
@@ -41,8 +41,8 @@ struct StrainRecoveryBalancePlot: View {
                     
                     // Overreaching Zone
                     RectangleMark(
-                        xStart: .value("Readiness Min", 0),
-                        xEnd: .value("Readiness Max", 100),
+                        xStart: .value("Recovery Min", 0),
+                        xEnd: .value("Recovery Max", 100),
                         yStart: .value("ACWR Min", 1.3),
                         yEnd: .value("ACWR Max", 2.0)
                     )
@@ -56,8 +56,8 @@ struct StrainRecoveryBalancePlot: View {
                     
                     // Underreaching Zone
                     RectangleMark(
-                        xStart: .value("Readiness Min", 0),
-                        xEnd: .value("Readiness Max", 100),
+                        xStart: .value("Recovery Min", 0),
+                        xEnd: .value("Recovery Max", 100),
                         yStart: .value("ACWR Min", 0.0),
                         yEnd: .value("ACWR Max", 0.8)
                     )
@@ -69,10 +69,10 @@ struct StrainRecoveryBalancePlot: View {
                             .padding(.bottom, 4)
                     }
                     
-                    // Rest Zone (Low readiness, any ACWR but ideally should be low)
+                    // Rest Zone (Low recovery, any ACWR but ideally should be low)
                     RectangleMark(
-                        xStart: .value("Readiness Min", 0),
-                        xEnd: .value("Readiness Max", 40),
+                        xStart: .value("Recovery Min", 0),
+                        xEnd: .value("Recovery Max", 40),
                         yStart: .value("ACWR Min", 0.8),
                         yEnd: .value("ACWR Max", 1.3)
                     )
@@ -114,7 +114,7 @@ struct StrainRecoveryBalancePlot: View {
                 // Summary text
                 HStack {
                     VStack(alignment: .leading) {
-                        Text("Recovery (Readiness)")
+                        Text("Recovery")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text("\(readiness)")
@@ -152,7 +152,7 @@ struct StrainRecoveryBalancePlot: View {
                 status: (currentACWR ?? 0) >= 0.8 && (currentACWR ?? 0) <= 1.3 ? .good : .needsAttention,
                 citation: nil,
                 thresholdBarValue: nil,
-                conditionReasoning: "Balancing your daily strain against your body's readiness is key to consistent progression and injury prevention.",
+                conditionReasoning: "Balancing your daily strain against your body's recovery is key to consistent progression and injury prevention.",
                 guidanceText: "Aim to keep your dot in the 'Optimal' zone. If you are 'Overreaching', prioritize active recovery or rest. If 'Underreaching', consider adding intensity to your workouts.",
                 detailedInsight: nil
             ))

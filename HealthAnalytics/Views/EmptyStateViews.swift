@@ -185,7 +185,7 @@ struct ReadinessEmptyState: View {
                     .font(.title2)
                     .fontWeight(.bold)
                 
-                Text("We need a few days of data to calculate your personalized readiness score")
+                Text("We need a few days of data to calculate your personalized recovery score")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

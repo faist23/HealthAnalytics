@@ -632,7 +632,7 @@ actor TrainingDNAAnalyzer {
             patternType: .backToBackCrash,
             confidenceNumerator: yesVotes.count,
             confidenceDenominator: sequences.count,
-            evidenceSummary: "Your readiness drops an average of \(avgDropInt) points the day after back-to-back training sessions. Seen in \(yesVotes.count) of \(sequences.count) sequences over the last 90 days.",
+            evidenceSummary: "Your recovery score drops an average of \(avgDropInt) points the day after back-to-back training sessions. Seen in \(yesVotes.count) of \(sequences.count) sequences over the last 90 days.",
             citationKey: PatternType.backToBackCrash.citationKey,
             instanceDates: instanceDates,
             coachingResponse: "Separate hard sessions by at least one recovery day. If you must train back-to-back, keep day 2 at zone 1–2 intensity only.",

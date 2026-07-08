@@ -1269,7 +1269,7 @@ struct ACWRInfoSheet: View {
                     .padding(.vertical, .spacingSm)
                 }
             }
-            .navigationTitle("Training Readiness")
+            .navigationTitle("Training Load Explained")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 Button("Done") { dismiss() }

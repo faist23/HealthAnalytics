@@ -676,7 +676,7 @@ struct FitnessTrendInfoSheet: View {
                         
                         Text("**Training Balance:** Research shows combining cardiorespiratory fitness AND strength training reduces mortality more than either alone.")
                         
-                        Text("**HRV & Recovery:** Real-time markers of your body's readiness and adaptation.")
+                        Text("**HRV & Recovery:** Real-time markers of your body's recovery state and adaptation.")
                         
                         Text("**Training Load (ACWR):** Proven injury risk predictor.")
                     }
@@ -712,7 +712,7 @@ struct FitnessTrendInfoSheet: View {
                 }
                 
                 Section(header: Text("Bottom Line")) {
-                    Text("VO2max is a useful metric but not the complete picture. This app uses a multi-factorial approach based on current research, emphasizing the combination of multiple health markers for a more complete view of your fitness and readiness.")
+                    Text("VO2max is a useful metric but not the complete picture. This app uses a multi-factorial approach based on current research, emphasizing the combination of multiple health markers for a more complete view of your fitness and recovery.")
                         .fontWeight(.semibold)
                 }
             }

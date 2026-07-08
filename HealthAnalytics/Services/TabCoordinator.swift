@@ -9,10 +9,9 @@ final class TabCoordinator: ObservableObject {
     // Tab indices must match the .tag(N) values in MainTabView.swift.
     // v0.1.9.0 Intelligence redesign: Intelligence renamed → Patterns and a new
     // Labs tab added as the 5th surface for experimental features. patternsTab
-    // and intelligenceTab are intentional aliases — both point at tag 3 so
-    // existing call sites (RecoveryTabView's pattern deep-link) keep working
-    // without churn. The intelligenceTab alias can be removed once we're
-    // confident there are no external consumers.
+    // and intelligenceTab are intentional aliases — both point at tag 3. No
+    // in-repo call sites reference intelligenceTab anymore; it is retained
+    // solely for the CLAUDE.md deprecation window (remove after v0.2.0).
     static let coachTab        = 0
     static let readinessTab    = 1
     static let loadTab         = 2

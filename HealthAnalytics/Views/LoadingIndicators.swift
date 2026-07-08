@@ -267,7 +267,7 @@ struct ShimmerLoadingView: View {
         Color.statusRest.opacity(0.3)
             .ignoresSafeArea()
         
-        LoadingOverlay(message: "Analyzing readiness...")
+        LoadingOverlay(message: "Analyzing recovery...")
     }
 }
 

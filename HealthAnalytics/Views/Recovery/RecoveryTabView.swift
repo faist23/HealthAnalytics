@@ -52,7 +52,7 @@ struct RecoveryTabView: View {
                                     
                                     // 1. Whoop Circular Gauge
                                     CircularGauge(
-                                        title: "READINESS",
+                                        title: "RECOVERY",
                                         value: "\(readiness.score)%",
                                         subtitle: levelLabel,
                                         progress: Double(readiness.score) / 100.0,
@@ -63,7 +63,7 @@ struct RecoveryTabView: View {
                                     MetricList {
                                         GaugeMetricRow(
                                             icon: "waveform.path.ecg",
-                                            title: "READINESS SCORE",
+                                            title: "OVERNIGHT RECOVERY",
                                             value: "\(readiness.breakdown.recoveryScore)/40",
                                             trendIcon: "arrowtriangle.up.fill",
                                             trendColor: .green
@@ -71,7 +71,7 @@ struct RecoveryTabView: View {
                                         Divider().background(Color.white.opacity(0.1))
                                         GaugeMetricRow(
                                             icon: "figure.run",
-                                            title: "CNS/AUTONOMIC READINESS",
+                                            title: "CNS/AUTONOMIC STATE",
                                             value: "\(readiness.breakdown.fitnessScore)/30",
                                             trendIcon: "arrowtriangle.up.fill",
                                             trendColor: .green
@@ -92,7 +92,7 @@ struct RecoveryTabView: View {
                                     // what the score is, not what to do (Phase 2.4).
                                     InsightBox(
                                         text: readinessDescription(for: readiness),
-                                        actionText: "BREAK DOWN MY READINESS",
+                                        actionText: "BREAK DOWN MY RECOVERY",
                                         action: { showBreakdown = true },
                                         navigationText: topActivePattern.map { "See \($0.patternType.displayName) in Patterns →" },
                                         navigationAction: topActivePattern.map { pattern in
@@ -201,7 +201,7 @@ struct RecoveryTabView: View {
         let weakest = signals.min(by: { $0.ratio < $1.ratio })?.name ?? "overnight recovery"
 
         if readiness.score >= 67 {
-            return "You're well-recovered across the board. Sleep, autonomic, and muscle signals all land in your normal range."
+            return "Your recovery signals look good. Sleep, autonomic, and muscle signals all land in your normal range."
         }
         if readiness.score >= 34 {
             return "You're in middle ground today. The signal pulling things down is your \(weakest)."

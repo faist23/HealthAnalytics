@@ -67,7 +67,7 @@ actor PatternNotificationService {
         case .sleepFragmentation:
             return "Your sleep fragments after sustained high training loads. Open the app to see the pattern."
         case .backToBackCrash:
-            return "Your readiness drops predictably after back-to-back hard sessions. Open the app to see your pattern."
+            return "Your recovery drops predictably after back-to-back hard sessions. Open the app to see your pattern."
         case .performancePeak:
             return "You're in peak form \u{1F3C5} — great week for a race or benchmark effort."
         case .tapering:

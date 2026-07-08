@@ -92,7 +92,7 @@ struct TrainingSignatureCard: View {
             Text("14-Day Signature")
                 .font(.cardTitle)
                 .foregroundStyle(Color.textPrimary)
-            Text("No consistent crash pattern detected. Your readiness holds up well after back-to-back sessions.")
+            Text("No consistent crash pattern detected. Your recovery holds up well after back-to-back sessions.")
                 .font(.coachGuidance)
                 .foregroundStyle(Color.textTertiary)
                 .multilineTextAlignment(.center)
@@ -250,7 +250,7 @@ struct TrainingSignatureCard: View {
 
     private func accessibilityLabel(for pattern: TrainingPattern) -> String {
         let avgDrop = computeAvgDrop(trajectories: buildTrajectories(from: pattern))
-        return "Training signature pattern. \(pattern.confidenceNumerator) of \(pattern.confidenceDenominator) sequences confirmed. Average readiness drop: \(Int(avgDrop.rounded())) points."
+        return "Training signature pattern. \(pattern.confidenceNumerator) of \(pattern.confidenceDenominator) sequences confirmed. Average recovery drop: \(Int(avgDrop.rounded())) points."
     }
 }
 

@@ -334,11 +334,11 @@ struct DailyRecommendationService {
         if let score = readinessScore {
             if score < 50 && (status == .moderate || status == .quality || status == .goHard) {
                 // Readiness says rest even if HRV looks normal
-                reasoning.append("Readiness score low (\(score))")
+                reasoning.append("Recovery score low (\(score))")
                 if score < 30 {
                     status = .rest
-                    headline = "Listen to Readiness: Rest"
-                    guidance = "Despite HRV status, your overall readiness score is critically low. Prioritize complete rest today."
+                    headline = "Listen to Your Recovery: Rest"
+                    guidance = "Despite HRV status, your overall recovery score is critically low. Prioritize complete rest today."
                 }
             }
         }
@@ -365,9 +365,9 @@ struct DailyRecommendationService {
             
             if status == .goHard || status == .quality {
                 if hasHardWork {
-                    guidance += "Excellent work—you capitalized on your high readiness with a quality session. Focus on immediate recovery now."
+                    guidance += "Excellent work—you capitalized on a well-recovered day with a quality session. Focus on immediate recovery now."
                 } else {
-                    guidance += "You've completed some work for today. Since your readiness is high, ensure this provided enough stimulus or prepare for a harder session tomorrow."
+                    guidance += "You've completed some work for today. Since you're well recovered, ensure this provided enough stimulus or prepare for a harder session tomorrow."
                 }
             } else if status == .easy || status == .rest {
                 if hasHardWork {

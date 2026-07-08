@@ -87,11 +87,11 @@ struct HolisticHealthDashboard: View {
                         statusColor: metrics.sleepStatus.color
                     )
                     
-                    // Readiness
+                    // Recovery
                     HealthMetricTile(
                         icon: "heart.fill",
                         iconColor: metrics.readinessStatus.color,
-                        title: "Readiness",
+                        title: "Recovery",
                         value: "\(metrics.readinessScore)",
                         unit: "/100",
                         status: metrics.readinessStatus.label,

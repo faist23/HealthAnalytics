@@ -116,7 +116,7 @@ struct TodayReadinessCard: View {
                             gradientForScore(data.readinessScore ?? 0)
                         )
                     
-                    Text("Readiness")
+                    Text("Recovery")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -657,7 +657,7 @@ struct WeeklySummaryCard: View {
             
             HStack(spacing: 20) {
                 VStack(alignment: .leading, spacing: .spacingXs) {
-                    Text("Average Readiness")
+                    Text("Average Recovery")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     

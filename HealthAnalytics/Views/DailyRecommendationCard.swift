@@ -52,7 +52,7 @@ struct DailyRecommendationCard: View {
                     
                     Spacer()
                     
-                    Text("\(intraDay.currentScore) Readiness")
+                    Text("\(intraDay.currentScore) Recovery")
                         .font(.caption2)
                         .fontWeight(.bold)
                         .padding(.horizontal, 6)

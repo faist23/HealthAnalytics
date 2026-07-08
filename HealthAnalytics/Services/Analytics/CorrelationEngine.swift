@@ -854,7 +854,7 @@ class CorrelationEngine {
                 }
                 
                 if let readiness = dailyReadinessScores[workoutDay], readiness >= 70 {
-                    contributors.append("+ High Readiness Score (\(readiness)%)")
+                    contributors.append("+ High Recovery Score (\(readiness)%)")
                 }
                 
                 // Fallback contributor if nothing else popped

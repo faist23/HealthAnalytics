@@ -17,7 +17,7 @@ extension Font {
 
     // MARK: - Headings
 
-    /// Tab / screen-level headings ("Today", "Readiness", "Training"). SF Pro Display, 28pt Semibold.
+    /// Tab / screen-level headings ("Today", "Recovery", "Training"). SF Pro Display, 28pt Semibold.
     static let sectionTitle = Font.system(size: 28, weight: .semibold, design: .default)
 
     /// Card headers ("Health Signals", "Training Load"). SF Pro Text, 17pt Semibold.
