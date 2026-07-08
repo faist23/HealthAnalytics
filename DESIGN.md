@@ -27,7 +27,7 @@
 ### Brand Accent
 | Token | Hex | Rationale |
 |-------|-----|-----------|
-| `accent` | `#7C5CFC` | Electric violet — signals intelligence and precision. Used on: score ring (high readiness), coaching border stripe, CTA buttons, active tab indicator, progress bars |
+| `accent` | `#7C5CFC` | Electric violet — signals intelligence and precision. Used on: score ring (high recovery), coaching border stripe, CTA buttons, active tab indicator, progress bars |
 | `accentDim` | `rgba(124,92,252,0.12)` | Accent tinted background for coach recommendation cards |
 | `accentBorder` | `rgba(124,92,252,0.22)` | Accent card border |
 
@@ -55,7 +55,7 @@ All typography uses the SF Pro system family — no external font loading requir
 ### Role Assignments
 | Role | SF Pro Variant | Size | Weight | Usage |
 |------|---------------|------|--------|-------|
-| Hero Numeral | SF Pro Rounded | 64pt | Bold | Readiness score. One per screen. This is the first thing the eye lands on. |
+| Hero Numeral | SF Pro Rounded | 64pt | Bold | Recovery score. One per screen. This is the first thing the eye lands on. |
 | Section Title | SF Pro Display | 28pt | Semibold | Tab/screen-level headings: "Today", "Recovery", "Training" |
 | Card Title | SF Pro Text | 17pt | Semibold | Card headers: "Health Signals", "Training Load", "HRV Trend" |
 | Coach Guidance | SF Pro Text | 15pt | Regular | The coaching voice (`MasterCoachSummary`). Sentence-level recommendations explicitly addressing morning-vs-current delta. Preceded by a 3pt `Color.accent` leading border with 8pt padding. |

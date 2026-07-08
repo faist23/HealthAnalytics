@@ -17,7 +17,7 @@ Underneath both: the `ReadinessRepository` was built as the single source of tru
 | # | Decision |
 |---|----------|
 | 1 | `holisticMetrics` becomes a field on `UnifiedReadiness`; `ContentView.swift` is deleted (confirmed dead — unreachable from `@main`, only consumer in `CoachTabView` will pull from the repo) |
-| 2 | Tab names unchanged (Coach / Readiness / Load / Intelligence). Defer renames. |
+| 2 | Tab names unchanged (Coach / Readiness / Load / Intelligence). Defer renames. *(Superseded: Intelligence → Patterns shipped v0.1.9.0; user-facing Readiness → Recovery shipped v0.1.10.0.)* |
 | 3 | Intelligence tab content redistribution planned (Patterns → Recovery, Performance Audit → Load) but **deferred** before shipping — no usage data to justify disturbing the tab. See Phase 2.5 below. |
 | 4 | No in-flight conflicting branches. `feat/intelligence-tab` is a stale already-merged branch. |
 | 5 | `DashboardViewModel` kept as thin adapter (4 published fields + repo subscription). |
