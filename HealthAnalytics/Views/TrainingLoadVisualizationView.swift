@@ -46,9 +46,23 @@ struct TrainingLoadVisualizationView: View {
                 // Content based on selected tab
                 switch selectedTab {
                 case .timeSeries:
-                    ACWRTimeSeriesChart(data: data.timeSeriesData, dangerZones: data.dangerZones)
+                    if data.timeSeriesData.isEmpty {
+                        // ACWR needs a full 28-day chronic window before it means
+                        // anything; the series is intentionally empty until then
+                        // (see TrainingLoadVisualizationService cold-start guard).
+                        // Show why the chart is blank instead of an empty plot.
+                        ContentUnavailableView(
+                            "Building Your Load History",
+                            systemImage: "chart.line.uptrend.xyaxis",
+                            description: Text("Training load compares your recent effort to your 28-day baseline. Keep logging workouts — your ACWR trend appears once you have about four weeks of history.")
+                        )
                         .frame(height: 300)
                         .padding(.horizontal)
+                    } else {
+                        ACWRTimeSeriesChart(data: data.timeSeriesData, dangerZones: data.dangerZones)
+                            .frame(height: 300)
+                            .padding(.horizontal)
+                    }
                     
                 case .breakdown:
                     IntentBreakdownView(breakdown: data.intentBreakdown)
@@ -454,8 +468,8 @@ struct DangerZonesSection: View {
             }
         }
         .padding()
-        .background(.orange.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(Color.statusWarning.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: .radiusMd))
     }
 }
 
@@ -487,7 +501,7 @@ struct DangerZoneCard: View {
             Spacer()
         }
         .padding()
-        .background(.white.opacity(0.5))
+        .background(Color.surfaceRaised)
         .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
     }
 }

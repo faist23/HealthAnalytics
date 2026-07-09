@@ -27,22 +27,25 @@ struct UnifiedTrainingLoadCard: View {
     
     private var statusColor: Color {
         switch assessment.trend {
+        case .overreaching: return .red
         case .building: return .orange
         case .optimal: return .green
         case .detraining: return .blue
         }
     }
-    
+
     private var statusLabel: String {
         switch assessment.trend {
+        case .overreaching: return "Overreaching"
         case .building: return "Building"
         case .optimal: return "Optimal"
         case .detraining: return "Detraining"
         }
     }
-    
+
     private var statusEmoji: String {
         switch assessment.trend {
+        case .overreaching: return "🚨"
         case .building: return "⚠️"
         case .optimal: return "✅"
         case .detraining: return "📉"

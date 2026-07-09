@@ -392,6 +392,7 @@ struct InsightsView: View {
 
     private func trendLabel(for trend: PredictiveReadinessService.ReadinessAssessment.Trend) -> String {
         switch trend {
+        case .overreaching: return "Overreaching"
         case .building: return "Building"
         case .optimal: return "Optimal"
         case .detraining: return "Detraining"
@@ -400,6 +401,7 @@ struct InsightsView: View {
 
     private func trendColor(for trend: PredictiveReadinessService.ReadinessAssessment.Trend) -> Color {
         switch trend {
+        case .overreaching: return .red
         case .building: return .orange
         case .optimal: return .green
         case .detraining: return .blue
@@ -1269,7 +1271,7 @@ struct ACWRInfoSheet: View {
                     .padding(.vertical, .spacingSm)
                 }
             }
-            .navigationTitle("Training Readiness")
+            .navigationTitle("Training Load Explained")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 Button("Done") { dismiss() }

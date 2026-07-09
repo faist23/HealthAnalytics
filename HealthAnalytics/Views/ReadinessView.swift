@@ -21,7 +21,7 @@ struct ReadinessView: View {
 
     var body: some View {
         mainView
-            .navigationTitle("Readiness")
+            .navigationTitle("Recovery")
             .toolbar { toolbarItems }
             // Deprecated view: analysis is now driven entirely by ReadinessRepository.
             // Period changes don't re-trigger because analyze() is gone. This view is
@@ -149,7 +149,7 @@ struct ReadinessView: View {
             
             // Loading overlay - must be AFTER ScrollView to appear on top
             if viewModel.isLoading || isFirstLoad {
-                LoadingOverlay(message: "Analyzing your readiness...")
+                LoadingOverlay(message: "Analyzing your recovery...")
             }
         }
     }
@@ -677,7 +677,7 @@ struct EmptyReadinessView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
             
-            Text("Keep tracking your workouts, sleep, and recovery metrics. We'll analyze your patterns and provide personalized readiness insights.")
+            Text("Keep tracking your workouts, sleep, and recovery metrics. We'll analyze your patterns and provide personalized recovery insights.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

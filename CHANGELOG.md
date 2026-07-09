@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.10.0] - 2026-07-09
+
+The vocabulary release. The score formerly labeled "Readiness" measures how recovered your body is — so now it says so. "Recovery" everywhere, and the only place you'll see "ready" is the Coach's verdict, where it belongs. Plus the Coach now actually warns you when your training load is risky, the 7-day forecast stopped hallucinating sawtooth workouts you never planned, and the Load tab now tells one consistent story about your ACWR instead of three contradictory ones.
+
+### Changed
+- The Readiness tab is now the **Recovery** tab — same battery icon, honest name. Score cards, gauges, charts, onboarding, and explainer sheets all say "Recovery" / "Recovery Score".
+- Coach messages speak plain English about recovery ("You're 69% recovered — enough for moderate work") instead of score-speak; "ready" verdict language now appears only on the Coach tab.
+- Load tab captions describe what your training-load ratio means ("You've done far more in the last week than your body is conditioned for") instead of issuing commands — advice stays with the Coach.
+- Recovery tab summary no longer overclaims "well-recovered across the board"; it reports what the recovery signals actually show.
+- The ACWR explainer sheet is titled "Training Load Explained" (it explains load, not readiness).
+
+### Fixed
+- The Coach's injury-risk warning now fires: when your recovery looks fine but your training load spikes into high-risk territory, the Coach says so ("You're 69% recovered, but injury risk is elevated from load spikes") instead of recommending moderate training. A type mismatch had silently disabled this branch in production.
+- The 7-day forecast no longer oscillates: a simulated-workout feedback loop could turn a flat recovery history into a sawtooth (75 → 65 → 84 → 53) prediction. The forecast is back to a smooth trend from your actual history plus your current load ratio.
+- The test target compiles again (a stale tab-constant reference had broken it since v0.1.9.0), and 21 new tests cover both Master Coach message paths, the injury-risk levels, and the forecast's clamp/homeostasis behavior.
+- The Load tab now reports one ACWR everywhere. The main tab, "Load details", and "Extended Analysis" used to disagree (1.33 "Building" vs 1.80 "Overreaching") because Extended Analysis ran its own crude duration-only load math that ignored power, zones, and today's workout. Every surface now uses the same training-load model, and "Overreaching" is a real status tier (ACWR above 1.5) instead of everything above 1.3 reading as "Building".
+- The ACWR trend chart no longer opens with a fake spike to 4.0. Early days whose 28-day baseline predated your data were fabricating that ratio by construction; the chart now begins once a real baseline exists. The Extended Analysis chart also reads a full 118 days of history so its "90-day" view actually shows 90 days rather than 62.
+- New users with under four weeks of training history see a "Building Your Load History" message on the load chart instead of a blank plot.
+- Overload-period cards in Extended Analysis are readable again — white text now sits on a dark card instead of a light-gray wash.
+
 ## [0.1.9.0] - 2026-06-07
 
 The Intelligence redesign. Renamed the tab, killed clutter that didn't earn its slot, added a 5th tab (Labs) for experimental signals so they're discoverable without competing for primary attention. Plus a round of ACWR chart corrections and UX repairs that surfaced during the redesign.

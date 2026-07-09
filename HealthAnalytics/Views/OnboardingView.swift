@@ -138,7 +138,7 @@ struct WelcomeStep: View {
                 ValuePropRow(
                     icon: "bolt.heart.fill",
                     color: .orange,
-                    title: "Readiness Scores",
+                    title: "Recovery Scores",
                     description: "Know when to push hard or take it easy"
                 )
             }
@@ -528,7 +528,7 @@ struct FeatureTourStep: View {
         (
             "bolt.heart.fill",
             .orange,
-            "Readiness Score",
+            "Recovery Score",
             "Get personalized recommendations on when to train hard or recover"
         ),
         (

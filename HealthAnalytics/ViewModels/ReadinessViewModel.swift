@@ -54,7 +54,7 @@ class ReadinessViewModel: ObservableObject {
                     return
                 }
                 self.errorMessage = error.contains("Insufficient data")
-                    ? "Add some workouts and sleep data to see your readiness score."
+                    ? "Add some workouts and sleep data to see your recovery score."
                     : "Something went wrong. Pull to refresh or try again later."
             }
 

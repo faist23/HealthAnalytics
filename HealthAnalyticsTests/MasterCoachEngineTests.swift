@@ -16,12 +16,12 @@ final class MasterCoachEngineTests: XCTestCase {
             currentScore: 42,
             nextDayForecast: "Rest recommended",
             acwr: 1.1,
-            injuryRisk: "Low"
+            injuryRisk: .low
         )
         let message = await MasterCoachEngine.generateMessage(state: state)
 
         XCTAssertTrue(message.contains("woke up primed at 85%"), "Message should acknowledge morning score: \(message)")
-        XCTAssertTrue(message.contains("Current readiness is 42%"), "Message should acknowledge current score: \(message)")
+        XCTAssertTrue(message.contains("down to 42%"), "Message should acknowledge current score: \(message)")
         XCTAssertTrue(message.contains("take it easy"), "Message should advise rest: \(message)")
         XCTAssertTrue(message.contains("rest day tomorrow"), "Message should include forecast: \(message)")
     }
@@ -32,7 +32,7 @@ final class MasterCoachEngineTests: XCTestCase {
             currentScore: 85,
             nextDayForecast: "Hard effort OK",
             acwr: 1.6,
-            injuryRisk: "High"
+            injuryRisk: .high
         )
         let message = await MasterCoachEngine.generateMessage(state: state)
 
@@ -46,11 +46,11 @@ final class MasterCoachEngineTests: XCTestCase {
             currentScore: 75,
             nextDayForecast: "Moderate training",
             acwr: 1.0,
-            injuryRisk: "Low"
+            injuryRisk: .low
         )
         let message = await MasterCoachEngine.generateMessage(state: state)
 
-        XCTAssertTrue(message.contains("readiness is stable (75%)"), "Message should acknowledge stable readiness: \(message)")
+        XCTAssertTrue(message.contains("75% recovered"), "Message should acknowledge recovery level: \(message)")
         XCTAssertTrue(message.contains("expect moderate training tomorrow"), "Message should include forecast: \(message)")
     }
 
@@ -63,14 +63,14 @@ final class MasterCoachEngineTests: XCTestCase {
             currentScore: 88,
             nextDayForecast: "Hard effort OK",
             acwr: 1.0,
-            injuryRisk: "Low",
+            injuryRisk: .low,
             activePatterns: ["hrvPrecursor"]
         )
         let message = await MasterCoachEngine.generateMessage(state: state)
 
         XCTAssertTrue(message.contains("early warning pattern"), "HRV precursor must override positive readiness: \(message)")
         XCTAssertTrue(message.contains("prioritize sleep"), "HRV precursor must recommend sleep: \(message)")
-        XCTAssertFalse(message.contains("nervous system is primed"), "Should not give positive message under HRV precursor: \(message)")
+        XCTAssertFalse(message.contains("ready for intensity"), "Should not give positive message under HRV precursor: \(message)")
     }
 
     func testPerformancePeakUpgradesExcellentReadiness() async {
@@ -79,7 +79,7 @@ final class MasterCoachEngineTests: XCTestCase {
             currentScore: 85,
             nextDayForecast: nil,
             acwr: 1.1,
-            injuryRisk: "Low",
+            injuryRisk: .low,
             activePatterns: ["performancePeak"]
         )
         let message = await MasterCoachEngine.generateMessage(state: state)
@@ -94,7 +94,7 @@ final class MasterCoachEngineTests: XCTestCase {
             currentScore: 81,
             nextDayForecast: nil,
             acwr: 0.75,
-            injuryRisk: "Low",
+            injuryRisk: .low,
             activePatterns: ["tapering"]
         )
         let message = await MasterCoachEngine.generateMessage(state: state)
@@ -109,7 +109,7 @@ final class MasterCoachEngineTests: XCTestCase {
             currentScore: 65,
             nextDayForecast: nil,
             acwr: 1.2,
-            injuryRisk: "Low",
+            injuryRisk: .low,
             activePatterns: ["backToBackCrash"]
         )
         let message = await MasterCoachEngine.generateMessage(state: state)
@@ -124,12 +124,207 @@ final class MasterCoachEngineTests: XCTestCase {
             currentScore: 58,
             nextDayForecast: nil,
             acwr: 1.0,
-            injuryRisk: "Low",
+            injuryRisk: .low,
             activePatterns: ["sleepFragmentation"]
         )
         let message = await MasterCoachEngine.generateMessage(state: state)
 
         XCTAssertTrue(message.contains("fragmenting"), "Sleep fragmentation pattern should add sleep note: \(message)")
         XCTAssertTrue(message.contains("sleep hygiene"), "Sleep note should mention hygiene: \(message)")
+    }
+
+    // MARK: - Enum migration + uncovered primary-path branches
+
+    func testVeryHighInjuryRiskOverride() async {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 85,
+            currentScore: 85,
+            nextDayForecast: nil,
+            acwr: 1.8,
+            injuryRisk: .veryHigh
+        )
+        let message = await MasterCoachEngine.generateMessage(state: state)
+
+        XCTAssertTrue(message.contains("injury risk is elevated"), ".veryHigh must trigger the injury-risk override like .high: \(message)")
+    }
+
+    func testModerateInjuryRiskDoesNotOverride() async {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 85,
+            currentScore: 85,
+            nextDayForecast: nil,
+            acwr: 1.2,
+            injuryRisk: .moderate
+        )
+        let message = await MasterCoachEngine.generateMessage(state: state)
+
+        XCTAssertFalse(message.contains("injury risk is elevated"), ".moderate must not trigger the override: \(message)")
+    }
+
+    func testExcellentReadinessPlain() async {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 88,
+            currentScore: 85,
+            nextDayForecast: nil,
+            acwr: 1.0,
+            injuryRisk: .low
+        )
+        let message = await MasterCoachEngine.generateMessage(state: state)
+
+        XCTAssertTrue(message.contains("recovery is excellent (85%)"), "Score >= 80 with no patterns should report excellent recovery: \(message)")
+        XCTAssertTrue(message.contains("ready for intensity"), "Excellent plain branch carries the ready verdict: \(message)")
+    }
+
+    func testSolidReadinessWithPeakPattern() async {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 72,
+            currentScore: 70,
+            nextDayForecast: nil,
+            acwr: 1.0,
+            injuryRisk: .low,
+            activePatterns: ["performancePeak"]
+        )
+        let message = await MasterCoachEngine.generateMessage(state: state)
+
+        XCTAssertTrue(message.contains("recovery is solid (70%)"), "Score 60-79 with peak pattern should report solid recovery: \(message)")
+        XCTAssertTrue(message.contains("peak form window forming"), "Peak pattern should upgrade the solid branch: \(message)")
+    }
+
+    func testSolidReadinessWithTaperPattern() async {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 72,
+            currentScore: 70,
+            nextDayForecast: nil,
+            acwr: 0.75,
+            injuryRisk: .low,
+            activePatterns: ["tapering"]
+        )
+        let message = await MasterCoachEngine.generateMessage(state: state)
+
+        XCTAssertTrue(message.contains("taper is underway"), "Taper pattern should upgrade the solid branch: \(message)")
+    }
+
+    func testSuppressedReadiness() async {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 56,
+            currentScore: 55,
+            nextDayForecast: nil,
+            acwr: 1.0,
+            injuryRisk: .low
+        )
+        let message = await MasterCoachEngine.generateMessage(state: state)
+
+        XCTAssertTrue(message.contains("recovery is suppressed (55%)"), "Score < 60 should report suppressed recovery: \(message)")
+        XCTAssertTrue(message.contains("Prioritize rest"), "Suppressed branch should advise rest: \(message)")
+    }
+
+    // MARK: - Heuristic fallback path (direct, synchronous)
+
+    func testHeuristic_morningUsedWell() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 85, currentScore: 42, nextDayForecast: nil, acwr: 1.1, injuryRisk: .low
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("woke up primed at 85%"), "High-morning big-drop branch: \(message)")
+        XCTAssertTrue(message.contains("down to 42% now"), "Should report current score: \(message)")
+    }
+
+    func testHeuristic_activeRecovery() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 80, currentScore: 60, nextDayForecast: nil, acwr: 1.1, injuryRisk: .low
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("put in work"), "High-morning moderate-drop branch: \(message)")
+        XCTAssertTrue(message.contains("Focus on active recovery"), "Should advise active recovery: \(message)")
+    }
+
+    func testHeuristic_startedFatigued() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 60, currentScore: 50, nextDayForecast: nil, acwr: 1.1, injuryRisk: .low
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("started the day fatigued at 60%"), "Low-morning intraday branch: \(message)")
+        XCTAssertTrue(message.contains("dropped you to 50%"), "Should report current score: \(message)")
+    }
+
+    func testHeuristic_injuryRiskOverride() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 80, currentScore: 80, nextDayForecast: nil, acwr: 1.6, injuryRisk: .veryHigh
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("injury risk is elevated"), "Heuristic path must honor the enum injury-risk override: \(message)")
+    }
+
+    func testHeuristic_excellentPlain() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 86, currentScore: 85, nextDayForecast: nil, acwr: 1.0, injuryRisk: .low
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("recovery is excellent (85%)"), "Heuristic excellent plain branch: \(message)")
+        XCTAssertTrue(message.contains("ready for intensity"), "Heuristic excellent branch carries the ready verdict: \(message)")
+    }
+
+    func testHeuristic_excellentPeak() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 86, currentScore: 85, nextDayForecast: nil, acwr: 1.0, injuryRisk: .low,
+            activePatterns: ["performancePeak"]
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("race or benchmark"), "Heuristic excellent+peak branch: \(message)")
+    }
+
+    func testHeuristic_excellentTaper() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 86, currentScore: 85, nextDayForecast: nil, acwr: 0.7, injuryRisk: .low,
+            activePatterns: ["tapering"]
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("load is tapering"), "Heuristic excellent+taper branch: \(message)")
+    }
+
+    func testHeuristic_solidPeak() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 72, currentScore: 70, nextDayForecast: nil, acwr: 1.0, injuryRisk: .low,
+            activePatterns: ["performancePeak"]
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("peak form window forming"), "Heuristic solid+peak branch: \(message)")
+    }
+
+    func testHeuristic_solidTaper() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 72, currentScore: 70, nextDayForecast: nil, acwr: 0.75, injuryRisk: .low,
+            activePatterns: ["tapering"]
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("taper is underway"), "Heuristic solid+taper branch: \(message)")
+    }
+
+    func testHeuristic_stablePlain() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 70, currentScore: 70, nextDayForecast: nil, acwr: 1.0, injuryRisk: .low
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("70% recovered"), "Heuristic stable plain branch: \(message)")
+        XCTAssertTrue(message.contains("moderate work"), "Stable branch should permit moderate work: \(message)")
+    }
+
+    func testHeuristic_suppressed() {
+        let state = MasterCoachEngine.StateVector(
+            morningScore: 50, currentScore: 48, nextDayForecast: nil, acwr: 1.0, injuryRisk: .low
+        )
+        let message = MasterCoachEngine.generateHeuristicMessage(state: state)
+
+        XCTAssertTrue(message.contains("recovery is suppressed (48%)"), "Heuristic suppressed branch: \(message)")
     }
 }

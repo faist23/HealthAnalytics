@@ -75,7 +75,7 @@ struct CoachMemoryView: View {
             } header: {
                 Text("Active Context")
             } footer: {
-                Text("These memories are used by the Master Coach to personalize your daily readiness recommendations.")
+                Text("These memories are used by the Master Coach to personalize your daily coaching recommendations.")
             }
         }
         .navigationTitle("Coach Memory")

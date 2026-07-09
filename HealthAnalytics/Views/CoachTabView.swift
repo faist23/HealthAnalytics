@@ -30,7 +30,7 @@ struct CoachTabView: View {
                 }
 
                 if viewModel.isLoading || isFirstLoad {
-                    LoadingOverlay(message: "Analyzing your readiness...")
+                    LoadingOverlay(message: "Analyzing your recovery...")
                 }
             }
             .navigationTitle("Today")

@@ -38,7 +38,7 @@ enum PatternType: String, Codable, CaseIterable {
         case .sleepFragmentation:
             return "Sleep quality fragments after sustained high training loads."
         case .backToBackCrash:
-            return "Your readiness consistently crashes after back-to-back hard training days."
+            return "Your recovery consistently crashes after back-to-back hard training days."
         case .performancePeak:
             return "HRV elevated 7+ days and optimal training load — race-ready window."
         case .tapering:

@@ -48,7 +48,7 @@ struct HeroReadinessCard: View {
                         .font(.system(size: 48, weight: .bold, design: .rounded))
                         .foregroundStyle(gradientForScore)
                     
-                    Text("Readiness")
+                    Text("Recovery")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

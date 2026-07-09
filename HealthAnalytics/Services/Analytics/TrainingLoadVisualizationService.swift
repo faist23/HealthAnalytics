@@ -14,7 +14,12 @@ import SwiftUI
 import HealthKit
 
 struct TrainingLoadVisualizationService {
-    
+
+    /// Single source of truth for per-workout load and ACWR. This service must
+    /// never grow its own load math again — a duration-only "hours × 100" TSS
+    /// here once made this screen report ACWR 1.80 while the Load tab said 1.33.
+    private let readinessService = PredictiveReadinessService()
+
     // MARK: - Data Models
     
     struct LoadVisualizationData {
@@ -116,6 +121,7 @@ struct TrainingLoadVisualizationService {
     func generateLoadVisualization(
         workouts: [WorkoutData],
         labels: [StoredIntentLabel],
+        ftpSnapshots: [StoredFTPSnapshot] = [],
         daysBack: Int = 90
     ) -> LoadVisualizationData {
         
@@ -138,19 +144,22 @@ struct TrainingLoadVisualizationService {
         let timeSeriesData = generateTimeSeriesData(
             workouts: workouts,
             startDate: startDate,
-            endDate: endDate
+            endDate: endDate,
+            ftpSnapshots: ftpSnapshots
         )
-        
+
         // 2. Calculate intent breakdown
         let intentBreakdown = calculateIntentBreakdown(
             workouts: recentWorkouts,
-            labels: labels
+            labels: labels,
+            ftpSnapshots: ftpSnapshots
         )
-        
+
         // 3. Analyze weekly patterns
         let weeklyPattern = analyzeWeeklyPattern(
             workouts: recentWorkouts,
-            startDate: startDate
+            startDate: startDate,
+            ftpSnapshots: ftpSnapshots
         )
         
         // 4. Identify danger zones
@@ -184,108 +193,70 @@ struct TrainingLoadVisualizationService {
     private func generateTimeSeriesData(
         workouts: [WorkoutData],
         startDate: Date,
-        endDate: Date
+        endDate: Date,
+        ftpSnapshots: [StoredFTPSnapshot]
     ) -> [LoadVisualizationData.LoadDataPoint] {
-        
+
         let calendar = Calendar.current
         var dataPoints: [LoadVisualizationData.LoadDataPoint] = []
-        
-        var currentDate = calendar.startOfDay(for: startDate)
-        
-        // Calculate daily for complete data coverage
-        let samplingInterval = 1
-        
+
+        // Cold-start guard: ACWR is undefined until a full 28-day chronic window
+        // is covered by data. Without this, the first days of the series compare
+        // acute and chronic windows containing the SAME few workouts, which
+        // yields (T/7)/(T/28) = exactly 4.0 — a fabricated spike, not real load.
+        guard let earliestWorkout = workouts.map(\.startDate).min() else { return [] }
+        let earliestValidDay = calendar.date(byAdding: .day, value: 28, to: calendar.startOfDay(for: earliestWorkout))!
+
+        var currentDate = max(calendar.startOfDay(for: startDate), earliestValidDay)
+        let today = calendar.startOfDay(for: endDate)
+
+        // One ACWR in the whole app: every point delegates to
+        // PredictiveReadinessService.calculateReadiness (zone-weighted / NP-TSS /
+        // duration×sport-multiplier load, windows [ref-7, ref] / [ref-28, ref]).
+        // The final point uses `endDate` (now) so it is identical to the
+        // assessment shown on the Load tab.
         while currentDate <= endDate {
-            // Calculate loads for this day
-            let acuteEnd = currentDate
-            let acuteStart = calendar.date(byAdding: .day, value: -7, to: acuteEnd)!
-            let chronicStart = calendar.date(byAdding: .day, value: -28, to: acuteEnd)!
-            
-            let acuteWorkouts = workouts.filter {
-                $0.startDate >= acuteStart && $0.startDate < acuteEnd
-            }
-            
-            let chronicWorkouts = workouts.filter {
-                $0.startDate >= chronicStart && $0.startDate < acuteEnd
-            }
-            
-            let acuteLoad = calculateLoad(workouts: acuteWorkouts) / 7.0
-            let chronicLoad = calculateLoad(workouts: chronicWorkouts) / 28.0
-            
-            let acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1.0
-            
-            // Determine status
-            let status: LoadVisualizationData.LoadDataPoint.LoadStatus
-            switch acwr {
-            case 0..<0.8:
-                status = .detraining
-            case 0.8...1.3:
-                status = .optimal
-            case 1.3...1.5:
-                status = .building
-            default:
-                status = .danger
-            }
-            
+            let isToday = calendar.isDate(currentDate, inSameDayAs: today)
+            let referenceDate = isToday ? endDate : currentDate
+
+            let assessment = readinessService.calculateReadiness(
+                stravaActivities: [],
+                healthKitWorkouts: workouts,
+                ftpSnapshots: ftpSnapshots,
+                referenceDate: referenceDate
+            )
+
             dataPoints.append(LoadVisualizationData.LoadDataPoint(
                 date: currentDate,
-                acuteLoad: acuteLoad,
-                chronicLoad: chronicLoad,
-                acwr: acwr,
-                status: status
+                acuteLoad: assessment.acuteLoad,
+                chronicLoad: assessment.chronicLoad,
+                acwr: assessment.acwr,
+                status: loadStatus(for: assessment.acwr)
             ))
-            
-            currentDate = calendar.date(byAdding: .day, value: samplingInterval, to: currentDate)!
+
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
         }
-        
-        // Always include the most recent day (today) if not already included
-        let lastPoint = dataPoints.last?.date ?? startDate
-        let today = calendar.startOfDay(for: endDate)
-        if !calendar.isDate(lastPoint, inSameDayAs: today) {
-            let acuteStart = calendar.date(byAdding: .day, value: -7, to: today)!
-            let chronicStart = calendar.date(byAdding: .day, value: -28, to: today)!
-            
-            let acuteWorkouts = workouts.filter {
-                $0.startDate >= acuteStart && $0.startDate < today
-            }
-            
-            let chronicWorkouts = workouts.filter {
-                $0.startDate >= chronicStart && $0.startDate < today
-            }
-            
-            let acuteLoad = calculateLoad(workouts: acuteWorkouts) / 7.0
-            let chronicLoad = calculateLoad(workouts: chronicWorkouts) / 28.0
-            let acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1.0
-            
-            let status: LoadVisualizationData.LoadDataPoint.LoadStatus
-            switch acwr {
-            case 0..<0.8:
-                status = .detraining
-            case 0.8...1.3:
-                status = .optimal
-            case 1.3...1.5:
-                status = .building
-            default:
-                status = .danger
-            }
-            
-            dataPoints.append(LoadVisualizationData.LoadDataPoint(
-                date: today,
-                acuteLoad: acuteLoad,
-                chronicLoad: chronicLoad,
-                acwr: acwr,
-                status: status
-            ))
-        }
-        
+
         return dataPoints
+    }
+
+    /// Same thresholds as PredictiveReadinessService.ReadinessAssessment.Trend —
+    /// the two enums must never disagree about what a given ACWR is called.
+    private func loadStatus(for acwr: Double) -> LoadVisualizationData.LoadDataPoint.LoadStatus {
+        switch acwr {
+        case ..<0.8: return .detraining
+        case 0.8...1.3: return .optimal
+        case 1.3...1.5: return .building
+        default: return .danger
+        }
     }
     
     // MARK: - Intent Breakdown
     
     private func calculateIntentBreakdown(
         workouts: [WorkoutData],
-        labels: [StoredIntentLabel]
+        labels: [StoredIntentLabel],
+        ftpSnapshots: [StoredFTPSnapshot]
     ) -> [LoadVisualizationData.IntentLoadBreakdown] {
         
         // Map workouts to their intents
@@ -297,7 +268,7 @@ struct TrainingLoadVisualizationService {
             let label = labels.first { $0.workoutId == workoutId }
             let intent = label?.intent ?? .other
             
-            let load = calculateWorkoutLoad(workout)
+            let load = readinessService.calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
             let intensity = estimateIntensity(workout)
             
             let current = intentLoads[intent] ?? (0, 0, 0)
@@ -325,7 +296,8 @@ struct TrainingLoadVisualizationService {
     
     private func analyzeWeeklyPattern(
         workouts: [WorkoutData],
-        startDate: Date
+        startDate: Date,
+        ftpSnapshots: [StoredFTPSnapshot]
     ) -> LoadVisualizationData.WeeklyLoadPattern {
         
         let calendar = Calendar.current
@@ -341,7 +313,7 @@ struct TrainingLoadVisualizationService {
                 $0.startDate >= weekStart && $0.startDate < weekEnd
             }
             
-            let totalLoad = calculateLoad(workouts: weekWorkouts)
+            let totalLoad = calculateLoad(workouts: weekWorkouts, ftpSnapshots: ftpSnapshots)
             let highIntensity = weekWorkouts.filter { estimateIntensity($0) > 7 }.count
             
             weeks.append(LoadVisualizationData.WeeklyLoadPattern.WeekData(
@@ -536,16 +508,11 @@ struct TrainingLoadVisualizationService {
     
     // MARK: - Helper Functions
     
-    private func calculateLoad(workouts: [WorkoutData]) -> Double {
-        workouts.reduce(0) { $0 + calculateWorkoutLoad($1) }
+    private func calculateLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot]) -> Double {
+        workouts.reduce(0) { $0 + readinessService.calculateWorkoutLoad($1, ftpSnapshots: ftpSnapshots) }
     }
-    
-    private func calculateWorkoutLoad(_ workout: WorkoutData) -> Double {
-        // Simple TSS approximation based on duration
-        let hours = workout.duration / 3600.0
-        return hours * 100.0 // Rough TSS estimate
-    }
-    
+
+
     private func estimateIntensity(_ workout: WorkoutData) -> Double {
         // Estimate 1-10 intensity based on duration and type
         let baseDuration = workout.duration / 3600.0

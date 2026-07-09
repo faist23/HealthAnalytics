@@ -185,7 +185,7 @@ struct EnergyBankChart: View {
                 status: (intraDay?.currentScore ?? 0) > 40 ? .good : .needsAttention,
                 citation: nil,
                 thresholdBarValue: nil,
-                conditionReasoning: "Your energy bank reflects your dynamic readiness score throughout the day, decaying after workouts and recovering over time.",
+                conditionReasoning: "Your energy bank reflects your dynamic recovery score throughout the day, decaying after workouts and recovering over time.",
                 guidanceText: "Monitor this chart to time your workouts optimally. Train when energy is high, and prioritize rest when it dips.",
                 detailedInsight: nil
             ))

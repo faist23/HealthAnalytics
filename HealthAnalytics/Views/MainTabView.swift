@@ -32,7 +32,7 @@ struct MainTabView: View {
 
                 RecoveryTabView()
                     .tabItem {
-                        Label("Readiness", systemImage: "battery.100")
+                        Label("Recovery", systemImage: "battery.100")
                     }
                     .tag(1)
 

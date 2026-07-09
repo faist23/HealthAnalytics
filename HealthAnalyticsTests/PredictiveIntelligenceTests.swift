@@ -527,6 +527,42 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
     }
 
+    /// ACWR underload on a high baseline pushes prediction above 100 → clamp ceiling enforced.
+    /// Flat trend at 95; ACWR=0.6; day 7: 95 + 95×0.02×7 = 108.3 → clamped to 100.
+    func testForecast_clampCeiling_noPredictionAbove100() throws {
+        let container = try makeFullContainer()
+        let ctx = ModelContext(container)
+        for i in 0..<14 {
+            ctx.insert(StoredDailyScore(date: day(-13 + i), readinessScore: 95, dailyStrain: 1.0, workoutCount: 0))
+        }
+        try ctx.save()
+
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, overrideACWR: 0.6)!
+        for forecastDay in result {
+            XCTAssertLessThanOrEqual(forecastDay.predictedReadiness, 100,
+                "Predicted readiness must never exceed the 100-point ceiling")
+        }
+        XCTAssertEqual(result[6].predictedReadiness, 100,
+            "Day 7 underload from a 95 baseline must hit the ceiling exactly")
+    }
+
+    /// ACWR in the sweet spot [0.8, 1.3] → homeostasis pulls an above-baseline
+    /// forecast back toward 75 without overshooting below it.
+    func testForecast_acwrSweetSpot_driftsToward75() throws {
+        let container = try makeFullContainer()
+        let ctx = ModelContext(container)
+        for i in 0..<14 {
+            ctx.insert(StoredDailyScore(date: day(-13 + i), readinessScore: 85, dailyStrain: 1.0, workoutCount: 0))
+        }
+        try ctx.save()
+
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, overrideACWR: 1.0)!
+        XCTAssertLessThan(result[6].predictedReadiness, result[0].predictedReadiness,
+            "Sweet-spot ACWR must pull an above-baseline forecast back toward 75")
+        XCTAssertGreaterThanOrEqual(result[6].predictedReadiness, 75,
+            "Homeostasis pull must not overshoot below the 75 baseline within 7 days")
+    }
+
     // MARK: - performancePeak notification dedup
 
     /// A performancePeak pattern with notificationSent=true must not be reset to false by a

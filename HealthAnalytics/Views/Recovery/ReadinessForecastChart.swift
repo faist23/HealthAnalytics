@@ -73,7 +73,7 @@ struct ReadinessForecastChart: View {
             // Predicted line
             LineMark(
                 x: .value("Day", day.date, unit: .day),
-                y: .value("Readiness", day.predictedReadiness)
+                y: .value("Recovery", day.predictedReadiness)
             )
             .foregroundStyle(Color.accent)
             .lineStyle(StrokeStyle(lineWidth: 2))
@@ -81,7 +81,7 @@ struct ReadinessForecastChart: View {
             // Point marks
             PointMark(
                 x: .value("Day", day.date, unit: .day),
-                y: .value("Readiness", day.predictedReadiness)
+                y: .value("Recovery", day.predictedReadiness)
             )
             .foregroundStyle(Color.accent)
             .symbolSize(30)

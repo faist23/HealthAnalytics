@@ -30,28 +30,32 @@ struct ACWRTrendCard: View {
     }
     
     private var interpretation: String {
+        // Phase 2.4 voice rule: Load is a descriptive dashboard. These captions
+        // state what the load ratio means — action advice lives on the Coach tab.
         let latest = currentAssessment.acwr
         if latest < 0.8 {
-            return "You're well-rested. This is a good time to increase training volume or intensity on your \(primaryActivity.lowercased())s."
+            return "You've been doing less \(primaryActivity.lowercased()) than your body is used to. You're fresh, with headroom to build."
         } else if latest <= 1.3 {
             return "You're in the sweet spot for building fitness. Your training load is sustainable."
         } else if latest <= 1.5 {
-            return "Training load is high. Monitor how you feel and consider adding more recovery."
+            return "You've been doing more than usual lately. In this zone, fatigue starts to outpace adaptation."
         } else {
-            return "Your body needs rest. High risk of overtraining or injury."
+            return "You've done far more in the last week than your body is conditioned for — the zone where overtraining and injury risk climb sharply."
         }
     }
     
     private var stateLabel: String {
         switch currentAssessment.trend {
+        case .overreaching: return "Overreaching"
         case .building: return "Building"
         case .optimal: return "Optimal"
         case .detraining: return "Detraining"
         }
     }
-    
+
     private var stateColor: Color {
         switch currentAssessment.trend {
+        case .overreaching: return .red
         case .building: return .orange
         case .optimal: return .green
         case .detraining: return .blue
