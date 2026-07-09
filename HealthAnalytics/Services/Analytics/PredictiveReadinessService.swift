@@ -17,9 +17,10 @@ class PredictiveReadinessService {
         let trend: Trend
         
         enum Trend {
-            case building    // ACWR > 1.3
-            case optimal     // 0.8-1.3
-            case detraining  // < 0.8
+            case overreaching // ACWR > 1.5 — injury-risk zone
+            case building     // ACWR 1.3-1.5
+            case optimal      // 0.8-1.3
+            case detraining   // < 0.8
         }
     }
     
@@ -51,9 +52,12 @@ class PredictiveReadinessService {
         // Calculate ratio
         let acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1.0
         
-        // Determine trend
+        // Determine trend — thresholds match TrainingLoadVisualizationService.LoadStatus
+        // so every surface labels the same ACWR identically.
         let trend: ReadinessAssessment.Trend
-        if acwr > 1.3 {
+        if acwr > 1.5 {
+            trend = .overreaching
+        } else if acwr > 1.3 {
             trend = .building
         } else if acwr < 0.8 {
             trend = .detraining

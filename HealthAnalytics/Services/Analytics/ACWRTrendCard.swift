@@ -46,14 +46,16 @@ struct ACWRTrendCard: View {
     
     private var stateLabel: String {
         switch currentAssessment.trend {
+        case .overreaching: return "Overreaching"
         case .building: return "Building"
         case .optimal: return "Optimal"
         case .detraining: return "Detraining"
         }
     }
-    
+
     private var stateColor: Color {
         switch currentAssessment.trend {
+        case .overreaching: return .red
         case .building: return .orange
         case .optimal: return .green
         case .detraining: return .blue

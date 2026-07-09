@@ -278,9 +278,19 @@ class ReadinessRepository: ObservableObject {
             let now = Date()
             let today = calendar.startOfDay(for: now)
             let baselineStart = calendar.date(byAdding: .day, value: -90, to: today)!
+            // The 90-day ACWR history chart needs a 28-day chronic lead-in before
+            // its first plotted day (day D's ACWR windows [D-28, D]). Fetch workouts
+            // 118 days back for the visualization so, after the cold-start trim,
+            // the chart fills a full 90 days instead of 62. Metrics/nutrition stay
+            // at 90 — widening those would shift readiness baselines elsewhere.
+            let loadHistoryStart = calendar.date(byAdding: .day, value: -118, to: today)!
 
             let workoutDescriptor = FetchDescriptor<StoredWorkout>(
                 predicate: #Predicate { $0.startDate >= baselineStart },
+                sortBy: [SortDescriptor(\.startDate)]
+            )
+            let loadHistoryWorkoutDescriptor = FetchDescriptor<StoredWorkout>(
+                predicate: #Predicate { $0.startDate >= loadHistoryStart },
                 sortBy: [SortDescriptor(\.startDate)]
             )
             let metricDescriptor = FetchDescriptor<StoredHealthMetric>(
@@ -293,6 +303,8 @@ class ReadinessRepository: ObservableObject {
             )
 
             let storedWorkouts = try modelContext.fetch(workoutDescriptor)
+            let loadHistoryWorkouts = (try? modelContext.fetch(loadHistoryWorkoutDescriptor))?
+                .map { WorkoutData(from: $0) } ?? []
             let storedMetrics = try modelContext.fetch(metricDescriptor)
             let storedNutrition = try modelContext.fetch(nutritionDescriptor)
             let intentLabels = try modelContext.fetch(FetchDescriptor<StoredIntentLabel>())
@@ -547,8 +559,9 @@ class ReadinessRepository: ObservableObject {
             let acwrTrend = calculateImprovedACWRTrend(workouts: workouts, ftpSnapshots: ftpSnapshots)
 
             let loadVisualization = loadVizService.generateLoadVisualization(
-                workouts: workouts,
+                workouts: loadHistoryWorkouts,
                 labels: intentLabels,
+                ftpSnapshots: ftpSnapshots,
                 daysBack: 90
             )
 
