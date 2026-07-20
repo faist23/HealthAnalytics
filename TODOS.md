@@ -43,6 +43,17 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15 min)
 
+### Delete dead `ActivityIntentClassifier` + fix file/type name mismatch
+**Priority:** P3 — deferred from the Load breakdown work (2026-07-09)
+
+**What:** `ML-Components/ActivityIntentClassifier.swift` is dead code — no references anywhere; the live classifier is `HeuristicIntentClassifier`. Separately, `ML-Components/IntentAwareReadinessService.swift` defines `struct EnhancedIntentAwareReadinessService` (file/type name mismatch).
+
+**Why:** Surfaced during the intent-breakdown audit. The dead classifier carries its own `String(activity.id)` labeling path that never runs, and the name mismatch costs a grep every time someone looks for the wired service.
+
+**How to apply:** Delete `ActivityIntentClassifier.swift` (confirm zero references first, as with the 2026-04-30 dead-code sweep). Rename `IntentAwareReadinessService.swift` → `EnhancedIntentAwareReadinessService.swift`.
+
+**Effort:** S (human: ~30 min / CC+gstack: ~5 min)
+
 ## Coach
 
 ### MasterCoachEngine copy duplicated across LLM and heuristic paths

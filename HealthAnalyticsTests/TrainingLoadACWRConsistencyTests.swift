@@ -39,8 +39,18 @@ final class TrainingLoadACWRConsistencyTests: XCTestCase {
     /// 21 older days (7.5–27.5 days ago) at 1h cycling/day, plus `acuteHoursPerDay`
     /// cycling on each of the last 7 days (0.5–6.5 days ago).
     /// ACWR = 4a / (21 + a) where a = 7 × acuteHoursPerDay (cycling multiplier 1.0).
+    ///
+    /// A chart cold-start lead-in (29–56 days ago) precedes that window. Without it the
+    /// earliest workout is only ~27.5 days old, and generateTimeSeriesData's guard
+    /// (`startOfDay(earliestWorkout) + 28 days`) rounds the first valid chart day to
+    /// *tomorrow* — an empty series and "Unknown" status, depending on the wall-clock date.
+    /// The lead-in sits entirely outside today's [today-28, today] chronic window, so it
+    /// leaves the assessment ACWR untouched while giving the chart runway to reach today.
     private func fixture(acuteHoursPerDay: Double) -> [WorkoutData] {
         var workouts: [WorkoutData] = []
+        for day in 29...56 {
+            workouts.append(workout(daysAgo: Double(day), hours: 1.0, type: .cycling))
+        }
         for day in 8...28 {
             workouts.append(workout(daysAgo: Double(day), hours: 1.0, type: .cycling))
         }

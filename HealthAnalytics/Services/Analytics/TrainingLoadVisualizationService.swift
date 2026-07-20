@@ -45,10 +45,10 @@ struct TrainingLoadVisualizationService {
                 
                 var color: Color {
                     switch self {
-                    case .optimal: return .green
-                    case .building: return .orange
-                    case .danger: return .red
-                    case .detraining: return .blue
+                    case .optimal: return Color.statusOptimal
+                    case .building: return Color.statusMonitoring
+                    case .danger: return Color.statusAllOut
+                    case .detraining: return Color.statusRest
                     }
                 }
             }
@@ -98,9 +98,9 @@ struct TrainingLoadVisualizationService {
                 
                 var color: Color {
                     switch self {
-                    case .warning: return .orange
-                    case .danger: return .red
-                    case .critical: return .purple
+                    case .warning: return Color.statusMonitoring
+                    case .danger: return Color.statusWarning
+                    case .critical: return Color.statusAllOut
                     }
                 }
             }
@@ -262,14 +262,18 @@ struct TrainingLoadVisualizationService {
         // Map workouts to their intents
         var intentLoads: [ActivityIntent: (totalLoad: Double, count: Int, totalIntensity: Double)] = [:]
         
+        // Labels are keyed by StoredWorkout.id, which for Strava workouts is the numeric
+        // activity ID — NOT a UUID. WorkoutData.id is a random UUID for those (the uuidString
+        // cast fails), so joining on id.uuidString silently dropped every Strava workout into
+        // .other. The real join key lives in originalId (== StoredWorkout.id).
+        let labelByWorkoutId = Dictionary(labels.map { ($0.workoutId, $0) }) { first, _ in first }
+
         for workout in workouts {
-            // Find matching label
-            let workoutId = workout.id.uuidString
-            let label = labels.first { $0.workoutId == workoutId }
-            let intent = label?.intent ?? .other
-            
+            let workoutId = workout.originalId ?? workout.id.uuidString
+            let intent = labelByWorkoutId[workoutId]?.intent ?? .other
+
             let load = readinessService.calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
-            let intensity = estimateIntensity(workout)
+            let intensity = estimateIntensity(workout, ftpSnapshots: ftpSnapshots)
             
             let current = intentLoads[intent] ?? (0, 0, 0)
             intentLoads[intent] = (
@@ -314,7 +318,7 @@ struct TrainingLoadVisualizationService {
             }
             
             let totalLoad = calculateLoad(workouts: weekWorkouts, ftpSnapshots: ftpSnapshots)
-            let highIntensity = weekWorkouts.filter { estimateIntensity($0) > 7 }.count
+            let highIntensity = weekWorkouts.filter { estimateIntensity($0, ftpSnapshots: ftpSnapshots) > 7 }.count
             
             weeks.append(LoadVisualizationData.WeeklyLoadPattern.WeekData(
                 weekStart: weekStart,
@@ -513,19 +517,50 @@ struct TrainingLoadVisualizationService {
     }
 
 
-    private func estimateIntensity(_ workout: WorkoutData) -> Double {
-        // Estimate 1-10 intensity based on duration and type
-        let baseDuration = workout.duration / 3600.0
-        
-        switch workout.workoutType {
-        case .running:
-            return min(10, 5 + baseDuration * 2)
-        case .cycling:
-            return min(10, 4 + baseDuration * 1.5)
-        case .swimming:
-            return min(10, 6 + baseDuration * 2)
-        default:
-            return 5
+    /// Estimate a 1–10 effort score from the strongest physiological signal available,
+    /// in priority order: power-zone distribution → normalized/avg power vs FTP → HR %max.
+    /// Duration is deliberately NOT used — a long recovery spin and a short VO2max set are
+    /// different intensities, and the old duration-only heuristic reported both as ~5.5.
+    private func estimateIntensity(_ workout: WorkoutData, ftpSnapshots: [StoredFTPSnapshot]) -> Double {
+        // 1. Power zones (cycling with stream data) — the ground truth for effort structure.
+        if let zones = workout.powerZoneSeconds, zones.count == 7 {
+            let total = zones.reduce(0, +)
+            if total > 0 {
+                // Representative intensity factor (fraction of FTP) at the middle of each zone.
+                let zoneIF: [Double] = [0.40, 0.65, 0.83, 0.98, 1.13, 1.35, 1.60]
+                let weightedIF = zip(zones, zoneIF).reduce(0.0) { $0 + ($1.0 / total) * $1.1 }
+                return intensityFromIntensityFactor(weightedIF)
+            }
         }
+
+        // 2. Normalized power (or average power) relative to FTP → intensity factor.
+        if let power = workout.normalizedPower ?? workout.averagePower, power > 0 {
+            let ftp = StoredFTPSnapshot.resolved(for: workout.startDate, snapshots: ftpSnapshots)
+            if ftp > 0 {
+                return intensityFromIntensityFactor(power / ftp)
+            }
+        }
+
+        // 3. Heart rate as a fraction of estimated max (same 185 bpm convention as the classifier).
+        if let hr = workout.averageHeartRate, hr > 0 {
+            return intensityFromHRFraction(hr / 185.0)
+        }
+
+        // 4. No physiological signal — return a neutral midpoint rather than a fabricated value.
+        return 5.0
+    }
+
+    /// Map an intensity factor (fraction of FTP) to 1–10.
+    /// Anchors: IF 0.40 (recovery) → 1, IF 1.20 (deep VO2max) → 10.
+    private func intensityFromIntensityFactor(_ intensityFactor: Double) -> Double {
+        let scaled = 1 + (intensityFactor - 0.40) / 0.80 * 9
+        return min(10, max(1, scaled))
+    }
+
+    /// Map a heart-rate fraction of max to 1–10.
+    /// Anchors: 50% max → 1, 100% max → 10.
+    private func intensityFromHRFraction(_ fraction: Double) -> Double {
+        let scaled = 1 + (fraction - 0.50) / 0.50 * 9
+        return min(10, max(1, scaled))
     }
 }

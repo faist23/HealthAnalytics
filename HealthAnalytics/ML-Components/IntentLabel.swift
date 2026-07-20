@@ -36,14 +36,14 @@ enum ActivityIntent: String, Codable, CaseIterable {
     
     var color: Color {
         switch self {
-        case .race: return .red
-        case .tempo: return .orange
-        case .intervals: return .purple
-        case .easy: return .green
-        case .long: return .blue
-        case .casualWalk: return .gray
-        case .strength: return .brown
-        case .other: return .secondary
+        case .race: return Color.statusAllOut
+        case .tempo: return Color.statusWarning
+        case .intervals: return Color.accent
+        case .easy: return Color.statusOptimal
+        case .long: return Color.statusRest
+        case .casualWalk: return Color.textTertiary
+        case .strength: return Color.statusMonitoring
+        case .other: return Color.textSecondary
         }
     }
     

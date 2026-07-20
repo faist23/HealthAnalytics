@@ -149,7 +149,7 @@ struct LoadSummaryCard: View {
                     .foregroundStyle(.primary)
             }
             .padding()
-            .background(.yellow.opacity(0.1))
+            .background(Color.statusMonitoring.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
         }
         .padding(20)
@@ -160,11 +160,11 @@ struct LoadSummaryCard: View {
     
     private var statusColor: Color {
         switch summary.currentStatus {
-        case "Optimal": return .green
-        case "Building": return .orange
-        case "Overreaching": return .red
-        case "Detraining": return .blue
-        default: return .gray
+        case "Optimal": return Color.statusOptimal
+        case "Building": return Color.statusMonitoring
+        case "Overreaching": return Color.statusAllOut
+        case "Detraining": return Color.statusRest
+        default: return Color.textTertiary
         }
     }
 }
@@ -210,7 +210,7 @@ struct ACWRTimeSeriesChart: View {
                     yStart: .value("Min", 0.8),
                     yEnd: .value("Max", 1.3)
                 )
-                .foregroundStyle(.green.opacity(0.1))
+                .foregroundStyle(Color.statusOptimal.opacity(0.1))
                 
                 // ACWR line
                 ForEach(data) { point in
@@ -234,7 +234,7 @@ struct ACWRTimeSeriesChart: View {
                     RuleMark(
                         x: .value("Date", selected.date)
                     )
-                    .foregroundStyle(.gray.opacity(0.3))
+                    .foregroundStyle(Color.textTertiary.opacity(0.3))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 }
             }
@@ -313,9 +313,15 @@ struct IntentBreakdownView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: .spacingMd) {
-            Text("Load by Intent")
-                .font(.headline)
-            
+            VStack(alignment: .leading, spacing: .spacingXs) {
+                Text("Load by Intent")
+                    .font(.headline)
+
+                Text("Each percentage is that effort type's share of your total training load (TSS) over the period.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             ForEach(breakdown) { item in
                 IntentLoadRow(item: item)
             }
@@ -340,10 +346,16 @@ struct IntentLoadRow: View {
                     .fontWeight(.medium)
                 
                 Spacer()
-                
-                Text("\(Int(item.percentage))%")
-                    .font(.headline)
-                    .foregroundStyle(intentColor(for: item.intent))
+
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text("\(Int(item.percentage))%")
+                        .font(.headline)
+                        .foregroundStyle(intentColor(for: item.intent))
+
+                    Text("of load")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             
             GeometryReader { geo in
@@ -437,9 +449,9 @@ struct WeeklyPatternView: View {
     
     private var trendColor: Color {
         switch pattern.trend {
-        case .increasing: return .green
-        case .stable: return .blue
-        case .decreasing: return .orange
+        case .increasing: return Color.statusOptimal
+        case .stable: return Color.statusRest
+        case .decreasing: return Color.statusWarning
         }
     }
     
