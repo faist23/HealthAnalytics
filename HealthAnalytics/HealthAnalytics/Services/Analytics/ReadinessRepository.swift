@@ -72,7 +72,9 @@ class ReadinessRepository: ObservableObject {
     private var lastFingerprint: PredictionCache.DataFingerprint?
     private var lastAnalysisDate: Date?
 
-    private var analysisTask: Task<Void, Never>?
+    /// Set when a refresh arrives while `performFullAnalysis` is mid-flight, so the
+    /// run can re-check the store on the way out instead of the request being lost.
+    private var pendingRefreshRequested = false
 
     private var syncCompletedObserver: NSObjectProtocol?
 
@@ -264,7 +266,19 @@ class ReadinessRepository: ObservableObject {
         // Re-entrancy guard: multiple views call refreshIfNecessary simultaneously on first load.
         // All pass the currentReadiness == nil check before any run sets it — without this guard
         // all three enter here concurrently, producing interleaved SwiftData writes.
-        guard !isAnalyzing else { return }
+        //
+        // A run takes a long time (ML training, MasterCoachEngine, HealthKit reads), and a
+        // workout finishing sync lands squarely inside that window. Dropping the request
+        // outright left the published snapshot describing pre-ride data — the Load tab kept
+        // showing yesterday's ACWR until some unrelated trigger happened along. Record the
+        // request instead and re-check once this run finishes.
+        guard !isAnalyzing else {
+            pendingRefreshRequested = true
+            #if DEBUG
+            print("⏳ ReadinessRepository: refresh requested mid-analysis — queued")
+            #endif
+            return
+        }
         isAnalyzing = true
         analysisError = nil
 
@@ -754,6 +768,14 @@ class ReadinessRepository: ObservableObject {
         }
 
         isAnalyzing = false
+
+        // Data changed while we were working — re-run against it. refreshIfNecessary
+        // recomputes the fingerprint, so this is a no-op unless the store actually
+        // moved, which bounds the recursion to real changes.
+        if pendingRefreshRequested {
+            pendingRefreshRequested = false
+            await refreshIfNecessary(modelContext: modelContext)
+        }
     }
 
     // MARK: - Daily Score Persistence
@@ -1059,25 +1081,16 @@ class ReadinessRepository: ObservableObject {
     }
 
     private func calculateImprovedACWRTrend(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot]) -> [ACWRDataPoint] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        var dataPoints: [ACWRDataPoint] = []
-        for dayOffset in (0..<7).reversed() {
-            guard let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
-            // Pass referenceDate so calculateReadiness windows [targetDate-7, targetDate]
-            // and [targetDate-28, targetDate] instead of [today-7, today] / [today-28, today].
-            // Without this the leftmost trend points were 0 because the "acute" window
-            // for, say, Monday's perspective was [today-7, today] filtered to workouts
-            // ≤ Monday — which left only Monday itself (often empty on rest days).
-            let assessment = predictiveReadinessService.calculateReadiness(
-                stravaActivities: [],
-                healthKitWorkouts: workouts,
-                ftpSnapshots: ftpSnapshots,
-                referenceDate: targetDate
-            )
-            dataPoints.append(ACWRDataPoint(date: targetDate, value: assessment.acwr))
-        }
-        return dataPoints
+        // Delegates to the one ACWR engine. This loop used to live here and passed
+        // `startOfDay(targetDate)` as the reference date, which closed every day's
+        // window at midnight *before* that day's training: the chart's last point
+        // ignored today's ride entirely and sat below the assessment printed
+        // beside it, and each earlier point was shifted a day late.
+        predictiveReadinessService.calculateACWRTrend(
+            healthKitWorkouts: workouts,
+            ftpSnapshots: ftpSnapshots,
+            days: 7
+        )
     }
 
     // MARK: - Reconciler

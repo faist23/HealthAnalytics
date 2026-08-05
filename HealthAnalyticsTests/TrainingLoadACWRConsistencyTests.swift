@@ -204,4 +204,121 @@ final class TrainingLoadACWRConsistencyTests: XCTestCase {
             .detraining
         )
     }
+
+    // MARK: - Daily trend windows close at end of day
+
+    /// The last point of the 7-day trend chart is "today", and must equal the
+    /// headline assessment. Both the Load tab's ACWRTrendCard and the number
+    /// above it are rendered side by side — a mismatch is visible on screen.
+    ///
+    /// Regression: the trend used `startOfDay(today)` as its reference date, so
+    /// every workout done today (all of which start after midnight) fell outside
+    /// the window. On any day the user trained, the chart's last point sat below
+    /// the number printed next to it and never moved when the number did.
+    func testTrendLastPointMatchesHeadlineAssessment() {
+        var workouts: [WorkoutData] = []
+        for day in 1...40 {
+            workouts.append(workout(daysAgo: Double(day), hours: 1.0, type: .cycling))
+        }
+        // A hard ride two hours ago — the case that exposed the divergence.
+        let rideStart = Date().addingTimeInterval(-3 * 3600)
+        workouts.append(WorkoutData(
+            workoutType: .cycling,
+            startDate: rideStart,
+            endDate: rideStart.addingTimeInterval(3 * 3600),
+            duration: 3 * 3600,
+            totalEnergyBurned: nil, totalDistance: nil,
+            averagePower: nil, averageHeartRate: nil,
+            source: .appleWatch
+        ))
+
+        let assessment = readinessService.calculateReadiness(
+            stravaActivities: [], healthKitWorkouts: workouts, ftpSnapshots: []
+        )
+        let trend = readinessService.calculateACWRTrend(
+            healthKitWorkouts: workouts, ftpSnapshots: []
+        )
+
+        XCTAssertEqual(trend.count, 7)
+        XCTAssertEqual(trend.last!.value, assessment.acwr, accuracy: 0.01,
+            "Trend chart's final point must equal the ACWR printed beside it")
+    }
+
+    /// A spike must land on the day it was ridden, not the day after.
+    /// With the start-of-day window every point reflected load through the
+    /// *previous* midnight, shifting the whole line one day to the right.
+    func testTrendSpikeLandsOnTheDayItWasRidden() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+
+        var workouts: [WorkoutData] = []
+        for day in 1...40 {
+            workouts.append(workout(daysAgo: Double(day), hours: 1.0, type: .cycling))
+        }
+        // A 4h ride anchored to a specific calendar day. `workout(daysAgo:)` offsets
+        // by (daysAgo - 0.5) *days* from now, which crosses midnight depending on the
+        // time of day the suite runs — no good when the assertion is about which
+        // calendar bucket a spike lands in.
+        let spikeStart = calendar.date(byAdding: .hour, value: 9,
+                                       to: calendar.date(byAdding: .day, value: -3, to: today)!)!
+        workouts.append(WorkoutData(
+            workoutType: .cycling,
+            startDate: spikeStart,
+            endDate: spikeStart.addingTimeInterval(4 * 3600),
+            duration: 4 * 3600,
+            totalEnergyBurned: nil, totalDistance: nil,
+            averagePower: nil, averageHeartRate: nil,
+            source: .appleWatch
+        ))
+
+        let trend = readinessService.calculateACWRTrend(
+            healthKitWorkouts: workouts, ftpSnapshots: []
+        )
+        func point(daysAgo: Int) -> Double {
+            let day = calendar.date(byAdding: .day, value: -daysAgo, to: today)!
+            return trend.first { calendar.isDate($0.date, inSameDayAs: day) }!.value
+        }
+
+        XCTAssertGreaterThan(point(daysAgo: 3), point(daysAgo: 4),
+            "The day of the big ride must already show the load it added")
+    }
+
+    /// The 7-day trend and the 90-day Extended Analysis series are the same
+    /// signal at two zoom levels. Where they overlap they must agree.
+    func testTrendAgreesWithExtendedAnalysisSeriesOnSharedDays() {
+        var workouts: [WorkoutData] = []
+        for day in 1...118 {
+            let hours = day % 4 == 0 ? 2.5 : 0.75   // uneven load so the series varies
+            workouts.append(workout(daysAgo: Double(day), hours: hours, type: .cycling))
+        }
+        let rideStart = Date().addingTimeInterval(-2 * 3600)
+        workouts.append(WorkoutData(
+            workoutType: .cycling,
+            startDate: rideStart,
+            endDate: rideStart.addingTimeInterval(2 * 3600),
+            duration: 2 * 3600,
+            totalEnergyBurned: nil, totalDistance: nil,
+            averagePower: nil, averageHeartRate: nil,
+            source: .appleWatch
+        ))
+
+        let trend = readinessService.calculateACWRTrend(
+            healthKitWorkouts: workouts, ftpSnapshots: []
+        )
+        let viz = vizService.generateLoadVisualization(
+            workouts: workouts, labels: [], ftpSnapshots: [], daysBack: 90
+        )
+        let calendar = Calendar.current
+
+        for point in trend {
+            guard let match = viz.timeSeriesData.first(where: {
+                calendar.isDate($0.date, inSameDayAs: point.date)
+            }) else {
+                XCTFail("90-day series is missing \(point.date)")
+                continue
+            }
+            XCTAssertEqual(point.value, match.acwr, accuracy: 0.01,
+                "Load tab trend and Extended Analysis disagree on \(point.date)")
+        }
+    }
 }

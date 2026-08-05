@@ -208,22 +208,20 @@ struct TrainingLoadVisualizationService {
         let earliestValidDay = calendar.date(byAdding: .day, value: 28, to: calendar.startOfDay(for: earliestWorkout))!
 
         var currentDate = max(calendar.startOfDay(for: startDate), earliestValidDay)
-        let today = calendar.startOfDay(for: endDate)
 
         // One ACWR in the whole app: every point delegates to
         // PredictiveReadinessService.calculateReadiness (zone-weighted / NP-TSS /
         // duration×sport-multiplier load, windows [ref-7, ref] / [ref-28, ref]).
-        // The final point uses `endDate` (now) so it is identical to the
-        // assessment shown on the Load tab.
+        // Window ends come from the shared `windowEnd` rule — each day closes at
+        // the following midnight (today closes at `endDate`, i.e. now), so a day's
+        // point includes that day's own training and the final point is identical
+        // to the assessment shown on the Load tab.
         while currentDate <= endDate {
-            let isToday = calendar.isDate(currentDate, inSameDayAs: today)
-            let referenceDate = isToday ? endDate : currentDate
-
             let assessment = readinessService.calculateReadiness(
                 stravaActivities: [],
                 healthKitWorkouts: workouts,
                 ftpSnapshots: ftpSnapshots,
-                referenceDate: referenceDate
+                referenceDate: PredictiveReadinessService.windowEnd(for: currentDate, now: endDate)
             )
 
             dataPoints.append(LoadVisualizationData.LoadDataPoint(
