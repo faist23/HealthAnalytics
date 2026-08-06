@@ -136,21 +136,11 @@ struct LoadSummaryCard: View {
                     )
                 }
             }
-            
-            Divider()
-            
-            // Recommendation
-            HStack(spacing: 12) {
-                Image(systemName: "lightbulb.fill")
-                    .foregroundStyle(Color.statusMonitoring)
 
-                Text(summary.recommendation)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-            }
-            .padding()
-            .background(Color.statusMonitoring.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
+            // No lightbulb recommendation here. `summary.recommendation` is
+            // advisory ("Reduce load immediately or take rest days") and Phase 2.4
+            // keeps advisory voice on Coach; this header states the load status and
+            // lets the charts below it carry the detail.
         }
         .padding(20)
         .background(.ultraThinMaterial)
