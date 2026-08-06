@@ -468,14 +468,23 @@ struct WeeklyPatternView: View {
 
 struct DangerZonesSection: View {
     let zones: [TrainingLoadVisualizationService.LoadVisualizationData.DangerZone]
-    
+
+    /// Most recent overload first — the one still relevant to how you feel today
+    /// shouldn't be at the bottom of a 90-day list. The flip is presentational:
+    /// the service emits zones chronologically and `generateSummary` reads
+    /// `dangerZones.last` as the most recent, so sorting there would quietly
+    /// break "weeks since danger".
+    private var zonesNewestFirst: [TrainingLoadVisualizationService.LoadVisualizationData.DangerZone] {
+        zones.sorted { $0.startDate > $1.startDate }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Overload Periods", systemImage: "exclamationmark.triangle.fill")
                 .font(.headline)
                 .foregroundStyle(Color.statusWarning)
 
-            ForEach(zones) { zone in
+            ForEach(zonesNewestFirst) { zone in
                 DangerZoneCard(zone: zone)
             }
         }

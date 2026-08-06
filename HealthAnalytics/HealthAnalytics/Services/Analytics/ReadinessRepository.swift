@@ -157,6 +157,29 @@ class ReadinessRepository: ObservableObject {
         let coaching: String          // "Hard effort OK" / "Moderate training" / "Easy only" / "Rest recommended"
     }
 
+    /// Forecast effort tiers, ordered least → most restrictive so two independent
+    /// verdicts (what recovery allows, what training load allows) can be combined
+    /// with `max` — the more restrictive one wins.
+    enum ForecastEffort: Int, Comparable {
+        case hard = 0
+        case moderate = 1
+        case easy = 2
+        case rest = 3
+
+        static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+
+        /// Kept as strings on `ReadinessForecastDay` because `ReadinessForecastChart`
+        /// and `MasterCoachEngine` both consume the label text.
+        var label: String {
+            switch self {
+            case .hard:     return "Hard effort OK"
+            case .moderate: return "Moderate training"
+            case .easy:     return "Easy only"
+            case .rest:     return "Rest recommended"
+            }
+        }
+    }
+
     struct UnifiedReadiness {
         let score: Int
         let morningScore: Int
@@ -346,11 +369,16 @@ class ReadinessRepository: ObservableObject {
                 throw NSError(domain: "ReadinessRepository", code: 1, userInfo: [NSLocalizedDescriptionKey: "Insufficient data"])
             }
 
+            // Fetch FTP snapshot history once — passed to every load calculation so that
+            // each workout is evaluated against the FTP that was in effect on its date.
+            let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+
             // B: Injury Risk
             let trainingLoad = loadCalculator.calculateTrainingLoad(
                 healthKitWorkouts: workouts,
                 stravaActivities: [],
-                stepData: []
+                stepData: [],
+                ftpSnapshots: ftpSnapshots
             )
 
             let trends = trendDetector.detectTrends(
@@ -441,10 +469,6 @@ class ReadinessRepository: ObservableObject {
             //    5a. Train PerformancePredictor (cache models 7 days)
             let primaryActivity = determinePrimaryActivity(from: workouts)
             var mlError: String? = nil
-
-            // Fetch FTP snapshot history once — passed to every load calculation so that
-            // each workout is evaluated against the FTP that was in effect on its date.
-            let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
 
             let readinessAssessmentResult = predictiveReadinessService.calculateReadiness(
                 stravaActivities: [],
@@ -567,7 +591,8 @@ class ReadinessRepository: ObservableObject {
                 stravaActivities: [],
                 stepData: stepData,
                 recoveryInsights: recoveryInsights,
-                dailyReadiness: dailyReadinessDict
+                dailyReadiness: dailyReadinessDict,
+                ftpSnapshots: ftpSnapshots
             )
 
             let acwrTrend = calculateImprovedACWRTrend(workouts: workouts, ftpSnapshots: ftpSnapshots)
@@ -1012,6 +1037,14 @@ class ReadinessRepository: ObservableObject {
         // ACWR modifier from current published readiness (or test override)
         let acwr = overrideACWR ?? currentReadiness?.readinessAssessment?.acwr
 
+        // Workouts for the per-day load ceiling below. The chronic window for the
+        // last forecast day reaches back to today-21, so 30 days covers every day.
+        let loadWindowStart = calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+        let forecastWorkouts = ((try? modelContext.fetch(FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate { $0.startDate >= loadWindowStart }
+        ))) ?? []).map { WorkoutData(from: $0) }
+        let forecastFTP = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+
         // Pure regression + ACWR modifier. No intra-forecast workout simulation:
         // a coaching-label feedback loop here (hard day → -25 next day) turns a
         // flat history into a sawtooth forecast and breaks the documented
@@ -1039,25 +1072,45 @@ class ReadinessRepository: ObservableObject {
             let lo = max(0,   Int((clamped - sigma).rounded()))
             let hi = min(100, Int((clamped + sigma).rounded()))
 
-            let coaching: String
             let score = Int(clamped.rounded())
-            if score >= 80 {
-                coaching = "Hard effort OK"
-            } else if score >= 70 {
-                coaching = "Moderate training"
-            } else if score >= 60 {
-                coaching = "Easy only"
-            } else {
-                coaching = "Rest recommended"
-            }
-
             let date = calendar.date(byAdding: .day, value: d, to: calendar.startOfDay(for: Date())) ?? Date()
+
+            // Recovery is only half the answer. A well-recovered body carrying a
+            // sharp load ramp must not be told "Hard effort OK" while the Load tab
+            // is saying to back off — same reconciliation `reconcileAdvice` does for
+            // the Coach tab, where injury risk overrides a green HRV reading.
+            //
+            // The ceiling is computed per forecast day rather than from today's
+            // ACWR: this forecast assumes no further workouts (see the note above),
+            // so the 7-day acute window empties as the horizon extends and the load
+            // constraint genuinely relaxes. Asking the one ACWR engine for a future
+            // reference date models exactly that — no future workouts exist in the
+            // array, so it returns the ratio you'd have on that day having rested.
+            // Same "a day's window closes at the end of that day" rule as
+            // PredictiveReadinessService.windowEnd — but the whole day is in the
+            // future here, so there's no `now` to clamp against.
+            let dayEnd = calendar.date(byAdding: .day, value: 1, to: date) ?? date
+            let projectedACWR = predictiveReadinessService.calculateReadiness(
+                stravaActivities: [],
+                healthKitWorkouts: forecastWorkouts,
+                ftpSnapshots: forecastFTP,
+                referenceDate: dayEnd
+            ).acwr
+
+            let byRecovery: ForecastEffort = score >= 80 ? .hard
+                                           : score >= 70 ? .moderate
+                                           : score >= 60 ? .easy
+                                           : .rest
+            let byLoad: ForecastEffort = projectedACWR > 1.5 ? .easy
+                                       : projectedACWR > 1.3 ? .moderate
+                                       : .hard
+
             days.append(ReadinessForecastDay(
                 date: date,
                 predictedReadiness: score,
                 confidenceLow: lo,
                 confidenceHigh: hi,
-                coaching: coaching
+                coaching: max(byRecovery, byLoad).label
             ))
         }
         return days

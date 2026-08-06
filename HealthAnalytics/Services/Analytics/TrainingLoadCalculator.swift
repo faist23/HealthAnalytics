@@ -72,13 +72,21 @@ struct TrainingLoadCalculator {
     
     // MARK: - Calculate Training Load
     
-    /// Calculates training load based on workouts and activity
+    /// Calculates training load based on workouts and activity.
+    ///
+    /// The TSS/EWMA/monotony metrics below are this calculator's own — but the
+    /// `status` and `recommendation` it returns are banded on the canonical ACWR
+    /// from `PredictiveReadinessService`, not on `ewmaRatio`. Those two numbers
+    /// disagree often enough that the Load Details card printed "training load is
+    /// elevated" (canonical ACWR, 1.3–1.5) directly above "training load is optimal
+    /// and recovery is good" (EWMA ratio, ≤1.3) about the same day.
     func calculateTrainingLoad(
         healthKitWorkouts: [WorkoutData],
         stravaActivities: [StravaActivity],
         stepData: [HealthDataPoint],
         recoveryInsights: [CorrelationEngine.RecoveryInsight] = [],
-        dailyReadiness: [Date: Int] = [:]
+        dailyReadiness: [Date: Int] = [:],
+        ftpSnapshots: [StoredFTPSnapshot] = []
     ) -> TrainingLoadSummary? {
         
         let calendar = Calendar.current
@@ -167,11 +175,19 @@ struct TrainingLoadCalculator {
         }
         let sixWeekTSS = sixWeekSum
         
-        // Determine status and recommendation (prioritize EWMA ratio + recovery state)
+        // Determine status and recommendation (canonical ACWR + recovery state)
         let status: TrainingLoadSummary.LoadStatus
         let recommendation: String
         
-        let primaryRatio = ewmaRatio // Use EWMA ratio as primary indicator
+        // One ACWR in the whole app. `ewmaRatio` stays on the struct (it's a
+        // genuinely different, smoother signal and callers may show it), but it
+        // must not decide which band the user is told they're in — every other
+        // Load surface bands on this number.
+        let primaryRatio = PredictiveReadinessService().calculateReadiness(
+            stravaActivities: stravaActivities,
+            healthKitWorkouts: healthKitWorkouts,
+            ftpSnapshots: ftpSnapshots
+        ).acwr
         
         // Check recovery status
         let isRecovered = checkRecoveryStatus(recoveryInsights: recoveryInsights)

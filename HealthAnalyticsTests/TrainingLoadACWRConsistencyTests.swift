@@ -205,6 +205,43 @@ final class TrainingLoadACWRConsistencyTests: XCTestCase {
         )
     }
 
+    // MARK: - Load Details card says one thing, not two
+
+    /// The Load Details card stacks `interpretation` (banded on the canonical
+    /// ACWR) directly above `summary.recommendation` (from TrainingLoadCalculator).
+    /// Those used to come from different ratios — the calculator banded on its own
+    /// `ewmaRatio` — so the card printed "training load is elevated" above
+    /// "training load is optimal and recovery is good" on the same screen.
+    func testLoadSummaryStatusAgreesWithAssessmentTier() {
+        let calculator = TrainingLoadCalculator()
+
+        let cases: [(hours: Double,
+                     trend: PredictiveReadinessService.ReadinessAssessment.Trend,
+                     status: TrainingLoadCalculator.TrainingLoadSummary.LoadStatus)] = [
+            (1.0,        .optimal,      .optimal),
+            (97.0 / 60.0, .building,     .fatigued),
+            (2.0,        .overreaching, .overreaching),
+        ]
+
+        for testCase in cases {
+            let workouts = fixture(acuteHoursPerDay: testCase.hours)
+            let assessment = readinessService.calculateReadiness(
+                stravaActivities: [], healthKitWorkouts: workouts, ftpSnapshots: []
+            )
+            guard let summary = calculator.calculateTrainingLoad(
+                healthKitWorkouts: workouts, stravaActivities: [], stepData: []
+            ) else {
+                XCTFail("Expected a summary for ACWR \(assessment.acwr)")
+                continue
+            }
+
+            XCTAssertEqual(assessment.trend, testCase.trend,
+                "fixture(\(testCase.hours)) should land in the \(testCase.trend) band")
+            XCTAssertEqual(summary.status, testCase.status,
+                "ACWR \(assessment.acwr) is \(assessment.trend) — the card's recommendation must not band it elsewhere")
+        }
+    }
+
     // MARK: - Daily trend windows close at end of day
 
     /// The last point of the 7-day trend chart is "today", and must equal the

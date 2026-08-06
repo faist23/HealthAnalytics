@@ -14,6 +14,7 @@
 
 import XCTest
 import SwiftData
+import HealthKit
 @testable import HealthAnalytics
 
 @MainActor
@@ -639,6 +640,101 @@ final class PredictiveIntelligenceTests: XCTestCase {
                 workoutCount: 1
             )
         }
+    }
+
+    // MARK: - Forecast load ceiling
+
+    /// Container that also holds workouts, so the forecast can compute a real
+    /// projected ACWR. `makeFullContainer` deliberately omits them — the earlier
+    /// forecast tests exercise the pure-recovery path.
+    private func makeContainerWithWorkouts() throws -> ModelContainer {
+        let schema = Schema([
+            TrainingPattern.self, StoredDailyScore.self,
+            StoredWorkout.self, StoredFTPSnapshot.self
+        ])
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        return try ModelContainer(for: schema, configurations: config)
+    }
+
+    /// 21 days of 1h/day cycling ending a week ago, then `acuteHours`/day for the
+    /// last 7 days.
+    ///
+    /// Note the horizon: forecast day 1 is *tomorrow*, and its window closes at the
+    /// end of tomorrow — by which point the oldest acute day has already rolled out.
+    /// acuteHours = 3.0 lands ACWR ≈ 1.8 there (2.0 only reaches ≈ 1.45).
+    private func insertRampWorkouts(_ ctx: ModelContext, acuteHours: Double) {
+        for offset in 8...28 {
+            ctx.insert(StoredWorkout(
+                id: "base-\(offset)", type: .cycling,
+                startDate: day(-offset).addingTimeInterval(9 * 3600),
+                duration: 3600, distance: nil, power: nil, energy: nil, hr: nil,
+                source: "test"
+            ))
+        }
+        for offset in 0...6 {
+            ctx.insert(StoredWorkout(
+                id: "acute-\(offset)", type: .cycling,
+                startDate: day(-offset).addingTimeInterval(9 * 3600),
+                duration: acuteHours * 3600, distance: nil, power: nil, energy: nil, hr: nil,
+                source: "test"
+            ))
+        }
+    }
+
+    /// A well-recovered athlete deep in an overload ramp must not be told to go
+    /// hard tomorrow. Recovery alone said "Hard effort OK" while the Load tab was
+    /// telling the same user to take rest days.
+    func testForecast_overloadCapsNearTermLabel() throws {
+        let container = try makeContainerWithWorkouts()
+        let ctx = ModelContext(container)
+
+        for i in 0..<14 {
+            ctx.insert(StoredDailyScore(date: day(-13 + i), readinessScore: 88, dailyStrain: 1.0, workoutCount: 1))
+        }
+        insertRampWorkouts(ctx, acuteHours: 3.0)
+        try ctx.save()
+
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        XCTAssertGreaterThanOrEqual(result[0].predictedReadiness, 80,
+            "Fixture must keep recovery in the 'hard effort' band, or the test proves nothing")
+        XCTAssertEqual(result[0].coaching, "Easy only",
+            "ACWR > 1.5 must cap tomorrow's label regardless of how recovered the athlete is")
+    }
+
+    /// The ceiling relaxes across the horizon: the forecast assumes no further
+    /// workouts, so the 7-day acute window empties and the ramp clears.
+    func testForecast_loadCeilingRelaxesAcrossHorizon() throws {
+        let container = try makeContainerWithWorkouts()
+        let ctx = ModelContext(container)
+
+        for i in 0..<14 {
+            ctx.insert(StoredDailyScore(date: day(-13 + i), readinessScore: 88, dailyStrain: 1.0, workoutCount: 1))
+        }
+        insertRampWorkouts(ctx, acuteHours: 3.0)
+        try ctx.save()
+
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        let restrictiveness = ["Hard effort OK": 0, "Moderate training": 1, "Easy only": 2, "Rest recommended": 3]
+
+        XCTAssertLessThan(restrictiveness[result[6].coaching]!, restrictiveness[result[0].coaching]!,
+            "Day 7 must be less restricted than day 1 — a week without training clears the acute window")
+    }
+
+    /// The load signal is a ceiling, never a floor: it must not upgrade a poor
+    /// recovery day into something easier-sounding.
+    func testForecast_loadCeilingNeverLoosensPoorRecovery() throws {
+        let container = try makeContainerWithWorkouts()
+        let ctx = ModelContext(container)
+
+        for i in 0..<14 {
+            ctx.insert(StoredDailyScore(date: day(-13 + i), readinessScore: 25, dailyStrain: 1.0, workoutCount: 0))
+        }
+        insertRampWorkouts(ctx, acuteHours: 3.0)
+        try ctx.save()
+
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        XCTAssertEqual(result[0].coaching, "Rest recommended",
+            "A 'rest' recovery verdict must survive a load ceiling of 'easy only'")
     }
 
     /// 7 HRV entries spanning the last 7 days with a monotone slope.
