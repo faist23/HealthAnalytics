@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Training load now updates the moment your ride lands.** Every daily ACWR point was measured as of midnight *before* that day — so the trend chart under "Training Load Balance" ignored the ride you'd just done, sat below the number printed next to it, and didn't move when that number did. A steady-load rider saw a flat 1.00 on the chart while the headline read 1.29. Every point on the 7-day and 90-day charts now closes at the end of its own day.
+- **A workout that finished syncing mid-analysis no longer gets ignored.** Analysis takes a while, and any refresh requested while it was running was silently thrown away — so the Load tab could keep describing a day that didn't include your ride until something unrelated nudged it. Those requests are now queued and re-checked.
+- **The Load Details card stopped contradicting itself.** It printed "Training load is elevated" directly above "Training load is optimal and recovery is good" — two sentences banded on two different ratios. Status and recommendation now come from the same ACWR as every other Load surface (an ACWR of 1.40 was being called *overreaching* by the other one).
+- **The 7-day forecast now accounts for training load.** It read your recovery score and nothing else, so it happily said "Hard effort OK" for tomorrow while the Load tab was telling you to take rest days. Load now caps the label — and because the forecast assumes you don't train, the cap eases across the week as your acute window clears. It can only make a day more conservative, never less.
+
+### Changed
+- Overload periods in Extended Analysis are listed newest first.
+- Load surfaces describe, they don't instruct. The lightbulb "recommendation" line is gone from both the Load Details card and the Extended Analysis header; Extended Analysis now carries the same plain-English load sentence the Load tab uses.
+
+
 ## [0.1.10.0] - 2026-07-09
 
 The vocabulary release. The score formerly labeled "Readiness" measures how recovered your body is — so now it says so. "Recovery" everywhere, and the only place you'll see "ready" is the Coach's verdict, where it belongs. Plus the Coach now actually warns you when your training load is risky, the 7-day forecast stopped hallucinating sawtooth workouts you never planned, and the Load tab now tells one consistent story about your ACWR instead of three contradictory ones.

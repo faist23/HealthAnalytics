@@ -136,21 +136,18 @@ struct LoadSummaryCard: View {
                     )
                 }
             }
-            
-            Divider()
-            
-            // Recommendation
-            HStack(spacing: 12) {
-                Image(systemName: "lightbulb.fill")
-                    .foregroundStyle(Color.statusMonitoring)
 
-                Text(summary.recommendation)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-            }
-            .padding()
-            .background(Color.statusMonitoring.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: .radiusSm))
+            Divider()
+
+            // Describes the ratio, doesn't advise on it. Replaces the old
+            // `summary.recommendation` lightbulb ("Reduce load immediately or take
+            // rest days") — Phase 2.4 keeps advisory voice on Coach. Same wording
+            // as `StrainTabView.loadDescription` so the Load tab and this drill-in
+            // say the same thing about the same ratio.
+            Text(loadDescription)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(20)
         .background(.ultraThinMaterial)
@@ -158,6 +155,21 @@ struct LoadSummaryCard: View {
         .padding(.horizontal)
     }
     
+    /// Banded on the canonical ACWR, same thresholds as everywhere else
+    /// (detraining <0.8 / optimal 0.8–1.3 / building 1.3–1.5 / overreaching >1.5).
+    private var loadDescription: String {
+        let acwr = summary.currentACWR
+        if acwr < 0.8 {
+            return "The past week of training has been lighter than your 28-day base."
+        } else if acwr <= 1.3 {
+            return "The past week of training tracks your 28-day base."
+        } else if acwr <= 1.5 {
+            return "The past week of training is running ahead of your 28-day base."
+        } else {
+            return "The past week of training sits well above your 28-day base — a sharp ramp."
+        }
+    }
+
     private var statusColor: Color {
         switch summary.currentStatus {
         case "Optimal": return Color.statusOptimal
@@ -468,14 +480,23 @@ struct WeeklyPatternView: View {
 
 struct DangerZonesSection: View {
     let zones: [TrainingLoadVisualizationService.LoadVisualizationData.DangerZone]
-    
+
+    /// Most recent overload first — the one still relevant to how you feel today
+    /// shouldn't be at the bottom of a 90-day list. The flip is presentational:
+    /// the service emits zones chronologically and `generateSummary` reads
+    /// `dangerZones.last` as the most recent, so sorting there would quietly
+    /// break "weeks since danger".
+    private var zonesNewestFirst: [TrainingLoadVisualizationService.LoadVisualizationData.DangerZone] {
+        zones.sorted { $0.startDate > $1.startDate }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Overload Periods", systemImage: "exclamationmark.triangle.fill")
                 .font(.headline)
                 .foregroundStyle(Color.statusWarning)
 
-            ForEach(zones) { zone in
+            ForEach(zonesNewestFirst) { zone in
                 DangerZoneCard(zone: zone)
             }
         }

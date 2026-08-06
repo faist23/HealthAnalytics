@@ -284,28 +284,14 @@ struct UnifiedTrainingLoadCard: View {
                 }
             }
             
-            // Compact interpretation + recommendation
-            VStack(alignment: .leading, spacing: .spacingSm) {
-                Text(interpretation)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                
-                if let summary = summary {
-                    HStack(spacing: .spacingSm) {
-                        Image(systemName: "lightbulb.fill")
-                            .font(.caption)
-                            .foregroundStyle(Color.statusMonitoring)
-
-                        Text(summary.recommendation)
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                    }
-                    .padding(.vertical, .spacingSm)
-                    .padding(.horizontal, 10)
-                    .background(Color.statusMonitoring.opacity(0.1))
-                    .cornerRadius(.radiusSm)
-                }
-            }
+            // One statement of what the ratio means, no second voice. The
+            // lightbulb line under this used to render `summary.recommendation`
+            // ("Add recovery days regardless of how you feel") — advice, on a Load
+            // surface, saying roughly what the sentence above already says. Phase
+            // 2.4 puts advisory voice on Coach only; Load describes its own state.
+            Text(interpretation)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             
             // Compact Extended Analysis Button
             if let extendedData = extendedData {

@@ -75,6 +75,53 @@ class PredictiveReadinessService {
         )
     }
     
+    // MARK: - Daily Trend
+
+    /// The instant a day's ACWR window closes.
+    ///
+    /// A day's ACWR has to include that day's own training — "what was my ACWR
+    /// on Saturday?" means *after* Saturday's ride, not before it. Past days
+    /// therefore close at the following midnight; the current day closes at
+    /// `now`, because the rest of it hasn't happened yet.
+    ///
+    /// Passing `startOfDay(day)` instead is what made every point on the trend
+    /// charts lag the headline assessment by a day and left today's ride
+    /// invisible until tomorrow.
+    static func windowEnd(for day: Date, now: Date = Date()) -> Date {
+        let calendar = Calendar.current
+        let nextMidnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: day)) ?? day
+        return min(nextMidnight, now)
+    }
+
+    /// Daily ACWR series ending today, one point per calendar day.
+    /// Each point windows to the close of its own day (see `windowEnd(for:now:)`),
+    /// so the final point is by construction identical to the assessment returned
+    /// by `calculateReadiness` for the same workouts.
+    func calculateACWRTrend(
+        stravaActivities: [StravaActivity] = [],
+        healthKitWorkouts: [WorkoutData],
+        ftpSnapshots: [StoredFTPSnapshot] = [],
+        days: Int = 7,
+        referenceDate: Date = Date()
+    ) -> [ACWRDataPoint] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: referenceDate)
+        var points: [ACWRDataPoint] = []
+
+        for dayOffset in (0..<days).reversed() {
+            guard let day = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
+            let assessment = calculateReadiness(
+                stravaActivities: stravaActivities,
+                healthKitWorkouts: healthKitWorkouts,
+                ftpSnapshots: ftpSnapshots,
+                referenceDate: Self.windowEnd(for: day, now: referenceDate)
+            )
+            points.append(ACWRDataPoint(date: day, value: assessment.acwr))
+        }
+
+        return points
+    }
+
     // MARK: - Load Calculations
 
     /// Calculate chronic load (28-day rolling average) as of `referenceDate`.
