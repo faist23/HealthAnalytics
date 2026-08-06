@@ -137,10 +137,17 @@ struct LoadSummaryCard: View {
                 }
             }
 
-            // No lightbulb recommendation here. `summary.recommendation` is
-            // advisory ("Reduce load immediately or take rest days") and Phase 2.4
-            // keeps advisory voice on Coach; this header states the load status and
-            // lets the charts below it carry the detail.
+            Divider()
+
+            // Describes the ratio, doesn't advise on it. Replaces the old
+            // `summary.recommendation` lightbulb ("Reduce load immediately or take
+            // rest days") — Phase 2.4 keeps advisory voice on Coach. Same wording
+            // as `StrainTabView.loadDescription` so the Load tab and this drill-in
+            // say the same thing about the same ratio.
+            Text(loadDescription)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(20)
         .background(.ultraThinMaterial)
@@ -148,6 +155,21 @@ struct LoadSummaryCard: View {
         .padding(.horizontal)
     }
     
+    /// Banded on the canonical ACWR, same thresholds as everywhere else
+    /// (detraining <0.8 / optimal 0.8–1.3 / building 1.3–1.5 / overreaching >1.5).
+    private var loadDescription: String {
+        let acwr = summary.currentACWR
+        if acwr < 0.8 {
+            return "The past week of training has been lighter than your 28-day base."
+        } else if acwr <= 1.3 {
+            return "The past week of training tracks your 28-day base."
+        } else if acwr <= 1.5 {
+            return "The past week of training is running ahead of your 28-day base."
+        } else {
+            return "The past week of training sits well above your 28-day base — a sharp ramp."
+        }
+    }
+
     private var statusColor: Color {
         switch summary.currentStatus {
         case "Optimal": return Color.statusOptimal
