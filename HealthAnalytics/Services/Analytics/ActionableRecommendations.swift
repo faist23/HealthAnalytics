@@ -215,7 +215,7 @@ class ActionableRecommendations {
                     actionItems: [
                         "Schedule 2 strength sessions this week (30-45 min each)",
                         "Focus on compound movements (squats, deadlifts, rows)",
-                        "Research shows combining endurance + strength reduces mortality more than either alone",
+                        "Doing both endurance and strength work is linked to lower all-cause mortality than doing neither",
                         "Even minimal strength work provides significant benefits"
                     ]
                 ))

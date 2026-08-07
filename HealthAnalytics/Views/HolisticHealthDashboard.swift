@@ -115,7 +115,7 @@ struct HolisticHealthDashboard: View {
                         )
                         
                         ResearchBullet(
-                            text: "Combining cardiorespiratory fitness AND strength reduces mortality more than either alone"
+                            text: "Doing both aerobic AND strength work is linked to lower all-cause mortality than doing neither"
                         )
                         
                         ResearchBullet(

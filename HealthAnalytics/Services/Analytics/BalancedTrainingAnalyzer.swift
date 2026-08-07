@@ -3,7 +3,9 @@
 //  HealthAnalytics
 //
 //  Analyzes training balance between aerobic/endurance and strength work
-//  Research: Combining CRF + muscle strength reduces mortality more than either alone
+//  Research: Momma 2022 (BJSM) — doing both aerobic and muscle-strengthening work is
+//  associated with lower all-cause mortality than doing neither. The evidence does NOT
+//  establish that the combination beats either one alone; don't word it that way in UI.
 //  Helps cyclists avoid single-modality training trap
 //
 
@@ -274,7 +276,7 @@ struct BalancedTrainingAnalyzer {
         )
         
         // Research insight
-        let researchInsight = "Research shows combining cardiorespiratory fitness AND muscle strength reduces mortality more than either alone."
+        let researchInsight = "People who do both aerobic and muscle-strengthening work have lower all-cause mortality than people who do neither."
         
         // Create activity breakdown
         let activityBreakdown = ActivityBreakdown(

@@ -323,9 +323,9 @@ struct SupportingMetricsCard: View {
 
     private var balanceConditionReasoning: String {
         switch metrics.trainingBalance {
-        case .excellent, .good: return "Your training mix shows a healthy integration of both strength and endurance work. This dual-stimulus approach is ideal for longevity."
+        case .excellent, .good: return "Your training mix includes both strength and endurance work. Doing both is linked to lower all-cause mortality than doing neither."
         case .moderate: return "Your training is currently leaning heavily toward one modality. Adding variety will help prevent imbalances."
-        case .needsAttention: return "Missing one pillar of training (Strength or Endurance). Research shows that combining both types provides superior health outcomes."
+        case .needsAttention: return "Missing one pillar of training (Strength or Endurance). Doing both aerobic and strength work is linked to lower all-cause mortality than doing neither."
         }
     }
 
