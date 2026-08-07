@@ -48,7 +48,9 @@ private extension ScienceCitation {
         dangerAbove: nil,
         optimalRange: "−5% to +5%",
         unit: "% of baseline",
-        referenceURL: URL(string: "https://doi.org/10.1007/s10286-007-0409-1"),
+        // Kiviniemi et al., Eur J Appl Physiol 2007;101:743–751.
+        // "Endurance training guided individually by daily heart rate variability measurements"
+        referenceURL: URL(string: "https://doi.org/10.1007/s00421-007-0552-2"),
         lastVerified: 2026
     )
 
@@ -65,7 +67,9 @@ private extension ScienceCitation {
         dangerAbove: 1.5,
         optimalRange: "0.8 – 1.3",
         unit: "ratio",
-        referenceURL: URL(string: "https://doi.org/10.1136/bjsports-2016-096308"),
+        // Gabbett, Br J Sports Med 2016;50:273–280.
+        // "The training—injury prevention paradox: should athletes be training smarter and harder?"
+        referenceURL: URL(string: "https://doi.org/10.1136/bjsports-2015-095788"),
         lastVerified: 2026
     )
 
@@ -81,7 +85,9 @@ private extension ScienceCitation {
         dangerAbove: nil,
         optimalRange: "7 – 9 h",
         unit: "hours",
-        referenceURL: URL(string: "https://doi.org/10.1249/JSR.0000000000000418"),
+        // Simpson, Gibbs & Matheson, Scand J Med Sci Sports 2017;27:266–274.
+        // "Optimizing sleep to maximize performance: implications and recommendations for elite athletes"
+        referenceURL: URL(string: "https://doi.org/10.1111/sms.12703"),
         lastVerified: 2026
     )
 
@@ -103,19 +109,26 @@ private extension ScienceCitation {
         lastVerified: 2026
     )
 
-    // MARK: Training Balance — Mujika & Padilla 2003 + Foster 1998
+    // MARK: Training Balance — Momma 2022
+    // This signal measures the endurance / strength / mobility mix (see
+    // BalancedTrainingAnalyzer), NOT periodisation or monotony. It previously
+    // carried a tapering + monotony citation that described a metric this app
+    // does not have — keep the citation topic matched to what the card measures.
     static let trainingBalance = ScienceCitation(
         signal: .trainingBalance,
-        author: "Mujika / Foster",
-        year: 2003,
-        finding: "Appropriate periodisation (build → peak → taper) maximises performance. Monotony index > 2.0 predicts overreaching and illness within 2 weeks.",
-        studyPopulation: "Competitive endurance and team-sport athletes.",
+        author: "Momma",
+        year: 2022,
+        finding: "Muscle-strengthening activity is associated with 10–17% lower risk of all-cause, cardiovascular and cancer mortality, independent of aerobic activity. Risk reduction peaks at roughly 30–60 min/week. Doing both muscle-strengthening and aerobic activity is associated with lower mortality than doing neither.",
+        studyPopulation: "Systematic review and meta-analysis of 16 prospective cohort studies; adults 18+ without severe health conditions.",
         lowerBound: nil,
         upperBound: nil,
         dangerAbove: nil,
         optimalRange: nil,
         unit: "AU",
-        referenceURL: URL(string: "https://doi.org/10.1249/01.MSS.0000078990.10047.1F"),
+        // Momma, Kawakami, Honda & Sawada, Br J Sports Med 2022;56:755–763.
+        // "Muscle-strengthening activities are associated with lower risk and
+        //  mortality in major non-communicable diseases"
+        referenceURL: URL(string: "https://doi.org/10.1136/bjsports-2021-105061"),
         lastVerified: 2026
     )
 }
