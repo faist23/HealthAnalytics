@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 
+## [0.1.12.0] - 2026-08-07
+
+### Changed
+- **The last research citation that could rot unnoticed is now covered.** The Cycling Compound Score card carried its citation inline, so the test that checks every "View source" link couldn't see it. It has moved in with the other five and is now pinned the same way. It was also mis-tagged internally as the biological-age signal, which meant the app was reasoning about it as the wrong kind of measurement. No change to what you see on the card.
+
+
 ## [0.1.11.0] - 2026-08-07
 
 The receipts release. Every "View source" link under a health signal now opens the paper it claims to cite — two of them opened a dead page, two opened somebody else's study, and Training Balance was citing research about a metric this app doesn't even measure. Plus the load-consistency work from the last cycle.
