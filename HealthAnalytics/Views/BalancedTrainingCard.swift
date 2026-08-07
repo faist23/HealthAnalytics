@@ -3,7 +3,8 @@
 //  HealthAnalytics
 //
 //  Training balance visualization - endurance vs strength
-//  Research-backed approach: Both CRF + strength reduce mortality more than either alone
+//  Research-backed approach: Momma 2022 (BJSM) — doing both aerobic and strength work is
+//  associated with lower all-cause mortality than doing neither (not "than either alone").
 //
 
 import SwiftUI
@@ -300,7 +301,7 @@ struct RecommendedSplitSheet: View {
                         
                         VStack(alignment: .leading, spacing: 12) {
                             InsightBullet(
-                                text: "Combining cardiorespiratory fitness AND muscle strength reduces mortality more than either alone"
+                                text: "Doing both aerobic AND muscle-strengthening work is linked to lower all-cause mortality than doing neither"
                             )
                             
                             InsightBullet(
@@ -446,7 +447,7 @@ struct SampleDayRow: View {
             balance: .optimal,
             trend: .stable,
             recommendation: "Excellent endurance-strength balance. Consider adding 1-2 weekly mobility sessions.",
-            researchInsight: "Research shows combining cardiorespiratory fitness AND muscle strength reduces mortality more than either alone.",
+            researchInsight: "People who do both aerobic and muscle-strengthening work have lower all-cause mortality than people who do neither.",
             activityBreakdown: BalancedTrainingAnalyzer.ActivityBreakdown(
                 cycling: 350,
                 running: 70,
@@ -474,7 +475,7 @@ struct SampleDayRow: View {
             balance: .missingStrength,
             trend: .unbalancing,
             recommendation: "No strength training in 18 days. Schedule 2-3 sessions this week to maintain muscle mass.",
-            researchInsight: "Research shows combining cardiorespiratory fitness AND muscle strength reduces mortality more than either alone.",
+            researchInsight: "People who do both aerobic and muscle-strengthening work have lower all-cause mortality than people who do neither.",
             activityBreakdown: BalancedTrainingAnalyzer.ActivityBreakdown(
                 cycling: 480,
                 running: 60,

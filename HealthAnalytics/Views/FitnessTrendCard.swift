@@ -674,7 +674,7 @@ struct FitnessTrendInfoSheet: View {
                     VStack(alignment: .leading, spacing: .spacingSm) {
                         Text("**MET-minutes:** Based on 750,000+ participant studies. Each MET increase = 14-15% mortality reduction.")
                         
-                        Text("**Training Balance:** Research shows combining cardiorespiratory fitness AND strength training reduces mortality more than either alone.")
+                        Text("**Training Balance:** People who do both aerobic and strength training have lower all-cause mortality than people who do neither.")
                         
                         Text("**HRV & Recovery:** Real-time markers of your body's recovery state and adaptation.")
                         

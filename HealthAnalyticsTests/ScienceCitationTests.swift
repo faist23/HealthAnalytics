@@ -76,6 +76,71 @@ final class ScienceCitationTests: XCTestCase {
         XCTAssertNil(c.dangerAbove, "WHO 2020 has no upper danger zone — dangerAbove must be nil")
     }
 
+    // MARK: - Reference URLs ("View source" link target)
+
+    /// Every citation the UI can show must carry a link, or `MetricConditionDetailView`
+    /// silently drops the "View source" row.
+    func testEveryCitationHasAReferenceURL() {
+        for signal in SignalType.allCases {
+            guard let c = CitationDatabase.citation(for: signal) else { continue }
+            XCTAssertNotNil(c.referenceURL, "\(signal) has no referenceURL — 'View source' would not render")
+        }
+    }
+
+    /// Pins each DOI to the exact paper whose author/year/finding we display.
+    ///
+    /// Regression: the HRV and training-balance DOIs were unregistered (doi.org 404 —
+    /// "DOI Not Found"), and the sleep + ACWR DOIs resolved to *different* papers than
+    /// the ones attributed on screen. Verified against the DOI handle API 2026-08-07.
+    /// If you change a DOI here, resolve it first — do not hand-assemble a suffix.
+    func testReferenceURLsPointAtTheAttributedPaper() throws {
+        let expected: [SignalType: String] = [
+            // Kiviniemi et al. 2007, Eur J Appl Physiol
+            .hrv: "https://doi.org/10.1007/s00421-007-0552-2",
+            // Gabbett 2016, BJSM — the training–injury prevention paradox
+            .acwr: "https://doi.org/10.1136/bjsports-2015-095788",
+            // Simpson, Gibbs & Matheson 2017, Scand J Med Sci Sports
+            .sleep: "https://doi.org/10.1111/sms.12703",
+            // Bull et al. 2020, BJSM — WHO physical activity guidelines
+            .metMinutes: "https://doi.org/10.1136/bjsports-2020-102955",
+            // Momma et al. 2022, BJSM — muscle-strengthening + mortality
+            .trainingBalance: "https://doi.org/10.1136/bjsports-2021-105061",
+        ]
+
+        for (signal, urlString) in expected {
+            let c = try XCTUnwrap(CitationDatabase.citation(for: signal))
+            let actual = try XCTUnwrap(c.referenceURL)
+            XCTAssertEqual(actual.absoluteString, urlString, "\(signal) links to the wrong paper")
+        }
+
+        // Guard the pin list itself: a signal added later must be pinned here,
+        // otherwise it would ship an unverified DOI and this test would still pass.
+        for signal in SignalType.allCases where CitationDatabase.citation(for: signal) != nil {
+            XCTAssertNotNil(expected[signal],
+                            "\(signal) has a citation but no pinned DOI — resolve it and add it here")
+        }
+    }
+
+    /// The Training Balance card measures the endurance/strength/mobility mix
+    /// (`BalancedTrainingAnalyzer`), so its citation must be about combining
+    /// strength with aerobic work — not periodisation, tapering, or monotony.
+    ///
+    /// Regression: it shipped citing "Mujika / Foster 2003" with a tapering paper,
+    /// describing a metric this app does not have.
+    func testTrainingBalanceCitesStrengthResearchNotPeriodisation() throws {
+        let c = try XCTUnwrap(CitationDatabase.citation(for: .trainingBalance))
+        XCTAssertEqual(c.author, "Momma")
+        XCTAssertEqual(c.year, 2022)
+
+        let text = (c.finding + " " + c.studyPopulation).lowercased()
+        XCTAssertTrue(text.contains("muscle-strengthening"),
+                      "Training Balance citation should describe strength work")
+        for offTopic in ["periodisation", "taper", "monotony"] {
+            XCTAssertFalse(text.contains(offTopic),
+                           "Training Balance citation must not describe \(offTopic) — wrong metric")
+        }
+    }
+
     // MARK: - All populated fields are non-empty strings
 
     func testAllCitationStringsAreNonEmpty() {

@@ -93,6 +93,8 @@
 
 **Context:** Citations in Phase 1 will be verified at code time (2026). The first review is due ~2028. Flag in code with `// lastVerified: 2026 — review by 2028`.
 
+**Correction (v0.1.11.0, 2026-08-07):** the "verified at code time" premise did not hold — the DOIs were never resolved, and 2 of 5 were unregistered while 2 more pointed at the wrong paper. All five are now resolved against Crossref and pinned by `ScienceCitationTests.testReferenceURLsPointAtTheAttributedPaper`, so the 2028 review starts from a known-good set. Note: publisher sites 403 `curl`; use `https://doi.org/api/handles/<doi>` to check resolution.
+
 **Effort:** S per citation (human: ~1 day research / CC+gstack: ~1 hour)
 
 ## Design
