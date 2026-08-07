@@ -5,13 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+
+## [0.1.11.0] - 2026-08-07
+
+The receipts release. Every "View source" link under a health signal now opens the paper it claims to cite — two of them opened a dead page, two opened somebody else's study, and Training Balance was citing research about a metric this app doesn't even measure. Plus the load-consistency work from the last cycle.
+
 ### Fixed
+- **"View source" opens the actual research paper now.** Tapping a health signal on the Coach tab shows a RESEARCH BASIS card with a link. Two of those links (HRV, Training Balance) went to a "DOI Not Found" page, and two more (Sleep, Training Load) quietly opened a *different* study than the author printed above them. All five now resolve to the paper named on screen.
+- **Training Balance was citing the wrong subject entirely.** The card measures how your training splits between endurance, strength, and mobility — but the research underneath it described periodisation and training monotony, which the app doesn't measure anywhere. It now cites Momma 2022, a meta-analysis of 16 studies on exactly what the card is about: what combining strength work with aerobic work does for you.
 - **Training load now updates the moment your ride lands.** Every daily ACWR point was measured as of midnight *before* that day — so the trend chart under "Training Load Balance" ignored the ride you'd just done, sat below the number printed next to it, and didn't move when that number did. A steady-load rider saw a flat 1.00 on the chart while the headline read 1.29. Every point on the 7-day and 90-day charts now closes at the end of its own day.
 - **A workout that finished syncing mid-analysis no longer gets ignored.** Analysis takes a while, and any refresh requested while it was running was silently thrown away — so the Load tab could keep describing a day that didn't include your ride until something unrelated nudged it. Those requests are now queued and re-checked.
 - **The Load Details card stopped contradicting itself.** It printed "Training load is elevated" directly above "Training load is optimal and recovery is good" — two sentences banded on two different ratios. Status and recommendation now come from the same ACWR as every other Load surface (an ACWR of 1.40 was being called *overreaching* by the other one).
 - **The 7-day forecast now accounts for training load.** It read your recovery score and nothing else, so it happily said "Hard effort OK" for tomorrow while the Load tab was telling you to take rest days. Load now caps the label — and because the forecast assumes you don't train, the cap eases across the week as your acute window clears. It can only make a day more conservative, never less.
 
 ### Changed
+- **The app no longer claims more than the research shows.** Six screens said combining cardio and strength "reduces mortality more than either alone." The study behind it only compares doing both against doing neither — it never establishes that the combination beats either one on its own. Every one of those screens now says what the evidence actually supports.
 - Overload periods in Extended Analysis are listed newest first.
 - Load surfaces describe, they don't instruct. The lightbulb "recommendation" line is gone from both the Load Details card and the Extended Analysis header; Extended Analysis now carries the same plain-English load sentence the Load tab uses.
 
