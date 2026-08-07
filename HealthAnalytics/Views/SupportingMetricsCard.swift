@@ -308,6 +308,24 @@ struct SupportingMetricsCard: View {
                 detailedInsight: nil,
                 badgeType: .estimate
             )
+        case .compoundScore:
+            // Owned by CyclingCompoundScoreCard, which builds its own config from
+            // CyclingPowerAnalyzer output. `metrics` carries no compound score, so
+            // this branch is unreachable — it exists only for switch exhaustiveness
+            // and shows an explicit empty state rather than fabricating a number.
+            return MetricDisplayConfig(
+                id: "compound_score",
+                title: "Cycling Compound Score",
+                icon: "bicycle",
+                currentValueFormatted: "—",
+                status: .needsAttention,
+                citation: citation,
+                thresholdBarValue: nil,
+                conditionReasoning: "Compound Score is shown on the cycling power card, not here.",
+                guidanceText: "",
+                detailedInsight: nil,
+                badgeType: .science
+            )
         }
     }
 

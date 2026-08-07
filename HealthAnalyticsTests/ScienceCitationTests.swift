@@ -16,6 +16,7 @@ final class ScienceCitationTests: XCTestCase {
         XCTAssertNotNil(CitationDatabase.citation(for: .sleep))
         XCTAssertNotNil(CitationDatabase.citation(for: .metMinutes))
         XCTAssertNotNil(CitationDatabase.citation(for: .trainingBalance))
+        XCTAssertNotNil(CitationDatabase.citation(for: .compoundScore))
     }
 
     func testBiologicalAgeReturnsNil() {
@@ -105,6 +106,9 @@ final class ScienceCitationTests: XCTestCase {
             .metMinutes: "https://doi.org/10.1136/bjsports-2020-102955",
             // Momma et al. 2022, BJSM — muscle-strengthening + mortality
             .trainingBalance: "https://doi.org/10.1136/bjsports-2021-105061",
+            // Leo et al. 2022, J Sci Cycling 11(2) — no DOI registered for this
+            // article; the OJS article URL is canonical.
+            .compoundScore: "https://www.jsc-journal.com/index.php/JSC/article/view/733",
         ]
 
         for (signal, urlString) in expected {

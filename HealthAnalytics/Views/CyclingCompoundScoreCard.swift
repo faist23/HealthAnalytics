@@ -88,20 +88,7 @@ struct CyclingCompoundScoreCard: View {
                     icon: "bicycle",
                     currentValueFormatted: String(format: "%.0f", analysis.compoundScore),
                     status: .good, // Using .good (blue) for optimal representation
-                    citation: ScienceCitation(
-                        signal: .biologicalAge, // Fallback since it's an enum
-                        author: "Leo et al.",
-                        year: 2022,
-                        finding: "The Compound Score solves the debate between Absolute and Relative power by multiplying them to predict all-around performance.",
-                        studyPopulation: "Elite Road Cyclists",
-                        lowerBound: nil,
-                        upperBound: nil,
-                        dangerAbove: nil,
-                        optimalRange: nil,
-                        unit: "Score",
-                        referenceURL: URL(string: "https://www.jsc-journal.com/index.php/JSC/article/view/733"),
-                        lastVerified: 2026
-                    ),
+                    citation: CitationDatabase.citation(for: .compoundScore),
                     thresholdBarValue: nil,
                     conditionReasoning: analysis.insight,
                     guidanceText: "Target workouts that balance raw sprint/TT power with lean weight management based on your phenotype (\(analysis.phenotype)).\n\n*Note: This app calculates your Absolute Power by extracting the highest 5-minute rolling average power directly from your recent cycling workouts.\n\nGrading Scale (approximate):\n• Beginner: < 450\n• Recreational: 450 - 749\n• Intermediate: 750 - 1099\n• Advanced: 1100 - 1599\n• Elite/Pro: 1600+",

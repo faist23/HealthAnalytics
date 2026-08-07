@@ -20,6 +20,7 @@ enum CitationDatabase {
         case .sleep:            return .sleep
         case .metMinutes:       return .metMinutes
         case .trainingBalance:  return .trainingBalance
+        case .compoundScore:    return .compoundScore
         case .biologicalAge:    return nil   // internal model — no external citation
         }
     }
@@ -129,6 +130,28 @@ private extension ScienceCitation {
         // "Muscle-strengthening activities are associated with lower risk and
         //  mortality in major non-communicable diseases"
         referenceURL: URL(string: "https://doi.org/10.1136/bjsports-2021-105061"),
+        lastVerified: 2026
+    )
+
+    // MARK: Cycling Compound Score — Leo 2022
+    // Moved here from an inline literal in CyclingCompoundScoreCard, where it was
+    // invisible to the DOI pin test and mis-tagged as `signal: .biologicalAge`.
+    // No DOI is registered for this article — the OJS article URL IS the canonical
+    // link. Do not "correct" it to a doi.org form; there isn't one.
+    static let compoundScore = ScienceCitation(
+        signal: .compoundScore,
+        author: "Leo et al.",
+        year: 2022,
+        finding: "The Compound Score solves the debate between Absolute and Relative power by multiplying them to predict all-around performance.",
+        studyPopulation: "Elite Road Cyclists",
+        lowerBound: nil,
+        upperBound: nil,
+        dangerAbove: nil,
+        optimalRange: nil,
+        unit: "Score",
+        // Leo, Spragg, Wakefield & Swart, J Sci Cycling 2022;11(2).
+        // "The Compound Score in elite road cycling"
+        referenceURL: URL(string: "https://www.jsc-journal.com/index.php/JSC/article/view/733"),
         lastVerified: 2026
     )
 }

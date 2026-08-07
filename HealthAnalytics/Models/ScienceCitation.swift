@@ -18,6 +18,10 @@ enum SignalType: String, CaseIterable {
     case metMinutes
     case trainingBalance
     case biologicalAge
+    /// Cycling Compound Score — surfaced only by `CyclingCompoundScoreCard`,
+    /// not by `SupportingMetricsCard`. It lives here so its citation is stored
+    /// (and DOI-pinned by tests) alongside every other one.
+    case compoundScore
 }
 
 // MARK: - Science Citation
