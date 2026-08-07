@@ -53,7 +53,7 @@ struct ResearchThresholdBar: View {
             return sleepZone(value: value, citation: citation)
         case .metMinutes:
             return metZone(value: value)
-        case .trainingBalance, .biologicalAge:
+        case .trainingBalance, .biologicalAge, .compoundScore:
             return symmetricZone(value: value, citation: citation)
         }
     }
@@ -161,7 +161,7 @@ struct ResearchThresholdBar: View {
                 Segment(label: .monitoring,    color: .statusMonitoring, fraction: 0.35, shortLabel: "150–599"),
                 Segment(label: .optimal,       color: .statusOptimal,   fraction: 0.50, shortLabel: "≥ 600")
             ]
-        case .trainingBalance, .biologicalAge:
+        case .trainingBalance, .biologicalAge, .compoundScore:
             // No scalar thresholds — bar is suppressed at the call site via the
             // `citation.lowerBound != nil || citation.dangerAbove != nil` guard.
             // This case exists so adding a new SignalType is a compile error here.
@@ -196,7 +196,7 @@ struct ResearchThresholdBar: View {
             // Scale: 0 → 0, 1500+ → 1.0 (clamped at 1500 — no upper harm)
             let clamped = min(value, 1500.0)
             return clamped / 1500.0
-        case .trainingBalance, .biologicalAge:
+        case .trainingBalance, .biologicalAge, .compoundScore:
             // Bar is suppressed at the call site for these signals (no scalar thresholds).
             // Return 0.5 as a safe no-op fallback; this branch should never render.
             guard let lower = citation.lowerBound, let upper = citation.upperBound else { return 0.5 }
