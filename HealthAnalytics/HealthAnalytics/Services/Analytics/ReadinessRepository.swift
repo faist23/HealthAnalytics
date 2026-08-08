@@ -662,10 +662,9 @@ class ReadinessRepository: ObservableObject {
             let computedForecast = compute7DayForecast(modelContext: modelContext, overrideACWR: readinessAssessmentResult.acwr)
             let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? Date()
             let nextDayCoaching = computedForecast?.first(where: { calendar.isDate($0.date, inSameDayAs: nextDay) })?.coaching
-            let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: today) ?? today
             let allStoredPatterns = (try? modelContext.fetch(FetchDescriptor<TrainingPattern>())) ?? []
             let activePatternTypes = allStoredPatterns
-                .filter { $0.detectedAt >= sevenDaysAgo }
+                .filter { $0.isActive }
                 .map(\.patternType)
             
             let allMemories = (try? modelContext.fetch(FetchDescriptor<CoachMemoryNote>())) ?? []

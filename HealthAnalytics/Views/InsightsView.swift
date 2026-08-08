@@ -19,7 +19,14 @@ struct InsightsView: View {
 
     // Reactive SwiftData read — updates automatically when TrainingDNAAnalyzer persists
     @Query(sort: \TrainingPattern.confidenceNumerator, order: .reverse)
-    private var detectedPatterns: [TrainingPattern]
+    private var storedPatterns: [TrainingPattern]
+
+    /// Only patterns still being re-detected. Stored patterns are never deleted, so
+    /// without this filter the card list showed de-detected patterns indefinitely
+    /// while the tab badge and header strip (both already recency-filtered) read 0.
+    private var detectedPatterns: [TrainingPattern] {
+        storedPatterns.filter { $0.isActive }
+    }
 
     @ObservedObject private var repo = ReadinessRepository.shared
 
@@ -127,7 +134,13 @@ struct InsightsView: View {
                 } else if let err = patternAnalysisError {
                     patternErrorRow(message: err)
                 } else if detectedPatterns.isEmpty {
-                    trainingDNAProgressRow(daysNeeded: 0)
+                    // Distinguish "never found anything" from "found patterns before,
+                    // none still hold" — the second is a real, informative state.
+                    if storedPatterns.isEmpty {
+                        trainingDNAProgressRow(daysNeeded: 0)
+                    } else {
+                        patternsQuietRow
+                    }
                 } else {
                     VStack(spacing: .spacingMd) {
                         ForEach(detectedPatterns) { pattern in
@@ -151,6 +164,13 @@ struct InsightsView: View {
                 }
             }
         }
+    }
+
+    private var patternsQuietRow: some View {
+        Text("No patterns active this week — nothing in your recent training stands out. Past patterns return here when they show up again.")
+            .font(.system(size: 13, weight: .regular, design: .default))
+            .foregroundStyle(Color.textSecondary)
+            .padding(.horizontal, .spacingXs)
     }
 
     private func trainingDNAProgressRow(daysNeeded: Int) -> some View {

@@ -702,4 +702,102 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
             "Warmup-only days (dailyLoad=0.3) must not qualify as hard days — no back-to-back crash pattern should be detected"
         )
     }
+
+    // MARK: - Confidence Copy
+
+    /// Tapering packs a percentage into numerator/denominator, so the shared
+    /// "seen in N of M" phrasing rendered "seen in 41 of 30 taper" — a fraction
+    /// above 1 against a singular noun. Load-based detection makes 50–70% drops
+    /// routine, so this string is on screen for every real taper.
+    func testTaperConfidenceTextReadsAsAPercentage() throws {
+        let taper = makePattern(.tapering, detectedAt: Date())   // 41 / 30
+        XCTAssertEqual(taper.confidenceCountText, "load down 41% (30% threshold)")
+        XCTAssertFalse(
+            taper.confidenceCountText.contains("seen in"),
+            "Taper must not use the N-of-M instance-count phrasing"
+        )
+    }
+
+    /// The other five pattern types genuinely count instances — leave them alone.
+    func testNonTaperConfidenceTextKeepsInstanceCount() throws {
+        let crash = makePattern(.backToBackCrash, detectedAt: Date())  // 41 / 30
+        XCTAssertEqual(crash.confidenceCountText, "seen in 41 of 30 sequences")
+    }
+
+    // MARK: - Pattern Staleness (isActive)
+
+    /// Builds a pattern with an explicit detectedAt. Field values are irrelevant here —
+    /// only recency is under test.
+    private func makePattern(
+        _ type: PatternType,
+        detectedAt: Date
+    ) -> TrainingPattern {
+        TrainingPattern(
+            patternType: type,
+            detectedAt: detectedAt,
+            confidenceNumerator: 41,
+            confidenceDenominator: 30,
+            evidenceSummary: "Load down 41% — peak form expected Jul 24.",
+            citationKey: type.citationKey,
+            instanceDates: [detectedAt],
+            coachingResponse: "Taper underway — keep intensity but cut volume."
+        )
+    }
+
+    /// Regression: a taper detected weeks ago and never re-detected kept rendering on
+    /// the Training DNA card list forever, claiming "Load down 41%" while the Load tab
+    /// correctly read ACWR ~1.0. Nothing deletes a TrainingPattern, so recency is the
+    /// only signal that a pattern still holds.
+    func testPatternDetectedThreeWeeksAgoIsNotActive() throws {
+        let stale = makePattern(.tapering, detectedAt: day(-21))
+        XCTAssertFalse(
+            stale.isActive,
+            "A pattern last re-detected 21 days ago must not count as active — it is what froze a stale taper card on Training DNA"
+        )
+    }
+
+    func testPatternDetectedTodayIsActive() throws {
+        XCTAssertTrue(
+            makePattern(.tapering, detectedAt: Date()).isActive,
+            "A pattern re-detected today must be active"
+        )
+    }
+
+    /// Pins the 7-day window itself. MainTabView's badge, PatternsTabView's header
+    /// strip, RecoveryTabView's top pattern and InsightsView's card list all read
+    /// isActive — changing this constant moves all four together, by design.
+    func testActiveWindowBoundaryIsSevenDays() throws {
+        XCTAssertEqual(TrainingPattern.activeWindowDays, 7)
+
+        // 6 days ago: inside the window.
+        XCTAssertTrue(
+            makePattern(.performancePeak, detectedAt: day(-6)).isActive,
+            "6 days old is inside the 7-day active window"
+        )
+        // 8 days ago: outside it.
+        XCTAssertFalse(
+            makePattern(.performancePeak, detectedAt: day(-8)).isActive,
+            "8 days old is outside the 7-day active window"
+        )
+    }
+
+    /// The card list and the tab badge must agree. Before the fix the badge filtered
+    /// on recency and the card list did not, so the badge read 0 while a taper card
+    /// was still on screen.
+    func testCardListAndBadgeSeeTheSameActiveSet() throws {
+        let patterns = [
+            makePattern(.tapering, detectedAt: day(-21)),        // stale
+            makePattern(.sleepFragmentation, detectedAt: day(-2)) // fresh
+        ]
+
+        let cardList = patterns.filter { $0.isActive }
+        let badgeCount = patterns.filter { $0.isActive }.count
+
+        XCTAssertEqual(cardList.count, badgeCount)
+        XCTAssertEqual(cardList.count, 1, "Only the fresh pattern is active")
+        XCTAssertEqual(
+            cardList.first?.patternType, .sleepFragmentation,
+            "The stale taper must be filtered out of the Training DNA card list"
+        )
+    }
 }

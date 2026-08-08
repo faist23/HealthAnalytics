@@ -157,7 +157,14 @@ final class TrainingPattern {
     }
 
     var confidenceCountText: String {
-        "seen in \(confidenceNumerator) of \(confidenceDenominator) \(patternType.instanceNoun)"
+        // Tapering has no instances to count — `detectTaperUnderway` packs the load-drop
+        // percentage into the numerator and the 30% trigger threshold into the denominator.
+        // The shared "seen in N of M" phrasing turns that into "seen in 41 of 30 taper":
+        // a fraction above 1 against a singular noun. Render it as what it actually is.
+        if patternType == .tapering {
+            return "load down \(confidenceNumerator)% (\(confidenceDenominator)% threshold)"
+        }
+        return "seen in \(confidenceNumerator) of \(confidenceDenominator) \(patternType.instanceNoun)"
     }
 
     var shareText: String {
@@ -174,5 +181,26 @@ final class TrainingPattern {
     /// True when detected within the last 48 hours.
     var isNewlyDetected: Bool {
         Date().timeIntervalSince(detectedAt) < 48 * 3600
+    }
+
+    /// How recently a pattern must have been re-detected to count as "active".
+    /// `upsertPatterns` refreshes `detectedAt` on every run where the pattern still
+    /// holds, so a pattern that stops being true simply ages out of this window.
+    static let activeWindowDays = 7
+
+    /// True when the pattern was re-detected within the active window.
+    ///
+    /// Nothing ever deletes a `TrainingPattern` — `TrainingDNAAnalyzer.upsertPatterns`
+    /// only inserts and updates, deliberately, so `notificationSent` survives. That
+    /// makes recency the ONLY signal that a pattern still holds, and every surface
+    /// that shows patterns MUST filter on it. Skipping the filter freezes a card on
+    /// screen forever: a taper detected once kept claiming "Taper Underway / Load
+    /// down 41%" weeks after the load came back up, while the Load tab correctly
+    /// read ACWR ~1.0. Do not re-introduce a local `sevenDaysAgo` cutoff in a view.
+    var isActive: Bool {
+        let cutoff = Calendar.current.date(
+            byAdding: .day, value: -Self.activeWindowDays, to: Date()
+        ) ?? Date()
+        return detectedAt >= cutoff
     }
 }

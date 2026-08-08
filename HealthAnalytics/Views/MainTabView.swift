@@ -17,8 +17,7 @@ struct MainTabView: View {
     @Query private var detectedPatterns: [TrainingPattern]
 
     private var activePatternCount: Int {
-        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        return detectedPatterns.filter { $0.detectedAt >= sevenDaysAgo }.count
+        detectedPatterns.filter { $0.isActive }.count
     }
 
     var body: some View {
