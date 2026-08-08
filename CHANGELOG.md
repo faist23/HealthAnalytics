@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 
+## [0.1.13.0] - 2026-08-08
+
+The phantom taper release. Training DNA was showing "Taper Underway — Load down 41%" while the Load tab showed perfectly normal training. Two separate things were wrong: the card never went away, and the thing that put it there was measuring the wrong number.
+
+### Fixed
+- **Pattern cards go away when the pattern does.** Nothing ever removed a Training DNA card once it appeared, and the card list — unlike the tab badge and the "N patterns active this week" strip above it — never checked whether the pattern was still happening. So a taper detected once kept announcing itself weeks later, quoting a load drop from a month ago, while the badge beside it read 0. Cards now clear when the pattern stops showing up in your data, and the Coach tab uses the same cutoff as everything else instead of one that ran a day wider.
+- **"Taper Underway" now means your training actually went down.** The detector was watching your acute:chronic ratio rather than your actual training load. That ratio drifts back toward normal on its own for about a month after you raise your training, with no change in what you're doing — so coming back from a break, or stepping up a block and holding it, registered as a 34–58% "load drop." Across ten simulated training histories the old measure got five verdicts wrong; the new one got none. It also used to miss a genuine 50% volume cut entirely.
+- **A taper needs training to taper from.** A quiet stretch with almost no riding could register as a large drop from nearly nothing. There's now a floor on the baseline, which also covers older stored days that never had a load recorded.
+- **The taper card stopped printing "seen in 41 of 30 taper."** Every other pattern counts occurrences ("seen in 4 of 6 blocks"); taper was putting a percentage in that slot. It now reads "load down 41% (30% threshold)". The other five cards are unchanged.
+
+### Changed
+- Recovery, Patterns, Coach, and the tab badge now share one definition of an active pattern, so they can't drift apart again.
+
+
 ## [0.1.12.0] - 2026-08-07
 
 ### Changed
