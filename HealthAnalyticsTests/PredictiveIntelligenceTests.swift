@@ -324,11 +324,13 @@ final class PredictiveIntelligenceTests: XCTestCase {
     // MARK: - Part 4: detectTaperUnderway
     //
     // Fixture geometry:
-    //   makeTaperScores(last7Strain:prev21Strain:totalDays:):
-    //     90 days of scores. Last 7 days at last7Strain, all earlier days at prev21Strain.
+    //   makeTaperScores(last7Load:prev21Load:totalDays:):
+    //     90 days of scores. Last 7 days at last7Load, all earlier days at prev21Load.
     //     The detector reads scores28 (last 28 days from modelContext) and splits:
     //       last7 = suffix(7), prev21 = prefix(21).
     //     Drop formula: (prev21Mean - last7Mean) / prev21Mean. Gate: >= 0.30.
+    //     Bands on dailyLoad (actual TSS/day), NOT dailyStrain (the ACWR ratio) —
+    //     the fixture pins dailyStrain to a constant so a regression to it goes red.
     //   makeTaperHRVData(slope:): 7 HRV entries increasing (positive) or decreasing (negative).
     //
     // Probability formula: min(1, drop/0.30)*0.60 + (positiveSlope ? 0.40 : 0.0); gate >= 0.80.
@@ -343,7 +345,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         mock.hrvData = makeTaperHRVData(positive: true)
         await analyzer.setDataProvider(mock)
 
-        try await analyzer.insertDailyScores(makeTaperScores(last7Strain: 0.65, prev21Strain: 1.0))
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
         _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
@@ -364,7 +366,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         await analyzer.setDataProvider(mock)
 
         // 29% drop: (1.0 - 0.71) / 1.0 = 0.29
-        try await analyzer.insertDailyScores(makeTaperScores(last7Strain: 0.71, prev21Strain: 1.0))
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.71, prev21Load: 1.0))
         _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
@@ -384,7 +386,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         mock.hrvData = makeTaperHRVData(positive: false)
         await analyzer.setDataProvider(mock)
 
-        try await analyzer.insertDailyScores(makeTaperScores(last7Strain: 0.65, prev21Strain: 1.0))
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
         _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
@@ -428,7 +430,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         mock.hrvData = makeTaperHRVData(positive: true)
         await analyzer.setDataProvider(mock)
 
-        try await analyzer.insertDailyScores(makeTaperScores(last7Strain: 0.65, prev21Strain: 1.0))
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
         _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
@@ -438,6 +440,96 @@ final class PredictiveIntelligenceTests: XCTestCase {
         let expected = Calendar.current.date(byAdding: .day, value: 14, to: Date())!
         let diff = abs(p.peakDate!.timeIntervalSince(expected))
         XCTAssertLessThan(diff, 60, "peakDate must be today + 14 days (Mujika & Padilla 2003)")
+    }
+
+    // MARK: - Part 4 (regression): taper must band on load, not the ACWR ratio
+
+    /// Builds 90 days where actual daily load is FLAT but the ACWR ratio decays hard,
+    /// which is what happens for ~28 days after any step up in training: the 28-day
+    /// chronic denominator is still catching up to the 7-day acute numerator.
+    ///
+    /// Load is constant, so a load-based detector must stay silent. `dailyStrain` walks
+    /// 2.20 → 1.00 across the 28-day window (a 41% mean drop, well past the 30% gate),
+    /// so an ACWR-based detector fires. That difference is the regression.
+    private func makeFlatLoadDecayingACWRScores(totalDays: Int = 90) -> [StoredDailyScore] {
+        (0..<totalDays).map { i in
+            let daysAgo = totalDays - 1 - i
+            // Linear decay from 2.20 (28 days ago) down to 1.00 (today).
+            let strain = daysAgo >= 28 ? 2.20 : 1.00 + (Double(daysAgo) / 28.0) * 1.20
+            return StoredDailyScore(
+                date: day(-daysAgo),
+                readinessScore: 70,
+                dailyStrain: strain,
+                workoutCount: 1,
+                dailyLoad: 1.0   // FLAT — training volume never changed
+            )
+        }
+    }
+
+    /// Regression: "stepped up training a month ago and held it flat" must NOT read as a taper.
+    /// This is the false positive the user hit — Training DNA claimed "Taper Underway /
+    /// Load down 41%" while the Load tab correctly showed ACWR ~1.0 and steady volume.
+    func testTaperUnderway_flatLoadWithDecayingACWR_notConfirmed() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)   // HRV gate satisfied
+        await analyzer.setDataProvider(mock)
+
+        try await analyzer.insertDailyScores(makeFlatLoadDecayingACWRScores())
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .tapering },
+            "Unchanged training volume must never read as a taper — a decaying ACWR ratio is the 28-day chronic window catching up, not an unload"
+        )
+    }
+
+    /// Regression: a genuine 50% volume cut must fire. The old ACWR-ratio metric moved
+    /// only ~24% here and missed it entirely.
+    func testTaperUnderway_genuineHalvedVolume_confirmed() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        // 50% drop: baseline 2.0 TSS/day → 1.0 TSS/day for the last week.
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 1.0, prev21Load: 2.0))
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(
+            patterns.contains { $0.patternType == .tapering },
+            "Halving training volume is a real taper and must be detected"
+        )
+    }
+
+    /// Regression: with no training to taper from, a drop to zero must not fire.
+    /// Also covers pre-migration rows where every dailyLoad defaults to 0.0.
+    func testTaperUnderway_noBaselineTrainingLoad_notConfirmed() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        // Baseline 0.1/day is below taperBaselineLoadThreshold (0.25); last week is 0.
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.0, prev21Load: 0.1))
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .tapering },
+            "A sedentary baseline has no training block to taper from — must not fire"
+        )
     }
 
     // MARK: - Part 2 (extra): HRV streak broken by below-threshold entry
@@ -626,9 +718,14 @@ final class PredictiveIntelligenceTests: XCTestCase {
 
     /// 90 days of StoredDailyScore for taper detection.
     /// Last 7 days use last7Strain; all earlier days use prev21Strain.
+    /// Builds taper fixtures on `dailyLoad` (actual TSS/day) — the field the detector reads.
+    ///
+    /// `dailyStrain` is deliberately pinned to a CONSTANT 1.0 across every day. It carries
+    /// no drop at all, so if `detectTaperUnderway` is ever reconnected to it the taper tests
+    /// go red instead of passing by coincidence.
     private func makeTaperScores(
-        last7Strain: Double,
-        prev21Strain: Double,
+        last7Load: Double,
+        prev21Load: Double,
         totalDays: Int = 90
     ) -> [StoredDailyScore] {
         (0..<totalDays).map { i in
@@ -636,8 +733,9 @@ final class PredictiveIntelligenceTests: XCTestCase {
             return StoredDailyScore(
                 date: day(-daysAgo),
                 readinessScore: 70,
-                dailyStrain: daysAgo < 7 ? last7Strain : prev21Strain,
-                workoutCount: 1
+                dailyStrain: 1.0,   // constant on purpose — see note above
+                workoutCount: 1,
+                dailyLoad: daysAgo < 7 ? last7Load : prev21Load
             )
         }
     }

@@ -738,9 +738,25 @@ actor TrainingDNAAnalyzer {
 
     // MARK: - Pattern 6: Taper Underway
 
+    /// Minimum mean daily load over the 21-day baseline for a taper to be meaningful.
+    /// On this project's TSS scale a 60-min zone-2 ride ≈ 1.0 and `hardDayLoadThreshold`
+    /// is 1.0, so 0.25 is roughly two moderate sessions a week — below that there is no
+    /// training block to taper from. Also blocks the degenerate case where every
+    /// `dailyLoad` is 0.0 (pre-migration rows), which would otherwise read as a 100% drop.
+    static let taperBaselineLoadThreshold = 0.25
+
     /// Detects when the user has intentionally reduced training load before a race.
-    /// Criteria: ACWR last 7 days dropped >= 30% vs days 8–28 AND HRV slope last 7 days is positive.
+    /// Criteria: mean daily load last 7 days dropped >= 30% vs days 8–28
+    /// AND HRV slope last 7 days is positive.
     /// Predicted peak date: today + 14 days (Mujika & Padilla 2003 — recreational athletes).
+    ///
+    /// Bands on `dailyLoad` (actual TSS/day), NOT `dailyStrain` (the ACWR ratio).
+    /// ACWR is acute÷chronic, so it decays toward 1.0 on its own for ~28 days after any
+    /// increase in training while the 28-day denominator catches up. Reading that decay
+    /// as a volume cut fired "Taper Underway / Load down 41%" at riders who had merely
+    /// resumed training or stepped up a block and then held it flat — while the Load tab
+    /// correctly showed ACWR ~1.0 — and it simultaneously MISSED a genuine 50% volume
+    /// cut (only a 24% ACWR move). Do not reconnect this to `dailyStrain`.
     private func detectTaperUnderway(sourcePreference: HRVSourcePreference) async throws -> TrainingPattern? {
         let cutoff28 = Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? Date()
         let predicate28 = #Predicate<StoredDailyScore> { $0.date >= cutoff28 }
@@ -749,14 +765,20 @@ actor TrainingDNAAnalyzer {
         )) ?? []
         guard scores28.count >= 28 else { return nil }
 
-        // Load drop: mean ACWR last 7 days vs mean ACWR days 8–28
-        let last7  = scores28.suffix(7).map(\.dailyStrain)
-        let prev21 = scores28.prefix(scores28.count - 7).map(\.dailyStrain)
+        // Load drop: mean daily load last 7 days vs mean daily load days 8–28
+        let last7  = scores28.suffix(7).map(\.dailyLoad)
+        let prev21 = scores28.prefix(scores28.count - 7).map(\.dailyLoad)
         guard !last7.isEmpty, !prev21.isEmpty else { return nil }
 
-        let acwrLast7  = last7.reduce(0, +)  / Double(last7.count)
-        let acwrPrev21 = prev21.reduce(0, +) / Double(prev21.count)
-        let dropPct    = acwrPrev21 > 0.01 ? (acwrPrev21 - acwrLast7) / acwrPrev21 : 0.0
+        let loadLast7  = last7.reduce(0, +)  / Double(last7.count)
+        let loadPrev21 = prev21.reduce(0, +) / Double(prev21.count)
+
+        // A taper is a reduction from real training. Without a baseline there is
+        // nothing to taper from — guard against reading a sedentary stretch, or
+        // pre-dailyLoad-migration rows (which default to 0.0), as a 100% drop.
+        guard loadPrev21 >= Self.taperBaselineLoadThreshold else { return nil }
+
+        let dropPct = (loadPrev21 - loadLast7) / loadPrev21
 
         guard dropPct >= 0.30 else { return nil }
 
