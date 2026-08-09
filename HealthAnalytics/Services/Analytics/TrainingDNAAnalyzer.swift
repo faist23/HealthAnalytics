@@ -763,11 +763,28 @@ actor TrainingDNAAnalyzer {
         let scores28 = (try? modelContext.fetch(
             FetchDescriptor<StoredDailyScore>(predicate: predicate28, sortBy: [SortDescriptor(\.date)])
         )) ?? []
-        guard scores28.count >= 28 else { return nil }
+        // Collapse duplicate-day rows BEFORE slicing, and count distinct days rather
+        // than rows. StoredDailyScore dedup is in-memory only (see
+        // ReadinessRepository.upsertDailyScore) so the store can hold two rows for one
+        // calendar day after a race or a migration. Slicing rows meant suffix(7) could
+        // span as few as 5 days while prefix(21) spanned 20 — and a double-counted rest
+        // day (dailyLoad 0.0) landing in the recent slice deflates the mean enough to
+        // clear the 30% gate on its own. That is the same false taper this detector was
+        // rewritten to eliminate, reached through a different door.
+        // Resolve each day to its highest dailyLoad rather than whichever row the fetch
+        // happened to return last: duplicates carry an identical `date`, so row order
+        // between them is not stable, and a partial write (backfill that ran before the
+        // workouts synced, migration default) shows up as the 0.0 twin. Max recovers the
+        // complete value, is order-independent, and errs against inventing a drop.
+        let byDay = Dictionary(grouping: scores28) { Calendar.current.startOfDay(for: $0.date) }
+        let daily = byDay.keys.sorted().compactMap { key in
+            byDay[key]?.max { $0.dailyLoad < $1.dailyLoad }
+        }
+        guard daily.count >= 28 else { return nil }
 
         // Load drop: mean daily load last 7 days vs mean daily load days 8–28
-        let last7  = scores28.suffix(7).map(\.dailyLoad)
-        let prev21 = scores28.prefix(scores28.count - 7).map(\.dailyLoad)
+        let last7  = daily.suffix(7).map(\.dailyLoad)
+        let prev21 = daily.prefix(daily.count - 7).map(\.dailyLoad)
         guard !last7.isEmpty, !prev21.isEmpty else { return nil }
 
         let loadLast7  = last7.reduce(0, +)  / Double(last7.count)

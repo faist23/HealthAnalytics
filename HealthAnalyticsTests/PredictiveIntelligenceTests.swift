@@ -510,6 +510,47 @@ final class PredictiveIntelligenceTests: XCTestCase {
         )
     }
 
+    /// Regression: duplicate-day rows must not manufacture a taper.
+    ///
+    /// StoredDailyScore dedup is in-memory only, so the store can hold two rows for one
+    /// calendar day after a race or a migration. Slicing ROWS instead of distinct days
+    /// let suffix(7) span fewer than 7 days, and a double-counted rest day (dailyLoad
+    /// 0.0) in the recent slice deflates the mean enough to clear the 30% gate on its
+    /// own — a false taper for someone whose volume never moved.
+    func testTaperUnderway_duplicateDayRows_doNotFabricateADrop() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)   // HRV gate satisfied
+        await analyzer.setDataProvider(mock)
+
+        // 90 days of perfectly flat 2.0 TSS/day — no taper anywhere in the data.
+        var scores = (0..<90).map { i -> StoredDailyScore in
+            StoredDailyScore(
+                date: day(-(89 - i)), readinessScore: 70,
+                dailyStrain: 1.0, workoutCount: 1, dailyLoad: 2.0
+            )
+        }
+        // Three extra rows for recent days carrying 0.0 load, as a partial upsert or a
+        // migration would leave behind. Row count still passes a naive `>= 28` check.
+        for offset in [1, 3, 5] {
+            scores.append(StoredDailyScore(
+                date: day(-offset), readinessScore: 70,
+                dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0.0
+            ))
+        }
+        try await analyzer.insertDailyScores(scores)
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .tapering },
+            "Duplicate rows for a calendar day must be collapsed before slicing — flat 2.0 TSS/day is not a taper"
+        )
+    }
+
     /// Regression: with no training to taper from, a drop to zero must not fire.
     /// Also covers pre-migration rows where every dailyLoad defaults to 0.0.
     func testTaperUnderway_noBaselineTrainingLoad_notConfirmed() async throws {
