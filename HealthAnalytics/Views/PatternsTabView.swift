@@ -20,15 +20,26 @@ struct PatternsTabView: View {
 
     @State private var pendingScroll: PatternType? = nil
 
+    /// The set InsightsView actually renders cards for. The deep-link checks below
+    /// must use this, not the raw @Query: only active patterns get an `.id(patternType)`
+    /// in the hierarchy, so a `contains` hit on a stale row makes `proxy.scrollTo`
+    /// fire at an ID that isn't there — and skips the stash-and-retry branch that
+    /// exists for exactly that case. The user lands on Patterns, scrolled nowhere.
+    private var activePatterns: [TrainingPattern] {
+        detectedPatterns.filter { $0.isActive }
+    }
+
     private var activePatternCount: Int {
-        detectedPatterns.filter { $0.isActive }.count
+        activePatterns.count
     }
 
     private var headerStripText: String {
         switch activePatternCount {
-        case 0:  return "No patterns active this week."
-        case 1:  return "1 pattern active this week."
-        default: return "\(activePatternCount) patterns active this week."
+        // Not "this week" — activeWindowDays is 10, deliberately wider than the
+        // 7-day analysis cadence. Don't name a duration the constant doesn't match.
+        case 0:  return "No patterns active right now."
+        case 1:  return "1 pattern active."
+        default: return "\(activePatternCount) patterns active."
         }
     }
 
@@ -65,15 +76,15 @@ struct PatternsTabView: View {
                         // If the pattern card is already in the @Query result,
                         // scroll immediately. Otherwise stash and wait — the
                         // .onChange below fires when the data lands.
-                        if detectedPatterns.contains(where: { $0.patternType == pattern }) {
+                        if activePatterns.contains(where: { $0.patternType == pattern }) {
                             scroll(proxy: proxy, to: pattern)
                         } else {
                             pendingScroll = pattern
                         }
                     }
-                    .onChange(of: detectedPatterns.map(\.patternType)) { _, _ in
+                    .onChange(of: activePatterns.map(\.patternType)) { _, _ in
                         guard let pattern = pendingScroll,
-                              detectedPatterns.contains(where: { $0.patternType == pattern }) else { return }
+                              activePatterns.contains(where: { $0.patternType == pattern }) else { return }
                         pendingScroll = nil
                         scroll(proxy: proxy, to: pattern)
                     }

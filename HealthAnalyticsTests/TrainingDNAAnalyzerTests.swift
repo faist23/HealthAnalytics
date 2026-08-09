@@ -763,21 +763,98 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         )
     }
 
-    /// Pins the 7-day window itself. MainTabView's badge, PatternsTabView's header
-    /// strip, RecoveryTabView's top pattern and InsightsView's card list all read
-    /// isActive — changing this constant moves all four together, by design.
-    func testActiveWindowBoundaryIsSevenDays() throws {
-        XCTAssertEqual(TrainingPattern.activeWindowDays, 7)
-
-        // 6 days ago: inside the window.
-        XCTAssertTrue(
-            makePattern(.performancePeak, detectedAt: day(-6)).isActive,
-            "6 days old is inside the 7-day active window"
+    /// Pins the active window AND its relationship to the analysis cadence.
+    ///
+    /// The window must stay strictly WIDER than the 7-day throttle in
+    /// `ReadinessRepository.runPatternAnalysis`. At exactly 7 the two coincided:
+    /// patterns expired at the same instant a refresh became eligible, so a user who
+    /// hadn't opened Patterns in a week saw every surface — badge, header strip,
+    /// cards, and the Coach hrvPrecursor alarm — read zero until analysis completed.
+    func testActiveWindowIsWiderThanTheAnalysisCadence() throws {
+        let analysisCadenceDays = 7
+        XCTAssertGreaterThan(
+            TrainingPattern.activeWindowDays, analysisCadenceDays,
+            "activeWindowDays must exceed the pattern-analysis cadence or patterns expire exactly when their refresh comes due"
         )
-        // 8 days ago: outside it.
+        XCTAssertEqual(TrainingPattern.activeWindowDays, 10)
+
+        // A pattern that is due for refresh (7 days old) must still be visible.
+        XCTAssertTrue(
+            makePattern(.performancePeak, detectedAt: day(-7)).isActive,
+            "A pattern going stale must stay on screen while its refresh becomes eligible"
+        )
+        // 9 days ago: still inside the 10-day window.
+        XCTAssertTrue(makePattern(.performancePeak, detectedAt: day(-9)).isActive)
+        // 11 days ago: outside it.
         XCTAssertFalse(
-            makePattern(.performancePeak, detectedAt: day(-8)).isActive,
-            "8 days old is outside the 7-day active window"
+            makePattern(.performancePeak, detectedAt: day(-11)).isActive,
+            "11 days old is outside the 10-day active window"
+        )
+    }
+
+    // MARK: - Confidence Ratio (taper stores a percentage, not a count)
+
+    /// Regression: confidenceQualifier and TrainingDNACard.confidenceTier both derive
+    /// a ratio from numerator/denominator. detectTaperUnderway guarantees the numerator
+    /// is >= 30 against a hardcoded denominator of 30, so the raw ratio was ALWAYS
+    /// >= 1.0 — every taper, including the weakest qualifying one, rendered as a green
+    /// "Consistent" pill. No input could produce any other tier.
+    func testWeakestTaperIsNotLabelledConsistent() throws {
+        let weakest = TrainingPattern(
+            patternType: .tapering, detectedAt: Date(),
+            confidenceNumerator: 30, confidenceDenominator: 30,   // exactly at the trigger
+            evidenceSummary: "", citationKey: "mujika2003",
+            instanceDates: [Date()], coachingResponse: ""
+        )
+        XCTAssertEqual(weakest.confidenceRatio, 0.0, accuracy: 0.001)
+        XCTAssertEqual(
+            weakest.confidenceQualifier, "Tentative",
+            "A 30% drop is the weakest taper that qualifies — it must not read as the strongest signal"
+        )
+    }
+
+    func testEmphaticTaperIsLabelledConsistent() throws {
+        let strong = TrainingPattern(
+            patternType: .tapering, detectedAt: Date(),
+            confidenceNumerator: 70, confidenceDenominator: 30,
+            evidenceSummary: "", citationKey: "mujika2003",
+            instanceDates: [Date()], coachingResponse: ""
+        )
+        XCTAssertEqual(strong.confidenceRatio, 1.0, accuracy: 0.001)
+        XCTAssertEqual(strong.confidenceQualifier, "Consistent")
+    }
+
+    /// The other five patterns genuinely count instances — their ratio must be untouched.
+    func testNonTaperConfidenceRatioIsUnchanged() throws {
+        let crash = TrainingPattern(
+            patternType: .backToBackCrash, detectedAt: Date(),
+            confidenceNumerator: 3, confidenceDenominator: 4,
+            evidenceSummary: "", citationKey: "x",
+            instanceDates: [Date()], coachingResponse: ""
+        )
+        XCTAssertEqual(crash.confidenceRatio, 0.75, accuracy: 0.001)
+    }
+
+    // MARK: - Card Ordering
+
+    /// Regression: InsightsView's @Query sorts by confidenceNumerator descending. Only
+    /// tapering stores a percentage there (30-100); every other pattern stores an
+    /// occurrence count (single digits). So the taper card sorted above everything,
+    /// inverting displayPriority — which ranks tapering LAST and hrvPrecursor FIRST.
+    func testDisplayPriorityRanksIllnessWarningAboveTaper() throws {
+        let taper   = makePattern(.tapering, detectedAt: Date())        // numerator 41
+        let illness = makePattern(.hrvPrecursor, detectedAt: Date())
+
+        // The old ordering key put the taper first.
+        XCTAssertEqual(taper.confidenceNumerator, illness.confidenceNumerator,
+                       "fixture parity — ordering must come from priority, not this field")
+
+        let ordered = [taper, illness]
+            .sorted { PatternType.displayPriority($0.patternType) < PatternType.displayPriority($1.patternType) }
+
+        XCTAssertEqual(
+            ordered.first?.patternType, .hrvPrecursor,
+            "The illness warning must render above the taper card, never below the fold"
         )
     }
 
