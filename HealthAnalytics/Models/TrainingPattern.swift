@@ -144,15 +144,37 @@ final class TrainingPattern {
 
     // MARK: - Computed
 
+    /// Normalized 0–1 strength, used by `confidenceQualifier` and by
+    /// `TrainingDNACard.confidenceTier` for the colour pill.
+    ///
+    /// Every pattern except tapering stores an occurrence count over a number of
+    /// chances, so numerator/denominator is already a 0–1 ratio. Tapering stores a
+    /// load-drop PERCENTAGE over the 30% trigger threshold, so its raw ratio is
+    /// always >= 1.0 — which pinned every taper, including the weakest qualifying
+    /// one, to the strongest tier and a green pill. Scale it across the band that
+    /// actually varies instead: 30% drop (the trigger) → 0.0, 60%+ → 1.0.
+    var confidenceRatio: Double {
+        guard confidenceDenominator > 0 else { return 0 }
+        if patternType == .tapering {
+            let trigger = Double(confidenceDenominator)
+            return min(1.0, max(0.0, (Double(confidenceNumerator) - trigger) / trigger))
+        }
+        return Double(confidenceNumerator) / Double(confidenceDenominator)
+    }
+
     var confidenceQualifier: String {
-        let ratio = confidenceDenominator > 0
-            ? Double(confidenceNumerator) / Double(confidenceDenominator)
-            : 0
         if confidenceNumerator == 2 && patternType == .sleepFragmentation {
             return "Early signal"
         }
+        // Tapering has no instance count, so the `<= 3` floor doesn't apply to it —
+        // its numerator is a percentage and is always >= 30.
+        if patternType == .tapering {
+            if confidenceRatio >= 0.75 { return "Consistent" }
+            if confidenceRatio >= 0.25 { return "Mixed signal" }
+            return "Tentative"
+        }
         if confidenceNumerator <= 3 { return "Tentative" }
-        if ratio >= 0.75 { return "Consistent" }
+        if confidenceRatio >= 0.75 { return "Consistent" }
         return "Mixed signal"
     }
 
@@ -186,7 +208,14 @@ final class TrainingPattern {
     /// How recently a pattern must have been re-detected to count as "active".
     /// `upsertPatterns` refreshes `detectedAt` on every run where the pattern still
     /// holds, so a pattern that stops being true simply ages out of this window.
-    static let activeWindowDays = 7
+    ///
+    /// MUST stay strictly greater than the pattern-analysis cadence in
+    /// `ReadinessRepository.runPatternAnalysis` (7 days). At exactly 7 the two
+    /// coincided: patterns expired at the same instant a refresh became eligible,
+    /// so any user who hadn't opened the Patterns tab in a week saw every surface
+    /// read zero until an analysis run completed. The 3-day margin keeps patterns
+    /// on screen while their refresh comes due.
+    static let activeWindowDays = 10
 
     /// True when the pattern was re-detected within the active window.
     ///

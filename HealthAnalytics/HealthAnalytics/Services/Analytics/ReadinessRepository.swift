@@ -124,8 +124,13 @@ class ReadinessRepository: ObservableObject {
         let lastRun = UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
         guard force || lastRun == nil || Date().timeIntervalSince(lastRun!) > 7 * 86400 else { return }
 
-        UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
-
+        // The throttle is stamped AFTER a run that actually reached upsertPatterns —
+        // never before. `analyze()` refreshes every pattern's `detectedAt`, which is
+        // the only thing keeping `TrainingPattern.isActive` true. Stamping up front
+        // meant a run that bailed early (this `.task` cancelled by a tab swipe, a
+        // HealthKit failure, a persistence throw) burned the whole 7-day window
+        // without refreshing anything — so every pattern surface, including the
+        // hrvPrecursor illness alarm on Coach, went dark until the next forced run.
         if trainingDNAAnalyzer == nil {
             trainingDNAAnalyzer = TrainingDNAAnalyzer(modelContainer: container)
         }
@@ -138,9 +143,18 @@ class ReadinessRepository: ObservableObject {
         do {
             let historyDays = try await analyzer.analyze(sourcePreference: preference)
             UserDefaults.standard.set(historyDays, forKey: "healthKitHistoryDays")
+            // `analyze()` returns normally when cancelled (its guards `return historyDays`),
+            // so a clean return is NOT proof the patterns were refreshed. Check explicitly.
+            if !Task.isCancelled {
+                UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
+            }
         } catch PatternAnalysisError.insufficientData {
-            // < 60 days of history — silent, no error surfaced
+            // < 60 days of history — silent, no error surfaced. Safe to throttle: there
+            // are no patterns to keep alive, so nothing can go stale behind the window.
+            UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
         } catch {
+            // Deliberately NOT stamping — a failed run must be retried on next appear,
+            // not locked out for a week.
             await MainActor.run { self.analysisError = "Pattern analysis failed: \(error.localizedDescription)" }
         }
     }
