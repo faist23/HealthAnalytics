@@ -62,7 +62,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
     /// Required for detectBackToBackReadinessCrash tests since the detector reads
     /// StoredDailyScore directly from the actor's modelContext.
     private func makeFullContainer() throws -> ModelContainer {
-        let schema = Schema([TrainingPattern.self, StoredDailyScore.self])
+        let schema = Schema([TrainingPattern.self, StoredDailyScore.self, StoredWorkout.self, StoredFTPSnapshot.self])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: schema, configurations: config)
     }

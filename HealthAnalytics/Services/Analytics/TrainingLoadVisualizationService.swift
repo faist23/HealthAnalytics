@@ -519,7 +519,25 @@ struct TrainingLoadVisualizationService {
     /// in priority order: power-zone distribution → normalized/avg power vs FTP → HR %max.
     /// Duration is deliberately NOT used — a long recovery spin and a short VO2max set are
     /// different intensities, and the old duration-only heuristic reported both as ~5.5.
-    private func estimateIntensity(_ workout: WorkoutData, ftpSnapshots: [StoredFTPSnapshot]) -> Double {
+    /// True when the workout carries a real physiological signal, so `estimateIntensity`
+    /// will return a measured value rather than the neutral 5.0 fallback.
+    ///
+    /// Callers that COMPARE intensities must gate on this. Averaging a measured window
+    /// against a window of 5.0 placeholders manufactures a difference out of missing
+    /// data — the same fabrication this file's `estimateIntensity` exists to avoid.
+    /// Must stay in lockstep with the fallback chain below.
+    func hasIntensitySignal(_ workout: WorkoutData) -> Bool {
+        if let zones = workout.powerZoneSeconds, zones.count == 7, zones.reduce(0, +) > 0 { return true }
+        if let power = workout.normalizedPower ?? workout.averagePower, power > 0 { return true }
+        if let hr = workout.averageHeartRate, hr > 0 { return true }
+        return false
+    }
+
+    /// Non-private: `TrainingDNAAnalyzer.detectTaperUnderway` reuses this to corroborate
+    /// that a volume drop was deliberate. Do not reimplement intensity anywhere else —
+    /// duplicated load math is how this project ended up with two disagreeing ACWR
+    /// engines (see CLAUDE.md, "One ACWR engine").
+    func estimateIntensity(_ workout: WorkoutData, ftpSnapshots: [StoredFTPSnapshot]) -> Double {
         // 1. Power zones (cycling with stream data) — the ground truth for effort structure.
         if let zones = workout.powerZoneSeconds, zones.count == 7 {
             let total = zones.reduce(0, +)

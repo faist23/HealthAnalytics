@@ -120,18 +120,23 @@
 
 ## Coaching Voice
 
-### Taper detection cannot tell a deliberate taper from an involuntary stoppage — intensity signal
-**Priority:** P2 — copy half shipped in v0.1.13.0; the detector still can't see intent
+### Taper detection: sharpen the intensity corroboration
+**Priority:** P3 — both halves shipped in v0.1.13.0; this is tuning, not a defect
 
 **What:** `detectTaperUnderway` fires on (volume down ≥ 30%) AND (HRV slope positive over 7 days). That is also the exact signature of stopping training involuntarily: injury, illness, a work trip, a family emergency. HRV rises on rest either way.
 
 **Done (v0.1.13.0):** every taper-facing string now describes the measurement and hedges the projection on intent. Card headline is "Load Dropping", not "Taper Underway"; evidence reads "Volume down 41% and HRV recovering. If this is a planned taper, peak form typically lands around <date>"; the coaching line addresses both readings; both `MasterCoachEngine` branches match. Pinned by `testTaperCopyDescribesTheObservationRatherThanAssertingATaper`, `testTaperUnderway_emittedCopyIsConditional`, and the banned-phrase assertions in `MasterCoachEngineTests`.
 
-**Still open:** the detector itself has no intent signal, so a rider who stopped involuntarily still gets a "Load Dropping" card. The copy is now honest about that ambiguity rather than resolving it wrongly, which is the cheap fix, not the complete one.
+**Also done (v0.1.13.0):** `taperIsCorroborated(referenceDate:)` gates detection on two tiers — at least one session in the last 7 days (universal, no sensors needed), and intensity retained at ≥85% of the days 8–28 baseline when both windows carry real power/HR. Reuses `TrainingLoadVisualizationService.estimateIntensity`.
 
-**How to apply:** require a corroborating signal that the reduction is deliberate — intensity maintained while volume falls is what a real taper looks like, and it's what the card's own advice describes. `estimateIntensity` in `TrainingLoadVisualizationService` already scores 1–10 from power/HR, so the input exists. If intensity falls with volume, that's a stoppage, not a taper.
+**Still open — tuning, not correctness:**
+- `taperIntensityRetention` (0.85) and `taperMinimumRecentSessions` (1) are reasoned defaults with no field validation. Real tapers vary a lot by discipline and event length; a 3-day crit taper and a 2-week ironman taper don't look alike.
+- Users with no power meter and no HR strap get Tier 1 only, so "rode easy every day for a week after getting sick" still reads as a taper for them. Deliberate — blocking the pattern outright for thin-data users repeats the sick-day-proxy mistake — but revisit if it shows up in practice.
+- A rider doing short, hard rehab sessions could satisfy both tiers while genuinely injured. The copy hedges, so the failure is soft.
 
-**Effort:** M (human: ~1d / CC+gstack: ~30min)
+**How to apply:** watch real detections before touching the constants. If tuning is needed, `taperIntensityRetention` is the sensitive knob.
+
+**Effort:** S (human: ~3h / CC+gstack: ~15min)
 
 ### Coach paragraph outlives the pattern card by up to a day
 **Priority:** P2

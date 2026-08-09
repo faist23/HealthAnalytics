@@ -260,6 +260,12 @@ actor TrainingDNAAnalyzer {
         try modelContext.save()
     }
 
+    /// Test seam for the taper corroboration gate, which reads StoredWorkout directly.
+    func insertWorkouts(_ workouts: [StoredWorkout]) throws {
+        for workout in workouts { modelContext.insert(workout) }
+        try modelContext.save()
+    }
+
     /// Sets notificationSent = true for the matching pattern type and saves.
     /// Used in tests to simulate a notification being dispatched without going through
     /// PatternNotificationService (which requires UNUserNotification authorization).
@@ -745,6 +751,17 @@ actor TrainingDNAAnalyzer {
     /// `dailyLoad` is 0.0 (pre-migration rows), which would otherwise read as a 100% drop.
     static let taperBaselineLoadThreshold = 0.25
 
+    /// A taper cuts volume while keeping the hard efforts. You cannot taper by not
+    /// training at all — seven straight days of nothing is a stoppage or detraining,
+    /// whatever the calendar says. Applies to every user; needs no power or HR.
+    static let taperMinimumRecentSessions = 1
+
+    /// Fraction of baseline intensity the recent week must retain. Mujika & Padilla's
+    /// defining feature of a taper is volume down, intensity held; when both fall
+    /// together the athlete stopped rather than sharpened. 0.85 leaves room for the
+    /// modest trim a real taper often includes without admitting a collapse.
+    static let taperIntensityRetention = 0.85
+
     /// Detects when the user has intentionally reduced training load before a race.
     /// Criteria: mean daily load last 7 days dropped >= 30% vs days 8–28
     /// AND HRV slope last 7 days is positive.
@@ -799,6 +816,14 @@ actor TrainingDNAAnalyzer {
 
         guard dropPct >= 0.30 else { return nil }
 
+        // Corroboration: was the reduction deliberate?
+        //
+        // Volume down + HRV recovering is equally the signature of injury, illness, or a
+        // week of work travel — HRV rises on rest either way, so those two inputs alone
+        // cannot tell a taper from a stoppage. What separates them is intensity: a taper
+        // cuts volume and KEEPS the hard efforts; a stoppage drops both.
+        guard taperIsCorroborated(referenceDate: Date()) else { return nil }
+
         // HRV trend: positive slope over last 7 days
         let hrvHistory = try await dataProvider.fetchDailyHRV(days: 7, sourcePreference: sourcePreference)
         let sortedHRV = hrvHistory.sorted { $0.date < $1.date }
@@ -838,6 +863,62 @@ actor TrainingDNAAnalyzer {
             coachingResponse: "Your volume is down and HRV is climbing back. If you're tapering for an event, hold your intensity and keep the volume low. If the drop wasn't planned, this is recovery time — you're not losing the fitness you built.",
             peakDate: peakDate
         )
+    }
+
+    /// Two-tier check that a volume drop was chosen rather than forced.
+    ///
+    /// **Tier 1 — session presence (every user).** At least
+    /// `taperMinimumRecentSessions` workouts in the last 7 days. Needs no power or HR,
+    /// so it protects users with no sensors at all, and it catches the worst case: a
+    /// rider who crashed and hasn't ridden since being told their peak is 14 days out.
+    ///
+    /// **Tier 2 — intensity retention (users with a signal).** Mean intensity over the
+    /// last 7 days must hold at `taperIntensityRetention` of the days 8–28 baseline.
+    /// Only applied when BOTH windows contain at least one workout carrying real
+    /// power/HR data: `estimateIntensity` returns a neutral 5.0 when a workout has no
+    /// signal, and averaging measured values against placeholders would invent a
+    /// difference from missing data. Users without sensors therefore get Tier 1 only —
+    /// a deliberate trade, matching this project's rule against blocking a pattern
+    /// outright for people whose data is thinner (see the sick-day proxy note in
+    /// CLAUDE.md).
+    ///
+    /// Intensity comes from `TrainingLoadVisualizationService.estimateIntensity`, the
+    /// existing signal-derived scorer. It is not reimplemented here.
+    private func taperIsCorroborated(referenceDate: Date) -> Bool {
+        let cal = Calendar.current
+        guard let windowStart = cal.date(byAdding: .day, value: -28, to: referenceDate),
+              let recentStart = cal.date(byAdding: .day, value: -7,  to: referenceDate)
+        else { return false }
+
+        let descriptor = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate { $0.startDate >= windowStart },
+            sortBy: [SortDescriptor(\.startDate)]
+        )
+        let stored = (try? modelContext.fetch(descriptor)) ?? []
+        let workouts = stored.map { WorkoutData(from: $0) }
+
+        let recent   = workouts.filter { $0.startDate >= recentStart }
+        let baseline = workouts.filter { $0.startDate <  recentStart }
+
+        // Tier 1 — you cannot taper by not training.
+        guard recent.count >= Self.taperMinimumRecentSessions else { return false }
+
+        // Tier 2 — only where intensity is actually measurable on both sides.
+        let viz = TrainingLoadVisualizationService()
+        let recentMeasured   = recent.filter   { viz.hasIntensitySignal($0) }
+        let baselineMeasured = baseline.filter { viz.hasIntensitySignal($0) }
+        guard !recentMeasured.isEmpty, !baselineMeasured.isEmpty else { return true }
+
+        let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+        func meanIntensity(_ ws: [WorkoutData]) -> Double {
+            ws.reduce(0.0) { $0 + viz.estimateIntensity($1, ftpSnapshots: ftpSnapshots) } / Double(ws.count)
+        }
+
+        let recentIntensity   = meanIntensity(recentMeasured)
+        let baselineIntensity = meanIntensity(baselineMeasured)
+        guard baselineIntensity > 0 else { return true }
+
+        return recentIntensity >= baselineIntensity * Self.taperIntensityRetention
     }
 
     // MARK: - Upsert
