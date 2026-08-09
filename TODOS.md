@@ -120,16 +120,18 @@
 
 ## Coaching Voice
 
-### Taper detection cannot tell a deliberate taper from an involuntary stoppage
-**Priority:** P1 — user-facing coaching is confidently wrong in a bad moment
+### Taper detection cannot tell a deliberate taper from an involuntary stoppage — intensity signal
+**Priority:** P2 — copy half shipped in v0.1.13.0; the detector still can't see intent
 
-**What:** `detectTaperUnderway` fires on (volume down ≥ 30%) AND (HRV slope positive over 7 days). That is also the exact signature of stopping training involuntarily: injury, illness, a work trip, a family emergency. HRV rises on rest either way. The copy asserts intent it hasn't established — `TrainingDNAAnalyzer.swift` `coachingResponse: "Taper underway — keep intensity but cut volume. Trust the process; fitness is locked in."` and `MasterCoachEngine.swift:96` repeat it on the Coach tab.
+**What:** `detectTaperUnderway` fires on (volume down ≥ 30%) AND (HRV slope positive over 7 days). That is also the exact signature of stopping training involuntarily: injury, illness, a work trip, a family emergency. HRV rises on rest either way.
 
-**Why:** A rider who crashes and can't ride for a week gets told their fitness is locked in and peak form is 14 days out. Surfaced by the v0.1.13.0 adversarial review. The `taperBaselineLoadThreshold` guard does not help — it filters the *baseline*, not the *cause* of the drop.
+**Done (v0.1.13.0):** every taper-facing string now describes the measurement and hedges the projection on intent. Card headline is "Load Dropping", not "Taper Underway"; evidence reads "Volume down 41% and HRV recovering. If this is a planned taper, peak form typically lands around <date>"; the coaching line addresses both readings; both `MasterCoachEngine` branches match. Pinned by `testTaperCopyDescribesTheObservationRatherThanAssertingATaper`, `testTaperUnderway_emittedCopyIsConditional`, and the banned-phrase assertions in `MasterCoachEngineTests`.
 
-**How to apply:** Either require a corroborating signal that the reduction is deliberate (intensity maintained while volume falls, which is what the card's own advice describes), or soften the copy to describe the observation — "your volume is down 41% and HRV is recovering" — instead of asserting a plan. The copy change is the cheap half and can ship alone.
+**Still open:** the detector itself has no intent signal, so a rider who stopped involuntarily still gets a "Load Dropping" card. The copy is now honest about that ambiguity rather than resolving it wrongly, which is the cheap fix, not the complete one.
 
-**Effort:** S for copy, M for the intensity signal (human: ~1d / CC+gstack: ~30min)
+**How to apply:** require a corroborating signal that the reduction is deliberate — intensity maintained while volume falls is what a real taper looks like, and it's what the card's own advice describes. `estimateIntensity` in `TrainingLoadVisualizationService` already scores 1–10 from power/HR, so the input exists. If intensity falls with volume, that's a stoppage, not a taper.
+
+**Effort:** M (human: ~1d / CC+gstack: ~30min)
 
 ### Coach paragraph outlives the pattern card by up to a day
 **Priority:** P2

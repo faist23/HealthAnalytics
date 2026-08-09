@@ -86,7 +86,7 @@ struct MasterCoachEngine {
             if state.activePatterns.contains("performancePeak") {
                 response += "Your recovery is excellent (\(state.currentScore)%) and your pattern engine shows you're in a peak form window — ideal timing for a race or benchmark effort. "
             } else if state.activePatterns.contains("tapering") {
-                response += "Your recovery is excellent (\(state.currentScore)%) and your load is tapering with HRV trending up. Trust the process — your peak window is approaching. "
+                response += "Your recovery is excellent (\(state.currentScore)%) and your training volume is down with HRV trending up. If you're tapering for an event, that's exactly the shape you want. "
             } else {
                 response += "Your recovery is excellent (\(state.currentScore)%). You're ready for intensity today. "
             }
@@ -94,7 +94,7 @@ struct MasterCoachEngine {
             if state.activePatterns.contains("performancePeak") {
                 response += "Your recovery is solid (\(state.currentScore)%) and your training data shows a peak form window forming — consider a quality session today. "
             } else if state.activePatterns.contains("tapering") {
-                response += "Your recovery is solid (\(state.currentScore)%) and your taper is underway. Keep intensity but cut volume — fitness is locked in. "
+                response += "Your recovery is solid (\(state.currentScore)%) and your training volume is down with HRV recovering. If this is a planned taper, hold intensity and keep volume low — and if it wasn't, you're not losing the fitness you built. "
             } else {
                 response += "You're \(state.currentScore)% recovered — enough for moderate work, but listen to your body. "
             }
@@ -209,7 +209,7 @@ struct MasterCoachEngine {
                 return "Your recovery is excellent (\(state.currentScore)%) and your pattern engine shows you're in a peak form window — ideal timing for a race or benchmark effort.\(forecastText)\(memoryNote)"
             }
             if isTapering {
-                return "Your recovery is excellent (\(state.currentScore)%) and your load is tapering with HRV trending up. Trust the process — your peak window is approaching.\(forecastText)\(memoryNote)"
+                return "Your recovery is excellent (\(state.currentScore)%) and your training volume is down with HRV trending up. If you're tapering for an event, that's exactly the shape you want.\(forecastText)\(memoryNote)"
             }
             return "Your recovery is excellent (\(state.currentScore)%). You're ready for intensity today.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         } else if state.currentScore >= 60 {
@@ -217,7 +217,7 @@ struct MasterCoachEngine {
                 return "Your recovery is solid (\(state.currentScore)%) and your training data shows a peak form window forming — consider a quality session today.\(loadNote)\(forecastText)\(memoryNote)"
             }
             if isTapering {
-                return "Your recovery is solid (\(state.currentScore)%) and your taper is underway. Keep intensity but cut volume — fitness is locked in.\(loadNote)\(forecastText)\(memoryNote)"
+                return "Your recovery is solid (\(state.currentScore)%) and your training volume is down with HRV recovering. If this is a planned taper, hold intensity and keep volume low — and if it wasn't, you're not losing the fitness you built.\(loadNote)\(forecastText)\(memoryNote)"
             }
             return "You're \(state.currentScore)% recovered — enough for moderate work, but listen to your body.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         } else {

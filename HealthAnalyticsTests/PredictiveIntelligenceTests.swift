@@ -442,6 +442,46 @@ final class PredictiveIntelligenceTests: XCTestCase {
         XCTAssertLessThan(diff, 60, "peakDate must be today + 14 days (Mujika & Padilla 2003)")
     }
 
+    /// The peak-form projection is only valid if the volume drop was chosen. Since the
+    /// detector cannot see intent — the same signal is injury, illness, or a work trip —
+    /// the emitted strings must hedge the projection and must not tell someone whose
+    /// drop was involuntary that their fitness is locked in.
+    func testTaperUnderway_emittedCopyIsConditional() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        guard let p = patterns.first(where: { $0.patternType == .tapering }) else {
+            XCTFail("Tapering pattern must exist"); return
+        }
+
+        XCTAssertTrue(
+            p.evidenceSummary.contains("If this is a planned taper"),
+            "The peak-form projection must be conditional: \(p.evidenceSummary)"
+        )
+        XCTAssertTrue(
+            p.evidenceSummary.contains("Volume down"),
+            "Evidence must lead with the measurement: \(p.evidenceSummary)"
+        )
+        XCTAssertFalse(
+            p.coachingResponse.contains("fitness is locked in")
+                || p.coachingResponse.contains("Trust the process"),
+            "Coaching copy must not assert the drop was deliberate: \(p.coachingResponse)"
+        )
+        XCTAssertTrue(
+            p.coachingResponse.contains("wasn't planned"),
+            "Coaching copy must address the involuntary case too: \(p.coachingResponse)"
+        )
+    }
+
     // MARK: - Part 4 (regression): taper must band on load, not the ACWR ratio
 
     /// Builds 90 days where actual daily load is FLAT but the ACWR ratio decays hard,

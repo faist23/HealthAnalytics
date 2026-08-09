@@ -100,7 +100,17 @@ final class MasterCoachEngineTests: XCTestCase {
         let message = await MasterCoachEngine.generateMessage(state: state)
 
         XCTAssertTrue(message.contains("tapering"), "Taper pattern should be called out: \(message)")
-        XCTAssertTrue(message.contains("peak window"), "Taper message should mention peak window: \(message)")
+        XCTAssertTrue(
+            message.contains("training volume is down"),
+            "Taper message should lead with the measurement: \(message)"
+        )
+        // Previously asserted "peak window" unconditionally. The detector cannot tell a
+        // chosen taper from injury or illness, so a peak-form promise is only safe when
+        // it is hedged on the reduction having been planned.
+        XCTAssertTrue(
+            message.contains("If you're tapering for an event"),
+            "Any peak-form framing must be conditional on intent: \(message)"
+        )
     }
 
     func testBackToBackCrashAddsLoadNote() async {
@@ -201,7 +211,11 @@ final class MasterCoachEngineTests: XCTestCase {
         )
         let message = await MasterCoachEngine.generateMessage(state: state)
 
-        XCTAssertTrue(message.contains("taper is underway"), "Taper pattern should upgrade the solid branch: \(message)")
+        XCTAssertTrue(message.contains("training volume is down"), "Taper pattern should upgrade the solid branch: \(message)")
+        XCTAssertFalse(
+            message.contains("fitness is locked in") || message.contains("Trust the process"),
+            "Coach must not assert the volume drop was deliberate — the same signal is injury or illness: \(message)"
+        )
     }
 
     func testSuppressedReadiness() async {
@@ -286,7 +300,14 @@ final class MasterCoachEngineTests: XCTestCase {
         )
         let message = MasterCoachEngine.generateHeuristicMessage(state: state)
 
-        XCTAssertTrue(message.contains("load is tapering"), "Heuristic excellent+taper branch: \(message)")
+        XCTAssertTrue(
+            message.contains("training volume is down"),
+            "Heuristic excellent+taper branch: \(message)"
+        )
+        XCTAssertTrue(
+            message.contains("If you're tapering for an event"),
+            "Heuristic path must hedge the peak-form framing on intent too: \(message)"
+        )
     }
 
     func testHeuristic_solidPeak() {
@@ -306,7 +327,11 @@ final class MasterCoachEngineTests: XCTestCase {
         )
         let message = MasterCoachEngine.generateHeuristicMessage(state: state)
 
-        XCTAssertTrue(message.contains("taper is underway"), "Heuristic solid+taper branch: \(message)")
+        XCTAssertTrue(message.contains("training volume is down"), "Heuristic solid+taper branch: \(message)")
+        XCTAssertFalse(
+            message.contains("fitness is locked in") || message.contains("Trust the process"),
+            "Heuristic path must not assert intent either: \(message)"
+        )
     }
 
     func testHeuristic_stablePlain() {

@@ -826,10 +826,16 @@ actor TrainingDNAAnalyzer {
             patternType: .tapering,
             confidenceNumerator: Int((dropPct * 100).rounded()),
             confidenceDenominator: 30,
-            evidenceSummary: "Load down \(loadDropPct)% — peak form expected \(peakDateStr). Mujika & Padilla 2003.",
+            // Both strings describe the measurement and make the peak-form projection
+            // CONDITIONAL. The detector's two inputs (volume down, HRV up) are also what
+            // injury, illness, or a week away from the bike look like, so asserting a
+            // taper tells a rider who just crashed that their fitness is locked in and
+            // peak form is 14 days out. Mujika & Padilla 2003 describes deliberate
+            // tapers — the citation only holds if the reduction was chosen.
+            evidenceSummary: "Volume down \(loadDropPct)% and HRV recovering. If this is a planned taper, peak form typically lands around \(peakDateStr). Mujika & Padilla 2003.",
             citationKey: PatternType.tapering.citationKey,
             instanceDates: [Date()],
-            coachingResponse: "Taper underway — keep intensity but cut volume. Trust the process; fitness is locked in.",
+            coachingResponse: "Your volume is down and HRV is climbing back. If you're tapering for an event, hold your intensity and keep the volume low. If the drop wasn't planned, this is recovery time — you're not losing the fitness you built.",
             peakDate: peakDate
         )
     }

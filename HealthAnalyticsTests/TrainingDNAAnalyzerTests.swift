@@ -737,10 +737,43 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
             detectedAt: detectedAt,
             confidenceNumerator: 41,
             confidenceDenominator: 30,
-            evidenceSummary: "Load down 41% — peak form expected Jul 24.",
+            evidenceSummary: "Volume down 41% and HRV recovering.",
             citationKey: type.citationKey,
             instanceDates: [detectedAt],
-            coachingResponse: "Taper underway — keep intensity but cut volume."
+            coachingResponse: "Your volume is down and HRV is climbing back."
+        )
+    }
+
+    // MARK: - Taper Copy Must Not Assert Intent
+
+    /// The detector fires on "volume down >= 30% AND HRV rising over 7 days". That is
+    /// equally the signature of an involuntary stoppage — injury, illness, a work trip —
+    /// because HRV rises on rest either way. Copy that asserts a deliberate taper tells
+    /// a rider who just crashed that their fitness is locked in and peak form is 14 days
+    /// out. Every taper-facing string must describe the measurement and make the
+    /// peak-form projection conditional.
+    func testTaperCopyDescribesTheObservationRatherThanAssertingATaper() throws {
+        XCTAssertEqual(
+            PatternType.tapering.displayName, "Load Dropping",
+            "The card headline must name what was measured, not why it happened"
+        )
+
+        let banned = ["Taper Underway", "taper is underway", "Trust the process", "fitness is locked in"]
+        for phrase in banned {
+            XCTAssertFalse(
+                PatternType.tapering.displayName.contains(phrase),
+                "displayName asserts intent: \(phrase)"
+            )
+            XCTAssertFalse(
+                PatternType.tapering.definition.contains(phrase),
+                "definition asserts intent: \(phrase)"
+            )
+        }
+
+        // The definition may reference a taper, but only as the shape being matched.
+        XCTAssertTrue(
+            PatternType.tapering.definition.contains("Training volume down"),
+            "definition should lead with the measurement: \(PatternType.tapering.definition)"
         )
     }
 

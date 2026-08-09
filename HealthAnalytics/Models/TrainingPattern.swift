@@ -25,7 +25,10 @@ enum PatternType: String, Codable, CaseIterable {
         case .sleepFragmentation: return "Sleep Fragmentation"
         case .backToBackCrash:    return "14-Day Signature"
         case .performancePeak:    return "Peak Form"
-        case .tapering:           return "Taper Underway"
+        // Names what was measured, not why. The detector fires on "volume down >= 30%
+        // AND HRV rising", which is equally the signature of injury, illness, or a week
+        // of work travel — it cannot see intent, so the card must not claim it.
+        case .tapering:           return "Load Dropping"
         }
     }
 
@@ -42,7 +45,7 @@ enum PatternType: String, Codable, CaseIterable {
         case .performancePeak:
             return "HRV elevated 7+ days and optimal training load — race-ready window."
         case .tapering:
-            return "Training load dropping 30%+ with HRV trending up — pre-race peak window approaching."
+            return "Training volume down 30%+ while HRV recovers — the shape a pre-race taper makes."
         }
     }
 
