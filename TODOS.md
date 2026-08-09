@@ -118,6 +118,65 @@
 
 **Depends on / blocked by:** Light mode design system phase. DESIGN.md must define light mode token values first.
 
+## Coaching Voice
+
+### Taper detection cannot tell a deliberate taper from an involuntary stoppage
+**Priority:** P1 — user-facing coaching is confidently wrong in a bad moment
+
+**What:** `detectTaperUnderway` fires on (volume down ≥ 30%) AND (HRV slope positive over 7 days). That is also the exact signature of stopping training involuntarily: injury, illness, a work trip, a family emergency. HRV rises on rest either way. The copy asserts intent it hasn't established — `TrainingDNAAnalyzer.swift` `coachingResponse: "Taper underway — keep intensity but cut volume. Trust the process; fitness is locked in."` and `MasterCoachEngine.swift:96` repeat it on the Coach tab.
+
+**Why:** A rider who crashes and can't ride for a week gets told their fitness is locked in and peak form is 14 days out. Surfaced by the v0.1.13.0 adversarial review. The `taperBaselineLoadThreshold` guard does not help — it filters the *baseline*, not the *cause* of the drop.
+
+**How to apply:** Either require a corroborating signal that the reduction is deliberate (intensity maintained while volume falls, which is what the card's own advice describes), or soften the copy to describe the observation — "your volume is down 41% and HRV is recovering" — instead of asserting a plan. The copy change is the cheap half and can ship alone.
+
+**Effort:** S for copy, M for the intensity signal (human: ~1d / CC+gstack: ~30min)
+
+### Coach paragraph outlives the pattern card by up to a day
+**Priority:** P2
+
+**What:** `activePatternTypes` is filtered on `isActive` but evaluated once inside `performFullAnalysis` and baked into `UnifiedReadiness.coachAdvice`. The fingerprint cache (`ReadinessRepository.swift:268`) holds that for the calendar day, so a pattern that expires at 14:32 drops from Patterns immediately while Coach keeps referencing it until the store moves or midnight passes.
+
+**Why:** Same cross-surface disagreement class v0.1.13.0 set out to fix. Not fixed by that release — the CLAUDE.md note there was corrected to say so.
+
+**How to apply:** Re-derive the pattern list on read, or invalidate the fingerprint cache when the nearest `detectedAt + activeWindowDays` boundary passes.
+
+**Effort:** S (human: ~3h / CC+gstack: ~15min)
+
+## Analytics / Patterns (continued)
+
+### `taperBaselineLoadThreshold` (0.25) is far below "a real training block"
+**Priority:** P2
+
+**What:** 0.25 mean daily load over 21 days is ~5.25 TSS-equivalent units in three weeks — under two hours of zone-2 riding per *week* on this project's scale. A casual rider averaging ~90 min/week (baseline ≈ 0.29) clears the guard, so a single week off yields `dropPct = 1.0` and "Taper Underway — load down 100%".
+
+**Why:** The constant's own doc comment claims it gates "no training block to taper from", but as written it only excludes the literally-zero case it was designed around (pre-migration rows). Surfaced by the v0.1.13.0 adversarial review.
+
+**How to apply:** Decide the intended floor as a product call — ~1.0 (roughly one real session per day-equivalent per week) is the likely target. Update `TrainingDNAAnalyzer.taperBaselineLoadThreshold`, its doc comment, and `testTaperUnderway_noBaselineTrainingLoad_notConfirmed`.
+
+**Effort:** XS once the number is chosen (human: ~1h / CC+gstack: ~5min)
+
+### Stored `.tapering` rows carry a numerator computed under the old ACWR metric
+**Priority:** P2 — affects upgraders only, self-heals within 10 days
+
+**What:** `confidenceNumerator` on a `.tapering` row written before v0.1.13.0 holds an ACWR-ratio percentage, but `confidenceCountText` now renders it as "load down N%" — a claim about training volume that was never measured. `upsertPatterns` only overwrites it when the detector re-fires.
+
+**Why:** An upgrader mid-taper can see the exact false claim this release was opened to remove. Self-limiting: the row ages out of `activeWindowDays` (10) and the next successful analysis rewrites it.
+
+**How to apply:** One-time migration on first launch of ≥ 0.1.13.0 that deletes stored `.tapering` rows (gated by a UserDefaults key, matching the existing migration pattern). Weigh against letting it self-heal.
+
+**Effort:** S (human: ~2h / CC+gstack: ~10min)
+
+### Taper detection requires all 28 of the last 28 days to have a stored score
+**Priority:** P3 — pre-existing, but now load-bearing
+
+**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (`ReadinessRepository.swift:926`). One night without the watch inside the window silences taper detection until that day rolls off.
+
+**Why:** v0.1.13.0's headline claim is that the detector now catches a genuine 50% volume cut. For intermittent watch-wearers that improvement may be unreachable.
+
+**How to apply:** Consider relaxing to a distinct-day count (e.g. ≥ 24 of 28) with the means computed over available days.
+
+**Effort:** S (human: ~2h / CC+gstack: ~10min)
+
 ## Completed
 
 - **P3 — Strain Sensitivity Calibration UI** — **Completed:** v0.1.0.0 (2026-04-20). `StrainSensitivityCard` in `SettingsView`; `CardiovascularStrainService.compute(sensitivityOffset:)`; normalization 90.0 → 70.0; ±20% slider with reset and live preview.
