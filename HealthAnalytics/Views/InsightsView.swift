@@ -19,7 +19,24 @@ struct InsightsView: View {
 
     // Reactive SwiftData read — updates automatically when TrainingDNAAnalyzer persists
     @Query(sort: \TrainingPattern.confidenceNumerator, order: .reverse)
-    private var detectedPatterns: [TrainingPattern]
+    private var storedPatterns: [TrainingPattern]
+
+    /// Only patterns still being re-detected. Stored patterns are never deleted, so
+    /// without this filter the card list showed de-detected patterns indefinitely
+    /// while the tab badge and header strip (both already recency-filtered) read 0.
+    ///
+    /// Ordered by `displayPriority`, NOT by the @Query's `confidenceNumerator` sort.
+    /// Only tapering stores a percentage in that field (30–100); every other pattern
+    /// stores an occurrence count (single digits), so the descending sort pinned the
+    /// taper card above everything — exactly inverting displayPriority, which ranks
+    /// tapering last and the hrvPrecursor illness warning first. A user deep-linked
+    /// from Recovery's "See HRV Precursor in Patterns →" landed on a taper card with
+    /// the illness warning below the fold.
+    private var detectedPatterns: [TrainingPattern] {
+        storedPatterns
+            .filter { $0.isActive }
+            .sorted { PatternType.displayPriority($0.patternType) < PatternType.displayPriority($1.patternType) }
+    }
 
     @ObservedObject private var repo = ReadinessRepository.shared
 
@@ -124,10 +141,20 @@ struct InsightsView: View {
 
                 if isPatternAnalyzing && detectedPatterns.isEmpty {
                     patternLoadingSkeleton
-                } else if let err = patternAnalysisError {
+                // repo.analysisError is where runPatternAnalysis actually reports
+                // failures — the local @State is only ever cleared, never set, so on
+                // its own this branch was unreachable and a failed run fell through
+                // to the "nothing stands out" copy below.
+                } else if let err = patternAnalysisError ?? repo.analysisError {
                     patternErrorRow(message: err)
                 } else if detectedPatterns.isEmpty {
-                    trainingDNAProgressRow(daysNeeded: 0)
+                    // Distinguish "never found anything" from "found patterns before,
+                    // none still hold" — the second is a real, informative state.
+                    if storedPatterns.isEmpty {
+                        trainingDNAProgressRow(daysNeeded: 0)
+                    } else {
+                        patternsQuietRow
+                    }
                 } else {
                     VStack(spacing: .spacingMd) {
                         ForEach(detectedPatterns) { pattern in
@@ -151,6 +178,17 @@ struct InsightsView: View {
                 }
             }
         }
+    }
+
+    /// Deliberately describes the app's state, not the user's physiology. The earlier
+    /// wording ("nothing in your recent training stands out") asserted a conclusion
+    /// about the training data, which is indistinguishable from — and wrong during —
+    /// a run that failed or hasn't happened yet.
+    private var patternsQuietRow: some View {
+        Text("No patterns active right now. Past patterns reappear here when they show up in your data again.")
+            .font(.system(size: 13, weight: .regular, design: .default))
+            .foregroundStyle(Color.textSecondary)
+            .padding(.horizontal, .spacingXs)
     }
 
     private func trainingDNAProgressRow(daysNeeded: Int) -> some View {

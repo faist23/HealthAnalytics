@@ -17,9 +17,8 @@ struct RecoveryTabView: View {
     @Query private var detectedPatterns: [TrainingPattern]
 
     private var topActivePattern: TrainingPattern? {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        return detectedPatterns
-            .filter { $0.detectedAt >= cutoff }
+        detectedPatterns
+            .filter { $0.isActive }
             .min { PatternType.displayPriority($0.patternType) < PatternType.displayPriority($1.patternType) }
     }
 

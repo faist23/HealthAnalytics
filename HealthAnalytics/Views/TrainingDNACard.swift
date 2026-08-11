@@ -153,9 +153,15 @@ struct TrainingDNACard: View {
     private enum ConfidenceTier { case consistent, mixed, tentative }
 
     private var confidenceTier: ConfidenceTier {
-        let ratio = pattern.confidenceDenominator > 0
-            ? Double(pattern.confidenceNumerator) / Double(pattern.confidenceDenominator)
-            : 0
+        // Reads the model's normalized ratio so the pill colour can't disagree with
+        // the qualifier text beside it. Tapering is scaled there (its numerator is a
+        // percentage, not a count) and skips the instance-count floor.
+        let ratio = pattern.confidenceRatio
+        if pattern.patternType == .tapering {
+            if ratio >= 0.75 { return .consistent }
+            if ratio >= 0.25 { return .mixed }
+            return .tentative
+        }
         if pattern.confidenceNumerator > 3 && ratio >= 0.75 { return .consistent }
         if pattern.confidenceNumerator > 3 { return .mixed }
         return .tentative

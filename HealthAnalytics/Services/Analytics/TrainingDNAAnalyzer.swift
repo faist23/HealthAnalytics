@@ -260,6 +260,12 @@ actor TrainingDNAAnalyzer {
         try modelContext.save()
     }
 
+    /// Test seam for the taper corroboration gate, which reads StoredWorkout directly.
+    func insertWorkouts(_ workouts: [StoredWorkout]) throws {
+        for workout in workouts { modelContext.insert(workout) }
+        try modelContext.save()
+    }
+
     /// Sets notificationSent = true for the matching pattern type and saves.
     /// Used in tests to simulate a notification being dispatched without going through
     /// PatternNotificationService (which requires UNUserNotification authorization).
@@ -738,27 +744,85 @@ actor TrainingDNAAnalyzer {
 
     // MARK: - Pattern 6: Taper Underway
 
+    /// Minimum mean daily load over the 21-day baseline for a taper to be meaningful.
+    /// On this project's TSS scale a 60-min zone-2 ride ≈ 1.0 and `hardDayLoadThreshold`
+    /// is 1.0, so 0.25 is roughly two moderate sessions a week — below that there is no
+    /// training block to taper from. Also blocks the degenerate case where every
+    /// `dailyLoad` is 0.0 (pre-migration rows), which would otherwise read as a 100% drop.
+    static let taperBaselineLoadThreshold = 0.25
+
+    /// A taper cuts volume while keeping the hard efforts. You cannot taper by not
+    /// training at all — seven straight days of nothing is a stoppage or detraining,
+    /// whatever the calendar says. Applies to every user; needs no power or HR.
+    static let taperMinimumRecentSessions = 1
+
+    /// Fraction of baseline intensity the recent week must retain. Mujika & Padilla's
+    /// defining feature of a taper is volume down, intensity held; when both fall
+    /// together the athlete stopped rather than sharpened. 0.85 leaves room for the
+    /// modest trim a real taper often includes without admitting a collapse.
+    static let taperIntensityRetention = 0.85
+
     /// Detects when the user has intentionally reduced training load before a race.
-    /// Criteria: ACWR last 7 days dropped >= 30% vs days 8–28 AND HRV slope last 7 days is positive.
+    /// Criteria: mean daily load last 7 days dropped >= 30% vs days 8–28
+    /// AND HRV slope last 7 days is positive.
     /// Predicted peak date: today + 14 days (Mujika & Padilla 2003 — recreational athletes).
+    ///
+    /// Bands on `dailyLoad` (actual TSS/day), NOT `dailyStrain` (the ACWR ratio).
+    /// ACWR is acute÷chronic, so it decays toward 1.0 on its own for ~28 days after any
+    /// increase in training while the 28-day denominator catches up. Reading that decay
+    /// as a volume cut fired "Taper Underway / Load down 41%" at riders who had merely
+    /// resumed training or stepped up a block and then held it flat — while the Load tab
+    /// correctly showed ACWR ~1.0 — and it simultaneously MISSED a genuine 50% volume
+    /// cut (only a 24% ACWR move). Do not reconnect this to `dailyStrain`.
     private func detectTaperUnderway(sourcePreference: HRVSourcePreference) async throws -> TrainingPattern? {
         let cutoff28 = Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? Date()
         let predicate28 = #Predicate<StoredDailyScore> { $0.date >= cutoff28 }
         let scores28 = (try? modelContext.fetch(
             FetchDescriptor<StoredDailyScore>(predicate: predicate28, sortBy: [SortDescriptor(\.date)])
         )) ?? []
-        guard scores28.count >= 28 else { return nil }
+        // Collapse duplicate-day rows BEFORE slicing, and count distinct days rather
+        // than rows. StoredDailyScore dedup is in-memory only (see
+        // ReadinessRepository.upsertDailyScore) so the store can hold two rows for one
+        // calendar day after a race or a migration. Slicing rows meant suffix(7) could
+        // span as few as 5 days while prefix(21) spanned 20 — and a double-counted rest
+        // day (dailyLoad 0.0) landing in the recent slice deflates the mean enough to
+        // clear the 30% gate on its own. That is the same false taper this detector was
+        // rewritten to eliminate, reached through a different door.
+        // Resolve each day to its highest dailyLoad rather than whichever row the fetch
+        // happened to return last: duplicates carry an identical `date`, so row order
+        // between them is not stable, and a partial write (backfill that ran before the
+        // workouts synced, migration default) shows up as the 0.0 twin. Max recovers the
+        // complete value, is order-independent, and errs against inventing a drop.
+        let byDay = Dictionary(grouping: scores28) { Calendar.current.startOfDay(for: $0.date) }
+        let daily = byDay.keys.sorted().compactMap { key in
+            byDay[key]?.max { $0.dailyLoad < $1.dailyLoad }
+        }
+        guard daily.count >= 28 else { return nil }
 
-        // Load drop: mean ACWR last 7 days vs mean ACWR days 8–28
-        let last7  = scores28.suffix(7).map(\.dailyStrain)
-        let prev21 = scores28.prefix(scores28.count - 7).map(\.dailyStrain)
+        // Load drop: mean daily load last 7 days vs mean daily load days 8–28
+        let last7  = daily.suffix(7).map(\.dailyLoad)
+        let prev21 = daily.prefix(daily.count - 7).map(\.dailyLoad)
         guard !last7.isEmpty, !prev21.isEmpty else { return nil }
 
-        let acwrLast7  = last7.reduce(0, +)  / Double(last7.count)
-        let acwrPrev21 = prev21.reduce(0, +) / Double(prev21.count)
-        let dropPct    = acwrPrev21 > 0.01 ? (acwrPrev21 - acwrLast7) / acwrPrev21 : 0.0
+        let loadLast7  = last7.reduce(0, +)  / Double(last7.count)
+        let loadPrev21 = prev21.reduce(0, +) / Double(prev21.count)
+
+        // A taper is a reduction from real training. Without a baseline there is
+        // nothing to taper from — guard against reading a sedentary stretch, or
+        // pre-dailyLoad-migration rows (which default to 0.0), as a 100% drop.
+        guard loadPrev21 >= Self.taperBaselineLoadThreshold else { return nil }
+
+        let dropPct = (loadPrev21 - loadLast7) / loadPrev21
 
         guard dropPct >= 0.30 else { return nil }
+
+        // Corroboration: was the reduction deliberate?
+        //
+        // Volume down + HRV recovering is equally the signature of injury, illness, or a
+        // week of work travel — HRV rises on rest either way, so those two inputs alone
+        // cannot tell a taper from a stoppage. What separates them is intensity: a taper
+        // cuts volume and KEEPS the hard efforts; a stoppage drops both.
+        guard taperIsCorroborated(referenceDate: Date()) else { return nil }
 
         // HRV trend: positive slope over last 7 days
         let hrvHistory = try await dataProvider.fetchDailyHRV(days: 7, sourcePreference: sourcePreference)
@@ -787,12 +851,74 @@ actor TrainingDNAAnalyzer {
             patternType: .tapering,
             confidenceNumerator: Int((dropPct * 100).rounded()),
             confidenceDenominator: 30,
-            evidenceSummary: "Load down \(loadDropPct)% — peak form expected \(peakDateStr). Mujika & Padilla 2003.",
+            // Both strings describe the measurement and make the peak-form projection
+            // CONDITIONAL. The detector's two inputs (volume down, HRV up) are also what
+            // injury, illness, or a week away from the bike look like, so asserting a
+            // taper tells a rider who just crashed that their fitness is locked in and
+            // peak form is 14 days out. Mujika & Padilla 2003 describes deliberate
+            // tapers — the citation only holds if the reduction was chosen.
+            evidenceSummary: "Volume down \(loadDropPct)% and HRV recovering. If this is a planned taper, peak form typically lands around \(peakDateStr). Mujika & Padilla 2003.",
             citationKey: PatternType.tapering.citationKey,
             instanceDates: [Date()],
-            coachingResponse: "Taper underway — keep intensity but cut volume. Trust the process; fitness is locked in.",
+            coachingResponse: "Your volume is down and HRV is climbing back. If you're tapering for an event, hold your intensity and keep the volume low. If the drop wasn't planned, this is recovery time — you're not losing the fitness you built.",
             peakDate: peakDate
         )
+    }
+
+    /// Two-tier check that a volume drop was chosen rather than forced.
+    ///
+    /// **Tier 1 — session presence (every user).** At least
+    /// `taperMinimumRecentSessions` workouts in the last 7 days. Needs no power or HR,
+    /// so it protects users with no sensors at all, and it catches the worst case: a
+    /// rider who crashed and hasn't ridden since being told their peak is 14 days out.
+    ///
+    /// **Tier 2 — intensity retention (users with a signal).** Mean intensity over the
+    /// last 7 days must hold at `taperIntensityRetention` of the days 8–28 baseline.
+    /// Only applied when BOTH windows contain at least one workout carrying real
+    /// power/HR data: `estimateIntensity` returns a neutral 5.0 when a workout has no
+    /// signal, and averaging measured values against placeholders would invent a
+    /// difference from missing data. Users without sensors therefore get Tier 1 only —
+    /// a deliberate trade, matching this project's rule against blocking a pattern
+    /// outright for people whose data is thinner (see the sick-day proxy note in
+    /// CLAUDE.md).
+    ///
+    /// Intensity comes from `TrainingLoadVisualizationService.estimateIntensity`, the
+    /// existing signal-derived scorer. It is not reimplemented here.
+    private func taperIsCorroborated(referenceDate: Date) -> Bool {
+        let cal = Calendar.current
+        guard let windowStart = cal.date(byAdding: .day, value: -28, to: referenceDate),
+              let recentStart = cal.date(byAdding: .day, value: -7,  to: referenceDate)
+        else { return false }
+
+        let descriptor = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate { $0.startDate >= windowStart },
+            sortBy: [SortDescriptor(\.startDate)]
+        )
+        let stored = (try? modelContext.fetch(descriptor)) ?? []
+        let workouts = stored.map { WorkoutData(from: $0) }
+
+        let recent   = workouts.filter { $0.startDate >= recentStart }
+        let baseline = workouts.filter { $0.startDate <  recentStart }
+
+        // Tier 1 — you cannot taper by not training.
+        guard recent.count >= Self.taperMinimumRecentSessions else { return false }
+
+        // Tier 2 — only where intensity is actually measurable on both sides.
+        let viz = TrainingLoadVisualizationService()
+        let recentMeasured   = recent.filter   { viz.hasIntensitySignal($0) }
+        let baselineMeasured = baseline.filter { viz.hasIntensitySignal($0) }
+        guard !recentMeasured.isEmpty, !baselineMeasured.isEmpty else { return true }
+
+        let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+        func meanIntensity(_ ws: [WorkoutData]) -> Double {
+            ws.reduce(0.0) { $0 + viz.estimateIntensity($1, ftpSnapshots: ftpSnapshots) } / Double(ws.count)
+        }
+
+        let recentIntensity   = meanIntensity(recentMeasured)
+        let baselineIntensity = meanIntensity(baselineMeasured)
+        guard baselineIntensity > 0 else { return true }
+
+        return recentIntensity >= baselineIntensity * Self.taperIntensityRetention
     }
 
     // MARK: - Upsert

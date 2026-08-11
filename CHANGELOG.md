@@ -6,6 +6,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 
+## [0.1.13.0] - 2026-08-11
+
+The phantom taper release. Training DNA was announcing "Taper Underway — Load down 41%" while the Load tab showed perfectly ordinary training. Two things were wrong behind that: the card never went away, and the number that put it there wasn't measuring your training. Fixing it turned up seven more, including one that could have blanked every pattern in the app for a week.
+
+### Fixed
+
+**What you reported**
+
+- **"Taper Underway" now means your training actually went down.** The detector was watching your acute:chronic ratio instead of your actual training load. That ratio drifts back toward normal on its own for about a month after you raise your training, with no change in what you're doing — so coming back from a break, or stepping up a block and holding it, registered as a 34–58% "load drop". Across ten simulated training histories the old measure got five verdicts wrong; the new one got none. It also used to miss a genuine 50% volume cut entirely.
+- **Pattern cards go away when the pattern does.** Nothing ever removed a Training DNA card once it appeared, and the card list — unlike the tab badge and the "patterns active" strip directly above it — never checked whether the pattern was still happening. So a taper detected once kept announcing itself weeks later, quoting a load drop from a month ago, while the badge beside it read 0. Cards now clear when the pattern stops showing up in your data, and every surface reads the same cutoff.
+
+**What that turned out to mean**
+
+- **A week off because you're hurt is no longer called a taper.** The card fired on two signals — volume down, HRV recovering — which is what a race taper looks like, and equally what a crash, the flu, or a week of work travel looks like, because HRV rises on rest either way. So a rider who'd just been forced off the bike was told "Taper underway. Trust the process; fitness is locked in. Peak form expected in 14 days." Two changes: the app now checks the thing that actually separates those cases — a taper cuts volume but keeps the hard efforts, while stopping drops both — and it no longer claims to know why your training changed. The card is called **Load Dropping**, the evidence reads "Volume down 41% and HRV recovering", and the peak-form date is stated as conditional on the drop having been planned. If it wasn't your choice, it tells you the fitness you built is still there, which is both true and more useful. Riders with a power meter or heart-rate strap get the full check; everyone else gets the "did you train at all" half.
+
+**What we found while we were in there**
+
+- **Patterns no longer go dark for a week after a mistimed tap.** Pattern analysis runs at most once a week, but it marked itself "done" before doing the work — so opening the Patterns tab and immediately swiping away cancelled the run, and nothing looked again for another seven days. Combined with cards expiring on exactly the same seven-day clock, that could blank every pattern surface, including the early-illness warning on Coach, with nothing on screen to say why. The run now records itself only after it finishes, and cards stay up for ten days so they don't vanish at the moment a refresh comes due.
+- **The early-illness warning is no longer pushed below a taper card.** The Training DNA list was ordered by a field that, for taper only, holds a percentage rather than a count — so the taper card sorted above everything else. Tapping "See HRV Precursor in Patterns" from Recovery landed you on a taper card with the warning you'd asked for further down. The list now follows the app's own priority order, illness first.
+- **The taper card stopped always looking like the app's strongest signal.** Its confidence pill came from that same field, so the arithmetic always cleared the top threshold and every taper rendered green and "Consistent" — including the weakest one that barely qualified. A 30% drop now reads "Tentative"; only an emphatic cut reads "Consistent".
+- **The taper card stopped printing "seen in 41 of 30 taper."** Every other pattern counts occurrences ("seen in 4 of 6 blocks"); taper was putting a percentage in that slot. It now reads "load down 41% (30% threshold)". The other five cards are unchanged.
+- **A duplicated day in stored history can't invent a taper.** If the same calendar day ended up saved twice — a partial write, an upgrade — the extra copy counted as an extra day, and an empty duplicate dragged the recent average down far enough to trip the taper threshold on its own.
+- **A taper needs training to taper from.** A quiet stretch with almost no riding could register as a large drop from nearly nothing. There's now a floor on the baseline, which also covers older stored days that never had a load recorded.
+
+### Changed
+- Recovery, Patterns, Coach, and the tab badge now share one definition of an active pattern, so they can't drift apart again.
+- The Patterns header no longer says "this week" — the window is ten days, and the copy now matches.
+- When there are no active patterns, the app says so plainly instead of concluding that nothing in your training stands out. It also surfaces an analysis failure rather than showing that same reassuring line when it simply couldn't look.
+
+### Known issues
+- The Coach paragraph can still mention a pattern for up to a day after its card disappears from Patterns. The advice is composed once per day and cached, so it outlives the card. Tracked for a follow-up.
+
+
 ## [0.1.12.0] - 2026-08-07
 
 ### Changed

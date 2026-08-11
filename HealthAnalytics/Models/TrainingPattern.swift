@@ -25,7 +25,10 @@ enum PatternType: String, Codable, CaseIterable {
         case .sleepFragmentation: return "Sleep Fragmentation"
         case .backToBackCrash:    return "14-Day Signature"
         case .performancePeak:    return "Peak Form"
-        case .tapering:           return "Taper Underway"
+        // Names what was measured, not why. The detector fires on "volume down >= 30%
+        // AND HRV rising", which is equally the signature of injury, illness, or a week
+        // of work travel — it cannot see intent, so the card must not claim it.
+        case .tapering:           return "Load Dropping"
         }
     }
 
@@ -42,7 +45,7 @@ enum PatternType: String, Codable, CaseIterable {
         case .performancePeak:
             return "HRV elevated 7+ days and optimal training load — race-ready window."
         case .tapering:
-            return "Training load dropping 30%+ with HRV trending up — pre-race peak window approaching."
+            return "Training volume down 30%+ while HRV recovers — the shape a pre-race taper makes."
         }
     }
 
@@ -144,20 +147,49 @@ final class TrainingPattern {
 
     // MARK: - Computed
 
+    /// Normalized 0–1 strength, used by `confidenceQualifier` and by
+    /// `TrainingDNACard.confidenceTier` for the colour pill.
+    ///
+    /// Every pattern except tapering stores an occurrence count over a number of
+    /// chances, so numerator/denominator is already a 0–1 ratio. Tapering stores a
+    /// load-drop PERCENTAGE over the 30% trigger threshold, so its raw ratio is
+    /// always >= 1.0 — which pinned every taper, including the weakest qualifying
+    /// one, to the strongest tier and a green pill. Scale it across the band that
+    /// actually varies instead: 30% drop (the trigger) → 0.0, 60%+ → 1.0.
+    var confidenceRatio: Double {
+        guard confidenceDenominator > 0 else { return 0 }
+        if patternType == .tapering {
+            let trigger = Double(confidenceDenominator)
+            return min(1.0, max(0.0, (Double(confidenceNumerator) - trigger) / trigger))
+        }
+        return Double(confidenceNumerator) / Double(confidenceDenominator)
+    }
+
     var confidenceQualifier: String {
-        let ratio = confidenceDenominator > 0
-            ? Double(confidenceNumerator) / Double(confidenceDenominator)
-            : 0
         if confidenceNumerator == 2 && patternType == .sleepFragmentation {
             return "Early signal"
         }
+        // Tapering has no instance count, so the `<= 3` floor doesn't apply to it —
+        // its numerator is a percentage and is always >= 30.
+        if patternType == .tapering {
+            if confidenceRatio >= 0.75 { return "Consistent" }
+            if confidenceRatio >= 0.25 { return "Mixed signal" }
+            return "Tentative"
+        }
         if confidenceNumerator <= 3 { return "Tentative" }
-        if ratio >= 0.75 { return "Consistent" }
+        if confidenceRatio >= 0.75 { return "Consistent" }
         return "Mixed signal"
     }
 
     var confidenceCountText: String {
-        "seen in \(confidenceNumerator) of \(confidenceDenominator) \(patternType.instanceNoun)"
+        // Tapering has no instances to count — `detectTaperUnderway` packs the load-drop
+        // percentage into the numerator and the 30% trigger threshold into the denominator.
+        // The shared "seen in N of M" phrasing turns that into "seen in 41 of 30 taper":
+        // a fraction above 1 against a singular noun. Render it as what it actually is.
+        if patternType == .tapering {
+            return "load down \(confidenceNumerator)% (\(confidenceDenominator)% threshold)"
+        }
+        return "seen in \(confidenceNumerator) of \(confidenceDenominator) \(patternType.instanceNoun)"
     }
 
     var shareText: String {
@@ -174,5 +206,33 @@ final class TrainingPattern {
     /// True when detected within the last 48 hours.
     var isNewlyDetected: Bool {
         Date().timeIntervalSince(detectedAt) < 48 * 3600
+    }
+
+    /// How recently a pattern must have been re-detected to count as "active".
+    /// `upsertPatterns` refreshes `detectedAt` on every run where the pattern still
+    /// holds, so a pattern that stops being true simply ages out of this window.
+    ///
+    /// MUST stay strictly greater than the pattern-analysis cadence in
+    /// `ReadinessRepository.runPatternAnalysis` (7 days). At exactly 7 the two
+    /// coincided: patterns expired at the same instant a refresh became eligible,
+    /// so any user who hadn't opened the Patterns tab in a week saw every surface
+    /// read zero until an analysis run completed. The 3-day margin keeps patterns
+    /// on screen while their refresh comes due.
+    static let activeWindowDays = 10
+
+    /// True when the pattern was re-detected within the active window.
+    ///
+    /// Nothing ever deletes a `TrainingPattern` — `TrainingDNAAnalyzer.upsertPatterns`
+    /// only inserts and updates, deliberately, so `notificationSent` survives. That
+    /// makes recency the ONLY signal that a pattern still holds, and every surface
+    /// that shows patterns MUST filter on it. Skipping the filter freezes a card on
+    /// screen forever: a taper detected once kept claiming "Taper Underway / Load
+    /// down 41%" weeks after the load came back up, while the Load tab correctly
+    /// read ACWR ~1.0. Do not re-introduce a local `sevenDaysAgo` cutoff in a view.
+    var isActive: Bool {
+        let cutoff = Calendar.current.date(
+            byAdding: .day, value: -Self.activeWindowDays, to: Date()
+        ) ?? Date()
+        return detectedAt >= cutoff
     }
 }

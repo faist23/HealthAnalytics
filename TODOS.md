@@ -54,6 +54,39 @@
 
 **Effort:** S (human: ~30 min / CC+gstack: ~5 min)
 
+### `taperBaselineLoadThreshold` (0.25) is far below "a real training block"
+**Priority:** P2
+
+**What:** 0.25 mean daily load over 21 days is ~5.25 TSS-equivalent units in three weeks — under two hours of zone-2 riding per *week* on this project's scale. A casual rider averaging ~90 min/week (baseline ≈ 0.29) clears the guard, so a single week off yields `dropPct = 1.0` and "Taper Underway — load down 100%".
+
+**Why:** The constant's own doc comment claims it gates "no training block to taper from", but as written it only excludes the literally-zero case it was designed around (pre-migration rows). Surfaced by the v0.1.13.0 adversarial review.
+
+**How to apply:** Decide the intended floor as a product call — ~1.0 (roughly one real session per day-equivalent per week) is the likely target. Update `TrainingDNAAnalyzer.taperBaselineLoadThreshold`, its doc comment, and `testTaperUnderway_noBaselineTrainingLoad_notConfirmed`.
+
+**Effort:** XS once the number is chosen (human: ~1h / CC+gstack: ~5min)
+
+### Stored `.tapering` rows carry a numerator computed under the old ACWR metric
+**Priority:** P2 — affects upgraders only, self-heals within 10 days
+
+**What:** `confidenceNumerator` on a `.tapering` row written before v0.1.13.0 holds an ACWR-ratio percentage, but `confidenceCountText` now renders it as "load down N%" — a claim about training volume that was never measured. `upsertPatterns` only overwrites it when the detector re-fires.
+
+**Why:** An upgrader mid-taper can see the exact false claim this release was opened to remove. Self-limiting: the row ages out of `activeWindowDays` (10) and the next successful analysis rewrites it.
+
+**How to apply:** One-time migration on first launch of ≥ 0.1.13.0 that deletes stored `.tapering` rows (gated by a UserDefaults key, matching the existing migration pattern). Weigh against letting it self-heal.
+
+**Effort:** S (human: ~2h / CC+gstack: ~10min)
+
+### Taper detection requires all 28 of the last 28 days to have a stored score
+**Priority:** P3 — pre-existing, but now load-bearing
+
+**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (`ReadinessRepository.swift:926`). One night without the watch inside the window silences taper detection until that day rolls off.
+
+**Why:** v0.1.13.0's headline claim is that the detector now catches a genuine 50% volume cut. For intermittent watch-wearers that improvement may be unreachable.
+
+**How to apply:** Consider relaxing to a distinct-day count (e.g. ≥ 24 of 28) with the means computed over available days.
+
+**Effort:** S (human: ~2h / CC+gstack: ~10min)
+
 ## Coach
 
 ### MasterCoachEngine copy duplicated across LLM and heuristic paths
@@ -117,6 +150,37 @@
 **Effort:** S (human: ~2h / CC: ~10 min)
 
 **Depends on / blocked by:** Light mode design system phase. DESIGN.md must define light mode token values first.
+
+## Coaching Voice
+
+### Taper detection: sharpen the intensity corroboration
+**Priority:** P3 — both halves shipped in v0.1.13.0; this is tuning, not a defect
+
+**What:** `detectTaperUnderway` fires on (volume down ≥ 30%) AND (HRV slope positive over 7 days). That is also the exact signature of stopping training involuntarily: injury, illness, a work trip, a family emergency. HRV rises on rest either way.
+
+**Done (v0.1.13.0):** every taper-facing string now describes the measurement and hedges the projection on intent. Card headline is "Load Dropping", not "Taper Underway"; evidence reads "Volume down 41% and HRV recovering. If this is a planned taper, peak form typically lands around <date>"; the coaching line addresses both readings; both `MasterCoachEngine` branches match. Pinned by `testTaperCopyDescribesTheObservationRatherThanAssertingATaper`, `testTaperUnderway_emittedCopyIsConditional`, and the banned-phrase assertions in `MasterCoachEngineTests`.
+
+**Also done (v0.1.13.0):** `taperIsCorroborated(referenceDate:)` gates detection on two tiers — at least one session in the last 7 days (universal, no sensors needed), and intensity retained at ≥85% of the days 8–28 baseline when both windows carry real power/HR. Reuses `TrainingLoadVisualizationService.estimateIntensity`.
+
+**Still open — tuning, not correctness:**
+- `taperIntensityRetention` (0.85) and `taperMinimumRecentSessions` (1) are reasoned defaults with no field validation. Real tapers vary a lot by discipline and event length; a 3-day crit taper and a 2-week ironman taper don't look alike.
+- Users with no power meter and no HR strap get Tier 1 only, so "rode easy every day for a week after getting sick" still reads as a taper for them. Deliberate — blocking the pattern outright for thin-data users repeats the sick-day-proxy mistake — but revisit if it shows up in practice.
+- A rider doing short, hard rehab sessions could satisfy both tiers while genuinely injured. The copy hedges, so the failure is soft.
+
+**How to apply:** watch real detections before touching the constants. If tuning is needed, `taperIntensityRetention` is the sensitive knob.
+
+**Effort:** S (human: ~3h / CC+gstack: ~15min)
+
+### Coach paragraph outlives the pattern card by up to a day
+**Priority:** P2
+
+**What:** `activePatternTypes` is filtered on `isActive` but evaluated once inside `performFullAnalysis` and baked into `UnifiedReadiness.coachAdvice`. The fingerprint cache (`ReadinessRepository.swift:268`) holds that for the calendar day, so a pattern that expires at 14:32 drops from Patterns immediately while Coach keeps referencing it until the store moves or midnight passes.
+
+**Why:** Same cross-surface disagreement class v0.1.13.0 set out to fix. Not fixed by that release — the CLAUDE.md note there was corrected to say so.
+
+**How to apply:** Re-derive the pattern list on read, or invalidate the fingerprint cache when the nearest `detectedAt + activeWindowDays` boundary passes.
+
+**Effort:** S (human: ~3h / CC+gstack: ~15min)
 
 ## Completed
 
