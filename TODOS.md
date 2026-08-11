@@ -54,6 +54,39 @@
 
 **Effort:** S (human: ~30 min / CC+gstack: ~5 min)
 
+### `taperBaselineLoadThreshold` (0.25) is far below "a real training block"
+**Priority:** P2
+
+**What:** 0.25 mean daily load over 21 days is ~5.25 TSS-equivalent units in three weeks — under two hours of zone-2 riding per *week* on this project's scale. A casual rider averaging ~90 min/week (baseline ≈ 0.29) clears the guard, so a single week off yields `dropPct = 1.0` and "Taper Underway — load down 100%".
+
+**Why:** The constant's own doc comment claims it gates "no training block to taper from", but as written it only excludes the literally-zero case it was designed around (pre-migration rows). Surfaced by the v0.1.13.0 adversarial review.
+
+**How to apply:** Decide the intended floor as a product call — ~1.0 (roughly one real session per day-equivalent per week) is the likely target. Update `TrainingDNAAnalyzer.taperBaselineLoadThreshold`, its doc comment, and `testTaperUnderway_noBaselineTrainingLoad_notConfirmed`.
+
+**Effort:** XS once the number is chosen (human: ~1h / CC+gstack: ~5min)
+
+### Stored `.tapering` rows carry a numerator computed under the old ACWR metric
+**Priority:** P2 — affects upgraders only, self-heals within 10 days
+
+**What:** `confidenceNumerator` on a `.tapering` row written before v0.1.13.0 holds an ACWR-ratio percentage, but `confidenceCountText` now renders it as "load down N%" — a claim about training volume that was never measured. `upsertPatterns` only overwrites it when the detector re-fires.
+
+**Why:** An upgrader mid-taper can see the exact false claim this release was opened to remove. Self-limiting: the row ages out of `activeWindowDays` (10) and the next successful analysis rewrites it.
+
+**How to apply:** One-time migration on first launch of ≥ 0.1.13.0 that deletes stored `.tapering` rows (gated by a UserDefaults key, matching the existing migration pattern). Weigh against letting it self-heal.
+
+**Effort:** S (human: ~2h / CC+gstack: ~10min)
+
+### Taper detection requires all 28 of the last 28 days to have a stored score
+**Priority:** P3 — pre-existing, but now load-bearing
+
+**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (`ReadinessRepository.swift:926`). One night without the watch inside the window silences taper detection until that day rolls off.
+
+**Why:** v0.1.13.0's headline claim is that the detector now catches a genuine 50% volume cut. For intermittent watch-wearers that improvement may be unreachable.
+
+**How to apply:** Consider relaxing to a distinct-day count (e.g. ≥ 24 of 28) with the means computed over available days.
+
+**Effort:** S (human: ~2h / CC+gstack: ~10min)
+
 ## Coach
 
 ### MasterCoachEngine copy duplicated across LLM and heuristic paths
@@ -148,41 +181,6 @@
 **How to apply:** Re-derive the pattern list on read, or invalidate the fingerprint cache when the nearest `detectedAt + activeWindowDays` boundary passes.
 
 **Effort:** S (human: ~3h / CC+gstack: ~15min)
-
-## Analytics / Patterns (continued)
-
-### `taperBaselineLoadThreshold` (0.25) is far below "a real training block"
-**Priority:** P2
-
-**What:** 0.25 mean daily load over 21 days is ~5.25 TSS-equivalent units in three weeks — under two hours of zone-2 riding per *week* on this project's scale. A casual rider averaging ~90 min/week (baseline ≈ 0.29) clears the guard, so a single week off yields `dropPct = 1.0` and "Taper Underway — load down 100%".
-
-**Why:** The constant's own doc comment claims it gates "no training block to taper from", but as written it only excludes the literally-zero case it was designed around (pre-migration rows). Surfaced by the v0.1.13.0 adversarial review.
-
-**How to apply:** Decide the intended floor as a product call — ~1.0 (roughly one real session per day-equivalent per week) is the likely target. Update `TrainingDNAAnalyzer.taperBaselineLoadThreshold`, its doc comment, and `testTaperUnderway_noBaselineTrainingLoad_notConfirmed`.
-
-**Effort:** XS once the number is chosen (human: ~1h / CC+gstack: ~5min)
-
-### Stored `.tapering` rows carry a numerator computed under the old ACWR metric
-**Priority:** P2 — affects upgraders only, self-heals within 10 days
-
-**What:** `confidenceNumerator` on a `.tapering` row written before v0.1.13.0 holds an ACWR-ratio percentage, but `confidenceCountText` now renders it as "load down N%" — a claim about training volume that was never measured. `upsertPatterns` only overwrites it when the detector re-fires.
-
-**Why:** An upgrader mid-taper can see the exact false claim this release was opened to remove. Self-limiting: the row ages out of `activeWindowDays` (10) and the next successful analysis rewrites it.
-
-**How to apply:** One-time migration on first launch of ≥ 0.1.13.0 that deletes stored `.tapering` rows (gated by a UserDefaults key, matching the existing migration pattern). Weigh against letting it self-heal.
-
-**Effort:** S (human: ~2h / CC+gstack: ~10min)
-
-### Taper detection requires all 28 of the last 28 days to have a stored score
-**Priority:** P3 — pre-existing, but now load-bearing
-
-**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (`ReadinessRepository.swift:926`). One night without the watch inside the window silences taper detection until that day rolls off.
-
-**Why:** v0.1.13.0's headline claim is that the detector now catches a genuine 50% volume cut. For intermittent watch-wearers that improvement may be unreachable.
-
-**How to apply:** Consider relaxing to a distinct-day count (e.g. ≥ 24 of 28) with the means computed over available days.
-
-**Effort:** S (human: ~2h / CC+gstack: ~10min)
 
 ## Completed
 
