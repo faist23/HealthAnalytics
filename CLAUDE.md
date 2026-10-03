@@ -143,9 +143,8 @@ iOS SwiftUI app. Target: weekend warriors who want coaching guidance, not raw da
 
 ## Skill routing
 
-When the user's request matches an available skill, ALWAYS invoke it using the Skill
-tool as your FIRST action. Do NOT answer directly, do NOT use other tools first.
-The skill has specialized workflows that produce better results than ad-hoc answers.
+When the user's request matches one of these skills, invoke it with the Skill tool
+before starting the work: its workflow produces better results than an ad-hoc pass.
 
 Key routing rules:
 - Product ideas, "is this worth building", brainstorming → invoke office-hours
@@ -158,18 +157,18 @@ Key routing rules:
 - Design system, brand → invoke design-consultation
 - Visual audit, design polish → invoke design-review
 - Architecture review → invoke plan-eng-review
-- Save progress, checkpoint, resume → invoke checkpoint
+- Save progress, checkpoint → invoke context-save; resume → invoke context-restore
 - Code quality, health check → invoke health
 
 ## gstack (REQUIRED — global install)
 
-**Before doing ANY work, verify gstack is installed:**
+Check that gstack is installed before starting work:
 
 ```bash
 test -d ~/.claude/skills/gstack/bin && echo "GSTACK_OK" || echo "GSTACK_MISSING"
 ```
 
-If GSTACK_MISSING: STOP. Do not proceed. Tell the user:
+If it prints GSTACK_MISSING, stop and tell the user:
 
 > gstack is required for all AI-assisted work in this repo.
 > Install it:
@@ -179,7 +178,8 @@ If GSTACK_MISSING: STOP. Do not proceed. Tell the user:
 > ```
 > Then restart your AI coding tool.
 
-Do not skip skills, ignore gstack errors, or work around missing gstack.
+When a gstack skill reports an error, surface it to the user rather than working
+around it.
 
 Using gstack skills: After install, skills like /qa, /ship, /review, /investigate,
 and /browse are available. Use /browse for all web browsing.
