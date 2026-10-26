@@ -54,6 +54,33 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~10min)
 
+### Background pattern-analysis task likely never runs, and bypasses `runPatternAnalysis`
+**Priority:** P2 — surfaced by the v0.1.14.0 red-team review; pre-existing
+
+**What:** `HealthAnalyticsApp.swift:44` registers `.backgroundTask(.appRefresh("com.craigfaist.HealthAnalytics.patternAnalysis"))`, but `schedulePatternAnalysisTask` (line 74) submits a `BGProcessingTaskRequest` with the same id — a type mismatch, so the handler likely never fires. When it does, it calls `analyzer.analyze` directly and stamps `lastPatternAnalysisDate` whenever `analyze` returns, including on cancellation (an expired BG task), which burns the 7-day throttle without refreshing `detectedAt` — the exact bug `runPatternAnalysis` already guards against. It also skips the coach cache re-check.
+
+**How to apply:** Route the handler through `ReadinessRepository.shared.runPatternAnalysis(container:force: true)`; pair `BGAppRefreshTaskRequest` with `.appRefresh` (or move both to processing); confirm `BGTaskSchedulerPermittedIdentifiers` in Info.plist. Also gates the "BGProcessingTask Promotion" item above, which assumes this path works.
+
+**Effort:** S (human: ~2h / CC+gstack: ~15min)
+
+### Pattern and recovery errors share `ReadinessRepository.analysisError`
+**Priority:** P3 — surfaced by the v0.1.14.0 red-team review; pre-existing
+
+**What:** `runPatternAnalysis`'s catch and `performFullAnalysis` both write `analysisError`, and `InsightsView` renders it as the Training DNA error row (whose "Try again" re-runs pattern analysis). A recovery failure can show as a pattern failure; a later `performFullAnalysis` clears a real pattern error; a successful retry that hits the cache clears nothing.
+
+**How to apply:** Add a separate published `patternAnalysisError` on the repository, cleared at the start of `runPatternAnalysis`; have `InsightsView` read it. Remove the never-set local `patternAnalysisError` in `InsightsView.triggerPatternAnalysis`.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10min)
+
+### First-launch pattern analysis can run on pre-backfill scores
+**Priority:** P3 — surfaced by the v0.1.14.0 red-team review; pre-existing
+
+**What:** `backfillHistoricalScores` clears `lastPatternAnalysisDate` as a "re-run patterns" signal, but on first launch `RecoveryTabView`'s forced analysis can start before the backfill saves and stamp afterwards, so the first session's patterns (and the Coach paragraph built from them) can miss history-dependent detections. Self-heals on the next Recovery-tab appear.
+
+**How to apply:** After a backfill that inserted rows, re-run pattern analysis directly — or have `runPatternAnalysis` await `backfillHistoricalScores` before `analyze` — instead of relying on clearing the throttle key.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10min)
+
 ### Taper detection requires all 28 of the last 28 days to have a stored score
 **Priority:** P3 — pre-existing, but now load-bearing
 
@@ -77,6 +104,17 @@
 **How to apply:** Extract the shared sentences into private static helpers (e.g. `injuryRiskSentence(_:)`, `baselineSentence(score:patterns:)`) consumed by both paths.
 
 **Effort:** S (human: ~2h / CC+gstack: ~15 min)
+
+### Dead analysis pipeline left behind by the ReadinessView deletion
+**Priority:** P3 — deferred from the v0.1.14.0 review (user decision)
+
+**What:** With `ReadinessView` gone, these have no readers (grep-verified 2026-10-26): `UnifiedReadiness.dailyInstruction`, `.recommendation`, `.injuryRisk`; `ReadinessViewModel.formIndicator` (+ `generateFormIndicator`), `mlPrediction`, `mlFeatureWeights`, `mlError`, `intentAwareAssessment`, `temporalAnalysis`, `zoneAnalysis`, `fitnessAnalysis`. `performFullAnalysis` still computes the intent-aware, temporal, zone and fitness analyses and the `CoachingService.DailyInstruction` on every run for them; `TrainingZoneCard` / `FitnessTrendCard` are never instantiated; `EnhancedIntentAwareReadinessService` then has no consumer.
+
+**Why:** ~540 lines of work done on every refresh for nothing. Deferred because removing whole analysis passes from the main pipeline is more than a cleanup release should carry.
+
+**How to apply:** Remove the view-model properties first, then each computation + its `UnifiedReadiness` field, rebuilding and running the lane between steps; check `PredictionCache.store(instruction:)` and the `ReadinessRepositoryCoachingTests` that only pin `dailyInstruction`. Watch for side effects in the analyses (e.g. writes) before deleting one.
+
+**Effort:** M (human: ~4h / CC+gstack: ~30min)
 
 ## Science
 

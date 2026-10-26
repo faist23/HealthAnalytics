@@ -156,7 +156,11 @@ class ReadinessRepository: ObservableObject {
                 // launch-time analysis that finished after the coach read leaves
                 // Coach behind Patterns until the next unrelated refresh. No-op when
                 // the set is unchanged; coalesces if an analysis is in flight.
-                await refreshIfNecessary(modelContext: HealthDataContainer.shared.mainContext)
+                // Unstructured on purpose: callers are view `.task`s, and a tab swipe
+                // cancelling one mid-refresh would make MasterCoachEngine's LLM call
+                // throw and cache the heuristic paragraph for the rest of the day.
+                let context = container.mainContext
+                Task { await self.refreshIfNecessary(modelContext: context) }
             }
         } catch PatternAnalysisError.insufficientData {
             // < 60 days of history — silent, no error surfaced. Safe to throttle: there

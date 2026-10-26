@@ -93,7 +93,7 @@ class ReadinessViewModel: ObservableObject {
         self.loadVisualization = unified.loadVisualization
         self.primaryActivity = unified.primaryActivity
 
-        // Coaching output — now owned by ReadinessRepository (GEMINI.md mandate)
+        // Energy-bank curve inputs — owned by ReadinessRepository (GEMINI.md mandate)
         self.overnightRecoveryMultiplier = unified.overnightRecoveryMultiplier
         self.todayStepExcessTSS = unified.todayStepExcessTSS
 
