@@ -43,28 +43,6 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15 min)
 
-### Delete dead `ActivityIntentClassifier` + fix file/type name mismatch
-**Priority:** P3 — deferred from the Load breakdown work (2026-07-09)
-
-**What:** `ML-Components/ActivityIntentClassifier.swift` is dead code — no references anywhere; the live classifier is `HeuristicIntentClassifier`. Separately, `ML-Components/IntentAwareReadinessService.swift` defines `struct EnhancedIntentAwareReadinessService` (file/type name mismatch).
-
-**Why:** Surfaced during the intent-breakdown audit. The dead classifier carries its own `String(activity.id)` labeling path that never runs, and the name mismatch costs a grep every time someone looks for the wired service.
-
-**How to apply:** Delete `ActivityIntentClassifier.swift` (confirm zero references first, as with the 2026-04-30 dead-code sweep). Rename `IntentAwareReadinessService.swift` → `EnhancedIntentAwareReadinessService.swift`.
-
-**Effort:** S (human: ~30 min / CC+gstack: ~5 min)
-
-### `taperBaselineLoadThreshold` (0.25) is far below "a real training block"
-**Priority:** P2
-
-**What:** 0.25 mean daily load over 21 days is ~5.25 TSS-equivalent units in three weeks — under two hours of zone-2 riding per *week* on this project's scale. A casual rider averaging ~90 min/week (baseline ≈ 0.29) clears the guard, so a single week off yields `dropPct = 1.0` and "Taper Underway — load down 100%".
-
-**Why:** The constant's own doc comment claims it gates "no training block to taper from", but as written it only excludes the literally-zero case it was designed around (pre-migration rows). Surfaced by the v0.1.13.0 adversarial review.
-
-**How to apply:** Decide the intended floor as a product call — ~1.0 (roughly one real session per day-equivalent per week) is the likely target. Update `TrainingDNAAnalyzer.taperBaselineLoadThreshold`, its doc comment, and `testTaperUnderway_noBaselineTrainingLoad_notConfirmed`.
-
-**Effort:** XS once the number is chosen (human: ~1h / CC+gstack: ~5min)
-
 ### Stored `.tapering` rows carry a numerator computed under the old ACWR metric
 **Priority:** P2 — affects upgraders only, self-heals within 10 days
 
@@ -99,17 +77,6 @@
 **How to apply:** Extract the shared sentences into private static helpers (e.g. `injuryRiskSentence(_:)`, `baselineSentence(score:patterns:)`) consumed by both paths.
 
 **Effort:** S (human: ~2h / CC+gstack: ~15 min)
-
-## Views
-
-### Delete deprecated ReadinessView.swift
-**Priority:** P3 — deferred from /ship review 2026-07-08
-
-**What:** `ReadinessView` is self-described as deprecated ("analysis is now driven entirely by ReadinessRepository") and its only instantiation is its own `#Preview`. The v0.1.10.0 copy sweep still had to maintain renamed strings in it.
-
-**How to apply:** Delete the file after relocating the shared `ScoreBreakdownCard` it defines (still used by `RecoveryTabView`). Until then, exclude it from copy sweeps.
-
-**Effort:** S (human: ~1h / CC+gstack: ~10 min)
 
 ## Science
 
@@ -171,19 +138,12 @@
 
 **Effort:** S (human: ~3h / CC+gstack: ~15min)
 
-### Coach paragraph outlives the pattern card by up to a day
-**Priority:** P2
-
-**What:** `activePatternTypes` is filtered on `isActive` but evaluated once inside `performFullAnalysis` and baked into `UnifiedReadiness.coachAdvice`. The fingerprint cache (`ReadinessRepository.swift:268`) holds that for the calendar day, so a pattern that expires at 14:32 drops from Patterns immediately while Coach keeps referencing it until the store moves or midnight passes.
-
-**Why:** Same cross-surface disagreement class v0.1.13.0 set out to fix. Not fixed by that release — the CLAUDE.md note there was corrected to say so.
-
-**How to apply:** Re-derive the pattern list on read, or invalidate the fingerprint cache when the nearest `detectedAt + activeWindowDays` boundary passes.
-
-**Effort:** S (human: ~3h / CC+gstack: ~15min)
-
 ## Completed
 
+- **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`; `ReadinessRepositoryCacheTests`.
+- **P2 — `taperBaselineLoadThreshold` (0.25) too low** — **Closed, no change:** v0.1.14.0 (2026-10-26). The "week off reads as 100% taper" case is already rejected by the Tier 1 session-presence check from v0.1.13.0. Raising the floor to 1.0 (~7h zone-2/week) would hide the pattern from the weekend-warrior target user. Pinned by `testTaperUnderway_casualRiderWeekOff_notConfirmed`.
+- **P3 — Delete dead `ActivityIntentClassifier` + file/type name mismatch** — **Completed:** v0.1.14.0 (2026-10-26). Deleted; `IntentAwareReadinessService.swift` → `EnhancedIntentAwareReadinessService.swift`.
+- **P3 — Delete deprecated ReadinessView.swift** — **Completed:** v0.1.14.0 (2026-10-26). `BackfillProgressView` and `ScoreBreakdownCard`/`BreakdownRow` relocated to their own files; the other 15 views in it had no callers.
 - **P3 — Strain Sensitivity Calibration UI** — **Completed:** v0.1.0.0 (2026-04-20). `StrainSensitivityCard` in `SettingsView`; `CardiovascularStrainService.compute(sensitivityOffset:)`; normalization 90.0 → 70.0; ±20% slider with reset and live preview.
 - **P3 — InsightsViewModel GEMINI.md Mandate Violation** — **Completed:** 2026-03-27. `analyzeData()` gutted 370 → 78 lines; all 9 service calls moved to `ReadinessRepository.performFullAnalysis()`; `UnifiedReadiness` gained 11 fields; `stepData` bug fixed.
 - **P3 — Design System (DESIGN.md)** — **Completed:** v0.1.7.0 (2026-05-03). Warm Signal replaced with Signal Indigo: `#09090E` background, `#7C5CFC` accent, cool-cast text tokens.

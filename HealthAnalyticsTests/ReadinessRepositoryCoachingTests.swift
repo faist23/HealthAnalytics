@@ -122,3 +122,45 @@ final class ReadinessRepositoryCoachingTests: XCTestCase {
         XCTAssertFalse(instruction.subline.isEmpty)
     }
 }
+
+// MARK: - Cache reuse vs. active patterns
+
+@MainActor
+final class ReadinessRepositoryCacheTests: XCTestCase {
+
+    private let fingerprint = PredictionCache.fingerprint(workoutCount: 10, sleepCount: 10, hrvCount: 10, rhrCount: 10)
+
+    private func canReuse(
+        lastAnalysisDate: Date? = Date(),
+        active: Set<PatternType>,
+        lastActive: Set<PatternType>?
+    ) -> Bool {
+        ReadinessRepository.canReuseCachedAnalysis(
+            lastAnalysisDate: lastAnalysisDate,
+            fingerprint: fingerprint,
+            lastFingerprint: fingerprint,
+            activePatternTypes: active,
+            lastActivePatternTypes: lastActive
+        )
+    }
+
+    func test_cacheReused_whenDataAndPatternsUnchanged() {
+        XCTAssertTrue(canReuse(active: [.tapering], lastActive: [.tapering]))
+    }
+
+    /// The P2 this guards: a pattern expires mid-day, the store doesn't move, and the
+    /// Coach paragraph kept citing a card the Patterns tab had already dropped.
+    func test_cacheInvalidated_whenPatternExpiresMidDay() {
+        XCTAssertFalse(canReuse(active: [], lastActive: [.tapering]),
+                       "A pattern dropping out of the active window must re-run the coach")
+    }
+
+    func test_cacheInvalidated_whenPatternNewlyDetected() {
+        XCTAssertFalse(canReuse(active: [.tapering, .hrvPrecursor], lastActive: [.tapering]))
+    }
+
+    func test_cacheInvalidated_onNewDay() {
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        XCTAssertFalse(canReuse(lastAnalysisDate: yesterday, active: [], lastActive: []))
+    }
+}
