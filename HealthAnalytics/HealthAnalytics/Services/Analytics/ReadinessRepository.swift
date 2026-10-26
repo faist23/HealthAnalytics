@@ -82,6 +82,15 @@ class ReadinessRepository: ObservableObject {
 
     private var syncCompletedObserver: NSObjectProtocol?
 
+    /// Pattern analysis is requested from view `.task`s; the flight owns the run so a
+    /// tab swipe can't cancel it and back-to-back appears join one analysis.
+    private let patternAnalysisFlight = SingleFlight()
+
+    /// A forced run (the Recovery tab forces one on every appear) is skipped if a run
+    /// completed this recently. Patterns move over days, so this only sheds tab-swipe
+    /// churn; the 7-day staleness gate still governs unforced runs.
+    nonisolated static let forcedPatternAnalysisMinInterval: TimeInterval = 5 * 60
+
     private static let dailyScoreDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
@@ -117,16 +126,28 @@ class ReadinessRepository: ObservableObject {
     func resetForTesting() {
         currentReadiness = nil
         forecast = nil
+        lastFingerprint = nil
+        lastAnalysisDate = nil
+        lastActivePatternTypes = nil
     }
     #endif
 
     // MARK: - Pattern Analysis (Phase 2)
 
-    /// Primary trigger: called from InsightsView.onAppear (7-day staleness check)
-    /// and from the toolbar refresh button (unconditional).
+    /// Called from RecoveryTabView's `.task` (forced, debounced by
+    /// `forcedPatternAnalysisMinInterval`) and InsightsView's `.task` (7-day staleness
+    /// check) and "Try again" button (forced).
+    /// Callers await the run but never own it — see `patternAnalysisFlight`. A request
+    /// that arrives mid-run joins it (its `force` is moot: an analysis is already running).
     func runPatternAnalysis(container: ModelContainer, force: Bool = false) async {
+        await patternAnalysisFlight.run { [self] in
+            await performPatternAnalysis(container: container, force: force)
+        }
+    }
+
+    private func performPatternAnalysis(container: ModelContainer, force: Bool) async {
         let lastRun = UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
-        guard force || lastRun == nil || Date().timeIntervalSince(lastRun!) > 7 * 86400 else { return }
+        guard Self.shouldRunPatternAnalysis(lastRun: lastRun, force: force) else { return }
 
         // The throttle is stamped AFTER a run that actually reached upsertPatterns —
         // never before. `analyze()` refreshes every pattern's `detectedAt`, which is
@@ -148,7 +169,8 @@ class ReadinessRepository: ObservableObject {
             let historyDays = try await analyzer.analyze(sourcePreference: preference)
             UserDefaults.standard.set(historyDays, forKey: "healthKitHistoryDays")
             // `analyze()` returns normally when cancelled (its guards `return historyDays`),
-            // so a clean return is NOT proof the patterns were refreshed. Check explicitly.
+            // so a clean return is NOT proof the patterns were refreshed. Callers can no
+            // longer cancel this task (it belongs to the flight), but check anyway.
             if !Task.isCancelled {
                 UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
                 // The Coach paragraph bakes in the active pattern set. A run that
@@ -156,11 +178,7 @@ class ReadinessRepository: ObservableObject {
                 // launch-time analysis that finished after the coach read leaves
                 // Coach behind Patterns until the next unrelated refresh. No-op when
                 // the set is unchanged; coalesces if an analysis is in flight.
-                // Unstructured on purpose: callers are view `.task`s, and a tab swipe
-                // cancelling one mid-refresh would make MasterCoachEngine's LLM call
-                // throw and cache the heuristic paragraph for the rest of the day.
-                let context = container.mainContext
-                Task { await self.refreshIfNecessary(modelContext: context) }
+                await refreshIfNecessary(modelContext: container.mainContext)
             }
         } catch PatternAnalysisError.insufficientData {
             // < 60 days of history — silent, no error surfaced. Safe to throttle: there
@@ -307,12 +325,22 @@ class ReadinessRepository: ObservableObject {
             return
         }
         
-        await performFullAnalysis(modelContext: modelContext, fingerprint: fingerprint)
+        await runShieldedAnalysis(modelContext: modelContext, fingerprint: fingerprint)
     }
     
     func forceRefresh(modelContext: ModelContext) async {
         guard let fingerprint = try? calculateFingerprint(context: modelContext) else { return }
-        await performFullAnalysis(modelContext: modelContext, fingerprint: fingerprint)
+        await runShieldedAnalysis(modelContext: modelContext, fingerprint: fingerprint)
+    }
+
+    /// Every caller is a view `.task` / `.refreshable` or an app lifecycle task, and any
+    /// of them can be cancelled mid-run. A cancelled run used to make MasterCoachEngine's
+    /// LLM call throw, fall back to the heuristic paragraph, and cache that for the rest
+    /// of the day. The analysis now runs to completion regardless of who asked.
+    private func runShieldedAnalysis(modelContext: ModelContext, fingerprint: PredictionCache.DataFingerprint) async {
+        await SingleFlight.shielded { [self] in
+            await performFullAnalysis(modelContext: modelContext, fingerprint: fingerprint)
+        }
     }
     
     // MARK: - Core Analysis Logic
@@ -1211,6 +1239,14 @@ class ReadinessRepository: ObservableObject {
     }
     
     // MARK: - Helpers
+
+    /// Unforced runs wait out the 7-day staleness window; forced runs only skip a run
+    /// that completed within `forcedPatternAnalysisMinInterval`. Never run → always run.
+    nonisolated static func shouldRunPatternAnalysis(lastRun: Date?, force: Bool, now: Date = Date()) -> Bool {
+        guard let lastRun else { return true }
+        let window = force ? forcedPatternAnalysisMinInterval : 7 * 86400
+        return now.timeIntervalSince(lastRun) > window
+    }
 
     /// Whether the published snapshot still describes the store. The fingerprint
     /// covers synced data; the pattern set covers the one input that changes with

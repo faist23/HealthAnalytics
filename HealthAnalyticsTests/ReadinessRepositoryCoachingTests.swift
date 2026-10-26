@@ -227,3 +227,31 @@ final class ReadinessRepositoryCacheTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Pattern analysis throttle
+
+final class ReadinessRepositoryPatternThrottleTests: XCTestCase {
+
+    private let now = Date()
+    private func ago(_ seconds: TimeInterval) -> Date { now.addingTimeInterval(-seconds) }
+    private func shouldRun(lastRun: Date?, force: Bool) -> Bool {
+        ReadinessRepository.shouldRunPatternAnalysis(lastRun: lastRun, force: force, now: now)
+    }
+
+    func test_neverRun_alwaysRuns() {
+        XCTAssertTrue(shouldRun(lastRun: nil, force: false))
+        XCTAssertTrue(shouldRun(lastRun: nil, force: true))
+    }
+
+    /// The Recovery tab forces a run on every appear; swiping back and forth must not
+    /// re-run the whole analysis each time.
+    func test_forced_skipsARunThatJustCompleted() {
+        XCTAssertFalse(shouldRun(lastRun: ago(60), force: true))
+        XCTAssertTrue(shouldRun(lastRun: ago(ReadinessRepository.forcedPatternAnalysisMinInterval + 1), force: true))
+    }
+
+    func test_unforced_waitsOutTheSevenDayWindow() {
+        XCTAssertFalse(shouldRun(lastRun: ago(6 * 86400), force: false))
+        XCTAssertTrue(shouldRun(lastRun: ago(7 * 86400 + 1), force: false))
+    }
+}

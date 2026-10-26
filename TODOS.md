@@ -59,7 +59,7 @@
 
 **What:** `HealthAnalyticsApp.swift:44` registers `.backgroundTask(.appRefresh("com.craigfaist.HealthAnalytics.patternAnalysis"))`, but `schedulePatternAnalysisTask` (line 74) submits a `BGProcessingTaskRequest` with the same id — a type mismatch, so the handler likely never fires. When it does, it calls `analyzer.analyze` directly and stamps `lastPatternAnalysisDate` whenever `analyze` returns, including on cancellation (an expired BG task), which burns the 7-day throttle without refreshing `detectedAt` — the exact bug `runPatternAnalysis` already guards against. It also skips the coach cache re-check.
 
-**How to apply:** Route the handler through `ReadinessRepository.shared.runPatternAnalysis(container:force: true)`; pair `BGAppRefreshTaskRequest` with `.appRefresh` (or move both to processing); confirm `BGTaskSchedulerPermittedIdentifiers` in Info.plist. Also gates the "BGProcessingTask Promotion" item above, which assumes this path works.
+**How to apply:** Route the handler through `ReadinessRepository.shared.runPatternAnalysis(container:force: true)` (now repository-owned via `SingleFlight`, so it also gets the Coach refresh); pair `BGAppRefreshTaskRequest` with `.appRefresh` (or move both to processing); confirm `BGTaskSchedulerPermittedIdentifiers` in Info.plist. Also gates the "BGProcessingTask Promotion" item above, which assumes this path works.
 
 **Effort:** S (human: ~2h / CC+gstack: ~15min)
 
@@ -93,18 +93,6 @@
 **Effort:** S (human: ~2h / CC+gstack: ~10min)
 
 ## Coach
-
-### Repository should own the pattern-analysis → Coach hand-off
-**Priority:** P2 — deferred from the v0.1.14.0 review (user decision)
-
-**What:** Pattern analysis is started by view `.task`s (`RecoveryTabView` forces it on every appear, `InsightsView` on appear and "Try again"), and v0.1.14.0 hands off to Coach with an unstructured `refreshIfNecessary` at the end of a successful `runPatternAnalysis`. Each review pass found another gap in that hand-off: (1) a tab swipe cancelling the view task after `upsertPatterns` but before the `!Task.isCancelled` check (while `analyze()` awaits `notifyIfNew`) skips the refresh; (2) if a refresh is coalesced into an in-flight `performFullAnalysis` (`pendingRefreshRequested`), the re-check runs inside that run's task, which may be a cancellable view task; (3) `performFullAnalysis` has no cancellation handling at all — a cancelled run makes `MasterCoachEngine.synthesizeWithLLM`'s `Task.sleep` throw, falls back to the heuristic paragraph, and caches it for the day (pre-existing; any cancelled `.refreshable` does it); (4) every Recovery-tab appear re-runs analysis and spawns a refresh.
-
-**Why:** The cache-key fix bounds the drift to "until the next launch/foreground/sync", but Coach copy can still depend on whether the user swiped tabs.
-
-**Context:** Don't patch the hand-off a fifth time. Move pattern analysis into a repository-owned task (debounced, not tied to view lifetime); have `analyze()` report whether `upsertPatterns` changed anything and refresh only then; make `performFullAnalysis` skip publishing and leave `lastFingerprint` / `lastAnalysisDate` / `lastActivePatternTypes` unset when cancelled. Pairs with the background-task item under Analytics / Patterns. Also: `resetForTesting()` clears `currentReadiness`/`forecast` but not the cache state, so any integration test on `.shared` would inherit it.
-
-**Effort:** M (human: ~4h / CC+gstack: ~30min)
-**Depends on:** None
 
 ### MasterCoachEngine copy duplicated across LLM and heuristic paths
 **Priority:** P3 — deferred from /ship review 2026-07-08
@@ -199,6 +187,7 @@
 
 ## Completed
 
+- **P2 — Repository should own the pattern-analysis → Coach hand-off** — **Completed:** 2026-10-26 (unreleased). `SingleFlight` owns pattern analysis (joins overlap, ignores caller cancellation, 5-min forced-run throttle) and shields `performFullAnalysis` from caller cancellation, so a tab swipe can no longer cache the heuristic Coach paragraph; `resetForTesting()` clears the cache state. `SingleFlightTests`, `ReadinessRepositoryPatternThrottleTests`. The background-task path is still separate (see Analytics / Patterns).
 - **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis usually can't leave Coach behind; `ReadinessRepositoryCacheTests`. The remaining hand-off gaps are the open "Repository should own the pattern-analysis → Coach hand-off" item.
 - **P2 — `taperBaselineLoadThreshold` (0.25) too low** — **Closed, no change:** v0.1.14.0 (2026-10-26). The "week off reads as 100% taper" case is already rejected by the Tier 1 session-presence check from v0.1.13.0. Raising the floor to 1.0 (~7h zone-2/week) would hide the pattern from the weekend-warrior target user. Pinned by `testTaperUnderway_casualRiderGenuineTaper_confirmed` (fires at a 0.29 baseline) and `testTaperUnderway_casualRiderWeekOff_notConfirmed`.
 - **P3 — Delete dead `ActivityIntentClassifier` + file/type name mismatch** — **Completed:** v0.1.14.0 (2026-10-26). Deleted; `IntentAwareReadinessService.swift` → `EnhancedIntentAwareReadinessService.swift`.

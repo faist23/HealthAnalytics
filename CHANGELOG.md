@@ -3,6 +3,13 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Switching tabs no longer downgrades the Coach paragraph.** If you swiped away while the app was working out today's advice, the AI-written paragraph could be cut off and replaced by the simpler built-in version, and that version stuck for the rest of the day. Analysis now always finishes, whoever asked for it. This also closes the last gap where Coach could lag the Patterns tab after a launch.
+- **Swiping back to Recovery no longer re-runs the full pattern analysis every time.** Back-to-back visits share one run, and a run that finished in the last five minutes is reused.
+
 ## [0.1.14.0] - 2026-10-26
 
 The cleanup release. The Coach tab could keep talking about a pattern for most of a day after the Patterns tab had stopped showing it. That's fixed, and about 2,000 lines of screens and services nothing used anymore are gone.
