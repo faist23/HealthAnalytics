@@ -42,15 +42,11 @@ struct HealthAnalyticsApp: App {
         }
         .modelContainer(HealthDataContainer.shared)
         .backgroundTask(.appRefresh("com.craigfaist.HealthAnalytics.patternAnalysis")) {
-            let container = HealthDataContainer.shared
-            let analyzer = TrainingDNAAnalyzer(modelContainer: container)
-            let preference = HRVSourcePreference(
-                rawValue: UserDefaults.standard.string(forKey: "preferredHRVSource") ?? HRVSourcePreference.auto.rawValue
-            ) ?? .auto
-            if let historyDays = try? await analyzer.analyze(sourcePreference: preference) {
-                UserDefaults.standard.set(historyDays, forKey: "healthKitHistoryDays")
-                UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
-            }
+            // Same path as the foreground: the throttle is stamped only when patterns
+            // were actually refreshed, and Coach re-checks its cache afterwards. On
+            // budget expiry the handler stops waiting; the run resumes next time the
+            // app is awake.
+            await ReadinessRepository.shared.runPatternAnalysis(container: HealthDataContainer.shared, force: true)
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active && isOnboardingComplete {
@@ -71,10 +67,16 @@ struct HealthAnalyticsApp: App {
     }
     
     private func schedulePatternAnalysisTask() {
-        let request = BGProcessingTaskRequest(identifier: "com.craigfaist.HealthAnalytics.patternAnalysis")
-        request.requiresNetworkConnectivity = false
-        request.requiresExternalPower = false
-        try? BGTaskScheduler.shared.submit(request)
+        // Must be an app-refresh request to match the SwiftUI `.appRefresh` handler, and
+        // needs UIBackgroundModes `fetch` in Info.plist — without it submit throws.
+        let request = BGAppRefreshTaskRequest(identifier: "com.craigfaist.HealthAnalytics.patternAnalysis")
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            #if DEBUG
+            print("⚠️ Pattern analysis background task not scheduled: \(error)")
+            #endif
+        }
     }
 
     private func handleIncomingURL(_ url: URL) {

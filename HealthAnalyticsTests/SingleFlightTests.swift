@@ -38,9 +38,23 @@ final class SingleFlightTests: XCTestCase {
         let caller = Task { await flight.run(slowWork(probe)) }
         caller.cancel()
         await caller.value
+        await flight.run(slowWork(probe))   // joins the still-running work
 
-        XCTAssertTrue(probe.finished, "The caller's wait must not return before the work finishes")
+        XCTAssertTrue(probe.finished)
+        XCTAssertEqual(probe.runs, 1, "The cancelled caller's work must keep running, not restart")
         XCTAssertFalse(probe.sawCancellation, "The caller's cancellation must not reach the work")
+    }
+
+    /// iOS cancels a background task when its time budget expires, and the handler must
+    /// return promptly then. Cancellation ends the caller's wait; the work carries on.
+    func test_run_cancelledCallerStopsWaitingBeforeTheWorkFinishes() async {
+        let flight = SingleFlight()
+        let probe = Probe()
+        let caller = Task { await flight.run(slowWork(probe)) }
+        caller.cancel()
+        await caller.value
+
+        XCTAssertFalse(probe.finished, "A cancelled caller must stop waiting instead of blocking on the work")
     }
 
     /// Recovery-tab appears in quick succession must not start overlapping analyses.
@@ -70,8 +84,10 @@ final class SingleFlightTests: XCTestCase {
         let caller = Task { await SingleFlight.shielded(slowWork(probe)) }
         caller.cancel()
         await caller.value
+        XCTAssertFalse(probe.finished, "A cancelled caller must stop waiting")
 
-        XCTAssertTrue(probe.finished)
+        try? await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(probe.finished, "The shielded work must still run to completion")
         XCTAssertFalse(probe.sawCancellation)
     }
 }
