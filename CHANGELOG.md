@@ -3,8 +3,18 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.1.14.0] - 2026-10-26
 
+The cleanup release. The Coach tab could keep talking about a pattern for most of a day after the Patterns tab had stopped showing it. That's fixed, and about 2,000 lines of screens and services nothing used anymore are gone.
+
+### Fixed
+
+- **Coach no longer cites a pattern the Patterns tab has dropped.** The Coach paragraph used to be cached for the whole day as long as no new data synced, so a pattern that expired at 2pm was still being referenced at bedtime. Coach now re-checks whenever the set of active patterns changes, on the next launch, foreground or sync. A fresh pattern analysis also nudges Coach to catch up. One narrow case remains: if you switch tabs at the exact moment an analysis finishes, Coach catches up on the next foreground instead.
+- **Casual riders keep their taper card.** The minimum training volume for "Load Dropping" stays low enough for a weekend warrior (about two easy hours a week). A week off still doesn't read as a taper, because a taper needs at least one ride in the last seven days.
+
+### Removed
+
+- The old all-in-one Readiness screen, replaced long ago by the Coach / Recovery / Load / Patterns tabs, plus an unused ML intent classifier, an unused prediction card and a large commented-out copy of the intent service. The two pieces still in use, the backfill progress view and the Recovery score breakdown, moved into their own files unchanged.
 
 ## [0.1.13.0] - 2026-08-11
 

@@ -94,6 +94,18 @@
 
 ## Coach
 
+### Repository should own the pattern-analysis → Coach hand-off
+**Priority:** P2 — deferred from the v0.1.14.0 review (user decision)
+
+**What:** Pattern analysis is started by view `.task`s (`RecoveryTabView` forces it on every appear, `InsightsView` on appear and "Try again"), and v0.1.14.0 hands off to Coach with an unstructured `refreshIfNecessary` at the end of a successful `runPatternAnalysis`. Each review pass found another gap in that hand-off: (1) a tab swipe cancelling the view task after `upsertPatterns` but before the `!Task.isCancelled` check (while `analyze()` awaits `notifyIfNew`) skips the refresh; (2) if a refresh is coalesced into an in-flight `performFullAnalysis` (`pendingRefreshRequested`), the re-check runs inside that run's task, which may be a cancellable view task; (3) `performFullAnalysis` has no cancellation handling at all — a cancelled run makes `MasterCoachEngine.synthesizeWithLLM`'s `Task.sleep` throw, falls back to the heuristic paragraph, and caches it for the day (pre-existing; any cancelled `.refreshable` does it); (4) every Recovery-tab appear re-runs analysis and spawns a refresh.
+
+**Why:** The cache-key fix bounds the drift to "until the next launch/foreground/sync", but Coach copy can still depend on whether the user swiped tabs.
+
+**Context:** Don't patch the hand-off a fifth time. Move pattern analysis into a repository-owned task (debounced, not tied to view lifetime); have `analyze()` report whether `upsertPatterns` changed anything and refresh only then; make `performFullAnalysis` skip publishing and leave `lastFingerprint` / `lastAnalysisDate` / `lastActivePatternTypes` unset when cancelled. Pairs with the background-task item under Analytics / Patterns. Also: `resetForTesting()` clears `currentReadiness`/`forecast` but not the cache state, so any integration test on `.shared` would inherit it.
+
+**Effort:** M (human: ~4h / CC+gstack: ~30min)
+**Depends on:** None
+
 ### MasterCoachEngine copy duplicated across LLM and heuristic paths
 **Priority:** P3 — deferred from /ship review 2026-07-08
 
@@ -139,6 +151,15 @@
 
 ## Design
 
+### `BreakdownRow` bar width is unclamped
+**Priority:** P4 — surfaced by the v0.1.14.0 adversarial review; pre-existing (moved unchanged from ReadinessView)
+
+**What:** `Views/Recovery/ScoreBreakdownCard.swift` sizes the bar as `width * score / maxScore` with no clamp; a score above `maxScore` overflows the track and a negative one yields an invalid frame width.
+
+**How to apply:** Clamp the ratio to `0...1`.
+
+**Effort:** XS
+
 ### Light Mode Token Sweep: TrainingSignatureCard
 **Priority:** P4 — blocked on light mode phase (not scoped)
 
@@ -178,7 +199,7 @@
 
 ## Completed
 
-- **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis can't leave Coach behind; `ReadinessRepositoryCacheTests`.
+- **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis usually can't leave Coach behind; `ReadinessRepositoryCacheTests`. The remaining hand-off gaps are the open "Repository should own the pattern-analysis → Coach hand-off" item.
 - **P2 — `taperBaselineLoadThreshold` (0.25) too low** — **Closed, no change:** v0.1.14.0 (2026-10-26). The "week off reads as 100% taper" case is already rejected by the Tier 1 session-presence check from v0.1.13.0. Raising the floor to 1.0 (~7h zone-2/week) would hide the pattern from the weekend-warrior target user. Pinned by `testTaperUnderway_casualRiderGenuineTaper_confirmed` (fires at a 0.29 baseline) and `testTaperUnderway_casualRiderWeekOff_notConfirmed`.
 - **P3 — Delete dead `ActivityIntentClassifier` + file/type name mismatch** — **Completed:** v0.1.14.0 (2026-10-26). Deleted; `IntentAwareReadinessService.swift` → `EnhancedIntentAwareReadinessService.swift`.
 - **P3 — Delete deprecated ReadinessView.swift** — **Completed:** v0.1.14.0 (2026-10-26). `BackfillProgressView` and `ScoreBreakdownCard`/`BreakdownRow` relocated to their own files; the other 15 views in it had no callers.
