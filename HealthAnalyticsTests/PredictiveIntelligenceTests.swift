@@ -682,6 +682,33 @@ final class PredictiveIntelligenceTests: XCTestCase {
         )
     }
 
+    /// The positive twin: the same casual-rider baseline (0.29) with a real taper —
+    /// fewer, shorter rides at the same effort — must still fire. This is what pins the
+    /// 0.25 floor staying low for weekend warriors; raising it above 0.29 turns this red.
+    func testTaperUnderway_casualRiderGenuineTaper_confirmed() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        // Volume down ~48%, still riding, same HR as the baseline.
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.15, prev21Load: 0.29))
+        var workouts = stride(from: 8, to: 28, by: 3).map { taperWorkout(daysAgo: $0, hr: 140, minutes: 45) }
+        workouts += [1, 4].map { taperWorkout(daysAgo: $0, hr: 140, minutes: 25) }
+        try await analyzer.insertWorkouts(workouts)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(
+            patterns.contains { $0.patternType == .tapering },
+            "The 0.25 floor is deliberately low for weekend warriors — a casual rider's real taper must still fire"
+        )
+    }
+
     /// Documents the deliberate limitation: with no power and no HR on any workout, the
     /// intensity tier cannot run and only session-presence applies. Users without sensors
     /// keep the old behaviour rather than losing the pattern entirely.

@@ -140,8 +140,8 @@
 
 ## Completed
 
-- **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`; `ReadinessRepositoryCacheTests`.
-- **P2 — `taperBaselineLoadThreshold` (0.25) too low** — **Closed, no change:** v0.1.14.0 (2026-10-26). The "week off reads as 100% taper" case is already rejected by the Tier 1 session-presence check from v0.1.13.0. Raising the floor to 1.0 (~7h zone-2/week) would hide the pattern from the weekend-warrior target user. Pinned by `testTaperUnderway_casualRiderWeekOff_notConfirmed`.
+- **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis can't leave Coach behind; `ReadinessRepositoryCacheTests`.
+- **P2 — `taperBaselineLoadThreshold` (0.25) too low** — **Closed, no change:** v0.1.14.0 (2026-10-26). The "week off reads as 100% taper" case is already rejected by the Tier 1 session-presence check from v0.1.13.0. Raising the floor to 1.0 (~7h zone-2/week) would hide the pattern from the weekend-warrior target user. Pinned by `testTaperUnderway_casualRiderGenuineTaper_confirmed` (fires at a 0.29 baseline) and `testTaperUnderway_casualRiderWeekOff_notConfirmed`.
 - **P3 — Delete dead `ActivityIntentClassifier` + file/type name mismatch** — **Completed:** v0.1.14.0 (2026-10-26). Deleted; `IntentAwareReadinessService.swift` → `EnhancedIntentAwareReadinessService.swift`.
 - **P3 — Delete deprecated ReadinessView.swift** — **Completed:** v0.1.14.0 (2026-10-26). `BackfillProgressView` and `ScoreBreakdownCard`/`BreakdownRow` relocated to their own files; the other 15 views in it had no callers.
 - **P3 — Strain Sensitivity Calibration UI** — **Completed:** v0.1.0.0 (2026-04-20). `StrainSensitivityCard` in `SettingsView`; `CardiovascularStrainService.compute(sensitivityOffset:)`; normalization 90.0 → 70.0; ±20% slider with reset and live preview.

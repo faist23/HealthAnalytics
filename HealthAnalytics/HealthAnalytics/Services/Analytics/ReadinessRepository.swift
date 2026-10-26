@@ -151,6 +151,12 @@ class ReadinessRepository: ObservableObject {
             // so a clean return is NOT proof the patterns were refreshed. Check explicitly.
             if !Task.isCancelled {
                 UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
+                // The Coach paragraph bakes in the active pattern set. A run that
+                // detected or expired a pattern must re-check the cache now, or a
+                // launch-time analysis that finished after the coach read leaves
+                // Coach behind Patterns until the next unrelated refresh. No-op when
+                // the set is unchanged; coalesces if an analysis is in flight.
+                await refreshIfNecessary(modelContext: HealthDataContainer.shared.mainContext)
             }
         } catch PatternAnalysisError.insufficientData {
             // < 60 days of history — silent, no error surfaced. Safe to throttle: there

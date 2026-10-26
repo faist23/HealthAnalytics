@@ -16,7 +16,6 @@ class ReadinessViewModel: ObservableObject {
     @Published var readinessScore: ReadinessAnalyzer.ReadinessScore?
     @Published var intraDayReadiness: RecoveryDecayService.IntraDayReadiness?
     @Published var formIndicator: ReadinessAnalyzer.FormIndicator?
-    @Published var dailyInstruction: CoachingService.DailyInstruction?
     @Published var mlPrediction: PerformancePredictor.Prediction?
     @Published var mlFeatureWeights: PerformancePredictor.FeatureWeights?
     @Published var mlError: String?
@@ -24,8 +23,6 @@ class ReadinessViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
     @Published var temporalAnalysis: TemporalModelingService.TemporalAnalysis?
-    @Published var dailyRecommendation: DailyRecommendationService.DailyRecommendation?
-    @Published var injuryRiskAssessment: InjuryRiskCalculator.InjuryRiskAssessment?
     @Published var zoneAnalysis: TrainingZoneAnalyzer.ZoneAnalysis?
     @Published var fitnessAnalysis: FitnessTrendAnalyzer.FitnessAnalysis?
     
@@ -78,8 +75,6 @@ class ReadinessViewModel: ObservableObject {
             breakdown: unified.breakdown
         )
         self.intraDayReadiness = unified.intraDay
-        self.dailyRecommendation = unified.recommendation
-        self.injuryRiskAssessment = unified.injuryRisk
         self.formIndicator = generateFormIndicator(from: self.readinessScore!)
 
         // ML outputs — now owned by ReadinessRepository
@@ -99,7 +94,6 @@ class ReadinessViewModel: ObservableObject {
         self.primaryActivity = unified.primaryActivity
 
         // Coaching output — now owned by ReadinessRepository (GEMINI.md mandate)
-        self.dailyInstruction = unified.dailyInstruction
         self.overnightRecoveryMultiplier = unified.overnightRecoveryMultiplier
         self.todayStepExcessTSS = unified.todayStepExcessTSS
 
