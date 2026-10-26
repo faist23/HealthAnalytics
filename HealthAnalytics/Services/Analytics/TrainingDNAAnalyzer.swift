@@ -749,6 +749,12 @@ actor TrainingDNAAnalyzer {
     /// is 1.0, so 0.25 is roughly two moderate sessions a week — below that there is no
     /// training block to taper from. Also blocks the degenerate case where every
     /// `dailyLoad` is 0.0 (pre-migration rows), which would otherwise read as a 100% drop.
+    ///
+    /// Deliberately low: the target user is a weekend warrior, and a floor of 1.0 (≈7h of
+    /// zone-2 a week) would hide the pattern from almost all of them. A casual rider who
+    /// simply takes a week off is not this guard's job — `taperMinimumRecentSessions`
+    /// rejects that. Pinned by the pair `testTaperUnderway_casualRiderGenuineTaper_confirmed`
+    /// (raising the floor turns it red) and `testTaperUnderway_casualRiderWeekOff_notConfirmed`.
     static let taperBaselineLoadThreshold = 0.25
 
     /// A taper cuts volume while keeping the hard efforts. You cannot taper by not

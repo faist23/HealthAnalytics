@@ -43,28 +43,6 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15 min)
 
-### Delete dead `ActivityIntentClassifier` + fix file/type name mismatch
-**Priority:** P3 — deferred from the Load breakdown work (2026-07-09)
-
-**What:** `ML-Components/ActivityIntentClassifier.swift` is dead code — no references anywhere; the live classifier is `HeuristicIntentClassifier`. Separately, `ML-Components/IntentAwareReadinessService.swift` defines `struct EnhancedIntentAwareReadinessService` (file/type name mismatch).
-
-**Why:** Surfaced during the intent-breakdown audit. The dead classifier carries its own `String(activity.id)` labeling path that never runs, and the name mismatch costs a grep every time someone looks for the wired service.
-
-**How to apply:** Delete `ActivityIntentClassifier.swift` (confirm zero references first, as with the 2026-04-30 dead-code sweep). Rename `IntentAwareReadinessService.swift` → `EnhancedIntentAwareReadinessService.swift`.
-
-**Effort:** S (human: ~30 min / CC+gstack: ~5 min)
-
-### `taperBaselineLoadThreshold` (0.25) is far below "a real training block"
-**Priority:** P2
-
-**What:** 0.25 mean daily load over 21 days is ~5.25 TSS-equivalent units in three weeks — under two hours of zone-2 riding per *week* on this project's scale. A casual rider averaging ~90 min/week (baseline ≈ 0.29) clears the guard, so a single week off yields `dropPct = 1.0` and "Taper Underway — load down 100%".
-
-**Why:** The constant's own doc comment claims it gates "no training block to taper from", but as written it only excludes the literally-zero case it was designed around (pre-migration rows). Surfaced by the v0.1.13.0 adversarial review.
-
-**How to apply:** Decide the intended floor as a product call — ~1.0 (roughly one real session per day-equivalent per week) is the likely target. Update `TrainingDNAAnalyzer.taperBaselineLoadThreshold`, its doc comment, and `testTaperUnderway_noBaselineTrainingLoad_notConfirmed`.
-
-**Effort:** XS once the number is chosen (human: ~1h / CC+gstack: ~5min)
-
 ### Stored `.tapering` rows carry a numerator computed under the old ACWR metric
 **Priority:** P2 — affects upgraders only, self-heals within 10 days
 
@@ -75,6 +53,33 @@
 **How to apply:** One-time migration on first launch of ≥ 0.1.13.0 that deletes stored `.tapering` rows (gated by a UserDefaults key, matching the existing migration pattern). Weigh against letting it self-heal.
 
 **Effort:** S (human: ~2h / CC+gstack: ~10min)
+
+### Background pattern-analysis task likely never runs, and bypasses `runPatternAnalysis`
+**Priority:** P2 — surfaced by the v0.1.14.0 red-team review; pre-existing
+
+**What:** `HealthAnalyticsApp.swift:44` registers `.backgroundTask(.appRefresh("com.craigfaist.HealthAnalytics.patternAnalysis"))`, but `schedulePatternAnalysisTask` (line 74) submits a `BGProcessingTaskRequest` with the same id — a type mismatch, so the handler likely never fires. When it does, it calls `analyzer.analyze` directly and stamps `lastPatternAnalysisDate` whenever `analyze` returns, including on cancellation (an expired BG task), which burns the 7-day throttle without refreshing `detectedAt` — the exact bug `runPatternAnalysis` already guards against. It also skips the coach cache re-check.
+
+**How to apply:** Route the handler through `ReadinessRepository.shared.runPatternAnalysis(container:force: true)`; pair `BGAppRefreshTaskRequest` with `.appRefresh` (or move both to processing); confirm `BGTaskSchedulerPermittedIdentifiers` in Info.plist. Also gates the "BGProcessingTask Promotion" item above, which assumes this path works.
+
+**Effort:** S (human: ~2h / CC+gstack: ~15min)
+
+### Pattern and recovery errors share `ReadinessRepository.analysisError`
+**Priority:** P3 — surfaced by the v0.1.14.0 red-team review; pre-existing
+
+**What:** `runPatternAnalysis`'s catch and `performFullAnalysis` both write `analysisError`, and `InsightsView` renders it as the Training DNA error row (whose "Try again" re-runs pattern analysis). A recovery failure can show as a pattern failure; a later `performFullAnalysis` clears a real pattern error; a successful retry that hits the cache clears nothing.
+
+**How to apply:** Add a separate published `patternAnalysisError` on the repository, cleared at the start of `runPatternAnalysis`; have `InsightsView` read it. Remove the never-set local `patternAnalysisError` in `InsightsView.triggerPatternAnalysis`.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10min)
+
+### First-launch pattern analysis can run on pre-backfill scores
+**Priority:** P3 — surfaced by the v0.1.14.0 red-team review; pre-existing
+
+**What:** `backfillHistoricalScores` clears `lastPatternAnalysisDate` as a "re-run patterns" signal, but on first launch `RecoveryTabView`'s forced analysis can start before the backfill saves and stamp afterwards, so the first session's patterns (and the Coach paragraph built from them) can miss history-dependent detections. Self-heals on the next Recovery-tab appear.
+
+**How to apply:** After a backfill that inserted rows, re-run pattern analysis directly — or have `runPatternAnalysis` await `backfillHistoricalScores` before `analyze` — instead of relying on clearing the throttle key.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10min)
 
 ### Taper detection requires all 28 of the last 28 days to have a stored score
 **Priority:** P3 — pre-existing, but now load-bearing
@@ -89,6 +94,18 @@
 
 ## Coach
 
+### Repository should own the pattern-analysis → Coach hand-off
+**Priority:** P2 — deferred from the v0.1.14.0 review (user decision)
+
+**What:** Pattern analysis is started by view `.task`s (`RecoveryTabView` forces it on every appear, `InsightsView` on appear and "Try again"), and v0.1.14.0 hands off to Coach with an unstructured `refreshIfNecessary` at the end of a successful `runPatternAnalysis`. Each review pass found another gap in that hand-off: (1) a tab swipe cancelling the view task after `upsertPatterns` but before the `!Task.isCancelled` check (while `analyze()` awaits `notifyIfNew`) skips the refresh; (2) if a refresh is coalesced into an in-flight `performFullAnalysis` (`pendingRefreshRequested`), the re-check runs inside that run's task, which may be a cancellable view task; (3) `performFullAnalysis` has no cancellation handling at all — a cancelled run makes `MasterCoachEngine.synthesizeWithLLM`'s `Task.sleep` throw, falls back to the heuristic paragraph, and caches it for the day (pre-existing; any cancelled `.refreshable` does it); (4) every Recovery-tab appear re-runs analysis and spawns a refresh.
+
+**Why:** The cache-key fix bounds the drift to "until the next launch/foreground/sync", but Coach copy can still depend on whether the user swiped tabs.
+
+**Context:** Don't patch the hand-off a fifth time. Move pattern analysis into a repository-owned task (debounced, not tied to view lifetime); have `analyze()` report whether `upsertPatterns` changed anything and refresh only then; make `performFullAnalysis` skip publishing and leave `lastFingerprint` / `lastAnalysisDate` / `lastActivePatternTypes` unset when cancelled. Pairs with the background-task item under Analytics / Patterns. Also: `resetForTesting()` clears `currentReadiness`/`forecast` but not the cache state, so any integration test on `.shared` would inherit it.
+
+**Effort:** M (human: ~4h / CC+gstack: ~30min)
+**Depends on:** None
+
 ### MasterCoachEngine copy duplicated across LLM and heuristic paths
 **Priority:** P3 — deferred from /ship review 2026-07-08
 
@@ -100,16 +117,16 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15 min)
 
-## Views
+### Dead analysis pipeline left behind by the ReadinessView deletion
+**Priority:** P3 — deferred from the v0.1.14.0 review (user decision)
 
-### Delete deprecated ReadinessView.swift
-**Priority:** P3 — deferred from /ship review 2026-07-08
+**What:** With `ReadinessView` gone, these have no readers (grep-verified 2026-10-26): `UnifiedReadiness.dailyInstruction`, `.recommendation`, `.injuryRisk`; `ReadinessViewModel.formIndicator` (+ `generateFormIndicator`), `mlPrediction`, `mlFeatureWeights`, `mlError`, `intentAwareAssessment`, `temporalAnalysis`, `zoneAnalysis`, `fitnessAnalysis`. `performFullAnalysis` still computes the intent-aware, temporal, zone and fitness analyses and the `CoachingService.DailyInstruction` on every run for them; `TrainingZoneCard` / `FitnessTrendCard` are never instantiated; `EnhancedIntentAwareReadinessService` then has no consumer.
 
-**What:** `ReadinessView` is self-described as deprecated ("analysis is now driven entirely by ReadinessRepository") and its only instantiation is its own `#Preview`. The v0.1.10.0 copy sweep still had to maintain renamed strings in it.
+**Why:** ~540 lines of work done on every refresh for nothing. Deferred because removing whole analysis passes from the main pipeline is more than a cleanup release should carry.
 
-**How to apply:** Delete the file after relocating the shared `ScoreBreakdownCard` it defines (still used by `RecoveryTabView`). Until then, exclude it from copy sweeps.
+**How to apply:** Remove the view-model properties first, then each computation + its `UnifiedReadiness` field, rebuilding and running the lane between steps; check `PredictionCache.store(instruction:)` and the `ReadinessRepositoryCoachingTests` that only pin `dailyInstruction`. Watch for side effects in the analyses (e.g. writes) before deleting one.
 
-**Effort:** S (human: ~1h / CC+gstack: ~10 min)
+**Effort:** M (human: ~4h / CC+gstack: ~30min)
 
 ## Science
 
@@ -133,6 +150,15 @@
 **Effort:** S per citation (human: ~1 day research / CC+gstack: ~1 hour)
 
 ## Design
+
+### `BreakdownRow` bar width is unclamped
+**Priority:** P4 — surfaced by the v0.1.14.0 adversarial review; pre-existing (moved unchanged from ReadinessView)
+
+**What:** `Views/Recovery/ScoreBreakdownCard.swift` sizes the bar as `width * score / maxScore` with no clamp; a score above `maxScore` overflows the track and a negative one yields an invalid frame width.
+
+**How to apply:** Clamp the ratio to `0...1`.
+
+**Effort:** XS
 
 ### Light Mode Token Sweep: TrainingSignatureCard
 **Priority:** P4 — blocked on light mode phase (not scoped)
@@ -171,19 +197,12 @@
 
 **Effort:** S (human: ~3h / CC+gstack: ~15min)
 
-### Coach paragraph outlives the pattern card by up to a day
-**Priority:** P2
-
-**What:** `activePatternTypes` is filtered on `isActive` but evaluated once inside `performFullAnalysis` and baked into `UnifiedReadiness.coachAdvice`. The fingerprint cache (`ReadinessRepository.swift:268`) holds that for the calendar day, so a pattern that expires at 14:32 drops from Patterns immediately while Coach keeps referencing it until the store moves or midnight passes.
-
-**Why:** Same cross-surface disagreement class v0.1.13.0 set out to fix. Not fixed by that release — the CLAUDE.md note there was corrected to say so.
-
-**How to apply:** Re-derive the pattern list on read, or invalidate the fingerprint cache when the nearest `detectedAt + activeWindowDays` boundary passes.
-
-**Effort:** S (human: ~3h / CC+gstack: ~15min)
-
 ## Completed
 
+- **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis usually can't leave Coach behind; `ReadinessRepositoryCacheTests`. The remaining hand-off gaps are the open "Repository should own the pattern-analysis → Coach hand-off" item.
+- **P2 — `taperBaselineLoadThreshold` (0.25) too low** — **Closed, no change:** v0.1.14.0 (2026-10-26). The "week off reads as 100% taper" case is already rejected by the Tier 1 session-presence check from v0.1.13.0. Raising the floor to 1.0 (~7h zone-2/week) would hide the pattern from the weekend-warrior target user. Pinned by `testTaperUnderway_casualRiderGenuineTaper_confirmed` (fires at a 0.29 baseline) and `testTaperUnderway_casualRiderWeekOff_notConfirmed`.
+- **P3 — Delete dead `ActivityIntentClassifier` + file/type name mismatch** — **Completed:** v0.1.14.0 (2026-10-26). Deleted; `IntentAwareReadinessService.swift` → `EnhancedIntentAwareReadinessService.swift`.
+- **P3 — Delete deprecated ReadinessView.swift** — **Completed:** v0.1.14.0 (2026-10-26). `BackfillProgressView` and `ScoreBreakdownCard`/`BreakdownRow` relocated to their own files; the other 15 views in it had no callers.
 - **P3 — Strain Sensitivity Calibration UI** — **Completed:** v0.1.0.0 (2026-04-20). `StrainSensitivityCard` in `SettingsView`; `CardiovascularStrainService.compute(sensitivityOffset:)`; normalization 90.0 → 70.0; ±20% slider with reset and live preview.
 - **P3 — InsightsViewModel GEMINI.md Mandate Violation** — **Completed:** 2026-03-27. `analyzeData()` gutted 370 → 78 lines; all 9 service calls moved to `ReadinessRepository.performFullAnalysis()`; `UnifiedReadiness` gained 11 fields; `stepData` bug fixed.
 - **P3 — Design System (DESIGN.md)** — **Completed:** v0.1.7.0 (2026-05-03). Warm Signal replaced with Signal Indigo: `#09090E` background, `#7C5CFC` accent, cool-cast text tokens.

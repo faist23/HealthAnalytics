@@ -4,7 +4,7 @@
 //
 //  Extracted from the deleted ContentView.swift during the Phase 1.4 cleanup.
 //  Still consumed by RecoveryTabView, StrainTabView, InsightsView,
-//  HealthspanTabView, TrainingView, and ReadinessView.
+//  HealthspanTabView, and TrainingView.
 //
 
 import SwiftUI

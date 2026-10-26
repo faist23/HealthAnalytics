@@ -655,6 +655,60 @@ final class PredictiveIntelligenceTests: XCTestCase {
         )
     }
 
+    /// A casual rider (~90 min/week, baseline ≈ 0.29 — just over the 0.25 floor) takes a
+    /// week off. The baseline guard admits them, so `dropPct` is 1.0; it is the
+    /// session-presence tier that must stop "load down 100%", not a higher floor.
+    func testTaperUnderway_casualRiderWeekOff_notConfirmed() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.0, prev21Load: 0.29))
+        // Two 45-min rides a week through the baseline, nothing in the last 7 days.
+        try await analyzer.insertWorkouts(
+            stride(from: 8, to: 28, by: 3).map { taperWorkout(daysAgo: $0, hr: 140, minutes: 45) }
+        )
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .tapering },
+            "A casual rider's week off must not read as a 100% taper"
+        )
+    }
+
+    /// The positive twin: the same casual-rider baseline (0.29) with a real taper —
+    /// fewer, shorter rides at the same effort — must still fire. This is what pins the
+    /// 0.25 floor staying low for weekend warriors; raising it above 0.29 turns this red.
+    func testTaperUnderway_casualRiderGenuineTaper_confirmed() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        // Volume down ~48%, still riding, same HR as the baseline.
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.15, prev21Load: 0.29))
+        var workouts = stride(from: 8, to: 28, by: 3).map { taperWorkout(daysAgo: $0, hr: 140, minutes: 45) }
+        workouts += [1, 4].map { taperWorkout(daysAgo: $0, hr: 140, minutes: 25) }
+        try await analyzer.insertWorkouts(workouts)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(
+            patterns.contains { $0.patternType == .tapering },
+            "The 0.25 floor is deliberately low for weekend warriors — a casual rider's real taper must still fire"
+        )
+    }
+
     /// Documents the deliberate limitation: with no power and no HR on any workout, the
     /// intensity tier cannot run and only session-presence applies. Users without sensors
     /// keep the old behaviour rather than losing the pattern entirely.

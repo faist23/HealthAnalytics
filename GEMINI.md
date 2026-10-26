@@ -13,7 +13,7 @@ This document serves as the "Source of Truth" for the HealthAnalytics project. A
 
 ### The Data Fingerprint
 *   To prevent "Score Drift" (e.g., a score changing from 81 to 78 simply by switching tabs), the app uses a `DataFingerprint` (see `PredictionCache.DataFingerprint`).
-*   **Caching Rule:** If the fingerprint (counts of workouts, sleep, HRV, RHR) has not changed and it is the same calendar day, the app should use the cached `UnifiedReadiness` object rather than recalculating.
+*   **Caching Rule:** If the fingerprint (counts of workouts, sleep, HRV, RHR) has not changed, it is the same calendar day, and the set of active training patterns is unchanged, the app should use the cached `UnifiedReadiness` object rather than recalculating (see `ReadinessRepository.canReuseCachedAnalysis`).
 
 ### Calendar-Based Math
 *   **Anchor Points:** Always use `Calendar.current.startOfDay(for: Date())` for analysis windows.

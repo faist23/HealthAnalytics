@@ -71,6 +71,10 @@ class ReadinessRepository: ObservableObject {
 
     private var lastFingerprint: PredictionCache.DataFingerprint?
     private var lastAnalysisDate: Date?
+    /// The active pattern set baked into the published `coachAdvice`. A pattern
+    /// expiring changes no data count, so the fingerprint alone would keep serving
+    /// a Coach paragraph that cites a card the Patterns tab has already dropped.
+    private var lastActivePatternTypes: Set<PatternType>?
 
     /// Set when a refresh arrives while `performFullAnalysis` is mid-flight, so the
     /// run can re-check the store on the way out instead of the request being lost.
@@ -147,6 +151,16 @@ class ReadinessRepository: ObservableObject {
             // so a clean return is NOT proof the patterns were refreshed. Check explicitly.
             if !Task.isCancelled {
                 UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
+                // The Coach paragraph bakes in the active pattern set. A run that
+                // detected or expired a pattern must re-check the cache now, or a
+                // launch-time analysis that finished after the coach read leaves
+                // Coach behind Patterns until the next unrelated refresh. No-op when
+                // the set is unchanged; coalesces if an analysis is in flight.
+                // Unstructured on purpose: callers are view `.task`s, and a tab swipe
+                // cancelling one mid-refresh would make MasterCoachEngine's LLM call
+                // throw and cache the heuristic paragraph for the rest of the day.
+                let context = container.mainContext
+                Task { await self.refreshIfNecessary(modelContext: context) }
             }
         } catch PatternAnalysisError.insufficientData {
             // < 60 days of history — silent, no error surfaced. Safe to throttle: there
@@ -278,11 +292,15 @@ class ReadinessRepository: ObservableObject {
         // 1. Calculate current data fingerprint
         guard let fingerprint = try? calculateFingerprint(context: modelContext) else { return }
         
-        // 2. Check if we can skip (Same data AND same day)
-        if let lastDate = lastAnalysisDate,
-           Calendar.current.isDateInToday(lastDate),
-           fingerprint == lastFingerprint,
-           currentReadiness != nil {
+        // 2. Check if we can skip (same data, same day, same active patterns)
+        if currentReadiness != nil,
+           Self.canReuseCachedAnalysis(
+               lastAnalysisDate: lastAnalysisDate,
+               fingerprint: fingerprint,
+               lastFingerprint: lastFingerprint,
+               activePatternTypes: fetchActivePatternTypes(context: modelContext),
+               lastActivePatternTypes: lastActivePatternTypes
+           ) {
             #if DEBUG
             print("✅ ReadinessRepository: Using cached unified analysis")
             #endif
@@ -676,10 +694,7 @@ class ReadinessRepository: ObservableObject {
             let computedForecast = compute7DayForecast(modelContext: modelContext, overrideACWR: readinessAssessmentResult.acwr)
             let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? Date()
             let nextDayCoaching = computedForecast?.first(where: { calendar.isDate($0.date, inSameDayAs: nextDay) })?.coaching
-            let allStoredPatterns = (try? modelContext.fetch(FetchDescriptor<TrainingPattern>())) ?? []
-            let activePatternTypes = allStoredPatterns
-                .filter { $0.isActive }
-                .map(\.patternType)
+            let activePatternTypes = fetchActivePatternTypes(context: modelContext)
             
             let allMemories = (try? modelContext.fetch(FetchDescriptor<CoachMemoryNote>())) ?? []
             
@@ -689,7 +704,7 @@ class ReadinessRepository: ObservableObject {
                 nextDayForecast: nextDayCoaching,
                 acwr: readinessAssessmentResult.acwr,
                 injuryRisk: riskAssessment.riskLevel,
-                activePatterns: activePatternTypes.map(\.rawValue),
+                activePatterns: activePatternTypes.map(\.rawValue).sorted(),
                 memories: allMemories
             )
             let masterCoachMessage = await MasterCoachEngine.generateMessage(state: coachState)
@@ -769,6 +784,7 @@ class ReadinessRepository: ObservableObject {
             self.intraDayReadiness = intraDay
             self.lastFingerprint = fingerprint
             self.lastAnalysisDate = now
+            self.lastActivePatternTypes = activePatternTypes
 
             // Persist today's readiness score for 90-day back-to-back crash pattern detection.
             let todayWorkoutsForLoad = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
@@ -1195,7 +1211,29 @@ class ReadinessRepository: ObservableObject {
     }
     
     // MARK: - Helpers
-    
+
+    /// Whether the published snapshot still describes the store. The fingerprint
+    /// covers synced data; the pattern set covers the one input that changes with
+    /// the clock alone (`TrainingPattern.isActive` expiring, or a fresh detection).
+    nonisolated static func canReuseCachedAnalysis(
+        lastAnalysisDate: Date?,
+        fingerprint: PredictionCache.DataFingerprint,
+        lastFingerprint: PredictionCache.DataFingerprint?,
+        activePatternTypes: Set<PatternType>,
+        lastActivePatternTypes: Set<PatternType>?,
+        now: Date = Date()
+    ) -> Bool {
+        guard let lastAnalysisDate,
+              Calendar.current.isDate(lastAnalysisDate, inSameDayAs: now)
+        else { return false }
+        return fingerprint == lastFingerprint && activePatternTypes == lastActivePatternTypes
+    }
+
+    private func fetchActivePatternTypes(context: ModelContext) -> Set<PatternType> {
+        let stored = (try? context.fetch(FetchDescriptor<TrainingPattern>())) ?? []
+        return Set(stored.filter(\.isActive).map(\.patternType))
+    }
+
     private func calculateFingerprint(context: ModelContext) throws -> PredictionCache.DataFingerprint {
         let workoutCount = try context.fetchCount(FetchDescriptor<StoredWorkout>())
         let sleepCount   = try context.fetchCount(FetchDescriptor<StoredHealthMetric>(predicate: #Predicate { $0.type == "Sleep" }))
