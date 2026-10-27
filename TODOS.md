@@ -3,6 +3,8 @@
 ## Analytics / Patterns
 
 ### BGProcessingTask Promotion: Evaluate After Phase 2a
+
+> Note (2026-10-26): the background path is now an app-refresh task (`BGAppRefreshTaskRequest`, ~30s budget), not `BGProcessingTask`, and before then it had never fired. Any production fire-rate data predates that fix is meaningless; re-baseline from v0.1.15.
 **Priority:** P2 — gated on Phase 2a production data (≥3 months)
 
 **What:** After Phase 2a ships, evaluate whether `BGProcessingTask` fires reliably enough for most users to promote it from "opportunistic" to "primary" trigger for pattern analysis. If BGTask fires consistently (> 80% of users trigger it within 24h of app backgrounding), flip the architecture: BGTask becomes primary, `InsightsView.onAppear` becomes display-only (no analysis trigger).
@@ -53,15 +55,6 @@
 **How to apply:** One-time migration on first launch of ≥ 0.1.13.0 that deletes stored `.tapering` rows (gated by a UserDefaults key, matching the existing migration pattern). Weigh against letting it self-heal.
 
 **Effort:** S (human: ~2h / CC+gstack: ~10min)
-
-### Background pattern-analysis task likely never runs, and bypasses `runPatternAnalysis`
-**Priority:** P2 — surfaced by the v0.1.14.0 red-team review; pre-existing
-
-**What:** `HealthAnalyticsApp.swift:44` registers `.backgroundTask(.appRefresh("com.craigfaist.HealthAnalytics.patternAnalysis"))`, but `schedulePatternAnalysisTask` (line 74) submits a `BGProcessingTaskRequest` with the same id — a type mismatch, so the handler likely never fires. When it does, it calls `analyzer.analyze` directly and stamps `lastPatternAnalysisDate` whenever `analyze` returns, including on cancellation (an expired BG task), which burns the 7-day throttle without refreshing `detectedAt` — the exact bug `runPatternAnalysis` already guards against. It also skips the coach cache re-check.
-
-**How to apply:** Route the handler through `ReadinessRepository.shared.runPatternAnalysis(container:force: true)` (now repository-owned via `SingleFlight`, so it also gets the Coach refresh); pair `BGAppRefreshTaskRequest` with `.appRefresh` (or move both to processing); confirm `BGTaskSchedulerPermittedIdentifiers` in Info.plist. Also gates the "BGProcessingTask Promotion" item above, which assumes this path works.
-
-**Effort:** S (human: ~2h / CC+gstack: ~15min)
 
 ### Pattern and recovery errors share `ReadinessRepository.analysisError`
 **Priority:** P3 — surfaced by the v0.1.14.0 red-team review; pre-existing
@@ -187,6 +180,7 @@
 
 ## Completed
 
+- **P2 — Background pattern-analysis task likely never runs** — **Completed:** 2026-10-26 (unreleased). Request is now `BGAppRefreshTaskRequest` (matching the SwiftUI `.appRefresh` handler), Info.plist declares `UIBackgroundModes` `fetch` (missing entirely before, so `submit` always threw), and the handler routes through `runPatternAnalysis(force: true)`. Verified firing on device by Craig.
 - **P2 — Repository should own the pattern-analysis → Coach hand-off** — **Completed:** 2026-10-26 (unreleased). `SingleFlight` owns pattern analysis (joins overlap, ignores caller cancellation, 5-min forced-run throttle) and shields `performFullAnalysis` from caller cancellation, so a tab swipe can no longer cache the heuristic Coach paragraph; `resetForTesting()` clears the cache state. `SingleFlightTests`, `ReadinessRepositoryPatternThrottleTests`. The background-task path is still separate (see Analytics / Patterns).
 - **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis usually can't leave Coach behind; `ReadinessRepositoryCacheTests`. The remaining hand-off gaps are the open "Repository should own the pattern-analysis → Coach hand-off" item.
 - **P2 — `taperBaselineLoadThreshold` (0.25) too low** — **Closed, no change:** v0.1.14.0 (2026-10-26). The "week off reads as 100% taper" case is already rejected by the Tier 1 session-presence check from v0.1.13.0. Raising the floor to 1.0 (~7h zone-2/week) would hide the pattern from the weekend-warrior target user. Pinned by `testTaperUnderway_casualRiderGenuineTaper_confirmed` (fires at a 0.29 baseline) and `testTaperUnderway_casualRiderWeekOff_notConfirmed`.
