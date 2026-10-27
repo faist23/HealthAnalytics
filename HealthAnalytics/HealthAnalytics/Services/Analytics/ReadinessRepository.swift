@@ -1060,8 +1060,10 @@ class ReadinessRepository: ObservableObject {
         // Skip dates that already have a StoredDailyScore.
         let allExisting  = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
         let existingDates = Set(allExisting.map { $0.dateString })
-        // First row per day; duplicate-day twins are resolved by the detectors (max load).
-        let existingByDate = Dictionary(allExisting.map { ($0.dateString, $0) }, uniquingKeysWith: { first, _ in first })
+        // Every row per day. A day can carry duplicate twins, and the detectors don't agree
+        // on which one wins (back-to-back crash takes the last one read), so a recompute
+        // rewrites all of them; updating just one left the verdict to fetch order.
+        let existingByDate = Dictionary(grouping: allExisting, by: \.dateString)
         let recomputeStart = recomputeFrom.map { calendar.startOfDay(for: $0) }
 
         let formatter = Self.dailyScoreDateFormatter
@@ -1110,18 +1112,21 @@ class ReadinessRepository: ObservableObject {
             let dayLoad = todayWorkouts.reduce(0.0) {
                 $0 + predictiveReadinessService.calculateWorkoutLoad($1, ftpSnapshots: ftpSnapshots)
             }
-            if isRecompute, let row = existingByDate[dateStr] {
-                // Count only real changes, so an unchanged day doesn't clear the
-                // pattern stamp below.
-                let changed = row.readinessScore != readiness.score
+            if isRecompute, let rows = existingByDate[dateStr], !rows.isEmpty {
+                // Count only real changes (once per date), so an unchanged day doesn't
+                // clear the pattern stamp below.
+                var changed = false
+                for row in rows where row.readinessScore != readiness.score
                     || row.dailyStrain != acwr
                     || row.workoutCount != todayWorkouts.count
-                    || row.dailyLoad != dayLoad
+                    || row.dailyLoad != dayLoad {
+                    row.readinessScore = readiness.score
+                    row.dailyStrain = acwr
+                    row.workoutCount = todayWorkouts.count
+                    row.dailyLoad = dayLoad
+                    changed = true
+                }
                 guard changed else { continue }
-                row.readinessScore = readiness.score
-                row.dailyStrain = acwr
-                row.workoutCount = todayWorkouts.count
-                row.dailyLoad = dayLoad
             } else {
                 modelContext.insert(StoredDailyScore(
                     date: day,
