@@ -1001,6 +1001,49 @@ final class PredictiveIntelligenceTests: XCTestCase {
         )
     }
 
+    // MARK: - Commit gate (background pass)
+
+    /// The background pass discards a run that spanned a suspension. Detection must
+    /// write nothing — no pattern rows, no renewed detectedAt — before the gate.
+    func testAnalyze_commitGateDeclined_writesNothing() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
+        try await seedIntensityHeldWorkouts(analyzer)
+
+        do {
+            _ = try await analyzer.analyze(commitGate: { false })
+            XCTFail("A declined gate must throw commitDeclined")
+        } catch PatternAnalysisError.commitDeclined {
+            // expected
+        }
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(patterns.isEmpty, "Nothing may be persisted when the commit gate declines")
+    }
+
+    func testAnalyze_commitGateAccepted_persistsAsBefore() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
+        try await seedIntensityHeldWorkouts(analyzer)
+
+        _ = try await analyzer.analyze(commitGate: { true })
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(patterns.contains { $0.patternType == .tapering })
+    }
+
     // MARK: - Part 2 (extra): HRV streak broken by below-threshold entry
 
     /// 22 high-HRV entries total, but a below-threshold entry at day -3 breaks the trailing streak.

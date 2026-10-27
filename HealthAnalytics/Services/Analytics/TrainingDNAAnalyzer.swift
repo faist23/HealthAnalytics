@@ -224,6 +224,8 @@ struct LivePatternDataProvider: PatternDataProvider {
 enum PatternAnalysisError: Error {
     case insufficientData
     case persistenceFailed(Error)
+    /// The caller's commit gate refused after detection; nothing was written.
+    case commitDeclined
 }
 
 // MARK: - TrainingDNAAnalyzer
@@ -290,7 +292,13 @@ actor TrainingDNAAnalyzer {
     // MARK: - Main Entry Point
 
     /// Returns the total HealthKit history days so callers can persist it for section-visibility gating.
-    func analyze(sourcePreference: HRVSourcePreference = .auto) async throws -> Int {
+    /// `commitGate` runs after detection and before any write. The background pass uses
+    /// it to discard a run that spanned a suspension (stale and fresh reads mixed); the
+    /// default commits, so foreground callers behave exactly as before.
+    func analyze(
+        sourcePreference: HRVSourcePreference = .auto,
+        commitGate: @Sendable () async -> Bool = { true }
+    ) async throws -> Int {
         guard !Task.isCancelled else { return 0 }
 
         let historyDays = try await dataProvider.totalHealthKitHistoryDays()
@@ -320,6 +328,8 @@ actor TrainingDNAAnalyzer {
         }
 
         guard !Task.isCancelled else { return historyDays }
+
+        guard await commitGate() else { throw PatternAnalysisError.commitDeclined }
 
         try upsertPatterns(detected)
 
