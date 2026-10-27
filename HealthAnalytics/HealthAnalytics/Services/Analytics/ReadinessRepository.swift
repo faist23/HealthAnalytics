@@ -948,6 +948,8 @@ class ReadinessRepository: ObservableObject {
 
     /// Writes missing past score rows and recomputes stale ones (days from the one
     /// after `scoresFinalizedThrough` through yesterday). Never touches today's row.
+    /// The marker advances only after HealthKit data was actually read, so a transient
+    /// failure leaves those days due for the next run.
     /// Shared by the foreground refresh and the background pattern pass.
     func finalizeScoreRows(modelContext: ModelContext, now: Date = Date()) async {
         let key = "scoresFinalizedThrough"
@@ -955,15 +957,17 @@ class ReadinessRepository: ObservableObject {
             finalizedThrough: UserDefaults.standard.object(forKey: key) as? Date,
             now: now
         )
-        await backfillHistoricalScores(modelContext: modelContext, recomputeFrom: range?.lowerBound)
-        if let range { UserDefaults.standard.set(range.upperBound, forKey: key) }
+        let readHealthKit = await backfillHistoricalScores(modelContext: modelContext, recomputeFrom: range?.lowerBound)
+        if let range, readHealthKit { UserDefaults.standard.set(range.upperBound, forKey: key) }
     }
 
     /// Populates StoredDailyScore for the last 90 days from already-synced SwiftData records.
     /// Runs once on first launch (UserDefaults gate) and re-runs whenever fewer than 14 records
     /// exist (e.g. after a data clear). This unlocks the 7-day forecast and 14-Day Signature
     /// without requiring 14 consecutive days of app opens.
-    private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false, recomputeFrom: Date? = nil) async {
+    /// Returns true only when biometric data was actually read (HRV or RHR, and sleep, non-empty).
+    @discardableResult
+    private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false, recomputeFrom: Date? = nil) async -> Bool {
         // V5: diagnose existingDates vs per-day filter failure.
         let udKey = "historicalScoreBackfillV5Done"
         let existingCount = (try? modelContext.fetchCount(FetchDescriptor<StoredDailyScore>())) ?? 0
@@ -978,14 +982,14 @@ class ReadinessRepository: ObservableObject {
             return (cal.dateComponents([.day], from: lastDate, to: yday).day ?? 0) >= 1
         }()
 
-        guard force || recomputeFrom != nil || !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 || hasRecentGap else { return }
+        guard force || recomputeFrom != nil || !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 || hasRecentGap else { return false }
 
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         guard let ninetyDaysAgo  = calendar.date(byAdding: .day, value: -90, to: today),
               let yesterday       = calendar.date(byAdding: .day, value:  -1, to: today),
               let fetchStart      = calendar.date(byAdding: .day, value: -28, to: ninetyDaysAgo)
-        else { return }
+        else { return false }
 
         let hk = HealthKitManager.shared
 
@@ -1002,6 +1006,9 @@ class ReadinessRepository: ObservableObject {
             sleepFetch ?? [],
             hkWorkoutFetch ?? []
         )
+        // A failed or empty HealthKit read (locked device, no permission) must not count as
+        // having looked at the history.
+        let readBiometrics = (!allHRV.isEmpty || !allRHR.isEmpty) && !allSleep.isEmpty
 
 
         // Workouts: merge HealthKit history with StoredWorkout (has Strava power data).
@@ -1108,6 +1115,7 @@ class ReadinessRepository: ObservableObject {
         #if DEBUG
         if inserted > 0 { print("📅 Backfill: inserted \(inserted) historical StoredDailyScore records") }
         #endif
+        return readBiometrics
     }
 
     /// One-time migration: populates dailyLoad on all existing StoredDailyScore rows from StoredWorkout.
