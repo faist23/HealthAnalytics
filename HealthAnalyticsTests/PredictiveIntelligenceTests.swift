@@ -709,6 +709,67 @@ final class PredictiveIntelligenceTests: XCTestCase {
         )
     }
 
+    /// A ride late on calendar day 7 belongs to the baseline, not "this week". A rolling
+    /// 7×24h window counted it as recent at almost any time of day, so this fails on the
+    /// old window whenever the suite runs — not only before noon.
+    func testTaperUnderway_rideLateOnDaySeven_isBaselineNotRecent() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.0, prev21Load: 1.0))
+        var workouts = (8..<28).map { taperWorkout(daysAgo: $0, hr: 150) }
+        workouts.append(lateWorkout(daysAgo: 7, hr: 150))
+        try await analyzer.insertWorkouts(workouts)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(patterns.contains { $0.patternType == .tapering },
+                       "No ride in the last 7 calendar days is a stoppage; a late day-7 ride doesn't change that")
+    }
+
+    /// Rides late on calendar day 28 are outside the 21-day baseline. A rolling 28×24h
+    /// window pulled them in at almost any time of day; at a high HR they inflate the
+    /// baseline intensity until a genuine taper fails the retention check.
+    func testTaperUnderway_ridesLateOnDayTwentyEight_areOutsideTheBaseline() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
+        var workouts = (7..<28).map { taperWorkout(daysAgo: $0, hr: 140) }
+        workouts += (0..<7).map { taperWorkout(daysAgo: $0, hr: 140, minutes: 35) }
+        workouts += (0..<10).map { lateWorkout(daysAgo: 28, hr: 185, id: $0) }
+        try await analyzer.insertWorkouts(workouts)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(patterns.contains { $0.patternType == .tapering },
+                      "Same effort recent vs baseline is a taper; rides from day 28 must not count in the baseline")
+    }
+
+    /// A cycling workout at 23:59 on calendar day `-daysAgo`.
+    private func lateWorkout(daysAgo: Int, hr: Double, id: Int = 0) -> StoredWorkout {
+        StoredWorkout(
+            id: "late-\(daysAgo)-\(Int(hr))-\(id)",
+            type: .cycling,
+            startDate: Calendar.current.date(byAdding: .minute, value: 23 * 60 + 59, to: day(-daysAgo))!,
+            duration: 3600,
+            distance: nil, power: nil, energy: nil, hr: hr,
+            source: "test"
+        )
+    }
+
     /// Documents the deliberate limitation: with no power and no HR on any workout, the
     /// intensity tier cannot run and only session-presence applies. Users without sensors
     /// keep the old behaviour rather than losing the pattern entirely.
