@@ -189,7 +189,10 @@ class ReadinessRepository: ObservableObject {
     /// visit during a background run still produce one run.
     func runBackgroundPass(container: ModelContainer, wake: BackgroundPassWake) async {
         let log = BackgroundPassLog.standard
-        log.recordWake(wake, appActive: UIApplication.shared.applicationState == .active)
+        // `!= .background`, not `== .active`: a foreground cold launch is still `.inactive`
+        // when didFinishLaunching runs the observer queries, and their first callbacks
+        // must not count as background deliveries. Same rule as `applicationIsInForeground`.
+        log.recordWake(wake, appActive: Self.applicationIsInForeground())
         await patternAnalysisFlight.run { [self] in
             let steps = LiveBackgroundPassSteps(repository: self, container: container)
             await BackgroundPatternPass(steps: steps, log: log, wake: wake).run()
