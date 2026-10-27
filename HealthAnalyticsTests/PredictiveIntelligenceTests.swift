@@ -795,12 +795,13 @@ final class PredictiveIntelligenceTests: XCTestCase {
                       "Day 6 is part of this week from its first minute; its ride must count as a recent session")
     }
 
-    /// A cycling workout at 23:59 on calendar day `-daysAgo`.
+    /// A cycling workout at 23:59 on calendar day `-daysAgo`: one minute before the next
+    /// day starts, so it stays on that day across a 23- or 25-hour DST day.
     private func lateWorkout(daysAgo: Int, hr: Double, id: Int = 0) -> StoredWorkout {
         StoredWorkout(
             id: "late-\(daysAgo)-\(Int(hr))-\(id)",
             type: .cycling,
-            startDate: Calendar.current.date(byAdding: .minute, value: 23 * 60 + 59, to: day(-daysAgo))!,
+            startDate: day(-daysAgo + 1).addingTimeInterval(-60),
             duration: 3600,
             distance: nil, power: nil, energy: nil, hr: hr,
             source: "test"

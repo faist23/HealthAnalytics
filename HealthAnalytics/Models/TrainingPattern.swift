@@ -212,8 +212,8 @@ final class TrainingPattern {
     /// `upsertPatterns` refreshes `detectedAt` on every run where the pattern still
     /// holds, so a pattern that stops being true simply ages out of this window.
     ///
-    /// MUST stay strictly greater than the pattern-analysis cadence in
-    /// `ReadinessRepository.runPatternAnalysis` (7 days). At exactly 7 the two
+    /// MUST stay strictly greater than the pattern-analysis cadence,
+    /// `ReadinessRepository.patternAnalysisStalenessInterval` (7 days). At exactly 7 the two
     /// coincided: patterns expired at the same instant a refresh became eligible,
     /// so any user who hadn't opened the Patterns tab in a week saw every surface
     /// read zero until an analysis run completed. The 3-day margin keeps patterns
