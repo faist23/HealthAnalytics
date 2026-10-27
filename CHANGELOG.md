@@ -3,6 +3,17 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Pattern alerts arrive soon after your Health data does.** When a new HRV reading or workout lands in Apple Health, the app now checks your patterns in the background as soon as you unlock your phone, so an illness warning can reach you before you open the app.
+
+### Fixed
+
+- **A day's training is counted in full.** If you opened the app in the afternoon and rode that evening, that day's load used to stay at its afternoon value. Past days are now finished off once they're over.
+- **Pattern checks look at complete days.** Taper, back-to-back and the other history checks now use whole days through yesterday, so a half-finished today can't fake or hide a pattern. Today's ride counts from tomorrow.
+
 ## [0.1.15.0] - 2026-10-27
 
 The Coach hand-off release. Swiping between tabs at the wrong moment could leave Coach on its plain built-in paragraph for the rest of the day. That's fixed, pattern analysis stops redoing work it just did, and the background pattern check runs for the first time.

@@ -16,7 +16,7 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~10min)
 
-**Depends on / blocked by:** Phase 2a must ship. Then 3 months of production data. Also "Design the background pattern run properly" below: until the background run syncs and stamps correctly, its fire rate says little about whether it can be primary.
+**Depends on / blocked by:** Phase 2a must ship. Then 3 months of production data. The Background Pass counters (Settings → Background Pass) now measure the run rate.
 
 ### Phase 2b: Manual Illness Log
 **Priority:** P2 — dependent on Phase 2a validation
@@ -66,18 +66,6 @@
 
 **Effort:** S (human: ~1h / CC+gstack: ~10min)
 
-### Design the background pattern run properly
-**Priority:** P2 — surfaced by the v0.1.15 adversarial reviews; each pass on the background path found a new gap, so it needs one design, not more patches
-
-**What:** v0.1.15 made the `.appRefresh` task actually run, but the run is a thin wrapper around the foreground path and several things don't hold in the background:
-- **No sync, no today's row.** The handler skips `performSmartSync` and `performFullAnalysis`, so `StoredWorkout` / `StoredDailyScore` are frozen at the last foreground while HealthKit HRV is read fresh. Back-to-back, performance peak, the HRV precursor's sick-day proxy and taper Tier 1 read those tables, so a once-ever notification can fire from the mix. `detectTaperUnderway` needs 28 distinct scored days in `now - 28d`, which only holds once today's row exists, so a run before the day's first open can never detect a taper.
-- **Stale stamp after a freeze.** On budget expiry the handler stops waiting but the flight's task keeps going and is suspended with the app; it can finish hours later on mixed pre/post-freeze reads, stamp `lastPatternAnalysisDate = Date()`, renew `detectedAt`, and the Recovery `.appear` request joins it instead of running fresh.
-- **Run rate unknown.** iOS runs app-refresh mostly while locked, where the `isProtectedDataAvailable` guard (correctly) skips, and only one request is pending per 6h, so most opportunities may be spent on no-ops.
-
-**How to apply:** Measure first: log fire / skip-locked / complete counts on a device (`_simulateLaunchForTaskWithIdentifier` for the path, a few days of real use for the rate). Then give the background run its own path: sync after the protected-data guard without the `DataSyncCompleted` → `refreshIfNecessary` Coach refresh, write today's score row (or anchor the taper score window to the latest scored day), and stamp with the run's start time or refuse to stamp when start-to-finish spans a suspension. Consider HealthKit background delivery (`HKObserverQuery` + `enableBackgroundDelivery`) instead of, or alongside, app refresh.
-
-**Effort:** M (human: ~1 day / CC+gstack: ~1-2h)
-
 ### First-launch pattern analysis can run on pre-backfill scores
 **Priority:** P3 — surfaced by the v0.1.14.0 red-team review; pre-existing
 
@@ -90,7 +78,7 @@
 ### Taper detection requires all 28 of the last 28 days to have a stored score
 **Priority:** P3 — pre-existing, but now load-bearing
 
-**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (`ReadinessRepository.swift:926`). One night without the watch inside the window silences taper detection until that day rolls off.
+**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (`ReadinessRepository.swift:926`). One night without the watch inside the window silences taper detection until that day rolls off. The window is now the 28 complete days ending yesterday (not including today).
 
 **Why:** v0.1.13.0's headline claim is that the detector now catches a genuine 50% volume cut. For intermittent watch-wearers that improvement may be unreachable.
 
@@ -204,6 +192,7 @@
 
 ## Completed
 
+- **P2 — Design the background pattern run properly** — **Completed:** unreleased (2026-10-27). HealthKit background delivery (HRV + workouts) and app refresh both run one `BackgroundPatternPass` (finalize score rows, HealthKit-only workout refresh, gated detection, abandon after 2 min); store-based pattern checks read complete days ending yesterday; counters in Settings → Background Pass.
 - **P2 — Background pattern-analysis task likely never runs** — **Completed:** v0.1.15.0 (2026-10-27). Request is now `BGAppRefreshTaskRequest` (matching the SwiftUI `.appRefresh` handler), Info.plist declares `UIBackgroundModes` `fetch` (missing entirely before, so `submit` always threw), and the handler routes through `runPatternAnalysis(container:trigger: .background)`. Verified firing on device by Craig.
 - **P2 — Repository should own the pattern-analysis → Coach hand-off** — **Completed:** v0.1.15.0 (2026-10-27). `SingleFlight` owns pattern analysis (joins overlap, ignores caller cancellation, 5-min forced-run throttle) and shields `performFullAnalysis` from caller cancellation, so a tab swipe can no longer cache the heuristic Coach paragraph; `resetForTesting()` clears the cache state. `SingleFlightTests`, `ReadinessRepositoryPatternThrottleTests`.
 - **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis usually can't leave Coach behind; `ReadinessRepositoryCacheTests`. The remaining hand-off gaps were closed by "Repository should own the pattern-analysis → Coach hand-off" above.

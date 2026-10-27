@@ -93,6 +93,12 @@ struct SettingsView: View {
                         }
 
                         NavigationLink {
+                            BackgroundPassStatsView()
+                        } label: {
+                            Label("Background Pass", systemImage: "clock.arrow.circlepath")
+                        }
+
+                        NavigationLink {
                             CoachMemoryView()
                         } label: {
                             Label("Coach Memory", systemImage: "brain.head.profile")
