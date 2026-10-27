@@ -15,8 +15,8 @@ import UIKit
 struct HealthAnalyticsApp: App {
     /// Must match `BGTaskSchedulerPermittedIdentifiers` in Info.plist (pinned by
     /// `BackgroundRefreshConfigTests`); a mismatch makes `submit` throw silently.
-    static let patternAnalysisTaskID = "com.craigfaist.HealthAnalytics.patternAnalysis"
-    static let patternAnalysisMinBackgroundInterval: TimeInterval = 6 * 3600
+    nonisolated static let patternAnalysisTaskID = "com.craigfaist.HealthAnalytics.patternAnalysis"
+    nonisolated static let patternAnalysisMinBackgroundInterval: TimeInterval = 6 * 3600
 
     @AppStorage("isOnboardingComplete") private var isOnboardingComplete = false
     @StateObject private var tabCoordinator = TabCoordinator()
@@ -78,7 +78,8 @@ struct HealthAnalyticsApp: App {
         }
     }
     
-    private static func schedulePatternAnalysisTask() {
+    /// Nonisolated: called from the `.backgroundTask` action, which is not on the main actor.
+    nonisolated private static func schedulePatternAnalysisTask() {
         // Must be an app-refresh request to match the SwiftUI `.appRefresh` handler, and
         // needs UIBackgroundModes `fetch` in Info.plist — without it submit throws.
         let request = BGAppRefreshTaskRequest(identifier: patternAnalysisTaskID)

@@ -85,6 +85,8 @@ class ReadinessRepository: ObservableObject {
     /// Pattern analysis is requested from view `.task`s; the flight owns the run so a
     /// tab swipe can't cancel it and back-to-back appears join one analysis.
     private let patternAnalysisFlight = SingleFlight()
+    /// The trigger of the pattern run in flight, so a joiner knows what it joined.
+    private var inFlightPatternTrigger: PatternAnalysisTrigger?
 
     /// Who asked for pattern analysis, which decides the throttle and how the run reports.
     enum PatternAnalysisTrigger: Sendable {
@@ -155,22 +157,29 @@ class ReadinessRepository: ObservableObject {
     // MARK: - Pattern Analysis (Phase 2)
 
     /// Callers await the run but never own it — see `patternAnalysisFlight`. A request
-    /// that arrives mid-run joins it and gets that run's behavior, so a joiner re-applies
-    /// its own: a "Try again" that only joined someone else's run (often a background one,
-    /// which reports no errors) gets a run of its own, and any other foreground joiner
-    /// re-checks the Coach cache, because a background run skips that refresh. A caller
-    /// whose own run happened already refreshed inside it; a throttled skip changed nothing.
+    /// that arrives mid-run joins it and gets that run's behavior. Only a joined
+    /// `.background` run behaves differently from a foreground one (no error reporting, no
+    /// Coach refresh), so only then does a foreground joiner re-apply its own: a "Try
+    /// again" gets a run of its own, anything else re-checks the Coach cache. Joining a
+    /// foreground run already reported errors and refreshed Coach; a throttled skip
+    /// changed nothing.
     func runPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
-        let started = await patternAnalysisFlight.run { [self] in
-            await performPatternAnalysis(container: container, trigger: trigger)
-        }
-        guard !started, trigger != .background else { return }
+        let joining = inFlightPatternTrigger
+        let started = await runPatternFlight(container: container, trigger: trigger)
+        guard !started, trigger != .background, joining == .background else { return }
         if trigger == .userRetry {
-            await patternAnalysisFlight.run { [self] in
-                await performPatternAnalysis(container: container, trigger: .userRetry)
-            }
+            await runPatternFlight(container: container, trigger: .userRetry)
         } else {
             await refreshIfNecessary(modelContext: container.mainContext)
+        }
+    }
+
+    @discardableResult
+    private func runPatternFlight(container: ModelContainer, trigger: PatternAnalysisTrigger) async -> Bool {
+        await patternAnalysisFlight.run { [self] in
+            inFlightPatternTrigger = trigger
+            defer { inFlightPatternTrigger = nil }
+            await performPatternAnalysis(container: container, trigger: trigger)
         }
     }
 

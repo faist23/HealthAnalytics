@@ -8,7 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 
 - **Switching tabs no longer downgrades the Coach paragraph.** If you swiped away while the app was working out today's advice, the AI-written paragraph could be cut off and replaced by the simpler built-in version, and that version stuck for the rest of the day. Analysis now always finishes, whoever asked for it. This also closes the last gap where Coach could lag the Patterns tab after a launch.
-- **Patterns now refresh in the background.** The background check had never actually been scheduled, so new-pattern notifications only arrived when you opened the app. It now runs while the app is closed and keeps Coach in sync when it does.
+- **Patterns now refresh in the background.** The background check had never actually been scheduled, so new-pattern notifications only arrived when you opened the app. It now runs while the app is closed, and Coach picks up any change the next time you open the app.
 - **Swiping back to Recovery no longer re-runs the full pattern analysis every time.** Back-to-back visits share one run, and a run that finished in the last five minutes is reused. "Try again" always runs.
 
 ## [0.1.14.0] - 2026-10-26
