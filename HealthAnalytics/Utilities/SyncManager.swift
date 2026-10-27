@@ -141,9 +141,28 @@ class SyncManager: ObservableObject {
         
         isSyncing = false
     }
-    
+
+    private var lastBackgroundWorkoutRefresh: Date? {
+        get { UserDefaults.standard.object(forKey: "lastBackgroundWorkoutRefresh") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "lastBackgroundWorkoutRefresh") }
+    }
+
+    /// HealthKit-only workout refresh for the background pattern pass. Never calls
+    /// Strava, never posts `DataSyncCompleted` (its observer runs the Coach refresh),
+    /// and never moves `lastSyncDate` — the next foreground sync must still pull Strava
+    /// power data for this window.
+    func refreshWorkoutsFromHealthKit(now: Date = Date()) async throws {
+        let since = [lastBackgroundWorkoutRefresh, lastSyncDate].compactMap { $0 }.max()
+            ?? now.addingTimeInterval(-7 * 86400)
+        let start = Calendar.current.date(byAdding: .day, value: -1, to: since) ?? since
+        let workouts = try await healthKitManager.fetchWorkouts(startDate: start, endDate: now)
+        let dataHandler = DataPersistenceActor(modelContainer: HealthDataContainer.shared)
+        await dataHandler.upsertHealthKitWorkoutsOnly(workouts, since: start)
+        lastBackgroundWorkoutRefresh = now
+    }
+
     // MARK: - Metric Name Migration
-    
+
     private func migrateMetricNames(dataHandler: DataPersistenceActor) async {
         #if DEBUG
         print("🔄 Migrating metric type names to standardized format...")
@@ -983,7 +1002,47 @@ actor DataPersistenceActor {
         print("💾 Recent data upserted")
         #endif
     }
-    
+
+    /// HealthKit-only workout upsert for the background pattern pass. Rides the
+    /// foreground already stored as their Strava copy are skipped: `upsertRecentData`
+    /// matches HealthKit workouts only against the Strava list it is handed, and the
+    /// background hands it none, so without this filter a stored Strava ride would gain
+    /// a second HealthKit-UUID row (double load). A ride not yet on Strava is stored
+    /// under its HealthKit UUID; the next foreground sync's match replaces it.
+    func upsertHealthKitWorkoutsOnly(_ workouts: [WorkoutData], since: Date) {
+        let windowStart = since.addingTimeInterval(-86400)
+        let descriptor = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate { $0.startDate >= windowStart && $0.source == "Strava" }
+        )
+        let storedStrava = ((try? modelContext.fetch(descriptor)) ?? []).map(Self.stravaImport(from:))
+        let uncovered = Self.healthKitWorkoutsNotCoveredByStrava(workouts, storedStrava: storedStrava)
+        guard !uncovered.isEmpty else { return }
+        upsertRecentData(workouts: uncovered, strava: [], sleep: [], hrv: [], rhr: [],
+                         steps: [], weight: [], nutrition: [], vo2max: [])
+    }
+
+    nonisolated static func healthKitWorkoutsNotCoveredByStrava(
+        _ healthKit: [WorkoutData],
+        storedStrava: [StravaImportData]
+    ) -> [WorkoutData] {
+        healthKit.filter { WorkoutMatcher.findMatch(for: $0, in: storedStrava) == nil }
+    }
+
+    private static func stravaImport(from stored: StoredWorkout) -> StravaImportData {
+        StravaImportData(
+            id: stored.id,
+            title: stored.title ?? "",
+            workoutType: HKWorkoutActivityType(rawValue: UInt(stored.workoutTypeInt)) ?? .other,
+            startDate: stored.startDate,
+            duration: stored.duration,
+            distance: stored.distance,
+            power: stored.averagePower,
+            normalizedPower: stored.normalizedPower,
+            energy: stored.totalEnergyBurned,
+            averageHeartRate: stored.averageHeartRate
+        )
+    }
+
     // MARK: - Append Historical Batch
     
     func appendHistoricalBatch(
