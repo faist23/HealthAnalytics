@@ -8,6 +8,7 @@
 
 import Foundation
 import SwiftUI
+import UIKit
 import SwiftData
 import HealthKit
 import Combine
@@ -85,10 +86,21 @@ class ReadinessRepository: ObservableObject {
     /// Pattern analysis is requested from view `.task`s; the flight owns the run so a
     /// tab swipe can't cancel it and back-to-back appears join one analysis.
     private let patternAnalysisFlight = SingleFlight()
-    /// The trigger of the pattern run in flight, so a joiner knows what it joined.
-    private var inFlightPatternTrigger: PatternAnalysisTrigger?
+    /// Whether the app is in the foreground when a pattern run's outcome lands. A run
+    /// that finishes in the foreground refreshes Coach and reports errors; one that
+    /// finishes in the background (often with the device locked, where HealthKit refuses
+    /// reads) stays silent, and the next foreground catches up because the active
+    /// pattern set is part of the cache key. Decided at completion, not from who started
+    /// the run: a background run that resumes and finishes after the user reopens the
+    /// app must still refresh Coach. Overridable for tests.
+    var isAppInForeground: @MainActor () -> Bool = ReadinessRepository.applicationIsInForeground
 
-    /// Who asked for pattern analysis, which decides the throttle and how the run reports.
+    static func applicationIsInForeground() -> Bool {
+        UIApplication.shared.applicationState != .background
+    }
+
+    /// Who asked for pattern analysis. Decides only the throttle (`shouldRunPatternAnalysis`);
+    /// how the run reports is decided when it finishes — see `isAppInForeground`.
     enum PatternAnalysisTrigger: Sendable {
         /// RecoveryTabView appearing. Throttled by `forcedPatternAnalysisMinInterval`.
         case appear
@@ -97,10 +109,7 @@ class ReadinessRepository: ObservableObject {
         case staleCheck
         /// The user tapped "Try again". Always runs.
         case userRetry
-        /// The `.appRefresh` background task. Throttled like `.appear`, reports errors
-        /// only to the debug log (HealthKit refuses reads while the device is locked,
-        /// which must not surface as an error row), and leaves the Coach refresh to the
-        /// next foreground — the pattern set is part of the cache key, so it catches up.
+        /// The `.appRefresh` background task. Throttled like `.appear`.
         case background
     }
 
@@ -151,34 +160,18 @@ class ReadinessRepository: ObservableObject {
         lastFingerprint = nil
         lastAnalysisDate = nil
         lastActivePatternTypes = nil
+        analysisError = nil
+        isAppInForeground = Self.applicationIsInForeground
     }
     #endif
 
     // MARK: - Pattern Analysis (Phase 2)
 
     /// Callers await the run but never own it — see `patternAnalysisFlight`. A request
-    /// that arrives mid-run joins it and gets that run's behavior. Only a joined
-    /// `.background` run behaves differently from a foreground one (no error reporting, no
-    /// Coach refresh), so only then does a foreground joiner re-apply its own: a "Try
-    /// again" gets a run of its own, anything else re-checks the Coach cache. Joining a
-    /// foreground run already reported errors and refreshed Coach; a throttled skip
-    /// changed nothing.
+    /// that arrives mid-run joins it. Joiners need no follow-up: the run itself decides,
+    /// when it finishes, whether to refresh Coach and report errors (`isAppInForeground`).
     func runPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
-        let joining = inFlightPatternTrigger
-        let started = await runPatternFlight(container: container, trigger: trigger)
-        guard !started, trigger != .background, joining == .background else { return }
-        if trigger == .userRetry {
-            await runPatternFlight(container: container, trigger: .userRetry)
-        } else {
-            await refreshIfNecessary(modelContext: container.mainContext)
-        }
-    }
-
-    @discardableResult
-    private func runPatternFlight(container: ModelContainer, trigger: PatternAnalysisTrigger) async -> Bool {
         await patternAnalysisFlight.run { [self] in
-            inFlightPatternTrigger = trigger
-            defer { inFlightPatternTrigger = nil }
             await performPatternAnalysis(container: container, trigger: trigger)
         }
     }
@@ -215,9 +208,9 @@ class ReadinessRepository: ObservableObject {
                 // detected or expired a pattern must re-check the cache now, or a
                 // launch-time analysis that finished after the coach read leaves
                 // Coach behind Patterns until the next unrelated refresh. No-op when
-                // the set is unchanged; coalesces if an analysis is in flight. Skipped in
-                // the background, where the app-refresh budget can't fit a full analysis.
-                if trigger != .background {
+                // the set is unchanged; coalesces if an analysis is in flight. Skipped when
+                // the app is in the background, where the refresh budget can't fit it.
+                if isAppInForeground() {
                     await refreshIfNecessary(modelContext: container.mainContext)
                 }
             }
@@ -228,7 +221,7 @@ class ReadinessRepository: ObservableObject {
         } catch {
             // Deliberately NOT stamping — a failed run must be retried on next appear,
             // not locked out for a week.
-            if trigger == .background {
+            if !isAppInForeground() {
                 #if DEBUG
                 print("⚠️ Background pattern analysis failed: \(error)")
                 #endif

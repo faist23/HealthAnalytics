@@ -55,8 +55,8 @@ struct HealthAnalyticsApp: App {
             // budget on a run that can only fail.
             guard await MainActor.run(body: { UIApplication.shared.isProtectedDataAvailable }) else { return }
             // Same path as the foreground (the throttle is stamped only when patterns were
-            // actually refreshed), but silent on errors and without the Coach refresh —
-            // see `PatternAnalysisTrigger.background`. On budget expiry the handler stops
+            // actually refreshed). Finishing in the background it stays silent on errors and
+            // skips the Coach refresh — see `ReadinessRepository.isAppInForeground`. On budget expiry the handler stops
             // waiting; the run resumes next time the app is awake.
             await ReadinessRepository.shared.runPatternAnalysis(container: HealthDataContainer.shared, trigger: .background)
         }
