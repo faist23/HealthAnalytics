@@ -152,7 +152,7 @@ struct RecoveryTabView: View {
                 // to InsightsView (a sheet). Drive it from the tab that shows the card.
                 // force: true bypasses the 7-day staleness gate on every launch so the
                 // card reflects current StoredDailyScore data without waiting a week.
-                await ReadinessRepository.shared.runPatternAnalysis(container: modelContext.container, force: true)
+                await ReadinessRepository.shared.runPatternAnalysis(container: modelContext.container, trigger: .appear)
             }
             .refreshable {
                 await SyncManager.shared.performSmartSync()

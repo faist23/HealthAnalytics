@@ -12,6 +12,11 @@ import BackgroundTasks
 
 @main
 struct HealthAnalyticsApp: App {
+    /// Must match `BGTaskSchedulerPermittedIdentifiers` in Info.plist (pinned by
+    /// `BackgroundRefreshConfigTests`); a mismatch makes `submit` throw silently.
+    static let patternAnalysisTaskID = "com.craigfaist.HealthAnalytics.patternAnalysis"
+    static let patternAnalysisMinBackgroundInterval: TimeInterval = 6 * 3600
+
     @AppStorage("isOnboardingComplete") private var isOnboardingComplete = false
     @StateObject private var tabCoordinator = TabCoordinator()
 
@@ -41,12 +46,12 @@ struct HealthAnalyticsApp: App {
             }
         }
         .modelContainer(HealthDataContainer.shared)
-        .backgroundTask(.appRefresh("com.craigfaist.HealthAnalytics.patternAnalysis")) {
-            // Same path as the foreground: the throttle is stamped only when patterns
-            // were actually refreshed, and Coach re-checks its cache afterwards. On
-            // budget expiry the handler stops waiting; the run resumes next time the
-            // app is awake.
-            await ReadinessRepository.shared.runPatternAnalysis(container: HealthDataContainer.shared, force: true)
+        .backgroundTask(.appRefresh(Self.patternAnalysisTaskID)) {
+            // Same path as the foreground (the throttle is stamped only when patterns were
+            // actually refreshed), but silent on errors and without the Coach refresh —
+            // see `PatternAnalysisTrigger.background`. On budget expiry the handler stops
+            // waiting; the run resumes next time the app is awake.
+            await ReadinessRepository.shared.runPatternAnalysis(container: HealthDataContainer.shared, trigger: .background)
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active && isOnboardingComplete {
@@ -69,7 +74,10 @@ struct HealthAnalyticsApp: App {
     private func schedulePatternAnalysisTask() {
         // Must be an app-refresh request to match the SwiftUI `.appRefresh` handler, and
         // needs UIBackgroundModes `fetch` in Info.plist — without it submit throws.
-        let request = BGAppRefreshTaskRequest(identifier: "com.craigfaist.HealthAnalytics.patternAnalysis")
+        let request = BGAppRefreshTaskRequest(identifier: Self.patternAnalysisTaskID)
+        // Patterns move over days and stay active for 10; a few runs a day keeps them
+        // alive and notifications timely without spending the refresh budget.
+        request.earliestBeginDate = Date(timeIntervalSinceNow: Self.patternAnalysisMinBackgroundInterval)
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {

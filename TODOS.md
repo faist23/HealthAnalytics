@@ -4,7 +4,8 @@
 
 ### BGProcessingTask Promotion: Evaluate After Phase 2a
 
-> Note (2026-10-26): the background path is now an app-refresh task (`BGAppRefreshTaskRequest`, ~30s budget), not `BGProcessingTask`, and before then it had never fired. Any production fire-rate data predates that fix is meaningless; re-baseline from v0.1.15.
+> Note (2026-10-26): the background path is now an app-refresh task (`BGAppRefreshTaskRequest`, ~30s budget), not `BGProcessingTask`, and before then it had never fired. Any production fire-rate data that predates this fix is meaningless; re-baseline from v0.1.15.
+
 **Priority:** P2 — gated on Phase 2a production data (≥3 months)
 
 **What:** After Phase 2a ships, evaluate whether `BGProcessingTask` fires reliably enough for most users to promote it from "opportunistic" to "primary" trigger for pattern analysis. If BGTask fires consistently (> 80% of users trigger it within 24h of app backgrounding), flip the architecture: BGTask becomes primary, `InsightsView.onAppear` becomes display-only (no analysis trigger).
@@ -86,6 +87,17 @@
 **Effort:** S (human: ~2h / CC+gstack: ~10min)
 
 ## Coach
+
+### A hung analysis blocks every later pattern-analysis request
+**Priority:** P3 — surfaced by the v0.1.15.0 red-team review (user deferred)
+
+**What:** `SingleFlight.run` has no escape. If one pattern analysis never finishes (a HealthKit callback that never fires), `current` is never cleared and every later `runPatternAnalysis` (including "Try again") joins the stuck run until the process dies. Joiners also inherit the first run's priority, so a background-started run stays at background priority while foreground callers wait.
+
+**Why:** Not observed; a background run suspended mid-flight resumes when the app wakes. Filed so a future hang has an obvious suspect.
+
+**How to apply:** Record when the flight started and let a non-background request start a fresh run when the current one is older than a limit, or create the flight task with `.userInitiated` priority.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10min)
 
 ### MasterCoachEngine copy duplicated across LLM and heuristic paths
 **Priority:** P3 — deferred from /ship review 2026-07-08
@@ -181,8 +193,8 @@
 ## Completed
 
 - **P2 — Background pattern-analysis task likely never runs** — **Completed:** 2026-10-26 (unreleased). Request is now `BGAppRefreshTaskRequest` (matching the SwiftUI `.appRefresh` handler), Info.plist declares `UIBackgroundModes` `fetch` (missing entirely before, so `submit` always threw), and the handler routes through `runPatternAnalysis(force: true)`. Verified firing on device by Craig.
-- **P2 — Repository should own the pattern-analysis → Coach hand-off** — **Completed:** 2026-10-26 (unreleased). `SingleFlight` owns pattern analysis (joins overlap, ignores caller cancellation, 5-min forced-run throttle) and shields `performFullAnalysis` from caller cancellation, so a tab swipe can no longer cache the heuristic Coach paragraph; `resetForTesting()` clears the cache state. `SingleFlightTests`, `ReadinessRepositoryPatternThrottleTests`. The background-task path is still separate (see Analytics / Patterns).
-- **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis usually can't leave Coach behind; `ReadinessRepositoryCacheTests`. The remaining hand-off gaps are the open "Repository should own the pattern-analysis → Coach hand-off" item.
+- **P2 — Repository should own the pattern-analysis → Coach hand-off** — **Completed:** 2026-10-26 (unreleased). `SingleFlight` owns pattern analysis (joins overlap, ignores caller cancellation, 5-min forced-run throttle) and shields `performFullAnalysis` from caller cancellation, so a tab swipe can no longer cache the heuristic Coach paragraph; `resetForTesting()` clears the cache state. `SingleFlightTests`, `ReadinessRepositoryPatternThrottleTests`.
+- **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis usually can't leave Coach behind; `ReadinessRepositoryCacheTests`. The remaining hand-off gaps were closed by "Repository should own the pattern-analysis → Coach hand-off" below.
 - **P2 — `taperBaselineLoadThreshold` (0.25) too low** — **Closed, no change:** v0.1.14.0 (2026-10-26). The "week off reads as 100% taper" case is already rejected by the Tier 1 session-presence check from v0.1.13.0. Raising the floor to 1.0 (~7h zone-2/week) would hide the pattern from the weekend-warrior target user. Pinned by `testTaperUnderway_casualRiderGenuineTaper_confirmed` (fires at a 0.29 baseline) and `testTaperUnderway_casualRiderWeekOff_notConfirmed`.
 - **P3 — Delete dead `ActivityIntentClassifier` + file/type name mismatch** — **Completed:** v0.1.14.0 (2026-10-26). Deleted; `IntentAwareReadinessService.swift` → `EnhancedIntentAwareReadinessService.swift`.
 - **P3 — Delete deprecated ReadinessView.swift** — **Completed:** v0.1.14.0 (2026-10-26). `BackfillProgressView` and `ScoreBreakdownCard`/`BreakdownRow` relocated to their own files; the other 15 views in it had no callers.

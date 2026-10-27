@@ -86,10 +86,30 @@ class ReadinessRepository: ObservableObject {
     /// tab swipe can't cancel it and back-to-back appears join one analysis.
     private let patternAnalysisFlight = SingleFlight()
 
-    /// A forced run (the Recovery tab forces one on every appear) is skipped if a run
-    /// completed this recently. Patterns move over days, so this only sheds tab-swipe
-    /// churn; the 7-day staleness gate still governs unforced runs.
+    /// Who asked for pattern analysis, which decides the throttle and how the run reports.
+    enum PatternAnalysisTrigger: Sendable {
+        /// RecoveryTabView appearing. Throttled by `forcedPatternAnalysisMinInterval`.
+        case appear
+        /// InsightsView appearing. Runs only when the last run is older than
+        /// `patternAnalysisStalenessInterval`.
+        case staleCheck
+        /// The user tapped "Try again". Always runs.
+        case userRetry
+        /// The `.appRefresh` background task. Throttled like `.appear`, reports errors
+        /// only to the debug log (HealthKit refuses reads while the device is locked,
+        /// which must not surface as an error row), and leaves the Coach refresh to the
+        /// next foreground — the pattern set is part of the cache key, so it catches up.
+        case background
+    }
+
+    /// An automatic run (the Recovery tab triggers one on every appear) is skipped if a
+    /// run completed this recently. Patterns move over days, so this only sheds tab-swipe
+    /// churn; a user-initiated retry is never throttled.
     nonisolated static let forcedPatternAnalysisMinInterval: TimeInterval = 5 * 60
+
+    /// How old the last run must be before an InsightsView appear re-runs it. Must stay
+    /// below `TrainingPattern.activeWindowDays` or patterns expire before their refresh.
+    nonisolated static let patternAnalysisStalenessInterval: TimeInterval = 7 * 86400
 
     private static let dailyScoreDateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -134,20 +154,17 @@ class ReadinessRepository: ObservableObject {
 
     // MARK: - Pattern Analysis (Phase 2)
 
-    /// Called from RecoveryTabView's `.task` (forced, debounced by
-    /// `forcedPatternAnalysisMinInterval`) and InsightsView's `.task` (7-day staleness
-    /// check) and "Try again" button (forced).
     /// Callers await the run but never own it — see `patternAnalysisFlight`. A request
-    /// that arrives mid-run joins it (its `force` is moot: an analysis is already running).
-    func runPatternAnalysis(container: ModelContainer, force: Bool = false) async {
+    /// that arrives mid-run joins it (its trigger is moot: an analysis is already running).
+    func runPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
         await patternAnalysisFlight.run { [self] in
-            await performPatternAnalysis(container: container, force: force)
+            await performPatternAnalysis(container: container, trigger: trigger)
         }
     }
 
-    private func performPatternAnalysis(container: ModelContainer, force: Bool) async {
+    private func performPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
         let lastRun = UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
-        guard Self.shouldRunPatternAnalysis(lastRun: lastRun, force: force) else { return }
+        guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return }
 
         // The throttle is stamped AFTER a run that actually reached upsertPatterns —
         // never before. `analyze()` refreshes every pattern's `detectedAt`, which is
@@ -177,8 +194,11 @@ class ReadinessRepository: ObservableObject {
                 // detected or expired a pattern must re-check the cache now, or a
                 // launch-time analysis that finished after the coach read leaves
                 // Coach behind Patterns until the next unrelated refresh. No-op when
-                // the set is unchanged; coalesces if an analysis is in flight.
-                await refreshIfNecessary(modelContext: container.mainContext)
+                // the set is unchanged; coalesces if an analysis is in flight. Skipped in
+                // the background, where the app-refresh budget can't fit a full analysis.
+                if trigger != .background {
+                    await refreshIfNecessary(modelContext: container.mainContext)
+                }
             }
         } catch PatternAnalysisError.insufficientData {
             // < 60 days of history — silent, no error surfaced. Safe to throttle: there
@@ -187,7 +207,13 @@ class ReadinessRepository: ObservableObject {
         } catch {
             // Deliberately NOT stamping — a failed run must be retried on next appear,
             // not locked out for a week.
-            await MainActor.run { self.analysisError = "Pattern analysis failed: \(error.localizedDescription)" }
+            if trigger == .background {
+                #if DEBUG
+                print("⚠️ Background pattern analysis failed: \(error)")
+                #endif
+            } else {
+                await MainActor.run { self.analysisError = "Pattern analysis failed: \(error.localizedDescription)" }
+            }
         }
     }
     
@@ -1240,11 +1266,17 @@ class ReadinessRepository: ObservableObject {
     
     // MARK: - Helpers
 
-    /// Unforced runs wait out the 7-day staleness window; forced runs only skip a run
-    /// that completed within `forcedPatternAnalysisMinInterval`. Never run → always run.
-    nonisolated static func shouldRunPatternAnalysis(lastRun: Date?, force: Bool, now: Date = Date()) -> Bool {
+    /// Never run → always run. A user retry always runs; automatic appears and the
+    /// background task skip a run that completed within `forcedPatternAnalysisMinInterval`;
+    /// an InsightsView appear waits out `patternAnalysisStalenessInterval`.
+    nonisolated static func shouldRunPatternAnalysis(lastRun: Date?, trigger: PatternAnalysisTrigger, now: Date = Date()) -> Bool {
         guard let lastRun else { return true }
-        let window = force ? forcedPatternAnalysisMinInterval : 7 * 86400
+        let window: TimeInterval
+        switch trigger {
+        case .userRetry: return true
+        case .appear, .background: window = forcedPatternAnalysisMinInterval
+        case .staleCheck: window = patternAnalysisStalenessInterval
+        }
         return now.timeIntervalSince(lastRun) > window
     }
 

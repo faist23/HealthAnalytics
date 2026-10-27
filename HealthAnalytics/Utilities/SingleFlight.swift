@@ -40,40 +40,14 @@ final class SingleFlight {
 
     /// Returns when `task` finishes or when the caller is cancelled, whichever is first.
     /// iOS cancels a background task's handler when its time budget expires and expects
-    /// it to return promptly; the work itself keeps running.
+    /// it to return promptly; the work itself keeps running. `AsyncStream` iteration ends
+    /// on the iterating task's cancellation, including a cancellation that came first.
     private static func wait(for task: Task<Void, Never>) async {
-        let gate = ResumeOnce()
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                gate.install(continuation)
-                Task { await task.value; gate.resume() }
-            }
-        } onCancel: {
-            gate.resume()
+        let (done, finished) = AsyncStream<Never>.makeStream()
+        Task {
+            await task.value
+            finished.finish()
         }
-    }
-}
-
-/// A continuation resumed at most once, by whichever of completion or cancellation
-/// arrives first — including a cancellation that lands before `install`.
-private final class ResumeOnce: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, Never>?
-    private var resumed = false
-
-    func install(_ c: CheckedContinuation<Void, Never>) {
-        lock.lock()
-        if resumed { lock.unlock(); c.resume(); return }
-        continuation = c
-        lock.unlock()
-    }
-
-    func resume() {
-        lock.lock()
-        resumed = true
-        let c = continuation
-        continuation = nil
-        lock.unlock()
-        c?.resume()
+        for await _ in done {}
     }
 }
