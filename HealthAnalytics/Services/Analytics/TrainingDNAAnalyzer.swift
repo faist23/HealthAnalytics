@@ -245,8 +245,9 @@ actor TrainingDNAAnalyzer {
     /// Store-based checks read complete calendar days only, ending yesterday. Today's
     /// StoredDailyScore row is partial (written on each foreground open) and the
     /// background pass never writes one, so including it made a verdict depend on who
-    /// ran the analysis and when. Live HealthKit series (HRV, sleep, steps, active
-    /// energy) still include today — this morning's HRV is what the alerts are for.
+    /// ran the analysis and when. Live HealthKit series (HRV, RHR, sleep) still include
+    /// today, so the latest HRV reading is used. The HRV precursor's sick-day steps are
+    /// the exception: today's count is partial, so they are complete days too.
     private var completeDaysEnd: Date { Calendar.current.startOfDay(for: Date()) }
 
     /// Start of the complete-days window `daysBack` days before `completeDaysEnd`.
@@ -429,8 +430,10 @@ actor TrainingDNAAnalyzer {
             dailyScores.filter { $0.dailyLoad >= 0.5 }.map { fmt.string(from: $0.date) }
         )
 
-        // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days AND no significant workout
-        let stepsSorted = stepHistory.sorted { $0.date < $1.date }
+        // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days AND no significant workout.
+        // Complete days only: today's count is partial (nearly everyone is under 2000 at 9am),
+        // so yesterday + today would fake a window. HRV stays live.
+        let stepsSorted = stepHistory.filter { $0.date < end }.sorted { $0.date < $1.date }
         var sickDayWindows: [Date] = []
         var i = 0
         while i < stepsSorted.count - 1 {

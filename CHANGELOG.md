@@ -7,12 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
-- **Pattern alerts arrive soon after your Health data does.** When a new HRV reading or workout lands in Apple Health, the app now checks your patterns in the background as soon as you unlock your phone, so an illness warning can reach you before you open the app.
+- **New patterns can reach you soon after your Health data does.** When a new HRV reading or workout lands in Apple Health, the app now checks your patterns in the background as soon as you unlock your phone, so a newly discovered pattern can notify you without opening the app.
 
 ### Fixed
 
 - **A day's training is counted in full.** If you opened the app in the afternoon and rode that evening, that day's load used to stay at its afternoon value. Past days are now finished off once they're over.
-- **Pattern checks look at complete days.** Taper, back-to-back and the other history checks now use whole days through yesterday, so a half-finished today can't fake or hide a pattern. Today's ride counts from tomorrow.
+- **Pattern checks look at complete days.** Taper, back-to-back and the other history checks now use whole days through yesterday, so a half-finished today can't fake or hide a pattern. Today's ride counts from tomorrow, and a quiet morning's low step count no longer looks like a sick day.
 
 ## [0.1.15.0] - 2026-10-27
 

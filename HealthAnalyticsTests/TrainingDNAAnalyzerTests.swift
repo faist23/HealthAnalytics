@@ -221,33 +221,67 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         )
     }
 
-    /// Today's StoredDailyScore row is partial and ignored. The third sick window is
-    /// yesterday + today, and today's row carries a significant workout load; read as
-    /// a workout day it would block that window and leave only two.
+    /// Today's StoredDailyScore row is partial and ignored. The third sick window is the
+    /// two complete days ending yesterday; today's row carries a significant workout load
+    /// and today's live steps are normal, so the row is the only thing that could touch
+    /// the verdict. The control below proves the fixture is sensitive to a workout row.
     func testHRVPrecursor_todaysPartialWorkoutRowCannotBlockASickWindow() async throws {
+        let fired = try await hrvPrecursorFires(workoutRowOffset: 0)
+        XCTAssertTrue(fired, "Today's partial row must not block a complete-days sick window")
+    }
+
+    /// Control: the same significant-load row on yesterday (inside the third window) blocks it.
+    func testHRVPrecursor_completeDayWorkoutRowBlocksASickWindow() async throws {
+        let fired = try await hrvPrecursorFires(workoutRowOffset: -1)
+        XCTAssertFalse(fired, "A significant workout on a sick-window day must block that window")
+    }
+
+    /// Windows at -80, -50 and -2 (days -2/-1), plus one StoredDailyScore row with a
+    /// significant load at `workoutRowOffset`. Fires only if the third window counts.
+    private func hrvPrecursorFires(workoutRowOffset: Int) async throws -> Bool {
         let container = try makeFullContainer()
         let analyzer = TrainingDNAAnalyzer(modelContainer: container)
 
-        let offsets = [-80, -50, -1]
+        let offsets = [-80, -50, -2]
         var mock = MockPatternDataProvider()
         mock.historyDays = 180
         mock.hrvData = makeHRVPrecursorHRV(baselineHRV: 60.0, precursorHRV: 45.0, sickOffsets: offsets)
-        var steps = makeHRVPrecursorSteps(windowCount: 3, sickOffsets: offsets)
-        steps.append((date: day(0), steps: 1000))   // live series includes today
-        mock.stepsData = steps
+        mock.stepsData = makeHRVPrecursorSteps(windowCount: 3, sickOffsets: offsets)  // today = 8000
         await analyzer.setDataProvider(mock)
 
         try await analyzer.insertDailyScores([
-            StoredDailyScore(date: day(0), readinessScore: 70, dailyStrain: 1.0,
+            StoredDailyScore(date: day(workoutRowOffset), readinessScore: 70, dailyStrain: 1.0,
                              workoutCount: 1, dailyLoad: 1.5)
         ])
 
         _ = try await analyzer.analyze()
+        return try await analyzer.fetchAllPatterns().contains { $0.patternType == .hrvPrecursor }
+    }
+
+    /// Today's step count is partial: at 9am nearly everyone is under 2000. Two complete
+    /// sick windows, then yesterday low and today near-zero. Counted, (yesterday, today)
+    /// would be the third window (its HRV precursor is seeded), so the pattern would fire.
+    func testHRVPrecursor_todaysPartialStepsCannotFormASickWindow() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeHRVPrecursorHRV(baselineHRV: 60.0, precursorHRV: 45.0, sickOffsets: [-80, -50, -1])
+        var steps = makeHRVPrecursorSteps(windowCount: 2, sickOffsets: [-80, -50])
+        for (offset, count) in [(-1, 1000), (0, 200)] {
+            let idx = try XCTUnwrap(steps.firstIndex { Calendar.current.isDate($0.date, inSameDayAs: day(offset)) })
+            steps[idx] = (date: steps[idx].date, steps: count)
+        }
+        mock.stepsData = steps
+        await analyzer.setDataProvider(mock)
+
+        _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
-        XCTAssertTrue(
+        XCTAssertFalse(
             patterns.contains { $0.patternType == .hrvPrecursor },
-            "Only complete days decide workout days; today's partial row must not block the sick window"
+            "Today's partial step count must not pair with yesterday to form a sick window"
         )
     }
 

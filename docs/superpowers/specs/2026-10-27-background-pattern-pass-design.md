@@ -124,9 +124,9 @@ Store-based checks read complete calendar days ending yesterday, in both the for
 | Taper volume | rows with `date >= now − 28d` (needs today's row to reach 28) | the 28 complete days ending yesterday |
 | Taper corroboration (Tier 1 + Tier 2) | recent = today + previous 6 days; baseline = days 7–27 | recent = the 7 days ending yesterday; baseline = the 21 days before that |
 | Back-to-back crash, performance peak streak | 90-day rows including today's partial row | 90 complete days ending yesterday |
-| HRV precursor sick-day proxy | 180-day rows including today | 180 complete days ending yesterday |
+| HRV precursor sick-day proxy | 180-day rows and live steps, both including today | 180 complete days ending yesterday, for the workout rows and the steps |
 
-Live HealthKit series (HRV, sleep, steps, active energy) keep including today. This morning's HRV is the signal the alert exists for.
+Live HealthKit series (HRV, RHR, sleep) keep including today, so a run uses the latest HRV reading. The sick-day proxy's steps are the exception (final-review ruling, overriding the earlier "steps stay live"): today's step count is partial, nearly everyone is under 2000 at 9am, so yesterday + today formed fake sick-day windows. The proxy reads steps over complete days only; HRV stays live.
 
 Consequences:
 - A background run and a foreground run on the same data give the same verdict.
@@ -199,7 +199,7 @@ Device checklist (no seam):
 | `Services/Analytics/BackgroundPatternPass.swift` | new |
 | `Services/HealthKit/HealthDataObserver.swift` | new |
 | `Services/Analytics/TrainingDNAAnalyzer.swift` | detect/commit split; complete-days anchoring |
-| `Services/Analytics/ReadinessRepository.swift` | shared per-day score computation; `finalizeScoreRows`; registers the observer in `bootstrap()`; background trigger runs the pass |
+| `Services/Analytics/ReadinessRepository.swift` | shared per-day score computation; `finalizeScoreRows`; `runBackgroundPass` (background trigger runs the pass). The observer is registered from the AppDelegate's `didFinishLaunching` and right after onboarding in `HealthAnalyticsApp`, not from `bootstrap()` (see Architecture) |
 | `Utilities/SyncManager.swift` | `refreshWorkoutsFromHealthKit(since:)` (HealthKit-only, no notification, no `lastSyncDate`) |
 | `HealthAnalyticsApp.swift` | app-refresh handler runs the pass; `UIApplicationDelegateAdaptor` registers `HealthDataObserver` at launch |
 | `HealthAnalytics.entitlements` | `com.apple.developer.healthkit.background-delivery` |
