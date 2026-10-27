@@ -189,10 +189,10 @@ class ReadinessRepository: ObservableObject {
     /// visit during a background run still produce one run.
     func runBackgroundPass(container: ModelContainer, wake: BackgroundPassWake) async {
         let log = BackgroundPassLog.standard
-        log.recordWake(wake)
+        log.recordWake(wake, appActive: UIApplication.shared.applicationState == .active)
         await patternAnalysisFlight.run { [self] in
             let steps = LiveBackgroundPassSteps(repository: self, container: container)
-            await BackgroundPatternPass(steps: steps, log: log).run()
+            await BackgroundPatternPass(steps: steps, log: log, wake: wake).run()
         }
     }
 

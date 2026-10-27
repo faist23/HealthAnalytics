@@ -44,11 +44,19 @@ final class BackgroundPatternPass {
 
     private let steps: BackgroundPassSteps
     private let log: BackgroundPassLog
+    /// What woke the app. Only an HRV delivery measures HRV-to-commit latency.
+    private let wake: BackgroundPassWake
     private let now: @Sendable () -> Date
 
-    init(steps: BackgroundPassSteps, log: BackgroundPassLog, now: @escaping @Sendable () -> Date = { Date() }) {
+    init(
+        steps: BackgroundPassSteps,
+        log: BackgroundPassLog,
+        wake: BackgroundPassWake,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.steps = steps
         self.log = log
+        self.wake = wake
         self.now = now
     }
 
@@ -88,9 +96,13 @@ final class BackgroundPatternPass {
             return .failed
         }
 
+        // The commit just happened; the HRV query below must not count toward latency.
+        let committedAt = now()
         steps.stamp(startedAt)
-        if let newest = await steps.newestHRVSampleDate() {
-            log.recordLatency(now().timeIntervalSince(newest))
+        // An app-refresh or workout wake would overwrite the HRV-delivery latency with a
+        // gap that says nothing about delivery.
+        if wake == .hrvDelivery, let newest = await steps.newestHRVSampleDate() {
+            log.recordLatency(committedAt.timeIntervalSince(newest))
         }
         await steps.refreshCoachIfForeground()
         return .completed
@@ -114,7 +126,12 @@ struct BackgroundPassLog {
 
     static var standard: BackgroundPassLog { BackgroundPassLog(defaults: .standard) }
 
-    func recordWake(_ wake: BackgroundPassWake) { increment("backgroundPass.wake.\(wake.rawValue)") }
+    /// iOS fires each observer query once when it is registered, so a cold launch in the
+    /// foreground "delivers" too. Wakes while the app is active count apart and never
+    /// read as background-delivery evidence; `count(_:)` is the not-active count.
+    func recordWake(_ wake: BackgroundPassWake, appActive: Bool) {
+        increment(Self.wakeKey(wake, whileActive: appActive))
+    }
 
     func record(_ outcome: BackgroundPassOutcome, at date: Date) {
         increment("backgroundPass.outcome.\(outcome.rawValue)")
@@ -126,7 +143,9 @@ struct BackgroundPassLog {
         defaults.set(seconds, forKey: "backgroundPass.lastLatency")
     }
 
-    func count(_ wake: BackgroundPassWake) -> Int { defaults.integer(forKey: "backgroundPass.wake.\(wake.rawValue)") }
+    func count(_ wake: BackgroundPassWake, whileActive: Bool = false) -> Int {
+        defaults.integer(forKey: Self.wakeKey(wake, whileActive: whileActive))
+    }
     func count(_ outcome: BackgroundPassOutcome) -> Int { defaults.integer(forKey: "backgroundPass.outcome.\(outcome.rawValue)") }
 
     var lastOutcome: BackgroundPassOutcome? {
@@ -134,6 +153,10 @@ struct BackgroundPassLog {
     }
     var lastOutcomeAt: Date? { defaults.object(forKey: "backgroundPass.lastOutcomeAt") as? Date }
     var lastLatency: TimeInterval? { defaults.object(forKey: "backgroundPass.lastLatency") as? TimeInterval }
+
+    private static func wakeKey(_ wake: BackgroundPassWake, whileActive: Bool) -> String {
+        "backgroundPass.wake.\(wake.rawValue)" + (whileActive ? ".whileActive" : "")
+    }
 
     private func increment(_ key: String) { defaults.set(defaults.integer(forKey: key) + 1, forKey: key) }
 }

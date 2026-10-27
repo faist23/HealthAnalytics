@@ -15,7 +15,12 @@ struct BackgroundPassStatsView: View {
         List {
             Section("Wakes") {
                 ForEach(BackgroundPassWake.allCases, id: \.self) { wake in
-                    LabeledContent(wake.rawValue, value: "\(log.count(wake))")
+                    // Not-active wakes are the delivery evidence; wakes while the app is
+                    // open (iOS fires each observer once at registration) count apart.
+                    LabeledContent(
+                        wake.rawValue,
+                        value: "\(log.count(wake)) (+\(log.count(wake, whileActive: true)) while open)"
+                    )
                 }
             }
             Section("Outcomes") {

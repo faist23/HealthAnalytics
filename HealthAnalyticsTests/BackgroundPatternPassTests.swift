@@ -24,6 +24,8 @@ private final class FakeSteps: BackgroundPassSteps {
     /// Advances the fake clock during analysis, before the gate is asked.
     var advanceDuringAnalysis: TimeInterval = 0
     var newestHRV: Date?
+    /// Advances the fake clock inside the newest-HRV query, after the commit.
+    var advanceDuringHRVQuery: TimeInterval = 0
     let clock: FakeClock
 
     private(set) var calls: [String] = []
@@ -50,7 +52,11 @@ private final class FakeSteps: BackgroundPassSteps {
     }
     func stamp(_ startedAt: Date) { calls.append("stamp"); stamped = startedAt }
     func refreshCoachIfForeground() async { calls.append("coach") }
-    func newestHRVSampleDate() async -> Date? { newestHRV }
+    func newestHRVSampleDate() async -> Date? {
+        calls.append("newestHRV")
+        clock.now = clock.now.addingTimeInterval(advanceDuringHRVQuery)
+        return newestHRV
+    }
 }
 
 private struct SomeHealthKitError: Error {}
@@ -65,9 +71,13 @@ final class BackgroundPatternPassTests: XCTestCase {
         defaults.removePersistentDomain(forName: "BackgroundPatternPassTests")
     }
 
-    private func makePass(_ steps: FakeSteps, _ clock: FakeClock) -> (BackgroundPatternPass, BackgroundPassLog) {
+    private func makePass(
+        _ steps: FakeSteps, _ clock: FakeClock, wake: BackgroundPassWake = .hrvDelivery
+    ) -> (BackgroundPatternPass, BackgroundPassLog) {
         let log = BackgroundPassLog(defaults: defaults)
-        let pass = BackgroundPatternPass(steps: steps, log: log, now: { MainActor.assumeIsolated { clock.now } })
+        let pass = BackgroundPatternPass(
+            steps: steps, log: log, wake: wake, now: { MainActor.assumeIsolated { clock.now } }
+        )
         return (pass, log)
     }
 
@@ -80,7 +90,7 @@ final class BackgroundPatternPassTests: XCTestCase {
         let outcome = await pass.run()
 
         XCTAssertEqual(outcome, .completed)
-        XCTAssertEqual(steps.calls, ["refreshWorkouts", "finalizeScoreRows", "analyze", "commit", "stamp", "coach"])
+        XCTAssertEqual(steps.calls, ["refreshWorkouts", "finalizeScoreRows", "analyze", "commit", "stamp", "newestHRV", "coach"])
         XCTAssertEqual(steps.stamped, t0, "The stamp describes the data the run read: its start, not its end")
         XCTAssertEqual(log.count(.completed), 1)
     }
@@ -181,26 +191,59 @@ final class BackgroundPatternPassTests: XCTestCase {
         XCTAssertTrue(steps.calls.contains("analyze"))
     }
 
-    func test_completedPass_recordsLatencyFromTheNewestHRVSample() async {
+    /// Latency runs from the newest HRV sample to the commit, not to the end of the
+    /// HRV query that follows it.
+    func test_completedPass_recordsLatencyFromTheNewestHRVSampleToTheCommit() async {
         let clock = FakeClock(t0)
         let steps = FakeSteps(clock: clock)
         steps.newestHRV = t0.addingTimeInterval(-600)
         steps.advanceDuringAnalysis = 15
-        let (pass, log) = makePass(steps, clock)
+        steps.advanceDuringHRVQuery = 30
+        let (pass, log) = makePass(steps, clock, wake: .hrvDelivery)
 
         _ = await pass.run()
 
         XCTAssertEqual(log.lastLatency ?? -1, 615, accuracy: 0.001)
     }
 
+    /// Only an HRV delivery measures HRV-to-commit latency; an app-refresh (or workout)
+    /// wake must not overwrite it with a gap that has nothing to do with delivery.
+    func test_appRefreshPass_recordsNoLatency() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        steps.newestHRV = t0.addingTimeInterval(-6 * 3600)
+        let (pass, log) = makePass(steps, clock, wake: .appRefresh)
+
+        let outcome = await pass.run()
+
+        XCTAssertEqual(outcome, .completed)
+        XCTAssertNil(log.lastLatency)
+        XCTAssertFalse(steps.calls.contains("newestHRV"), "No latency to record, so no HRV query")
+    }
+
     func test_log_countsWakesPerTrigger() {
         let log = BackgroundPassLog(defaults: defaults)
-        log.recordWake(.hrvDelivery)
-        log.recordWake(.hrvDelivery)
-        log.recordWake(.appRefresh)
+        log.recordWake(.hrvDelivery, appActive: false)
+        log.recordWake(.hrvDelivery, appActive: false)
+        log.recordWake(.appRefresh, appActive: false)
         XCTAssertEqual(log.count(.hrvDelivery), 2)
         XCTAssertEqual(log.count(.appRefresh), 1)
         XCTAssertEqual(log.count(.workoutDelivery), 0)
+    }
+
+    /// iOS fires every observer query once when it is registered, so a cold launch in
+    /// the foreground "delivers". Those wakes count apart, never as delivery evidence.
+    func test_log_countsWakesWhileActiveSeparately() {
+        let log = BackgroundPassLog(defaults: defaults)
+        log.recordWake(.hrvDelivery, appActive: true)
+        log.recordWake(.hrvDelivery, appActive: true)
+        log.recordWake(.hrvDelivery, appActive: false)
+        log.recordWake(.workoutDelivery, appActive: true)
+        XCTAssertEqual(log.count(.hrvDelivery), 1)
+        XCTAssertEqual(log.count(.hrvDelivery, whileActive: false), 1)
+        XCTAssertEqual(log.count(.hrvDelivery, whileActive: true), 2)
+        XCTAssertEqual(log.count(.workoutDelivery), 0)
+        XCTAssertEqual(log.count(.workoutDelivery, whileActive: true), 1)
     }
 
     func test_isWithinBudget_edges() {
