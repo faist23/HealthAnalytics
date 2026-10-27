@@ -37,11 +37,7 @@
 - **New files need no `project.pbxproj` edits.** The project uses `PBXFileSystemSynchronizedRootGroup`.
 - **SourceKit "Cannot find X in scope" diagnostics are noise.** Only trust `xcodebuild`.
 - **Colors and fonts:** use design tokens from `DESIGN.md` (`Color.textTertiary`, etc.). No hardcoded colors or inline font sizes.
-- **Every commit ends with these two lines.** `<trailers>` in a task's commit command stands for them:
-  ```
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-  Claude-Session: https://claude.ai/code/session_012gz4AAXGNPcqM3qBTjEVh5
-  ```
+- **Every commit ends with the session's two attribution trailers** (the `Co-Authored-By` line and the session-link line from the session's attribution instructions). `<trailers>` in a task's commit command stands for them.
 
 ## Review Focus
 
