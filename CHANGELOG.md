@@ -3,6 +3,18 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.15.0] - 2026-10-27
+
+The Coach hand-off release. Swiping between tabs at the wrong moment could leave Coach on its plain built-in paragraph for the rest of the day. That's fixed, pattern analysis stops redoing work it just did, and the background pattern check runs for the first time.
+
+### Fixed
+
+- **Switching tabs no longer downgrades the Coach paragraph.** If you swiped away while the app was working out today's advice, the AI-written paragraph could be cut off and replaced by the simpler built-in version, and that version stuck for the rest of the day. Analysis now always finishes, whoever asked for it. This also closes the last gap where Coach could lag the Patterns tab after a launch.
+- **Swiping back to Recovery no longer re-runs the full pattern analysis every time.** Back-to-back visits share one run, and a run that finished in the last five minutes is reused. "Try again" always runs.
+- **The background pattern check can now run.** It had never actually been scheduled, so new-pattern notifications only arrived when you opened the app. iOS now gets a chance to run it every few hours while the app is closed, and Coach picks up any change the next time you open the app. iOS decides when that happens, and it skips the check while your phone is locked, so for now opening the app is still the dependable way to see new patterns.
+- **No more "Pattern analysis failed" after unlocking your phone.** A check that was interrupted by the lock screen used to report an error when it resumed; it now stays quiet and tries again later.
+- **A ride late in the evening counts on the right day for taper detection.** The "recent week" and the four-week baseline now follow calendar days, so a ride at 11pm a week ago no longer slips into this week, and the result no longer depends on what time of day you open the app.
+
 ## [0.1.14.0] - 2026-10-26
 
 The cleanup release. The Coach tab could keep talking about a pattern for most of a day after the Patterns tab had stopped showing it. That's fixed, and about 2,000 lines of screens and services nothing used anymore are gone.

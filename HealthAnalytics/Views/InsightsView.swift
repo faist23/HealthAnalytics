@@ -74,7 +74,7 @@ struct InsightsView: View {
             }
             await viewModel.analyzeData()
             isFirstLoad = false
-            await triggerPatternAnalysis()
+            await triggerPatternAnalysis(.staleCheck)
         }
         .onChange(of: modelContext) { _, _ in
             if viewModel.modelContainer == nil {
@@ -238,7 +238,7 @@ struct InsightsView: View {
                 .foregroundStyle(Color.textSecondary)
             Spacer()
             Button("Try again") {
-                Task { await triggerPatternAnalysis(force: true) }
+                Task { await triggerPatternAnalysis(.userRetry) }
             }
             .font(.system(size: 13, weight: .medium, design: .default))
             .foregroundStyle(Color.accent)
@@ -251,12 +251,12 @@ struct InsightsView: View {
     // MARK: - Pattern Analysis Trigger
 
     @MainActor
-    private func triggerPatternAnalysis(force: Bool = false) async {
+    private func triggerPatternAnalysis(_ trigger: ReadinessRepository.PatternAnalysisTrigger) async {
         isPatternAnalyzing = true
         patternAnalysisError = nil
         await ReadinessRepository.shared.runPatternAnalysis(
             container: modelContext.container,
-            force: force
+            trigger: trigger
         )
         isPatternAnalyzing = false
     }

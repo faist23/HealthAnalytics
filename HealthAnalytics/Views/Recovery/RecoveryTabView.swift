@@ -150,9 +150,10 @@ struct RecoveryTabView: View {
                 isFirstLoad = false
                 // TrainingSignatureCard lives here but runPatternAnalysis was only wired
                 // to InsightsView (a sheet). Drive it from the tab that shows the card.
-                // force: true bypasses the 7-day staleness gate on every launch so the
-                // card reflects current StoredDailyScore data without waiting a week.
-                await ReadinessRepository.shared.runPatternAnalysis(container: modelContext.container, force: true)
+                // `.appear` skips the 7-day staleness gate so the card reflects current
+                // StoredDailyScore data, but runs at most once per
+                // `forcedPatternAnalysisMinInterval` (5 min) so tab swipes don't re-run it.
+                await ReadinessRepository.shared.runPatternAnalysis(container: modelContext.container, trigger: .appear)
             }
             .refreshable {
                 await SyncManager.shared.performSmartSync()

@@ -798,13 +798,13 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
 
     /// Pins the active window AND its relationship to the analysis cadence.
     ///
-    /// The window must stay strictly WIDER than the 7-day throttle in
-    /// `ReadinessRepository.runPatternAnalysis`. At exactly 7 the two coincided:
+    /// The window must stay strictly WIDER than the 7-day throttle,
+    /// `ReadinessRepository.patternAnalysisStalenessInterval`. At exactly 7 the two coincided:
     /// patterns expired at the same instant a refresh became eligible, so a user who
     /// hadn't opened Patterns in a week saw every surface — badge, header strip,
     /// cards, and the Coach hrvPrecursor alarm — read zero until analysis completed.
     func testActiveWindowIsWiderThanTheAnalysisCadence() throws {
-        let analysisCadenceDays = 7
+        let analysisCadenceDays = Int(ReadinessRepository.patternAnalysisStalenessInterval / 86400)
         XCTAssertGreaterThan(
             TrainingPattern.activeWindowDays, analysisCadenceDays,
             "activeWindowDays must exceed the pattern-analysis cadence or patterns expire exactly when their refresh comes due"

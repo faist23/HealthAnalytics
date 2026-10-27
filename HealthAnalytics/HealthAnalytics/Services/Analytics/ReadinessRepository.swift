@@ -8,6 +8,7 @@
 
 import Foundation
 import SwiftUI
+import UIKit
 import SwiftData
 import HealthKit
 import Combine
@@ -82,6 +83,53 @@ class ReadinessRepository: ObservableObject {
 
     private var syncCompletedObserver: NSObjectProtocol?
 
+    /// Pattern analysis is requested from view `.task`s; the flight owns the run so a
+    /// tab swipe can't cancel it and back-to-back appears join one analysis.
+    private let patternAnalysisFlight = SingleFlight()
+    /// Whether the app is in the foreground when a pattern run's outcome lands. A run
+    /// that finishes in the foreground refreshes Coach and reports errors; one that
+    /// finishes in the background (often with the device locked, where HealthKit refuses
+    /// reads) stays silent, and the next foreground catches up because the active
+    /// pattern set is part of the cache key. Decided at completion, not from who started
+    /// the run: a background run that resumes and finishes after the user reopens the
+    /// app must still refresh Coach. Overridable for tests.
+    var isAppInForeground: @MainActor () -> Bool = ReadinessRepository.applicationIsInForeground
+
+    static func applicationIsInForeground() -> Bool {
+        UIApplication.shared.applicationState != .background
+    }
+
+    /// HealthKit refusing reads because the device is (or was, mid-run) locked. Never an
+    /// error row, even when the run finishes in the foreground — a run suspended across a
+    /// lock resumes on unlock and fails for a reason that no longer applies. Unstamped,
+    /// so the next appear retries.
+    nonisolated static func isLockedDeviceError(_ error: Error) -> Bool {
+        (error as? HKError)?.code == .errorDatabaseInaccessible
+    }
+
+    /// Who asked for pattern analysis. Decides only the throttle (`shouldRunPatternAnalysis`);
+    /// how the run reports is decided when it finishes — see `isAppInForeground`.
+    enum PatternAnalysisTrigger: Sendable {
+        /// RecoveryTabView appearing. Throttled by `forcedPatternAnalysisMinInterval`.
+        case appear
+        /// InsightsView appearing. Runs only when the last run is older than
+        /// `patternAnalysisStalenessInterval`.
+        case staleCheck
+        /// The user tapped "Try again". Always runs.
+        case userRetry
+        /// The `.appRefresh` background task. Throttled like `.appear`.
+        case background
+    }
+
+    /// An automatic run (the Recovery tab triggers one on every appear) is skipped if a
+    /// run completed this recently. Patterns move over days, so this only sheds tab-swipe
+    /// churn; a user-initiated retry is never throttled.
+    nonisolated static let forcedPatternAnalysisMinInterval: TimeInterval = 5 * 60
+
+    /// How old the last run must be before an InsightsView appear re-runs it. Must stay
+    /// below `TrainingPattern.activeWindowDays` or patterns expire before their refresh.
+    nonisolated static let patternAnalysisStalenessInterval: TimeInterval = 7 * 86400
+
     private static let dailyScoreDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
@@ -117,16 +165,28 @@ class ReadinessRepository: ObservableObject {
     func resetForTesting() {
         currentReadiness = nil
         forecast = nil
+        lastFingerprint = nil
+        lastAnalysisDate = nil
+        lastActivePatternTypes = nil
+        analysisError = nil
+        isAppInForeground = Self.applicationIsInForeground
     }
     #endif
 
     // MARK: - Pattern Analysis (Phase 2)
 
-    /// Primary trigger: called from InsightsView.onAppear (7-day staleness check)
-    /// and from the toolbar refresh button (unconditional).
-    func runPatternAnalysis(container: ModelContainer, force: Bool = false) async {
+    /// Callers await the run but never own it — see `patternAnalysisFlight`. A request
+    /// that arrives mid-run joins it. Joiners need no follow-up: the run itself decides,
+    /// when it finishes, whether to refresh Coach and report errors (`isAppInForeground`).
+    func runPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
+        await patternAnalysisFlight.run { [self] in
+            await performPatternAnalysis(container: container, trigger: trigger)
+        }
+    }
+
+    private func performPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
         let lastRun = UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
-        guard force || lastRun == nil || Date().timeIntervalSince(lastRun!) > 7 * 86400 else { return }
+        guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return }
 
         // The throttle is stamped AFTER a run that actually reached upsertPatterns —
         // never before. `analyze()` refreshes every pattern's `detectedAt`, which is
@@ -148,19 +208,19 @@ class ReadinessRepository: ObservableObject {
             let historyDays = try await analyzer.analyze(sourcePreference: preference)
             UserDefaults.standard.set(historyDays, forKey: "healthKitHistoryDays")
             // `analyze()` returns normally when cancelled (its guards `return historyDays`),
-            // so a clean return is NOT proof the patterns were refreshed. Check explicitly.
+            // so a clean return is NOT proof the patterns were refreshed. Callers can no
+            // longer cancel this task (it belongs to the flight), but check anyway.
             if !Task.isCancelled {
                 UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
                 // The Coach paragraph bakes in the active pattern set. A run that
                 // detected or expired a pattern must re-check the cache now, or a
                 // launch-time analysis that finished after the coach read leaves
                 // Coach behind Patterns until the next unrelated refresh. No-op when
-                // the set is unchanged; coalesces if an analysis is in flight.
-                // Unstructured on purpose: callers are view `.task`s, and a tab swipe
-                // cancelling one mid-refresh would make MasterCoachEngine's LLM call
-                // throw and cache the heuristic paragraph for the rest of the day.
-                let context = container.mainContext
-                Task { await self.refreshIfNecessary(modelContext: context) }
+                // the set is unchanged; coalesces if an analysis is in flight. Skipped when
+                // the app is in the background, where the refresh budget can't fit it.
+                if isAppInForeground() {
+                    await refreshIfNecessary(modelContext: container.mainContext)
+                }
             }
         } catch PatternAnalysisError.insufficientData {
             // < 60 days of history — silent, no error surfaced. Safe to throttle: there
@@ -169,7 +229,13 @@ class ReadinessRepository: ObservableObject {
         } catch {
             // Deliberately NOT stamping — a failed run must be retried on next appear,
             // not locked out for a week.
-            await MainActor.run { self.analysisError = "Pattern analysis failed: \(error.localizedDescription)" }
+            if !isAppInForeground() || Self.isLockedDeviceError(error) {
+                #if DEBUG
+                print("⚠️ Pattern analysis failed silently: \(error)")
+                #endif
+            } else {
+                await MainActor.run { self.analysisError = "Pattern analysis failed: \(error.localizedDescription)" }
+            }
         }
     }
     
@@ -307,12 +373,22 @@ class ReadinessRepository: ObservableObject {
             return
         }
         
-        await performFullAnalysis(modelContext: modelContext, fingerprint: fingerprint)
+        await runShieldedAnalysis(modelContext: modelContext, fingerprint: fingerprint)
     }
     
     func forceRefresh(modelContext: ModelContext) async {
         guard let fingerprint = try? calculateFingerprint(context: modelContext) else { return }
-        await performFullAnalysis(modelContext: modelContext, fingerprint: fingerprint)
+        await runShieldedAnalysis(modelContext: modelContext, fingerprint: fingerprint)
+    }
+
+    /// Every caller is a view `.task` / `.refreshable` or an app lifecycle task, and any
+    /// of them can be cancelled mid-run. A cancelled run used to make MasterCoachEngine's
+    /// LLM call throw, fall back to the heuristic paragraph, and cache that for the rest
+    /// of the day. The analysis now runs to completion regardless of who asked.
+    private func runShieldedAnalysis(modelContext: ModelContext, fingerprint: PredictionCache.DataFingerprint) async {
+        await SingleFlight.shielded { [self] in
+            await performFullAnalysis(modelContext: modelContext, fingerprint: fingerprint)
+        }
     }
     
     // MARK: - Core Analysis Logic
@@ -987,11 +1063,14 @@ class ReadinessRepository: ObservableObject {
             inserted += 1
         }
 
+        // New history changes what the detectors see, so let patterns re-run. Only then:
+        // this backfill runs inside the Coach refresh that follows a pattern run, and an
+        // unconditional clear would erase that run's stamp and defeat the throttle for
+        // anyone it keeps re-checking (no sleep data, or a skipped day).
         if inserted > 0 {
             try? modelContext.save()
+            UserDefaults.standard.removeObject(forKey: "lastPatternAnalysisDate")
         }
-
-        UserDefaults.standard.removeObject(forKey: "lastPatternAnalysisDate")
         UserDefaults.standard.set(true, forKey: udKey)
 
         #if DEBUG
@@ -1211,6 +1290,20 @@ class ReadinessRepository: ObservableObject {
     }
     
     // MARK: - Helpers
+
+    /// Never run → always run. A user retry always runs; automatic appears and the
+    /// background task skip a run that completed within `forcedPatternAnalysisMinInterval`;
+    /// an InsightsView appear waits out `patternAnalysisStalenessInterval`.
+    nonisolated static func shouldRunPatternAnalysis(lastRun: Date?, trigger: PatternAnalysisTrigger, now: Date = Date()) -> Bool {
+        guard let lastRun else { return true }
+        let window: TimeInterval
+        switch trigger {
+        case .userRetry: return true
+        case .appear, .background: window = forcedPatternAnalysisMinInterval
+        case .staleCheck: window = patternAnalysisStalenessInterval
+        }
+        return now.timeIntervalSince(lastRun) > window
+    }
 
     /// Whether the published snapshot still describes the store. The fingerprint
     /// covers synced data; the pattern set covers the one input that changes with

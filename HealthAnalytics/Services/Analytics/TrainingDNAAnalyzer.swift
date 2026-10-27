@@ -892,8 +892,13 @@ actor TrainingDNAAnalyzer {
     /// existing signal-derived scorer. It is not reimplemented here.
     private func taperIsCorroborated(referenceDate: Date) -> Bool {
         let cal = Calendar.current
-        guard let windowStart = cal.date(byAdding: .day, value: -28, to: referenceDate),
-              let recentStart = cal.date(byAdding: .day, value: -7,  to: referenceDate)
+        let today = cal.startOfDay(for: referenceDate)
+        // Both ends in calendar days, matching the volume comparison's 28 daily scores:
+        // recent = today and the 6 before, baseline = the 21 days before that. Rolling
+        // 7×24h / 28×24h windows let a ride on day 7 or day 28 count or not depending on
+        // the time of day the analysis ran.
+        guard let windowStart = cal.date(byAdding: .day, value: -27, to: today),
+              let recentStart = cal.date(byAdding: .day, value: -6, to: today)
         else { return false }
 
         let descriptor = FetchDescriptor<StoredWorkout>(

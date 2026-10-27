@@ -15,7 +15,8 @@ actor PatternNotificationService {
 
     // MARK: - Permission
 
-    /// Called once at app launch. Silently skips on denial — no retry.
+    /// Called at launch and on every foreground activation; a no-op once the user has
+    /// answered. Silently skips on denial — no retry.
     func requestAuthorizationIfNeeded() async {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
