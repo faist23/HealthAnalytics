@@ -893,7 +893,10 @@ actor TrainingDNAAnalyzer {
     private func taperIsCorroborated(referenceDate: Date) -> Bool {
         let cal = Calendar.current
         guard let windowStart = cal.date(byAdding: .day, value: -28, to: referenceDate),
-              let recentStart = cal.date(byAdding: .day, value: -7,  to: referenceDate)
+              // Calendar days, matching the volume comparison's last 7 daily scores (today
+              // and the 6 before). A rolling 7×24h window counted a ride from 7 days ago as
+              // "this week" before noon and not after, so the verdict depended on time of day.
+              let recentStart = cal.date(byAdding: .day, value: -6, to: cal.startOfDay(for: referenceDate))
         else { return false }
 
         let descriptor = FetchDescriptor<StoredWorkout>(
