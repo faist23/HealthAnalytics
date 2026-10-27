@@ -1,0 +1,208 @@
+# Background Pattern Pass — Design
+
+**Date:** 2026-10-27
+**Status:** Draft for review
+**Replaces TODO:** P2 "Design the background pattern run properly" (TODOS.md)
+
+## Goal
+
+Timely pattern alerts. When overnight HRV (or a finished workout) lands in Apple Health, the matching pattern notification, most importantly the HRV precursor illness warning, should arrive within minutes of the user's first unlock, without opening the app.
+
+Health data is encrypted while the device is locked, so "first unlock after the data is recorded" is the earliest any design can act. A late alert is better than a wrong one: the pass must never notify from stale or half-synced stores.
+
+"Patterns are already current when I open the app" is a side benefit, not a requirement.
+
+## Decisions (agreed 2026-10-27)
+
+| Question | Decision |
+|---|---|
+| Purpose | Timely alerts |
+| Latency target | Within minutes of the first unlock after new data |
+| Ride data source in the background | HealthKit only. All rides reach Apple Health, so Strava is not needed in the background |
+| Trigger | HealthKit background delivery (HRV + workouts) as primary, with the existing app-refresh task kept as a backup (approach A) |
+| Today's partial data in store-based checks | Complete days everywhere: store-based checks read through yesterday in both the foreground and the background |
+
+Constraints carried over from v0.1.15:
+- The background must never run the Coach analysis (`performFullAnalysis` / `MasterCoachEngine`).
+- `DataSyncCompleted` must not be posted from the background, because it triggers `refreshIfNecessary`.
+- The foreground paths (`.appear`, `.staleCheck`, `.userRetry`, Coach) keep their behaviour, except for the complete-days anchoring below.
+
+## What the detectors read today
+
+| Detector | Live from HealthKit (fresh each run) | From stored tables (stale in the background) |
+|---|---|---|
+| Block crash cycle | active energy → ACWR | — |
+| HRV precursor | HRV, steps | `StoredDailyScore.dailyLoad` (sick-day proxy) |
+| Sleep fragmentation | sleep, active energy | — |
+| Back-to-back crash | — | `StoredDailyScore.readinessScore`, `.dailyLoad` |
+| Performance peak | HRV | `StoredDailyScore.dailyStrain` |
+| Taper | HRV | `StoredDailyScore.dailyLoad` (28 days), `StoredWorkout` (corroboration) |
+
+The stored tables are written by the foreground today: `StoredWorkout` by `SyncManager.performSmartSync`, today's score row by `performFullAnalysis` → `upsertDailyScore`, and past score rows by `backfillHistoricalScores`.
+
+A pre-existing gap, fixed here: `backfillHistoricalScores` skips any day that already has a row. A row written mid-afternoon on the user's last open keeps that partial load forever, including after an evening ride.
+
+## Architecture
+
+### Units
+
+**`BackgroundPatternPass`** (new file, `Services/Analytics/BackgroundPatternPass.swift`, `@MainActor`)
+- The only thing background triggers call.
+- Owns the step order, the protected-data guard, the start time, the commit gate and outcome recording.
+- Depends on a `BackgroundPassSteps` protocol (see below) and an injectable clock, so it can be unit-tested without HealthKit or the repository singleton.
+- Its result is `BackgroundPassOutcome`:
+
+```swift
+enum BackgroundPassOutcome {
+    case skippedLocked
+    case throttled
+    case completed
+    case abandoned
+    case failed
+}
+```
+
+`abandoned` means the run spanned a suspension, so its results were discarded.
+
+**`BackgroundPassSteps`** (protocol; the live implementation lives beside the pass)
+- `refreshWorkoutsFromHealthKit(since:)`: a HealthKit-only refresh into `StoredWorkout`.
+- `finalizeScoreRows(through:)`: writes missing past rows and recomputes stale ones.
+- `detectPatterns()`: the analyzer's detect phase.
+- `commitPatterns(_:)`: upserts the patterns, sends notifications and saves.
+
+**`HealthDataObserver`** (new file, `Services/HealthKit/HealthDataObserver.swift`)
+- Registers one `HKObserverQuery` for `heartRateVariabilitySDNN` and one for `HKWorkoutType`, each with `enableBackgroundDelivery(for:frequency: .immediate)`.
+- Its handler runs the pass and calls the observer completion handler in a `defer` on every outcome. iOS backs off delivery when that call is missing.
+- It is registered at app launch from a `UIApplicationDelegateAdaptor`'s `application(_:didFinishLaunchingWithOptions:)`, only once HealthKit authorization has been requested (onboarding complete). It is not registered from `bootstrap()`: that runs from the WindowGroup's `.task`, which never runs when iOS relaunches the app in the background for a delivery without connecting a scene. Observers must be registered on every launch, or the delivery that caused the launch has no handler.
+
+**`TrainingDNAAnalyzer`** (changed)
+- `analyze()` is split at its existing commit point, just before `upsertPatterns`:
+  - `detect(sourcePreference:) -> PatternDetection` returns `historyDays` and the detected patterns. It writes nothing.
+  - `commit(_ detection: PatternDetection)` runs `upsertPatterns`, `notifyIfNew` and `save`.
+  - `analyze()` stays as `detect` followed by `commit`, so the foreground behaves exactly as before.
+- The store-based checks anchor on complete days. See "Complete-days anchoring".
+
+### Triggers
+
+1. **HealthKit background delivery** (primary): a new HRV sample or workout wakes the app soon after the first unlock.
+2. **App refresh** (backup): the existing `.backgroundTask(.appRefresh(patternAnalysisTaskID))`. It still resubmits first and still submits on exit only when no request is pending. Its body changes from `runPatternAnalysis(.background)` to running the pass.
+
+Both triggers run the pass through the existing `patternAnalysisFlight`. Overlapping wakes, and a foreground Recovery visit during a background run, still share one run. The `.background` throttle (`forcedPatternAnalysisMinInterval`, 5 minutes) still applies, so a burst of HRV samples does not re-run the pass several times.
+
+## Data flow (one pass)
+
+1. **Guard:** `UIApplication.shared.isProtectedDataAvailable` is false → `skippedLocked`.
+2. **Throttle:** `shouldRunPatternAnalysis(lastRun:trigger: .background)` is false → `throttled`.
+3. **Record the start:** `startedAt = clock.now`.
+4. **Workouts:** `refreshWorkoutsFromHealthKit(since: lastBackgroundWorkoutRefresh ?? lastSyncDate − 1 day)`.
+   - It reuses `HealthKitManager.fetchWorkouts` and the existing `DataPersistenceActor` save, the same dedup path the foreground sync uses.
+   - It does not call Strava.
+   - It does not post `DataSyncCompleted`.
+   - It does not touch `SyncManager.lastSyncDate`, so the next open still runs the full foreground sync, including Strava power streams.
+   - It stamps its own `lastBackgroundWorkoutRefresh`.
+5. **Score rows:** `finalizeScoreRows(through: yesterday)`.
+   - It writes missing rows through yesterday using the backfill's existing per-day computation, extracted so both callers share it.
+   - It recomputes every existing row from `scoresFinalizedThrough` (UserDefaults, a calendar day) through yesterday, then advances `scoresFinalizedThrough` to yesterday.
+   - It never writes a row for today. Today's row stays foreground-only, written by `upsertDailyScore`.
+   - The foreground runs the same step inside `refreshIfNecessary`, so the stale-row gap is closed for both paths.
+6. **Detect:** `detectPatterns()`.
+7. **Commit gate:** if `clock.now − startedAt > maxBackgroundPassDuration` (2 minutes; the budget is about 30 seconds), the run spanned a suspension.
+   - The result is `abandoned`: no commit, no stamp, no notification.
+   - Because nothing was stamped, the next trigger can run straight away.
+   - The gate applies to every pass, whoever is waiting on it. A foreground Recovery visit that joined a pass which was later frozen and resumed gets no new patterns from it. Its next `.appear` runs fresh, because nothing was stamped.
+8. **Commit:** `commitPatterns(detection)`. This upserts the patterns, renewing `detectedAt`, and sends notifications, which stay once ever per pattern through `notificationSent`.
+9. **Stamp:** `lastPatternAnalysisDate = startedAt`, not completion time. The stamp then describes the data the run actually read.
+10. **Coach:** never in the background. If the app is in the foreground at completion (`isAppInForeground`), run the existing `refreshIfNecessary`, as `performPatternAnalysis` does today.
+11. **Record** the outcome (see "Measurement").
+
+## Complete-days anchoring
+
+Store-based checks read complete calendar days ending yesterday, in both the foreground and the background:
+
+| Check | Today (v0.1.15) | After this change |
+|---|---|---|
+| Taper volume | rows with `date >= now − 28d` (needs today's row to reach 28) | the 28 complete days ending yesterday |
+| Taper corroboration (Tier 1 + Tier 2) | recent = today + previous 6 days; baseline = days 7–27 | recent = the 7 days ending yesterday; baseline = the 21 days before that |
+| Back-to-back crash, performance peak streak | 90-day rows including today's partial row | 90 complete days ending yesterday |
+| HRV precursor sick-day proxy | 180-day rows including today | 180 complete days ending yesterday |
+
+Live HealthKit series (HRV, sleep, steps, active energy) keep including today. This morning's HRV is the signal the alert exists for.
+
+Consequences:
+- A background run and a foreground run on the same data give the same verdict.
+- The taper no longer needs today's row.
+- A partial day can't skew any check.
+- Today's ride counts in these checks from tomorrow onward.
+
+`taperIsCorroborated(referenceDate:)` already takes a reference date. Every store-based check takes an explicit `throughDay` (yesterday) instead of reading `Date()`, which also makes their tests clock-proof.
+
+## Measurement
+
+The pass records counters in UserDefaults (`backgroundPass.*`):
+- wakes by trigger: HRV delivery, workout delivery, app refresh
+- one count per outcome
+- the last outcome and its time
+- the latency from the newest HRV sample's `endDate` to the commit
+
+The existing debug Settings screen (beside `WorkoutAuditView`) shows them in a new "Background Pass" row. A few days of real use answer the run-rate question that the "BGProcessingTask Promotion" TODO is waiting on.
+
+## Error handling
+
+- Errors in the background stay silent, as in v0.1.15 (`isAppInForeground` / `isLockedDeviceError`). They are recorded as the `failed` outcome.
+- `refreshWorkoutsFromHealthKit` or `finalizeScoreRows` failing does not stop the pass. Detection still runs, and the commit gate still applies.
+- The observer completion handler is always called (`defer`).
+- The app-refresh task always resubmits before doing anything else.
+- `enableBackgroundDelivery` failing is logged (DEBUG). App refresh still covers the run.
+- A pass the handler stops waiting on keeps running inside the flight. The commit gate handles the case where it is frozen and resumed later.
+
+## Testing
+
+Unit tests (simulator lane, no singleton, no HealthKit):
+- **`BackgroundPatternPassTests`** use a fake `BackgroundPassSteps` and a fake clock. They cover:
+  - step order
+  - `skippedLocked` and `throttled` short-circuits (no steps run)
+  - a step failure that doesn't block detection
+  - the abandon rule: a clock advanced past `maxBackgroundPassDuration` between detect and commit → no commit, no stamp
+  - the stamp equals `startedAt`
+  - outcome counters
+- **`TrainingDNAAnalyzer` detect/commit**, with the existing `MockPatternDataProvider` and in-memory container:
+  - `detect` writes nothing (no `TrainingPattern` rows, no notifications)
+  - `commit` upserts the patterns and sends notifications
+  - `analyze` equals `detect` followed by `commit`
+- **Complete-days anchoring:**
+  - the taper fires with 28 complete days and no row for today
+  - today's partial row is ignored by back-to-back and the taper
+  - DST-safe fixtures (`day(n + 1) − 60s` for late-day rides)
+- **`finalizeScoreRows`:**
+  - a row written mid-day is recomputed once the day is complete
+  - `scoresFinalizedThrough` advances
+  - today is never written
+- **Config:** `BackgroundRefreshConfigTests` gains the background-delivery entitlement check.
+
+Device checklist (no seam):
+- An HRV sample written while the device is locked fires the pass after unlock. Write one with the Health app, or let a Watch reading land.
+- A notification arrives without opening the app.
+- A pass frozen with the debugger for more than 2 minutes and then resumed records `abandoned` and sends no notification.
+- The counters appear in debug Settings.
+
+## Out of scope
+
+- Strava in the background.
+- Coach refresh in the background.
+- Promoting background analysis to the primary trigger (the existing "BGProcessingTask Promotion" TODO decides that once the counters have data).
+- Pattern logic changes beyond the complete-days anchoring.
+
+## Files touched
+
+| File | Change |
+|---|---|
+| `Services/Analytics/BackgroundPatternPass.swift` | new |
+| `Services/HealthKit/HealthDataObserver.swift` | new |
+| `Services/Analytics/TrainingDNAAnalyzer.swift` | detect/commit split; complete-days anchoring |
+| `Services/Analytics/ReadinessRepository.swift` | shared per-day score computation; `finalizeScoreRows`; registers the observer in `bootstrap()`; background trigger runs the pass |
+| `Utilities/SyncManager.swift` | `refreshWorkoutsFromHealthKit(since:)` (HealthKit-only, no notification, no `lastSyncDate`) |
+| `HealthAnalyticsApp.swift` | app-refresh handler runs the pass; `UIApplicationDelegateAdaptor` registers `HealthDataObserver` at launch |
+| `HealthAnalytics.entitlements` | `com.apple.developer.healthkit.background-delivery` |
+| `Views/SettingsView.swift` | debug "Background Pass" counters row |
+| `CLAUDE.md`, `TODOS.md` | document the pass and complete-days anchoring; close the P2 |
+| Tests | as listed above |
