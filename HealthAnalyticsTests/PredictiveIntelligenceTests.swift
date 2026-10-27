@@ -114,6 +114,29 @@ final class PredictiveIntelligenceTests: XCTestCase {
         )
     }
 
+    /// HRV streak = 18, complete-day ACWR streak = 4 → 0.76, no peak. Today's row is in
+    /// the sweet spot too; counted, it would make the streak 5 → 0.80 and fire.
+    func testPerformancePeak_todaysRowCannotExtendTheACWRStreak() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeHRVPeakData(highDays: 18)
+        await analyzer.setDataProvider(mock)
+
+        var scores = makeACWRStreakScores(streakLen: 4).filter { $0.date != day(0) }
+        scores.append(StoredDailyScore(date: day(0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0))
+        try await analyzer.insertDailyScores(scores)
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .performancePeak },
+            "Only complete days count toward the ACWR streak; today's row must not tip 0.76 to 0.80"
+        )
+    }
+
     /// HRV streak = 18, ACWR streak = 5 → probability = 0.60 + 0.20 = 0.80 → boundary confirmed.
     func testPerformancePeak_boundaryProbability_confirmed() async throws {
         let container = try makeFullContainer()

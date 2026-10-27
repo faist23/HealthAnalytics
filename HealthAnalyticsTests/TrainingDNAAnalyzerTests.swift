@@ -221,6 +221,36 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         )
     }
 
+    /// Today's StoredDailyScore row is partial and ignored. The third sick window is
+    /// yesterday + today, and today's row carries a significant workout load; read as
+    /// a workout day it would block that window and leave only two.
+    func testHRVPrecursor_todaysPartialWorkoutRowCannotBlockASickWindow() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        let offsets = [-80, -50, -1]
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeHRVPrecursorHRV(baselineHRV: 60.0, precursorHRV: 45.0, sickOffsets: offsets)
+        var steps = makeHRVPrecursorSteps(windowCount: 3, sickOffsets: offsets)
+        steps.append((date: day(0), steps: 1000))   // live series includes today
+        mock.stepsData = steps
+        await analyzer.setDataProvider(mock)
+
+        try await analyzer.insertDailyScores([
+            StoredDailyScore(date: day(0), readinessScore: 70, dailyStrain: 1.0,
+                             workoutCount: 1, dailyLoad: 1.5)
+        ])
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(
+            patterns.contains { $0.patternType == .hrvPrecursor },
+            "Only complete days decide workout days; today's partial row must not block the sick window"
+        )
+    }
+
     // MARK: - analyze() historyDays Gating
 
     /// < 60 days of history throws PatternAnalysisError.insufficientData.
@@ -604,7 +634,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         sickOffsets: [Int] = [-80, -50, -20]
     ) -> [(date: Date, steps: Int)] {
         var data: [(date: Date, steps: Int)] = (0..<90).map { i in
-            (date: day(-(90 - i)), steps: 8000)
+            (date: day(-(89 - i)), steps: 8000)
         }
         for sickOffset in sickOffsets.prefix(windowCount) {
             for delta in [0, 1] {
@@ -617,6 +647,36 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
             }
         }
         return data
+    }
+
+    /// Three sequences from complete days, plus a fourth whose crash day is today.
+    /// Today's row is partial, so the fourth must not count and the n >= 4 gate holds.
+    func testBackToBackCrash_todaysRowCannotCompleteASequence() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        await analyzer.setDataProvider(mock)
+
+        let yesterday = day(-1), twoDaysAgo = day(-2)
+        var scores = makeBackToBackScores(confirmedCount: 3, totalSequences: 3)
+            .filter { $0.date != yesterday && $0.date != twoDaysAgo }
+        scores.append(StoredDailyScore(date: twoDaysAgo, readinessScore: 70, dailyStrain: 1.0,
+                                       workoutCount: 1, dailyLoad: 1.5))
+        scores.append(StoredDailyScore(date: yesterday, readinessScore: 65, dailyStrain: 1.0,
+                                       workoutCount: 1, dailyLoad: 1.5))
+        scores.append(StoredDailyScore(date: day(0), readinessScore: 45, dailyStrain: 1.0,
+                                       workoutCount: 0, dailyLoad: 0.0))
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "Only 3 complete-day sequences; today's row must not supply a fourth"
+        )
     }
 
     // MARK: - Back-to-Back Crash Fixtures
