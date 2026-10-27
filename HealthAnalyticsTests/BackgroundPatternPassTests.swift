@@ -106,6 +106,12 @@ final class BackgroundPatternPassTests: XCTestCase {
         XCTAssertEqual(outcome, .skippedLocked)
         XCTAssertTrue(steps.calls.isEmpty)
         XCTAssertEqual(log.count(.skippedLocked), 1)
+        // Extended by /ship test coverage audit (Claude Code), pass 1.
+        // Value: protects=the debug screen's Last pass row reads back what the pass recorded; fails_when=record stops
+        //   writing, or reads a different key than, lastOutcome/lastOutcomeAt; why_new=only per-outcome counts were
+        //   read back; seam=none; no_claim=the SwiftUI rendering of the row
+        XCTAssertEqual(log.lastOutcome, .skippedLocked)
+        XCTAssertEqual(log.lastOutcomeAt, t0)
     }
 
     /// Review focus 2: a burst of deliveries inside the 5-minute window does nothing.

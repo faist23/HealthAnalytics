@@ -6,6 +6,7 @@
 //  update uncompleted, so the completion must run on every outcome.
 //
 
+import HealthKit
 import UIKit
 import XCTest
 @testable import HealthAnalytics
@@ -136,8 +137,15 @@ final class HealthDataObserverTests: XCTestCase {
         XCTAssertTrue(fake.ended.isEmpty)
     }
 
+    // Extended by /ship test coverage audit (Claude Code), pass 1.
+    // Value: protects=the HRV type wakes as .hrvDelivery and workouts as .workoutDelivery (only HRV wakes record
+    //   HRV-to-commit latency); fails_when=the pairs are swapped or a type is mislabeled; why_new=the set check
+    //   passes with the wakes swapped; seam=none; no_claim=real delivery registration (device only)
     func test_observedTypes_coverHRVAndWorkouts() {
         let wakes = HealthDataObserver.observedTypes.map(\.wake)
         XCTAssertEqual(Set(wakes), [.hrvDelivery, .workoutDelivery])
+        let byType = Dictionary(uniqueKeysWithValues: HealthDataObserver.observedTypes.map { ($0.type.identifier, $0.wake) })
+        XCTAssertEqual(byType[HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue], .hrvDelivery)
+        XCTAssertEqual(byType[HKObjectType.workoutType().identifier], .workoutDelivery)
     }
 }
