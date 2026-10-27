@@ -1027,6 +1027,38 @@ final class PredictiveIntelligenceTests: XCTestCase {
         XCTAssertTrue(patterns.isEmpty, "Nothing may be persisted when the commit gate declines")
     }
 
+    /// A declined pass that follows an earlier success leaves the stored pattern as it
+    /// was: an abandoned run must not renew `detectedAt` (which would keep a pattern
+    /// active on evidence nobody committed) or touch `notificationSent`.
+    func testAnalyze_commitGateDeclined_preservesExistingPattern() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
+        try await seedIntensityHeldWorkouts(analyzer)
+
+        _ = try await analyzer.analyze()
+        let first = try await analyzer.fetchAllPatterns().first { $0.patternType == .tapering }
+        let detectedAt = try XCTUnwrap(first?.detectedAt, "The first run must store the taper")
+        let notificationSent = try XCTUnwrap(first?.notificationSent)
+
+        do {
+            _ = try await analyzer.analyze(commitGate: { false })
+            XCTFail("A declined gate must throw commitDeclined")
+        } catch PatternAnalysisError.commitDeclined {
+            // expected
+        }
+
+        let after = try await analyzer.fetchAllPatterns().filter { $0.patternType == .tapering }
+        XCTAssertEqual(after.count, 1)
+        XCTAssertEqual(after.first?.detectedAt, detectedAt, "A declined run must not renew detectedAt")
+        XCTAssertEqual(after.first?.notificationSent, notificationSent)
+    }
+
     func testAnalyze_commitGateAccepted_persistsAsBefore() async throws {
         let container = try makeFullContainer()
         let analyzer = TrainingDNAAnalyzer(modelContainer: container)
