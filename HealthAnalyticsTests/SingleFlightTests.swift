@@ -61,25 +61,12 @@ final class SingleFlightTests: XCTestCase {
     func test_run_overlappingCallersJoinOneRun() async {
         let flight = SingleFlight()
         let probe = Probe()
-        async let first = flight.run(slowWork(probe))
-        async let second = flight.run(slowWork(probe))
+        async let first: Void = flight.run(slowWork(probe))
+        async let second: Void = flight.run(slowWork(probe))
         _ = await (first, second)
 
         XCTAssertEqual(probe.runs, 1)
         XCTAssertTrue(probe.finished)
-    }
-
-    /// The repository gives a "Try again" that only joined a background run a run of
-    /// its own, so the caller must be told whether it started the work.
-    func test_run_reportsWhetherTheCallerStartedTheRun() async {
-        let flight = SingleFlight()
-        let probe = Probe()
-        async let first = flight.run(slowWork(probe))
-        async let second = flight.run(slowWork(probe))
-        let started = await [first, second]
-
-        XCTAssertEqual(started.filter { $0 }.count, 1, "Exactly one caller starts the run")
-        XCTAssertEqual(probe.runs, 1)
     }
 
     /// Joining is only for overlap; a request after the run finished must run again.

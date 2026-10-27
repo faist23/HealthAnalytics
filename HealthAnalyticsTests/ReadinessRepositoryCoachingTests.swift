@@ -7,6 +7,7 @@
 //
 
 import XCTest
+import HealthKit
 import SwiftData
 import Combine
 @testable import HealthAnalytics
@@ -330,23 +331,28 @@ final class ReadinessRepositoryPatternThrottleWiringTests: XCTestCase {
 //   HealthKit refusal must not show an error row) while the same failure in the foreground does; fails_when=the
 //   isAppInForeground check in performPatternAnalysis's catch is dropped or inverted; why_new=no other test reaches that
 //   catch block; seam=ReadinessRepository.isAppInForeground (non-test callers: performPatternAnalysis);
-//   no_claim=a real locked-device HealthKit error (simulator "Authorization not determined" stands in; skips if neither run throws)
+//   no_claim=that app state is sampled at completion rather than at start (it never changes mid-run here), the success-path
+//   Coach refresh (analyze() always throws on the simulator), and a real locked-device error (skips if neither run throws)
 @MainActor
 final class ReadinessRepositoryBackgroundPatternErrorTests: XCTestCase {
 
     private let key = "lastPatternAnalysisDate"
+    private let historyKey = "healthKitHistoryDays"   // written if HealthKit happens to succeed
     private var saved: Any?
+    private var savedHistory: Any?
 
     override func setUp() async throws {
         // Same isolation as ReadinessRepositoryPatternThrottleWiringTests: an onboarded host
         // runs launch analysis on the shared repository. Captured before the skip.
         saved = UserDefaults.standard.object(forKey: key)
+        savedHistory = UserDefaults.standard.object(forKey: historyKey)
         try XCTSkipIf(UserDefaults.standard.bool(forKey: "isOnboardingComplete"),
                       "App host is onboarded: launch tasks share ReadinessRepository.shared")
     }
 
     override func tearDown() async throws {
         UserDefaults.standard.set(saved, forKey: key)
+        UserDefaults.standard.set(savedHistory, forKey: historyKey)
         ReadinessRepository.shared.resetForTesting()   // clears the error this test leaves and the app-state override
     }
 
@@ -374,5 +380,22 @@ final class ReadinessRepositoryBackgroundPatternErrorTests: XCTestCase {
                       "analyze() did not throw here (HealthKit authorized?), so the error path isn't exercised")
         XCTAssertEqual(backgroundWrites, 0, "A failure while the app is in the background must not surface as analysisError")
         XCTAssertEqual(foregroundWrites, 1, "The same failure in the foreground must be reported")
+    }
+}
+
+// MARK: - Locked-device HealthKit errors are never an error row
+
+final class ReadinessRepositoryLockedDeviceErrorTests: XCTestCase {
+
+    /// A run suspended across a device lock resumes on unlock and fails with this; the
+    /// user never asked for that run and the cause no longer applies.
+    func test_databaseInaccessible_isTreatedAsLockedDevice() {
+        XCTAssertTrue(ReadinessRepository.isLockedDeviceError(HKError(.errorDatabaseInaccessible)))
+    }
+
+    /// Everything else still reaches the foreground error row.
+    func test_otherErrors_areNotLockedDevice() {
+        XCTAssertFalse(ReadinessRepository.isLockedDeviceError(HKError(.errorAuthorizationNotDetermined)))
+        XCTAssertFalse(ReadinessRepository.isLockedDeviceError(CocoaError(.fileReadNoPermission)))
     }
 }

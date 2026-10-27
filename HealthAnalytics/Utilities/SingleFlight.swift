@@ -17,13 +17,10 @@ import Foundation
 final class SingleFlight {
     private var current: Task<Void, Never>?
 
-    /// Returns `true` if this call started the work, `false` if it joined a run already
-    /// in flight — a joiner gets that run's behavior, not its own.
-    @discardableResult
-    func run(_ work: @escaping @MainActor () async -> Void) async -> Bool {
+    func run(_ work: @escaping @MainActor () async -> Void) async {
         if let current {
             await Self.wait(for: current)
-            return false
+            return
         }
         let task = Task { [weak self] in
             await work()
@@ -33,7 +30,6 @@ final class SingleFlight {
         }
         current = task
         await Self.wait(for: task)
-        return true
     }
 
     /// Runs `work` to completion even if the caller is cancelled. For work with its

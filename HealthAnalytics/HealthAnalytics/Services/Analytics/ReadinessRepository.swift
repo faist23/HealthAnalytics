@@ -99,6 +99,14 @@ class ReadinessRepository: ObservableObject {
         UIApplication.shared.applicationState != .background
     }
 
+    /// HealthKit refusing reads because the device is (or was, mid-run) locked. Never an
+    /// error row, even when the run finishes in the foreground — a run suspended across a
+    /// lock resumes on unlock and fails for a reason that no longer applies. Unstamped,
+    /// so the next appear retries.
+    nonisolated static func isLockedDeviceError(_ error: Error) -> Bool {
+        (error as? HKError)?.code == .errorDatabaseInaccessible
+    }
+
     /// Who asked for pattern analysis. Decides only the throttle (`shouldRunPatternAnalysis`);
     /// how the run reports is decided when it finishes — see `isAppInForeground`.
     enum PatternAnalysisTrigger: Sendable {
@@ -221,9 +229,9 @@ class ReadinessRepository: ObservableObject {
         } catch {
             // Deliberately NOT stamping — a failed run must be retried on next appear,
             // not locked out for a week.
-            if !isAppInForeground() {
+            if !isAppInForeground() || Self.isLockedDeviceError(error) {
                 #if DEBUG
-                print("⚠️ Background pattern analysis failed: \(error)")
+                print("⚠️ Pattern analysis failed silently: \(error)")
                 #endif
             } else {
                 await MainActor.run { self.analysisError = "Pattern analysis failed: \(error.localizedDescription)" }
