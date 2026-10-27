@@ -1,0 +1,181 @@
+//
+//  BackgroundPatternPass.swift
+//  HealthAnalytics
+//
+//  The one thing background triggers (HealthKit delivery, app refresh) run. Order:
+//  protected-data guard → throttle → HealthKit-only workout refresh → score-row
+//  finalization → detection behind a commit gate → stamp (start time) → Coach only
+//  if the app is in the foreground. Never posts DataSyncCompleted, never calls Strava.
+//
+
+import Foundation
+import HealthKit
+import SwiftData
+import UIKit
+
+enum BackgroundPassWake: String, CaseIterable, Sendable {
+    case hrvDelivery, workoutDelivery, appRefresh
+}
+
+enum BackgroundPassOutcome: String, CaseIterable, Sendable {
+    case skippedLocked, throttled, completed, abandoned, failed
+}
+
+@MainActor
+protocol BackgroundPassSteps {
+    func isProtectedDataAvailable() -> Bool
+    func lastPatternRun() -> Date?
+    func refreshWorkouts() async throws
+    func finalizeScoreRows() async
+    /// Detects, then commits only if `commitGate` returns true; throws
+    /// `PatternAnalysisError.commitDeclined` when it refuses.
+    func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws
+    func stamp(_ startedAt: Date)
+    func refreshCoachIfForeground() async
+    func newestHRVSampleDate() async -> Date?
+}
+
+@MainActor
+final class BackgroundPatternPass {
+    /// A background budget is ~30s. A run whose detection finishes later than this
+    /// after it started spanned a suspension: some reads predate the freeze, some
+    /// follow it, so its verdict describes no real moment. Discard it.
+    nonisolated static let maxDuration: TimeInterval = 2 * 60
+
+    private let steps: BackgroundPassSteps
+    private let log: BackgroundPassLog
+    private let now: @Sendable () -> Date
+
+    init(steps: BackgroundPassSteps, log: BackgroundPassLog, now: @escaping @Sendable () -> Date = { Date() }) {
+        self.steps = steps
+        self.log = log
+        self.now = now
+    }
+
+    @discardableResult
+    func run() async -> BackgroundPassOutcome {
+        let outcome = await perform()
+        log.record(outcome, at: now())
+        return outcome
+    }
+
+    private func perform() async -> BackgroundPassOutcome {
+        guard steps.isProtectedDataAvailable() else { return .skippedLocked }
+        let startedAt = now()
+        guard ReadinessRepository.shouldRunPatternAnalysis(
+            lastRun: steps.lastPatternRun(), trigger: .background, now: startedAt
+        ) else { return .throttled }
+
+        // Neither step may block detection: a stale store is still checked by the gate.
+        try? await steps.refreshWorkouts()
+        await steps.finalizeScoreRows()
+
+        let clock = now
+        do {
+            try await steps.analyzePatterns(commitGate: {
+                Self.isWithinBudget(startedAt: startedAt, now: clock())
+            })
+        } catch PatternAnalysisError.commitDeclined {
+            return .abandoned
+        } catch PatternAnalysisError.insufficientData {
+            // < 60 days of history: nothing to keep alive, safe to throttle (as the
+            // foreground does).
+            steps.stamp(startedAt)
+            return .completed
+        } catch {
+            // Silent in the background (HealthKit refuses reads while locked, or
+            // isn't authorized). Unstamped, so the next trigger retries.
+            return .failed
+        }
+
+        steps.stamp(startedAt)
+        if let newest = await steps.newestHRVSampleDate() {
+            log.recordLatency(now().timeIntervalSince(newest))
+        }
+        await steps.refreshCoachIfForeground()
+        return .completed
+    }
+
+    /// Inside the budget and not before the start (a clock moved backwards proves
+    /// nothing about freshness).
+    nonisolated static func isWithinBudget(startedAt: Date, now: Date) -> Bool {
+        let elapsed = now.timeIntervalSince(startedAt)
+        return elapsed >= 0 && elapsed <= maxDuration
+    }
+}
+
+/// Counters for the debug "Background Pass" screen: how often each trigger wakes the
+/// app, how each pass ends, and how long after the newest HRV sample a pass committed.
+@MainActor
+struct BackgroundPassLog {
+    let defaults: UserDefaults
+
+    init(defaults: UserDefaults) { self.defaults = defaults }
+
+    static var standard: BackgroundPassLog { BackgroundPassLog(defaults: .standard) }
+
+    func recordWake(_ wake: BackgroundPassWake) { increment("backgroundPass.wake.\(wake.rawValue)") }
+
+    func record(_ outcome: BackgroundPassOutcome, at date: Date) {
+        increment("backgroundPass.outcome.\(outcome.rawValue)")
+        defaults.set(outcome.rawValue, forKey: "backgroundPass.lastOutcome")
+        defaults.set(date, forKey: "backgroundPass.lastOutcomeAt")
+    }
+
+    func recordLatency(_ seconds: TimeInterval) {
+        defaults.set(seconds, forKey: "backgroundPass.lastLatency")
+    }
+
+    func count(_ wake: BackgroundPassWake) -> Int { defaults.integer(forKey: "backgroundPass.wake.\(wake.rawValue)") }
+    func count(_ outcome: BackgroundPassOutcome) -> Int { defaults.integer(forKey: "backgroundPass.outcome.\(outcome.rawValue)") }
+
+    var lastOutcome: BackgroundPassOutcome? {
+        defaults.string(forKey: "backgroundPass.lastOutcome").flatMap(BackgroundPassOutcome.init(rawValue:))
+    }
+    var lastOutcomeAt: Date? { defaults.object(forKey: "backgroundPass.lastOutcomeAt") as? Date }
+    var lastLatency: TimeInterval? { defaults.object(forKey: "backgroundPass.lastLatency") as? TimeInterval }
+
+    private func increment(_ key: String) { defaults.set(defaults.integer(forKey: key) + 1, forKey: key) }
+}
+
+/// Production steps. Not unit-tested (singleton + HealthKit); see the device checklist.
+@MainActor
+struct LiveBackgroundPassSteps: BackgroundPassSteps {
+    let repository: ReadinessRepository
+    let container: ModelContainer
+
+    func isProtectedDataAvailable() -> Bool { UIApplication.shared.isProtectedDataAvailable }
+
+    func lastPatternRun() -> Date? {
+        UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
+    }
+
+    func refreshWorkouts() async throws { try await SyncManager.shared.refreshWorkoutsFromHealthKit() }
+
+    func finalizeScoreRows() async { await repository.finalizeScoreRows(modelContext: container.mainContext) }
+
+    func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws {
+        try await repository.analyzePatternsForBackgroundPass(container: container, commitGate: commitGate)
+    }
+
+    func stamp(_ startedAt: Date) { UserDefaults.standard.set(startedAt, forKey: "lastPatternAnalysisDate") }
+
+    func refreshCoachIfForeground() async {
+        guard repository.isAppInForeground() else { return }
+        await repository.refreshIfNecessary(modelContext: container.mainContext)
+    }
+
+    func newestHRVSampleDate() async -> Date? {
+        await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: HKQuantityType(.heartRateVariabilitySDNN),
+                predicate: nil,
+                limit: 1,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)]
+            ) { _, samples, _ in
+                continuation.resume(returning: samples?.first?.endDate)
+            }
+            HKHealthStore().execute(query)
+        }
+    }
+}

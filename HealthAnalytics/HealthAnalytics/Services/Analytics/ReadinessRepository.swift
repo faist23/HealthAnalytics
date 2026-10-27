@@ -184,6 +184,40 @@ class ReadinessRepository: ObservableObject {
         }
     }
 
+    /// The background pattern pass (HealthKit delivery, app refresh). Shares
+    /// `patternAnalysisFlight` with the foreground, so overlapping wakes and a Recovery
+    /// visit during a background run still produce one run.
+    func runBackgroundPass(container: ModelContainer, wake: BackgroundPassWake) async {
+        let log = BackgroundPassLog.standard
+        log.recordWake(wake)
+        await patternAnalysisFlight.run { [self] in
+            let steps = LiveBackgroundPassSteps(repository: self, container: container)
+            await BackgroundPatternPass(steps: steps, log: log).run()
+        }
+    }
+
+    /// Detection + gated commit for the background pass, on the same analyzer instance
+    /// as the foreground. Throws what `analyze` throws, including `.commitDeclined`.
+    func analyzePatternsForBackgroundPass(
+        container: ModelContainer,
+        commitGate: @escaping @Sendable () async -> Bool
+    ) async throws {
+        if trainingDNAAnalyzer == nil {
+            trainingDNAAnalyzer = TrainingDNAAnalyzer(modelContainer: container)
+        }
+        let historyDays = try await trainingDNAAnalyzer!.analyze(
+            sourcePreference: hrvSourcePreference,
+            commitGate: commitGate
+        )
+        UserDefaults.standard.set(historyDays, forKey: "healthKitHistoryDays")
+    }
+
+    private var hrvSourcePreference: HRVSourcePreference {
+        HRVSourcePreference(
+            rawValue: UserDefaults.standard.string(forKey: "preferredHRVSource") ?? HRVSourcePreference.auto.rawValue
+        ) ?? .auto
+    }
+
     private func performPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
         let lastRun = UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
         guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return }
@@ -200,9 +234,7 @@ class ReadinessRepository: ObservableObject {
         }
 
         let analyzer = trainingDNAAnalyzer!
-        let preference = HRVSourcePreference(
-            rawValue: UserDefaults.standard.string(forKey: "preferredHRVSource") ?? HRVSourcePreference.auto.rawValue
-        ) ?? .auto
+        let preference = hrvSourcePreference
 
         do {
             let historyDays = try await analyzer.analyze(sourcePreference: preference)
