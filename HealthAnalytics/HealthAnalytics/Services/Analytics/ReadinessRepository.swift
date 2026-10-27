@@ -350,8 +350,9 @@ class ReadinessRepository: ObservableObject {
     // MARK: - Main Analysis Entry Point
     
     func refreshIfNecessary(modelContext: ModelContext) async {
-        // Backfill StoredDailyScore from HealthKit history on first launch.
-        await backfillHistoricalScores(modelContext: modelContext)
+        // Backfill missing StoredDailyScore days and recompute any written before
+        // their day ended.
+        await finalizeScoreRows(modelContext: modelContext)
         // One-time migration: populate dailyLoad on existing rows (default was 0.0 from schema add).
         backfillDailyLoad(modelContext: modelContext)
 
@@ -945,11 +946,24 @@ class ReadinessRepository: ObservableObject {
 
     // MARK: - Historical Score Backfill
 
+    /// Writes missing past score rows and recomputes stale ones (days from the one
+    /// after `scoresFinalizedThrough` through yesterday). Never touches today's row.
+    /// Shared by the foreground refresh and the background pattern pass.
+    func finalizeScoreRows(modelContext: ModelContext, now: Date = Date()) async {
+        let key = "scoresFinalizedThrough"
+        let range = ScoreRowFinalization.recomputeRange(
+            finalizedThrough: UserDefaults.standard.object(forKey: key) as? Date,
+            now: now
+        )
+        await backfillHistoricalScores(modelContext: modelContext, recomputeFrom: range?.lowerBound)
+        if let range { UserDefaults.standard.set(range.upperBound, forKey: key) }
+    }
+
     /// Populates StoredDailyScore for the last 90 days from already-synced SwiftData records.
     /// Runs once on first launch (UserDefaults gate) and re-runs whenever fewer than 14 records
     /// exist (e.g. after a data clear). This unlocks the 7-day forecast and 14-Day Signature
     /// without requiring 14 consecutive days of app opens.
-    private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false) async {
+    private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false, recomputeFrom: Date? = nil) async {
         // V5: diagnose existingDates vs per-day filter failure.
         let udKey = "historicalScoreBackfillV5Done"
         let existingCount = (try? modelContext.fetchCount(FetchDescriptor<StoredDailyScore>())) ?? 0
@@ -964,7 +978,7 @@ class ReadinessRepository: ObservableObject {
             return (cal.dateComponents([.day], from: lastDate, to: yday).day ?? 0) >= 1
         }()
 
-        guard force || !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 || hasRecentGap else { return }
+        guard force || recomputeFrom != nil || !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 || hasRecentGap else { return }
 
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -1007,6 +1021,9 @@ class ReadinessRepository: ObservableObject {
         // Skip dates that already have a StoredDailyScore.
         let allExisting  = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
         let existingDates = Set(allExisting.map { $0.dateString })
+        // First row per day; duplicate-day twins are resolved by the detectors (max load).
+        let existingByDate = Dictionary(allExisting.map { ($0.dateString, $0) }, uniquingKeysWith: { first, _ in first })
+        let recomputeStart = recomputeFrom.map { calendar.startOfDay(for: $0) }
 
         let formatter = Self.dailyScoreDateFormatter
         var inserted = 0
@@ -1016,7 +1033,8 @@ class ReadinessRepository: ObservableObject {
             let dateStr = formatter.string(from: day)
             defer { day = calendar.date(byAdding: .day, value: 1, to: day) ?? today }
 
-            guard !existingDates.contains(dateStr) else { continue }
+            let isRecompute = recomputeStart.map { day >= $0 } ?? false
+            guard isRecompute || !existingDates.contains(dateStr) else { continue }
 
             guard let dayEnd          = calendar.date(byAdding: .day, value:  1, to: day),
                   let window7Start    = calendar.date(byAdding: .day, value:  -7, to: day),
@@ -1053,17 +1071,31 @@ class ReadinessRepository: ObservableObject {
             let dayLoad = todayWorkouts.reduce(0.0) {
                 $0 + predictiveReadinessService.calculateWorkoutLoad($1, ftpSnapshots: ftpSnapshots)
             }
-            modelContext.insert(StoredDailyScore(
-                date: day,
-                readinessScore: readiness.score,
-                dailyStrain: acwr,
-                workoutCount: todayWorkouts.count,
-                dailyLoad: dayLoad
-            ))
+            if isRecompute, let row = existingByDate[dateStr] {
+                // Count only real changes, so an unchanged day doesn't clear the
+                // pattern stamp below.
+                let changed = row.readinessScore != readiness.score
+                    || row.dailyStrain != acwr
+                    || row.workoutCount != todayWorkouts.count
+                    || row.dailyLoad != dayLoad
+                guard changed else { continue }
+                row.readinessScore = readiness.score
+                row.dailyStrain = acwr
+                row.workoutCount = todayWorkouts.count
+                row.dailyLoad = dayLoad
+            } else {
+                modelContext.insert(StoredDailyScore(
+                    date: day,
+                    readinessScore: readiness.score,
+                    dailyStrain: acwr,
+                    workoutCount: todayWorkouts.count,
+                    dailyLoad: dayLoad
+                ))
+            }
             inserted += 1
         }
 
-        // New history changes what the detectors see, so let patterns re-run. Only then:
+        // New or recomputed history changes what the detectors see, so let patterns re-run. Only then:
         // this backfill runs inside the Coach refresh that follows a pattern run, and an
         // unconditional clear would erase that run's stamp and defeat the throttle for
         // anyone it keeps re-checking (no sleep data, or a skipped day).
