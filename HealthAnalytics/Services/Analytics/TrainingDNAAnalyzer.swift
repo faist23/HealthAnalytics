@@ -240,6 +240,18 @@ actor TrainingDNAAnalyzer {
         return f
     }()
 
+    /// Store-based checks read complete calendar days only, ending yesterday. Today's
+    /// StoredDailyScore row is partial (written on each foreground open) and the
+    /// background pass never writes one, so including it made a verdict depend on who
+    /// ran the analysis and when. Live HealthKit series (HRV, sleep, steps, active
+    /// energy) still include today — this morning's HRV is what the alerts are for.
+    private var completeDaysEnd: Date { Calendar.current.startOfDay(for: Date()) }
+
+    /// Start of the complete-days window `daysBack` days before `completeDaysEnd`.
+    private func completeDayStart(daysBack: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: -daysBack, to: completeDaysEnd) ?? completeDaysEnd
+    }
+
     // MARK: - Dependency Injection
 
     /// Replaces the live data provider with a test double. Call before `analyze()` in tests.
@@ -396,10 +408,11 @@ actor TrainingDNAAnalyzer {
         // Load-gated workout days: only days with a real training session (load >= 0.5 TSS) count
         // as "workout days" for sick-day proxy detection. Daily warmup spins (~0.17 TSS) are
         // excluded so they don't block the proxy from firing on users who work out every day.
-        let cutoff = Calendar.current.date(byAdding: .day, value: -180, to: Date()) ?? Date()
+        let cutoff = completeDayStart(daysBack: 180)
+        let end = completeDaysEnd
         let dailyScores = (try? modelContext.fetch(
             FetchDescriptor<StoredDailyScore>(
-                predicate: #Predicate<StoredDailyScore> { $0.date >= cutoff }
+                predicate: #Predicate<StoredDailyScore> { $0.date >= cutoff && $0.date < end }
             )
         )) ?? []
         let significantWorkoutDays: Set<String> = Set(
@@ -541,8 +554,9 @@ actor TrainingDNAAnalyzer {
     /// Data source: StoredDailyScore — fetched directly from this actor's modelContext
     /// (StoredDailyScore is in the shared schema since HealthDataContainer was updated).
     private func detectBackToBackReadinessCrash() async throws -> TrainingPattern? {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
-        let predicate = #Predicate<StoredDailyScore> { $0.date >= cutoff }
+        let cutoff = completeDayStart(daysBack: 90)
+        let end = completeDaysEnd
+        let predicate = #Predicate<StoredDailyScore> { $0.date >= cutoff && $0.date < end }
         let scores = (try? modelContext.fetch(
             FetchDescriptor<StoredDailyScore>(predicate: predicate, sortBy: [SortDescriptor(\.date)])
         )) ?? []
@@ -668,8 +682,9 @@ actor TrainingDNAAnalyzer {
         guard hrvHistory.count >= 7 else { return nil }
 
         // ACWR streak from StoredDailyScore (same source as detectBackToBackReadinessCrash)
-        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
-        let predicate90 = #Predicate<StoredDailyScore> { $0.date >= cutoff }
+        let cutoff = completeDayStart(daysBack: 90)
+        let end = completeDaysEnd
+        let predicate90 = #Predicate<StoredDailyScore> { $0.date >= cutoff && $0.date < end }
         let scores = (try? modelContext.fetch(
             FetchDescriptor<StoredDailyScore>(predicate: predicate90, sortBy: [SortDescriptor(\.date)])
         )) ?? []
@@ -781,8 +796,10 @@ actor TrainingDNAAnalyzer {
     /// correctly showed ACWR ~1.0 — and it simultaneously MISSED a genuine 50% volume
     /// cut (only a 24% ACWR move). Do not reconnect this to `dailyStrain`.
     private func detectTaperUnderway(sourcePreference: HRVSourcePreference) async throws -> TrainingPattern? {
-        let cutoff28 = Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? Date()
-        let predicate28 = #Predicate<StoredDailyScore> { $0.date >= cutoff28 }
+        // The 28 complete days ending yesterday.
+        let cutoff28 = completeDayStart(daysBack: 28)
+        let end = completeDaysEnd
+        let predicate28 = #Predicate<StoredDailyScore> { $0.date >= cutoff28 && $0.date < end }
         let scores28 = (try? modelContext.fetch(
             FetchDescriptor<StoredDailyScore>(predicate: predicate28, sortBy: [SortDescriptor(\.date)])
         )) ?? []
@@ -828,7 +845,7 @@ actor TrainingDNAAnalyzer {
         // week of work travel — HRV rises on rest either way, so those two inputs alone
         // cannot tell a taper from a stoppage. What separates them is intensity: a taper
         // cuts volume and KEEPS the hard efforts; a stoppage drops both.
-        guard taperIsCorroborated(referenceDate: Date()) else { return nil }
+        guard taperIsCorroborated(endingBefore: completeDaysEnd) else { return nil }
 
         // HRV trend: positive slope over last 7 days
         let hrvHistory = try await dataProvider.fetchDailyHRV(days: 7, sourcePreference: sourcePreference)
@@ -871,15 +888,17 @@ actor TrainingDNAAnalyzer {
         )
     }
 
-    /// Two-tier check that a volume drop was chosen rather than forced.
+    /// Two-tier check that a volume drop was chosen rather than forced. Reads complete
+    /// calendar days only: the recent week is the 7 days ending yesterday (days 1–7 ago)
+    /// and the baseline the 21 days before it (days 8–28 ago); today's workouts are excluded.
     ///
     /// **Tier 1 — session presence (every user).** At least
-    /// `taperMinimumRecentSessions` workouts in the last 7 days. Needs no power or HR,
+    /// `taperMinimumRecentSessions` workouts in the 7 complete days. Needs no power or HR,
     /// so it protects users with no sensors at all, and it catches the worst case: a
     /// rider who crashed and hasn't ridden since being told their peak is 14 days out.
     ///
     /// **Tier 2 — intensity retention (users with a signal).** Mean intensity over the
-    /// last 7 days must hold at `taperIntensityRetention` of the days 8–28 baseline.
+    /// recent week must hold at `taperIntensityRetention` of the days 8–28 baseline.
     /// Only applied when BOTH windows contain at least one workout carrying real
     /// power/HR data: `estimateIntensity` returns a neutral 5.0 when a workout has no
     /// signal, and averaging measured values against placeholders would invent a
@@ -890,19 +909,18 @@ actor TrainingDNAAnalyzer {
     ///
     /// Intensity comes from `TrainingLoadVisualizationService.estimateIntensity`, the
     /// existing signal-derived scorer. It is not reimplemented here.
-    private func taperIsCorroborated(referenceDate: Date) -> Bool {
+    private func taperIsCorroborated(endingBefore end: Date) -> Bool {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: referenceDate)
-        // Both ends in calendar days, matching the volume comparison's 28 daily scores:
-        // recent = today and the 6 before, baseline = the 21 days before that. Rolling
-        // 7×24h / 28×24h windows let a ride on day 7 or day 28 count or not depending on
-        // the time of day the analysis ran.
-        guard let windowStart = cal.date(byAdding: .day, value: -27, to: today),
-              let recentStart = cal.date(byAdding: .day, value: -6, to: today)
+        let end = cal.startOfDay(for: end)
+        // Complete calendar days, matching the volume comparison's 28 daily scores:
+        // recent = the 7 days ending yesterday, baseline = the 21 days before that.
+        // Today's workouts count from tomorrow.
+        guard let windowStart = cal.date(byAdding: .day, value: -28, to: end),
+              let recentStart = cal.date(byAdding: .day, value: -7, to: end)
         else { return false }
 
         let descriptor = FetchDescriptor<StoredWorkout>(
-            predicate: #Predicate { $0.startDate >= windowStart },
+            predicate: #Predicate { $0.startDate >= windowStart && $0.startDate < end },
             sortBy: [SortDescriptor(\.startDate)]
         )
         let stored = (try? modelContext.fetch(descriptor)) ?? []

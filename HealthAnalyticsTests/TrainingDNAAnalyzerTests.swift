@@ -604,7 +604,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         sickOffsets: [Int] = [-80, -50, -20]
     ) -> [(date: Date, steps: Int)] {
         var data: [(date: Date, steps: Int)] = (0..<90).map { i in
-            (date: day(-(89 - i)), steps: 8000)
+            (date: day(-(90 - i)), steps: 8000)
         }
         for sickOffset in sickOffsets.prefix(windowCount) {
             for delta in [0, 1] {
@@ -638,7 +638,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         daysBack: Int = 90
     ) -> [StoredDailyScore] {
         (0..<daysBack).map { i in
-            let date = day(-(daysBack - 1 - i))
+            let date = day(-(daysBack - i))
             let seqIdx = i / 10
             let slot = i % 10
 
@@ -672,7 +672,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
     /// No day should qualify as a "hard day" so the detector must return nil regardless of readiness drops.
     func testWarmupDaysDoNotCountAsHardDays() async throws {
         let scores = (0..<90).map { i -> StoredDailyScore in
-            let date = day(-(89 - i))
+            let date = day(-(90 - i))
             // Alternate score to create apparent readiness drops — these should be ignored
             // because the dailyLoad never reaches hardDayLoadThreshold (1.0).
             let score = i % 3 == 2 ? 45 : 70

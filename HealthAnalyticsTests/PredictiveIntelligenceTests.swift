@@ -32,6 +32,11 @@ final class PredictiveIntelligenceTests: XCTestCase {
         Calendar.current.date(byAdding: .day, value: offset, to: ref)!
     }
 
+    /// Store-based taper checks read complete days ending yesterday:
+    /// recent week = days 1–7 ago, baseline = days 8–28 ago.
+    private let recentWeek = 1...7
+    private let baselineDays = 8...28
+
     /// In-memory container with TrainingPattern + StoredDailyScore.
     private func makeFullContainer() throws -> ModelContainer {
         let schema = Schema([TrainingPattern.self, StoredDailyScore.self, StoredWorkout.self, StoredFTPSnapshot.self])
@@ -559,8 +564,8 @@ final class PredictiveIntelligenceTests: XCTestCase {
     /// Tests that assert a taper FIRES need this — a load drop alone is no longer
     /// sufficient, by design.
     private func seedIntensityHeldWorkouts(_ analyzer: TrainingDNAAnalyzer) async throws {
-        var workouts = (7..<28).map { taperWorkout(daysAgo: $0, hr: 150) }
-        workouts += (0..<7).map { taperWorkout(daysAgo: $0, hr: 150, minutes: 35) }
+        var workouts = baselineDays.map { taperWorkout(daysAgo: $0, hr: 150) }
+        workouts += recentWeek.map { taperWorkout(daysAgo: $0, hr: 150, minutes: 35) }
         try await analyzer.insertWorkouts(workouts)
     }
 
@@ -579,6 +584,78 @@ final class PredictiveIntelligenceTests: XCTestCase {
         )
     }
 
+    /// The background pass never writes today's row, and the foreground's is partial.
+    /// 28 complete days ending yesterday must be enough on their own.
+    func testTaperUnderway_noRowForToday_stillFires() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        let scores = makeTaperScores(last7Load: 0.65, prev21Load: 1.0)
+            .filter { !Calendar.current.isDate($0.date, inSameDayAs: ref) }
+        try await analyzer.insertDailyScores(scores)
+        try await seedIntensityHeldWorkouts(analyzer)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(patterns.contains { $0.patternType == .tapering },
+                      "Store-based checks read complete days; today's missing row must not block the taper")
+    }
+
+    /// Today's row is partial and must not count as a day of the recent week. Here a
+    /// big day-in-progress row (3.0) would lift the old recent mean to ~0.94 (a 6% drop,
+    /// no taper); over the 7 complete days the drop is a real 40%.
+    func testTaperUnderway_todaysPartialRowCannotHideATaper() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        var scores = makeTaperScores(last7Load: 0.6, prev21Load: 1.0)
+            .filter { !Calendar.current.isDate($0.date, inSameDayAs: ref) }
+        scores.append(StoredDailyScore(date: ref, readinessScore: 70, dailyStrain: 1.0,
+                                       workoutCount: 2, dailyLoad: 3.0))
+        try await analyzer.insertDailyScores(scores)
+        try await seedIntensityHeldWorkouts(analyzer)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertTrue(patterns.contains { $0.patternType == .tapering },
+                      "Only complete days count; today's partial row must not mask the drop")
+    }
+
+    /// Today's ride counts from tomorrow. With no ride in the 7 complete days, a ride
+    /// this morning must not rescue session presence.
+    func testTaperUnderway_rideTodayDoesNotCountAsRecent() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+
+        try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.0, prev21Load: 1.0))
+        var workouts = baselineDays.map { taperWorkout(daysAgo: $0, hr: 150) }
+        workouts.append(taperWorkout(daysAgo: 0, hr: 150, minutes: 35))
+        try await analyzer.insertWorkouts(workouts)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(patterns.contains { $0.patternType == .tapering },
+                       "Only complete days count; today's ride must not count as this week's session")
+    }
+
     /// A real taper: volume down 35%, but the hard efforts are still there. Baseline and
     /// recent week both ride at the same HR, so intensity is retained.
     func testTaperUnderway_volumeDownIntensityHeld_confirmed() async throws {
@@ -592,8 +669,8 @@ final class PredictiveIntelligenceTests: XCTestCase {
 
         try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
         // Baseline days 8-27 and the recent week both at HR 150 — intensity unchanged.
-        var workouts = (7..<28).map { taperWorkout(daysAgo: $0, hr: 150) }
-        workouts += (0..<7).map { taperWorkout(daysAgo: $0, hr: 150, minutes: 35) }
+        var workouts = baselineDays.map { taperWorkout(daysAgo: $0, hr: 150) }
+        workouts += recentWeek.map { taperWorkout(daysAgo: $0, hr: 150, minutes: 35) }
         try await analyzer.insertWorkouts(workouts)
 
         _ = try await analyzer.analyze()
@@ -618,8 +695,8 @@ final class PredictiveIntelligenceTests: XCTestCase {
         await analyzer.setDataProvider(mock)
 
         try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
-        var workouts = (7..<28).map { taperWorkout(daysAgo: $0, hr: 150) }
-        workouts += (0..<7).map { taperWorkout(daysAgo: $0, hr: 105, minutes: 35) }
+        var workouts = baselineDays.map { taperWorkout(daysAgo: $0, hr: 150) }
+        workouts += recentWeek.map { taperWorkout(daysAgo: $0, hr: 105, minutes: 35) }
         try await analyzer.insertWorkouts(workouts)
 
         _ = try await analyzer.analyze()
@@ -644,7 +721,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
 
         try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.0, prev21Load: 1.0))
         // Baseline training, then nothing at all for the last week.
-        try await analyzer.insertWorkouts((7..<28).map { taperWorkout(daysAgo: $0, hr: 150) })
+        try await analyzer.insertWorkouts(baselineDays.map { taperWorkout(daysAgo: $0, hr: 150) })
 
         _ = try await analyzer.analyze()
 
@@ -709,10 +786,9 @@ final class PredictiveIntelligenceTests: XCTestCase {
         )
     }
 
-    /// A ride late on calendar day 7 belongs to the baseline, not "this week". A rolling
-    /// 7×24h window counted it as recent at almost any time of day, so this fails on the
-    /// old window whenever the suite runs — not only before noon.
-    func testTaperUnderway_rideLateOnDaySeven_isBaselineNotRecent() async throws {
+    /// A ride late on calendar day 8 belongs to the baseline, not the recent week
+    /// (days 1–7). Clock-proof: 23:59 is the last minute of that day.
+    func testTaperUnderway_rideLateOnDayEight_isBaselineNotRecent() async throws {
         let container = try makeFullContainer()
         let analyzer = TrainingDNAAnalyzer(modelContainer: container)
 
@@ -722,21 +798,21 @@ final class PredictiveIntelligenceTests: XCTestCase {
         await analyzer.setDataProvider(mock)
 
         try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.0, prev21Load: 1.0))
-        var workouts = (8..<28).map { taperWorkout(daysAgo: $0, hr: 150) }
-        workouts.append(lateWorkout(daysAgo: 7, hr: 150))
+        var workouts = (9...28).map { taperWorkout(daysAgo: $0, hr: 150) }
+        workouts.append(lateWorkout(daysAgo: 8, hr: 150))
         try await analyzer.insertWorkouts(workouts)
 
         _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
         XCTAssertFalse(patterns.contains { $0.patternType == .tapering },
-                       "No ride in the last 7 calendar days is a stoppage; a late day-7 ride doesn't change that")
+                       "No ride in the 7 complete days is a stoppage; a late day-8 ride doesn't change that")
     }
 
-    /// Rides late on calendar day 28 are outside the 21-day baseline. A rolling 28×24h
-    /// window pulled them in at almost any time of day; at a high HR they inflate the
-    /// baseline intensity until a genuine taper fails the retention check.
-    func testTaperUnderway_ridesLateOnDayTwentyEight_areOutsideTheBaseline() async throws {
+    /// Rides late on calendar day 29 are outside the 21-day baseline (days 8–28).
+    /// At a high HR they would inflate baseline intensity until a genuine taper fails
+    /// the retention check.
+    func testTaperUnderway_ridesLateOnDayTwentyNine_areOutsideTheBaseline() async throws {
         let container = try makeFullContainer()
         let analyzer = TrainingDNAAnalyzer(modelContainer: container)
 
@@ -746,25 +822,24 @@ final class PredictiveIntelligenceTests: XCTestCase {
         await analyzer.setDataProvider(mock)
 
         try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
-        var workouts = (7..<28).map { taperWorkout(daysAgo: $0, hr: 140) }
-        workouts += (0..<7).map { taperWorkout(daysAgo: $0, hr: 140, minutes: 35) }
-        workouts += (0..<10).map { lateWorkout(daysAgo: 28, hr: 185, id: $0) }
+        var workouts = baselineDays.map { taperWorkout(daysAgo: $0, hr: 140) }
+        workouts += recentWeek.map { taperWorkout(daysAgo: $0, hr: 140, minutes: 35) }
+        workouts += (0..<10).map { lateWorkout(daysAgo: 29, hr: 185, id: $0) }
         try await analyzer.insertWorkouts(workouts)
 
         _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
         XCTAssertTrue(patterns.contains { $0.patternType == .tapering },
-                      "Same effort recent vs baseline is a taper; rides from day 28 must not count in the baseline")
+                      "Same effort recent vs baseline is a taper; rides from day 29 must not count in the baseline")
     }
 
-    // Generated by /ship test coverage audit (Claude Code), pass 2.
-    // Value: protects=a ride at 00:00 on calendar day 6 is in the recent week (today + 6 before), so it alone passes
-    //   session presence; fails_when=recentStart is moved one day later (-5) or the recent filter becomes `>`, so the
-    //   week's only ride drops to the baseline; why_new=the two clock-proof tests pin the outer edges (day 7, day 28),
-    //   and every other recent ride sits at noon on days 0-5; seam=none; no_claim=window start (day 27 at 00:00), HRV and
-    //   volume tiers beyond the fixtures (mocked HRV provider, in-memory store; unit only)
-    func testTaperUnderway_onlyRideAtStartOfDaySix_countsAsRecent() async throws {
+    // Generated by /ship test coverage audit (Claude Code), pass 2; re-anchored to complete days.
+    // Value: protects=a ride at 00:00 on calendar day 7 is in the recent week (days 1–7), so it alone passes
+    //   session presence; fails_when=recentStart moves one day later or the recent filter becomes `>`;
+    //   why_new=the clock-proof tests pin the outer edges (day 8, day 29); seam=none;
+    //   no_claim=HRV and volume tiers beyond the fixtures (mocked HRV provider, in-memory store; unit only)
+    func testTaperUnderway_onlyRideAtStartOfDaySeven_countsAsRecent() async throws {
         let container = try makeFullContainer()
         let analyzer = TrainingDNAAnalyzer(modelContainer: container)
 
@@ -774,14 +849,14 @@ final class PredictiveIntelligenceTests: XCTestCase {
         await analyzer.setDataProvider(mock)
 
         try await analyzer.insertDailyScores(makeTaperScores(last7Load: 0.65, prev21Load: 1.0))
-        var workouts = (7..<28).map { taperWorkout(daysAgo: $0, hr: 150) }
+        var workouts = baselineDays.map { taperWorkout(daysAgo: $0, hr: 150) }
         // From the clock now, not the suite-start `ref`: this ride sits exactly on the
         // window's inner edge, so a suite that crossed midnight would push it out.
         let today = Calendar.current.startOfDay(for: Date())
         workouts.append(StoredWorkout(
-            id: "start-of-day-6",
+            id: "start-of-day-7",
             type: .cycling,
-            startDate: Calendar.current.date(byAdding: .day, value: -6, to: today)!,
+            startDate: Calendar.current.date(byAdding: .day, value: -7, to: today)!,
             duration: 35 * 60,
             distance: nil, power: nil, energy: nil, hr: 150,
             source: "test"
@@ -792,7 +867,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
 
         let patterns = try await analyzer.fetchAllPatterns()
         XCTAssertTrue(patterns.contains { $0.patternType == .tapering },
-                      "Day 6 is part of this week from its first minute; its ride must count as a recent session")
+                      "Day 7 is part of the recent week from its first minute; its ride must count")
     }
 
     /// A cycling workout at 23:59 on calendar day `-daysAgo`: one minute before the next
@@ -1081,7 +1156,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
             return StoredDailyScore(
                 date: day(-daysAgo),
                 readinessScore: 70,
-                dailyStrain: daysAgo < streakLen ? 1.0 : 0.5,
+                dailyStrain: daysAgo <= streakLen ? 1.0 : 0.5,   // streak = the complete days ending yesterday
                 workoutCount: 0
             )
         }
@@ -1106,7 +1181,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
                 readinessScore: 70,
                 dailyStrain: 1.0,   // constant on purpose — see note above
                 workoutCount: 1,
-                dailyLoad: daysAgo < 7 ? last7Load : prev21Load
+                dailyLoad: recentWeek.contains(daysAgo) ? last7Load : prev21Load
             )
         }
     }
