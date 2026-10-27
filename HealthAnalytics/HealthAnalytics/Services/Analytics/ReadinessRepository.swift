@@ -155,10 +155,22 @@ class ReadinessRepository: ObservableObject {
     // MARK: - Pattern Analysis (Phase 2)
 
     /// Callers await the run but never own it — see `patternAnalysisFlight`. A request
-    /// that arrives mid-run joins it (its trigger is moot: an analysis is already running).
+    /// that arrives mid-run joins it and gets that run's behavior, so a joiner re-applies
+    /// its own: a "Try again" that only joined someone else's run (often a background one,
+    /// which reports no errors) gets a run of its own, and any other foreground joiner
+    /// re-checks the Coach cache, because a background run skips that refresh. A caller
+    /// whose own run happened already refreshed inside it; a throttled skip changed nothing.
     func runPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
-        await patternAnalysisFlight.run { [self] in
+        let started = await patternAnalysisFlight.run { [self] in
             await performPatternAnalysis(container: container, trigger: trigger)
+        }
+        guard !started, trigger != .background else { return }
+        if trigger == .userRetry {
+            await patternAnalysisFlight.run { [self] in
+                await performPatternAnalysis(container: container, trigger: .userRetry)
+            }
+        } else {
+            await refreshIfNecessary(modelContext: container.mainContext)
         }
     }
 

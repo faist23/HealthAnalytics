@@ -9,6 +9,7 @@ import SwiftUI
 import Combine
 import SwiftData
 import BackgroundTasks
+import UIKit
 
 @main
 struct HealthAnalyticsApp: App {
@@ -47,6 +48,12 @@ struct HealthAnalyticsApp: App {
         }
         .modelContainer(HealthDataContainer.shared)
         .backgroundTask(.appRefresh(Self.patternAnalysisTaskID)) {
+            // Keep the chain going: iOS runs each request once, and otherwise the next one
+            // is only submitted when the user next leaves the app.
+            Self.schedulePatternAnalysisTask()
+            // HealthKit refuses reads while the device is locked; don't spend the refresh
+            // budget on a run that can only fail.
+            guard await MainActor.run(body: { UIApplication.shared.isProtectedDataAvailable }) else { return }
             // Same path as the foreground (the throttle is stamped only when patterns were
             // actually refreshed), but silent on errors and without the Coach refresh —
             // see `PatternAnalysisTrigger.background`. On budget expiry the handler stops
@@ -66,18 +73,18 @@ struct HealthAnalyticsApp: App {
                 }
             }
             if newPhase == .background && isOnboardingComplete {
-                schedulePatternAnalysisTask()
+                Self.schedulePatternAnalysisTask()
             }
         }
     }
     
-    private func schedulePatternAnalysisTask() {
+    private static func schedulePatternAnalysisTask() {
         // Must be an app-refresh request to match the SwiftUI `.appRefresh` handler, and
         // needs UIBackgroundModes `fetch` in Info.plist — without it submit throws.
-        let request = BGAppRefreshTaskRequest(identifier: Self.patternAnalysisTaskID)
+        let request = BGAppRefreshTaskRequest(identifier: patternAnalysisTaskID)
         // Patterns move over days and stay active for 10; a few runs a day keeps them
         // alive and notifications timely without spending the refresh budget.
-        request.earliestBeginDate = Date(timeIntervalSinceNow: Self.patternAnalysisMinBackgroundInterval)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: patternAnalysisMinBackgroundInterval)
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {

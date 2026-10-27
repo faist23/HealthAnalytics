@@ -289,9 +289,11 @@ final class ReadinessRepositoryPatternThrottleWiringTests: XCTestCase {
     override func setUp() async throws {
         // Unit tests run inside the app. An onboarded host runs its own launch analysis
         // on the same shared repository, which this test could join or observe.
+        // Captured before the skip: XCTest still runs tearDown after XCTSkip, and
+        // restoring an uncaptured value would erase the host app's real stamp.
+        saved = UserDefaults.standard.object(forKey: key)
         try XCTSkipIf(UserDefaults.standard.bool(forKey: "isOnboardingComplete"),
                       "App host is onboarded: launch tasks share ReadinessRepository.shared")
-        saved = UserDefaults.standard.object(forKey: key)
     }
 
     override func tearDown() async throws {
