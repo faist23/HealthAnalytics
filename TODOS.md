@@ -66,6 +66,15 @@
 
 **Effort:** S (human: ~1h / CC+gstack: ~10min)
 
+### Background pattern runs analyze stores that haven't been synced
+**Priority:** P2 — surfaced by the v0.1.15 adversarial review
+
+**What:** The `.appRefresh` handler runs `runPatternAnalysis(.background)` without `performSmartSync`, so `StoredWorkout` / `StoredDailyScore` are frozen at the last foreground while HealthKit HRV is read fresh. Back-to-back, performance peak, the HRV precursor's sick-day proxy and taper Tier 1 read those tables, and a once-ever pattern notification can fire from the mix. No concrete false positive found yet.
+
+**How to apply:** Sync in the handler after the `isProtectedDataAvailable` guard, but without the `DataSyncCompleted` → `refreshIfNecessary` path (the Coach refresh must stay out of the background). Verify on a device with `_simulateLaunchForTaskWithIdentifier`.
+
+**Effort:** M (human: ~half day / CC+gstack: ~45min)
+
 ### First-launch pattern analysis can run on pre-backfill scores
 **Priority:** P3 — surfaced by the v0.1.14.0 red-team review; pre-existing
 

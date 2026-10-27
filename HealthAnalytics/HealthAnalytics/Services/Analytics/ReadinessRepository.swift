@@ -1063,11 +1063,14 @@ class ReadinessRepository: ObservableObject {
             inserted += 1
         }
 
+        // New history changes what the detectors see, so let patterns re-run. Only then:
+        // this backfill runs inside the Coach refresh that follows a pattern run, and an
+        // unconditional clear would erase that run's stamp and defeat the throttle for
+        // anyone it keeps re-checking (no sleep data, or a skipped day).
         if inserted > 0 {
             try? modelContext.save()
+            UserDefaults.standard.removeObject(forKey: "lastPatternAnalysisDate")
         }
-
-        UserDefaults.standard.removeObject(forKey: "lastPatternAnalysisDate")
         UserDefaults.standard.set(true, forKey: udKey)
 
         #if DEBUG
