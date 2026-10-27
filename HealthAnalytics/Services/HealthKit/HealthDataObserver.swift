@@ -9,6 +9,45 @@
 //
 
 import HealthKit
+import UIKit
+
+/// Begin/end for UIApplication background time; a seam so tests can fire expiry.
+@MainActor
+struct BackgroundTime {
+    let begin: (String, @escaping @MainActor @Sendable () -> Void) -> UIBackgroundTaskIdentifier
+    let end: (UIBackgroundTaskIdentifier) -> Void
+
+    static var live: BackgroundTime {
+        BackgroundTime(
+            begin: { UIApplication.shared.beginBackgroundTask(withName: $0, expirationHandler: $1) },
+            end: { UIApplication.shared.endBackgroundTask($0) }
+        )
+    }
+}
+
+/// One background-time identifier, ended at most once whichever of the expiration
+/// handler and the normal exit gets there first.
+@MainActor
+private final class BackgroundTimeHold {
+    private let time: BackgroundTime
+    private var id: UIBackgroundTaskIdentifier = .invalid
+
+    init(time: BackgroundTime) { self.time = time }
+
+    func begin(name: String, onExpiry: @escaping @MainActor @Sendable () -> Void) {
+        id = time.begin(name) { [self] in
+            onExpiry()
+            end()
+        }
+    }
+
+    func end() {
+        guard id != .invalid else { return }
+        let held = id
+        id = .invalid
+        time.end(held)
+    }
+}
 
 @MainActor
 final class HealthDataObserver {
@@ -29,10 +68,20 @@ final class HealthDataObserver {
         guard queries.isEmpty, HKHealthStore.isHealthDataAvailable() else { return }
         for (type, wake) in Self.observedTypes {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, error in
-                guard error == nil else { completion(); return }
+                guard error == nil else {
+                    #if DEBUG
+                    print("⚠️ Observer query failed for \(type): \(String(describing: error))")
+                    #endif
+                    completion()
+                    return
+                }
                 nonisolated(unsafe) let done = completion
                 Task { @MainActor in
-                    await Self.handleUpdate(wake: wake, run: onUpdate, completion: done)
+                    await Self.handleUpdate(
+                        wake: wake,
+                        run: { await Self.runHoldingBackgroundTime(wake: $0, run: onUpdate) },
+                        completion: done
+                    )
                 }
             }
             store.execute(query)
@@ -54,5 +103,22 @@ final class HealthDataObserver {
     ) async {
         defer { completion() }
         await run(wake)
+    }
+
+    /// Holds UIApplication background time while the pass runs, so the observer
+    /// completion isn't left pending across a suspension. On expiry it cancels the task
+    /// WAITING for the pass: `SingleFlight` returns that waiter at once while the
+    /// flight's work runs on (a resume after suspension is covered by the commit gate),
+    /// so the caller can complete the observer before iOS suspends the app.
+    static func runHoldingBackgroundTime(
+        wake: BackgroundPassWake,
+        run: @escaping @MainActor (BackgroundPassWake) async -> Void,
+        time: BackgroundTime? = nil   // nil = UIApplication (a default can't touch main-actor state)
+    ) async {
+        let waiter = Task { @MainActor in await run(wake) }
+        let hold = BackgroundTimeHold(time: time ?? .live)
+        hold.begin(name: "patternPass") { waiter.cancel() }
+        await waiter.value
+        hold.end()
     }
 }
