@@ -33,6 +33,10 @@ struct HealthAnalyticsApp: App {
                     }
                     .task {
                         ReadinessRepository.shared.bootstrap()
+                        // A background app-refresh launch can connect the scene too. Leave sync,
+                        // the Coach refresh and the permission prompt to `.active`: run locked,
+                        // HealthKit refuses reads and the day's Coach would be cached from nothing.
+                        guard ReadinessRepository.applicationIsInForeground() else { return }
                         await SyncManager.shared.performSmartSync()
                         await ReadinessRepository.shared.refreshIfNecessary(
                             modelContext: HealthDataContainer.shared.mainContext
@@ -70,14 +74,25 @@ struct HealthAnalyticsApp: App {
                     await ReadinessRepository.shared.refreshIfNecessary(
                         modelContext: HealthDataContainer.shared.mainContext
                     )
+                    // Here too: a scene connected by a background launch skipped it in `.task`.
+                    await PatternNotificationService.shared.requestAuthorizationIfNeeded()
                 }
             }
             if newPhase == .background && isOnboardingComplete {
-                Self.schedulePatternAnalysisTask()
+                Task { await Self.schedulePatternAnalysisTaskIfNoneIsPending() }
             }
         }
     }
     
+    /// Leaving the app schedules a run only when none is pending. A submit replaces the
+    /// pending request, so resubmitting on every exit would push the run 6h out each time
+    /// and someone who opens the app more often than that would never get one.
+    nonisolated private static func schedulePatternAnalysisTaskIfNoneIsPending() async {
+        let pending = await BGTaskScheduler.shared.pendingTaskRequests()
+        guard !pending.contains(where: { $0.identifier == patternAnalysisTaskID }) else { return }
+        schedulePatternAnalysisTask()
+    }
+
     /// Nonisolated: called from the `.backgroundTask` action, which is not on the main actor.
     nonisolated private static func schedulePatternAnalysisTask() {
         // Must be an app-refresh request to match the SwiftUI `.appRefresh` handler, and
