@@ -202,12 +202,19 @@ class ReadinessRepository: ObservableObject {
         log.recordWake(wake, appActive: inForeground)
         // The observers' registration callbacks on every foreground cold launch would
         // otherwise run a full pass; the foreground's own sync and refresh cover it.
+        // Checked here to avoid joining a run at all, and again inside the work, which is
+        // the check that matters: a joiner's retry runs the work later, maybe after the
+        // user opened the app.
         if BackgroundPatternPass.skipIfForeground(appInForeground: inForeground, log: log, at: Date()) { return }
-        await patternAnalysisFlight.run { [self] in
-            let steps = LiveBackgroundPassSteps(repository: self, container: container)
-            let outcome = await BackgroundPatternPass(steps: steps, log: log, wake: wake).run()
-            return outcome != .abandoned
-        }
+        await patternAnalysisFlight.run(BackgroundPatternPass.flightWork(
+            appInForeground: { Self.applicationIsInForeground() },
+            log: log,
+            makePass: { [self] in
+                BackgroundPatternPass(
+                    steps: LiveBackgroundPassSteps(repository: self, container: container), log: log, wake: wake
+                )
+            }
+        ))
     }
 
     /// Detection + gated commit for the background pass, on the same analyzer instance

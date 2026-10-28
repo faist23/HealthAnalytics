@@ -126,6 +126,24 @@ final class BackgroundPatternPass {
         return true
     }
 
+    /// The work a background wake hands `patternAnalysisFlight`. The foreground check is
+    /// inside it, not only before the flight: a wake that joined an abandoned pass runs
+    /// this closure again later (`SingleFlight.run`), and by then the user may have
+    /// opened the app. That retry records `skippedForeground` and reports completed
+    /// (a skip leaves nothing for anyone to redo).
+    static func flightWork(
+        appInForeground: @escaping @MainActor () -> Bool,
+        log: BackgroundPassLog,
+        now: @escaping @MainActor () -> Date = { Date() },
+        makePass: @escaping @MainActor () -> BackgroundPatternPass
+    ) -> @MainActor () async -> Bool {
+        {
+            if skipIfForeground(appInForeground: appInForeground(), log: log, at: now()) { return true }
+            let outcome = await makePass().run()
+            return outcome != .abandoned
+        }
+    }
+
     /// Inside the budget and not before the start (a clock moved backwards proves
     /// nothing about freshness).
     nonisolated static func isWithinBudget(startedAt: Date, now: Date) -> Bool {

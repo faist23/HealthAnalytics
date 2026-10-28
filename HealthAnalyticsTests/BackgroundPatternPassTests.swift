@@ -314,6 +314,78 @@ final class BackgroundPatternPassTests: XCTestCase {
         XCTAssertNil(log.lastOutcome)
     }
 
+    // MARK: - Flight work (S3: the foreground skip lives inside the work)
+
+    /// A wake that joined an abandoned pass retries on its own (`SingleFlight.run`). If
+    /// the user opened the app meanwhile, that retry must skip like any foreground wake,
+    /// not run a full pass the foreground's own sync and refresh already cover.
+    func test_flightWork_joinerRetryWhileForeground_runsNoStepsAndRecordsSkippedForeground() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        let log = BackgroundPassLog(defaults: defaults)
+        var foreground = false
+        let flight = SingleFlight()
+        var starterRunning = false
+
+        let (release, releaseStarter) = AsyncStream<Never>.makeStream()
+        let starter = Task { @MainActor in
+            await flight.run {
+                starterRunning = true
+                for await _ in release {}
+                return false   // abandoned: its joiners retry once
+            }
+        }
+        while !starterRunning { await Task.yield() }
+
+        let work = BackgroundPatternPass.flightWork(
+            appInForeground: { foreground }, log: log, now: { self.t0 },
+            makePass: { BackgroundPatternPass(steps: steps, log: log, wake: .hrvDelivery, now: { MainActor.assumeIsolated { clock.now } }) }
+        )
+        let joiner = Task { @MainActor in await flight.run(work) }
+        for _ in 0..<20 { await Task.yield() }
+
+        foreground = true              // the user opens the app while the joiner waits
+        releaseStarter.finish()
+        await starter.value
+        await joiner.value
+
+        XCTAssertTrue(steps.calls.isEmpty, "The retry re-checks the foreground and runs no pass step")
+        XCTAssertEqual(log.count(.skippedForeground), 1)
+        XCTAssertEqual(log.count(.completed), 0)
+    }
+
+    func test_flightWork_inBackground_runsThePass_andReportsCompleted() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        let log = BackgroundPassLog(defaults: defaults)
+        let work = BackgroundPatternPass.flightWork(
+            appInForeground: { false }, log: log,
+            makePass: { BackgroundPatternPass(steps: steps, log: log, wake: .appRefresh, now: { MainActor.assumeIsolated { clock.now } }) }
+        )
+
+        let completed = await work()
+
+        XCTAssertTrue(completed)
+        XCTAssertTrue(steps.calls.contains("analyze"))
+        XCTAssertEqual(log.count(.skippedForeground), 0)
+    }
+
+    /// A skip stored nothing that a joiner could redo, so it counts as completed.
+    func test_flightWork_inForeground_reportsCompleted_soNoOneRetries() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        let log = BackgroundPassLog(defaults: defaults)
+        let work = BackgroundPatternPass.flightWork(
+            appInForeground: { true }, log: log,
+            makePass: { BackgroundPatternPass(steps: steps, log: log, wake: .hrvDelivery) }
+        )
+
+        let completed = await work()
+
+        XCTAssertTrue(completed)
+        XCTAssertTrue(steps.calls.isEmpty)
+    }
+
     func test_isWithinBudget_edges() {
         XCTAssertTrue(BackgroundPatternPass.isWithinBudget(startedAt: t0, now: t0))
         XCTAssertTrue(BackgroundPatternPass.isWithinBudget(startedAt: t0, now: t0.addingTimeInterval(BackgroundPatternPass.maxDuration)))
