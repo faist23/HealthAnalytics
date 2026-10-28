@@ -272,8 +272,12 @@ final class BackgroundPatternPassTests: XCTestCase {
     // Value: protects=only an HRV wake records latency; a workout wake records none; fails_when=the guard is
     //   rewritten as `wake != .appRefresh`; why_new=only appRefresh was checked, which that rewrite still passes;
     //   seam=none; no_claim=real HealthKit delivery (fake steps; unit only)
+    // Extended by /ship test coverage audit (Claude Code), pass 2: launch row.
+    // Value: protects=an observer's first fire in a process (.launch) records no HRV latency; fails_when=the guard
+    //   becomes a deny-list of appRefresh/workoutDelivery; why_new=no row used .launch, the wake every cold
+    //   launch produces; seam=none; no_claim=wakeForFire tagging itself (HealthDataObserverTests) or real delivery
     func test_appRefreshPass_recordsNoLatency() async {
-        for wake in [BackgroundPassWake.appRefresh, .workoutDelivery] {
+        for wake in [BackgroundPassWake.appRefresh, .workoutDelivery, .launch] {
             defaults.removePersistentDomain(forName: "BackgroundPatternPassTests")
             let clock = FakeClock(t0)
             let steps = FakeSteps(clock: clock)
