@@ -11,7 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **A day's training is counted in full.** If you opened the app in the afternoon and rode that evening, that day's load used to stay at its afternoon value. Past days are now finished off once they're over.
+- **A day's training is counted in full.** If you opened the app in the afternoon and rode that evening, that day's load used to stay at its afternoon value. Past days are now finished off once they're over, and the first launch after this update rechecks the last 90 days once, so days already stuck at an afternoon value are corrected too.
 - **Pattern checks look at complete days.** Taper, back-to-back and the other history checks now use whole days through yesterday, so a half-finished today can't fake or hide a pattern. Today's ride counts from tomorrow, and a quiet morning's low step count no longer looks like a sick day.
 
 ## [0.1.15.0] - 2026-10-27

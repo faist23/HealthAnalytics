@@ -206,3 +206,14 @@ Device checklist (no seam):
 | `Views/SettingsView.swift` | debug "Background Pass" counters row |
 | `CLAUDE.md`, `TODOS.md` | document the pass and complete-days anchoring; close the P2 |
 | Tests | as listed above |
+
+## Post-review changes (2026-10-27)
+
+A red-team review found six holes; each is fixed on this branch.
+
+- **R1. The pass no longer finalizes days.** Before the Strava sync the store may hold only the HealthKit copy of yesterday's ride, so a pass that advanced `scoresFinalizedThrough` froze that day at the HealthKit-only load. `finalizeScoreRows(advancesMarker:)` (default true) is called with false by `LiveBackgroundPassSteps`: the pass recomputes rows, and only the foreground refresh, which runs after the Strava sync, advances the marker. Rule: `ScoreRowFinalization.markerAdvance`.
+- **R2. A wake in the foreground skips the pass.** Observer queries fire once at registration, so every foreground cold launch ran a full pass. `runBackgroundPass` records the wake, then `BackgroundPatternPass.skipIfForeground` records the new `skippedForeground` outcome and returns before the flight.
+- **R3. One-time 90-day recompute on upgrade.** With no marker, `recomputeRange` now starts at the horizon (today − 90), not yesterday, so mid-day rows the old backfill froze on any of those days are corrected once.
+- **R4. HRV or RHR is enough to count as having read HealthKit.** The marker rule no longer requires sleep (`ScoreRowFinalization.readBiometrics`), so users without sleep data advance it.
+- **R5. Budget checked between steps; joiners of an abandoned run rerun once.** The pass returns `abandoned` (no detection, no stamp) when the budget is gone after the workout refresh or after finalization. `SingleFlight.run`'s work returns whether it completed; a caller that joined a run that returned false runs its own work (or joins a fresh run another joiner started) exactly once. `runBackgroundPass` returns `outcome != .abandoned`, `runPatternAnalysis` true.
+- **R6. Background upsert and foreground sync are serialized.** `BackgroundRefreshGate` on `SyncManager` (main actor): `refreshWorkoutsFromHealthKit` does nothing while `isSyncing`, and `performSmartSync` / `resetAllData` wait for an in-flight refresh after setting `isSyncing`, before their own upsert.
