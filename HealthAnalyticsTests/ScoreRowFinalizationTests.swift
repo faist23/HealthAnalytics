@@ -58,6 +58,31 @@ final class ScoreRowFinalizationTests: XCTestCase {
         XCTAssertEqual(range, day(-3)...day(-1))
     }
 
+    // MARK: - Marker advance (R1)
+
+    /// The foreground refresh runs after the Strava sync, so what it recomputed is final.
+    func test_markerAdvance_foregroundThatReadHealthKit_advancesToTheRangeEnd() {
+        let range = day(-3)...day(-1)
+        XCTAssertEqual(ScoreRowFinalization.markerAdvance(range: range, readBiometrics: true, advancesMarker: true), day(-1))
+    }
+
+    /// The background pass may have seen only the HealthKit copy of yesterday's ride; the
+    /// Strava copy (power, zones) arrives with the next foreground sync. Advancing here
+    /// would freeze yesterday at the HealthKit-only load forever.
+    func test_markerAdvance_backgroundPass_neverAdvances() {
+        let range = day(-3)...day(-1)
+        XCTAssertNil(ScoreRowFinalization.markerAdvance(range: range, readBiometrics: true, advancesMarker: false))
+    }
+
+    /// A locked device or missing permission read nothing: those days stay due.
+    func test_markerAdvance_nothingRead_doesNotAdvance() {
+        XCTAssertNil(ScoreRowFinalization.markerAdvance(range: day(-3)...day(-1), readBiometrics: false, advancesMarker: true))
+    }
+
+    func test_markerAdvance_nothingDue_doesNotAdvance() {
+        XCTAssertNil(ScoreRowFinalization.markerAdvance(range: nil, readBiometrics: true, advancesMarker: true))
+    }
+
     // MARK: - What counts as having read HealthKit (R4)
 
     /// Users with no sleep tracking still have HRV or RHR. Requiring sleep kept their

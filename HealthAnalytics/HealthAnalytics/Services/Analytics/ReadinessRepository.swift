@@ -985,15 +985,22 @@ class ReadinessRepository: ObservableObject {
     /// after `scoresFinalizedThrough` through yesterday). Never touches today's row.
     /// The marker advances only after HealthKit data was actually read, so a transient
     /// failure leaves those days due for the next run.
-    /// Shared by the foreground refresh and the background pattern pass.
-    func finalizeScoreRows(modelContext: ModelContext, now: Date = Date()) async {
+    /// Shared by the foreground refresh and the background pattern pass. Only the
+    /// foreground (`advancesMarker: true`, after the Strava sync) moves the marker: the
+    /// background pass passes false because it may have seen only the HealthKit copy of a
+    /// ride, and the next foreground refresh recomputes the same days with Strava data.
+    func finalizeScoreRows(modelContext: ModelContext, now: Date = Date(), advancesMarker: Bool = true) async {
         let key = "scoresFinalizedThrough"
         let range = ScoreRowFinalization.recomputeRange(
             finalizedThrough: UserDefaults.standard.object(forKey: key) as? Date,
             now: now
         )
         let readHealthKit = await backfillHistoricalScores(modelContext: modelContext, recomputeFrom: range?.lowerBound)
-        if let range, readHealthKit { UserDefaults.standard.set(range.upperBound, forKey: key) }
+        if let through = ScoreRowFinalization.markerAdvance(
+            range: range, readBiometrics: readHealthKit, advancesMarker: advancesMarker
+        ) {
+            UserDefaults.standard.set(through, forKey: key)
+        }
     }
 
     /// Populates StoredDailyScore for the last 90 days from already-synced SwiftData records.

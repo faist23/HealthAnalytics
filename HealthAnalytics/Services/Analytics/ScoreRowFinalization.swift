@@ -39,6 +39,19 @@ enum ScoreRowFinalization {
         return start...yesterday
     }
 
+    /// Where `scoresFinalizedThrough` moves after a finalize run, or nil to leave it.
+    /// Only a caller that `advancesMarker` (the foreground refresh, which runs after the
+    /// Strava sync) may move it, and only when something was due and HealthKit was read.
+    /// The background pass recomputes rows but never advances: it may have seen only the
+    /// HealthKit copy of a ride, and the next foreground refresh recomputes the same days
+    /// with the Strava data.
+    nonisolated static func markerAdvance(
+        range: ClosedRange<Date>?, readBiometrics: Bool, advancesMarker: Bool
+    ) -> Date? {
+        guard advancesMarker, let range, readBiometrics else { return nil }
+        return range.upperBound
+    }
+
     /// Whether a backfill actually looked at the user's history: HRV or resting HR came
     /// back non-empty. A locked device or missing permission reads nothing. Sleep is not
     /// required: a user who doesn't track sleep still has HRV/RHR, and requiring it kept

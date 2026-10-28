@@ -175,7 +175,12 @@ struct LiveBackgroundPassSteps: BackgroundPassSteps {
 
     func refreshWorkouts() async throws { try await SyncManager.shared.refreshWorkoutsFromHealthKit() }
 
-    func finalizeScoreRows() async { await repository.finalizeScoreRows(modelContext: container.mainContext) }
+    /// Recomputes rows but never advances `scoresFinalizedThrough`: before the Strava
+    /// sync the store may hold only the HealthKit copy of yesterday's ride, and the next
+    /// foreground refresh recomputes the same days with the Strava data.
+    func finalizeScoreRows() async {
+        await repository.finalizeScoreRows(modelContext: container.mainContext, advancesMarker: false)
+    }
 
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws {
         try await repository.analyzePatternsForBackgroundPass(container: container, commitGate: commitGate)
