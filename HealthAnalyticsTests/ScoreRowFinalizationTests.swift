@@ -15,9 +15,13 @@ final class ScoreRowFinalizationTests: XCTestCase {
     private var today: Date { cal.startOfDay(for: Date()) }
     private func day(_ offset: Int) -> Date { cal.date(byAdding: .day, value: offset, to: today)! }
 
-    func test_neverFinalized_recomputesYesterdayOnly() {
+    /// An upgrading user has no marker but may have up to 90 days of mid-day rows the
+    /// old backfill froze. The first run recomputes the whole horizon once; the marker
+    /// then bounds every later run.
+    func test_neverFinalized_recomputesTheWholeHorizonOnce() {
         let range = ScoreRowFinalization.recomputeRange(finalizedThrough: nil, now: Date())
-        XCTAssertEqual(range, day(-1)...day(-1))
+        XCTAssertEqual(range, day(-ScoreRowFinalization.maxRecomputeDays)...day(-1))
+        XCTAssertEqual(range?.lowerBound, day(-90))
     }
 
     /// Last open was 3 days ago, which finalized through 4 days ago. The open day's

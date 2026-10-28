@@ -13,9 +13,11 @@ enum ScoreRowFinalization {
     /// Matches the backfill horizon (`backfillHistoricalScores` covers 90 days).
     nonisolated static let maxRecomputeDays = 90
 
-    /// Days to recompute: from the day after `finalizedThrough` (yesterday when nothing
-    /// was ever finalized) through yesterday, never today, at most `maxRecomputeDays`
-    /// back. Nil when nothing is due, including a `finalizedThrough` in the future.
+    /// Days to recompute: from the day after `finalizedThrough` through yesterday, never
+    /// today, at most `maxRecomputeDays` back. Nil when nothing is due, including a
+    /// `finalizedThrough` in the future. With no marker yet (an upgrading user) the whole
+    /// horizon is due once: the old backfill froze any mid-day row it wrote, on any of
+    /// those days, and only a full pass can find them.
     nonisolated static func recomputeRange(
         finalizedThrough: Date?,
         now: Date,
@@ -26,7 +28,7 @@ enum ScoreRowFinalization {
               let horizon = calendar.date(byAdding: .day, value: -maxRecomputeDays, to: today)
         else { return nil }
 
-        var start = yesterday
+        var start = horizon
         if let finalizedThrough {
             let finalizedDay = calendar.startOfDay(for: finalizedThrough)
             guard finalizedDay < yesterday,
