@@ -252,6 +252,30 @@ final class BackgroundPatternPassTests: XCTestCase {
         XCTAssertEqual(log.count(.workoutDelivery, whileActive: true), 1)
     }
 
+    /// iOS fires every observer query once when it registers, so each foreground cold
+    /// launch "delivers". A wake while the app is in the foreground must not run a full
+    /// pass: it records `skippedForeground` and the foreground's own refresh does the work.
+    func test_skipIfForeground_inForeground_recordsSkippedForeground() {
+        let log = BackgroundPassLog(defaults: defaults)
+
+        let skipped = BackgroundPatternPass.skipIfForeground(appInForeground: true, log: log, at: t0)
+
+        XCTAssertTrue(skipped)
+        XCTAssertEqual(log.count(.skippedForeground), 1)
+        XCTAssertEqual(log.lastOutcome, .skippedForeground)
+        XCTAssertEqual(log.lastOutcomeAt, t0)
+    }
+
+    func test_skipIfForeground_inBackground_runsAndRecordsNothing() {
+        let log = BackgroundPassLog(defaults: defaults)
+
+        let skipped = BackgroundPatternPass.skipIfForeground(appInForeground: false, log: log, at: t0)
+
+        XCTAssertFalse(skipped)
+        XCTAssertEqual(log.count(.skippedForeground), 0)
+        XCTAssertNil(log.lastOutcome)
+    }
+
     func test_isWithinBudget_edges() {
         XCTAssertTrue(BackgroundPatternPass.isWithinBudget(startedAt: t0, now: t0))
         XCTAssertTrue(BackgroundPatternPass.isWithinBudget(startedAt: t0, now: t0.addingTimeInterval(BackgroundPatternPass.maxDuration)))

@@ -2,7 +2,8 @@
 //  BackgroundPatternPass.swift
 //  HealthAnalytics
 //
-//  The one thing background triggers (HealthKit delivery, app refresh) run. Order:
+//  The one thing background triggers (HealthKit delivery, app refresh) run. A wake
+//  while the app is in the foreground is skipped before the pass starts. Order:
 //  protected-data guard → throttle → HealthKit-only workout refresh → score-row
 //  finalization → detection behind a commit gate → stamp (start time) → Coach only
 //  if the app is in the foreground. Never posts DataSyncCompleted, never calls Strava.
@@ -18,7 +19,7 @@ enum BackgroundPassWake: String, CaseIterable, Sendable {
 }
 
 enum BackgroundPassOutcome: String, CaseIterable, Sendable {
-    case skippedLocked, throttled, completed, abandoned, failed
+    case skippedForeground, skippedLocked, throttled, completed, abandoned, failed
 }
 
 @MainActor
@@ -106,6 +107,17 @@ final class BackgroundPatternPass {
         }
         await steps.refreshCoachIfForeground()
         return .completed
+    }
+
+    /// A wake while the app is in the foreground skips the pass and records
+    /// `skippedForeground`. iOS fires every observer query once when it registers, so
+    /// each foreground cold launch "delivers"; the foreground's own sync and refresh do
+    /// that work (with Strava data). App-refresh wakes are background by construction.
+    /// Returns true when the caller must not run the pass.
+    static func skipIfForeground(appInForeground: Bool, log: BackgroundPassLog, at date: Date) -> Bool {
+        guard appInForeground else { return false }
+        log.record(.skippedForeground, at: date)
+        return true
     }
 
     /// Inside the budget and not before the start (a clock moved backwards proves

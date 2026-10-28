@@ -192,7 +192,11 @@ class ReadinessRepository: ObservableObject {
         // `!= .background`, not `== .active`: a foreground cold launch is still `.inactive`
         // when didFinishLaunching runs the observer queries, and their first callbacks
         // must not count as background deliveries. Same rule as `applicationIsInForeground`.
-        log.recordWake(wake, appActive: Self.applicationIsInForeground())
+        let inForeground = Self.applicationIsInForeground()
+        log.recordWake(wake, appActive: inForeground)
+        // The observers' registration callbacks on every foreground cold launch would
+        // otherwise run a full pass; the foreground's own sync and refresh cover it.
+        if BackgroundPatternPass.skipIfForeground(appInForeground: inForeground, log: log, at: Date()) { return }
         await patternAnalysisFlight.run { [self] in
             let steps = LiveBackgroundPassSteps(repository: self, container: container)
             await BackgroundPatternPass(steps: steps, log: log, wake: wake).run()
