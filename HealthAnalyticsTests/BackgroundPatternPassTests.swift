@@ -26,6 +26,10 @@ private final class FakeSteps: BackgroundPassSteps {
     /// Advances the fake clock during analysis, before the gate is asked.
     var advanceDuringAnalysis: TimeInterval = 0
     var newestHRV: Date?
+    /// A foreground sync is in flight.
+    var syncing = false
+    /// A foreground sync starts during analysis, before the gate is asked.
+    var startSyncDuringAnalysis = false
     /// Advances the fake clock inside the newest-HRV query, after the commit.
     var advanceDuringHRVQuery: TimeInterval = 0
     let clock: FakeClock
@@ -38,6 +42,7 @@ private final class FakeSteps: BackgroundPassSteps {
 
     func isProtectedDataAvailable() -> Bool { protectedDataAvailable }
     func lastPatternRun() -> Date? { lastRun }
+    func isSyncing() -> Bool { syncing }
     func refreshWorkouts() async throws {
         calls.append("refreshWorkouts")
         clock.now = clock.now.addingTimeInterval(advanceDuringRefresh)
@@ -47,13 +52,13 @@ private final class FakeSteps: BackgroundPassSteps {
         calls.append("analyze")
         if let analyzeError { throw analyzeError }
         clock.now = clock.now.addingTimeInterval(advanceDuringAnalysis)
+        if startSyncDuringAnalysis { syncing = true }
         let ok = await commitGate()
         gateResult = ok
         if !ok { throw PatternAnalysisError.commitDeclined }
         calls.append("commit")
     }
     func stamp(_ startedAt: Date) { calls.append("stamp"); stamped = startedAt }
-    func refreshCoachIfForeground() async { calls.append("coach") }
     func newestHRVSampleDate() async -> Date? {
         calls.append("newestHRV")
         clock.now = clock.now.addingTimeInterval(advanceDuringHRVQuery)
@@ -92,7 +97,7 @@ final class BackgroundPatternPassTests: XCTestCase {
         let outcome = await pass.run()
 
         XCTAssertEqual(outcome, .completed)
-        XCTAssertEqual(steps.calls, ["refreshWorkouts", "analyze", "commit", "stamp", "newestHRV", "coach"])
+        XCTAssertEqual(steps.calls, ["refreshWorkouts", "analyze", "commit", "stamp", "newestHRV"])
         XCTAssertEqual(steps.stamped, t0, "The stamp describes the data the run read: its start, not its end")
         XCTAssertEqual(log.count(.completed), 1)
     }
@@ -142,8 +147,39 @@ final class BackgroundPatternPassTests: XCTestCase {
         XCTAssertEqual(steps.gateResult, false)
         XCTAssertNil(steps.stamped, "An abandoned run must not stamp, so the next trigger runs fresh")
         XCTAssertFalse(steps.calls.contains("commit"))
-        XCTAssertFalse(steps.calls.contains("coach"))
         XCTAssertEqual(log.count(.abandoned), 1)
+    }
+
+    /// A foreground sync is storing workouts (with Strava) and backfilling history. The
+    /// pass must not refresh, detect or commit over a half-written store.
+    func test_syncInProgress_skipsEveryStep() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        steps.syncing = true
+        let (pass, log) = makePass(steps, clock)
+
+        let outcome = await pass.run()
+
+        XCTAssertEqual(outcome, .skippedSyncing)
+        XCTAssertTrue(steps.calls.isEmpty)
+        XCTAssertNil(steps.stamped)
+        XCTAssertEqual(log.count(.skippedSyncing), 1)
+        XCTAssertTrue(BackgroundPatternPass.isCompleted(.skippedSyncing), "A skip leaves nothing for joiners to redo")
+    }
+
+    /// A sync that starts while detection runs (the user opened the app) means detection
+    /// read a store the sync is now rewriting. The gate refuses: no commit, no stamp.
+    func test_syncStartingDuringAnalysis_isAbandoned() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        steps.startSyncDuringAnalysis = true
+        let (pass, _) = makePass(steps, clock)
+
+        let outcome = await pass.run()
+
+        XCTAssertEqual(outcome, .abandoned)
+        XCTAssertEqual(steps.gateResult, false)
+        XCTAssertNil(steps.stamped)
     }
 
     /// A pass frozen inside the workout refresh resumes past its budget. Detecting now
@@ -287,8 +323,20 @@ final class BackgroundPatternPassTests: XCTestCase {
 
         XCTAssertTrue(skipped)
         XCTAssertEqual(log.count(.skippedForeground), 1)
-        XCTAssertEqual(log.lastOutcome, .skippedForeground)
+    }
+
+    /// "Last pass" in Settings is the device checklist's evidence of what the last
+    /// background pass did. A foreground skip (any observer fire after the user opens the
+    /// app) is counted but must not overwrite it.
+    func test_skipIfForeground_doesNotOverwriteTheLastBackgroundOutcome() {
+        let log = BackgroundPassLog(defaults: defaults)
+        log.record(.completed, at: t0)
+
+        _ = BackgroundPatternPass.skipIfForeground(appInForeground: true, log: log, at: t0.addingTimeInterval(60))
+
+        XCTAssertEqual(log.lastOutcome, .completed)
         XCTAssertEqual(log.lastOutcomeAt, t0)
+        XCTAssertEqual(log.count(.skippedForeground), 1)
     }
 
     func test_skipIfForeground_inBackground_runsAndRecordsNothing() {

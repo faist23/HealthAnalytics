@@ -157,4 +157,17 @@ final class HealthDataObserverTests: XCTestCase {
         XCTAssertEqual(byType[HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue], .hrvDelivery)
         XCTAssertEqual(byType[HKObjectType.workoutType().identifier], .workoutDelivery)
     }
+
+    /// Each observer query fires once when it is executed, in every process. On a
+    /// background cold launch (an app-refresh launch, or a delivery relaunch for the other
+    /// type) that fire is not evidence of a delivery, so it is tagged `.launch`: counted
+    /// apart and never measured as HRV-to-commit latency. Later fires keep their type.
+    func test_firstFirePerTypeIsALaunchFire_laterFiresKeepTheirWake() {
+        var seen: Set<BackgroundPassWake> = []
+
+        XCTAssertEqual(HealthDataObserver.wakeForFire(.hrvDelivery, seen: &seen), .launch)
+        XCTAssertEqual(HealthDataObserver.wakeForFire(.workoutDelivery, seen: &seen), .launch)
+        XCTAssertEqual(HealthDataObserver.wakeForFire(.hrvDelivery, seen: &seen), .hrvDelivery)
+        XCTAssertEqual(HealthDataObserver.wakeForFire(.workoutDelivery, seen: &seen), .workoutDelivery)
+    }
 }

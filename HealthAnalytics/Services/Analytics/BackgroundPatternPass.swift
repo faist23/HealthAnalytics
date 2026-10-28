@@ -4,10 +4,13 @@
 //
 //  The one thing background triggers (HealthKit delivery, app refresh) run. A wake
 //  while the app is in the foreground is skipped before the pass starts. Order:
-//  protected-data guard → throttle → HealthKit-only workout refresh → detection behind
-//  a commit gate → stamp (start time) → Coach only if the app is in the foreground.
-//  Never fills score rows (the foreground does, after the Strava sync), never posts
-//  DataSyncCompleted, never calls Strava.
+//  protected-data guard → throttle → sync guard → HealthKit-only workout refresh →
+//  detection behind a commit gate → stamp (start time).
+//  Touches no foreground state: never fills score rows (the foreground does, after the
+//  Strava sync), never refreshes Coach (that runs `refreshIfNecessary`, whose backfill
+//  fills rows; the next foreground trigger refreshes Coach, since the active pattern set
+//  is in its cache key), never runs or commits while a foreground sync is in flight,
+//  never posts DataSyncCompleted, never calls Strava.
 //
 
 import Foundation
@@ -15,24 +18,27 @@ import HealthKit
 import SwiftData
 import UIKit
 
+/// `launch` is an observer query's first fire in a process: iOS fires each query once
+/// when it is executed, so on a background cold launch it isn't delivery evidence.
 enum BackgroundPassWake: String, CaseIterable, Sendable {
-    case hrvDelivery, workoutDelivery, appRefresh
+    case hrvDelivery, workoutDelivery, appRefresh, launch
 }
 
 enum BackgroundPassOutcome: String, CaseIterable, Sendable {
-    case skippedForeground, skippedLocked, throttled, completed, abandoned, failed
+    case skippedForeground, skippedLocked, throttled, skippedSyncing, completed, abandoned, failed
 }
 
 @MainActor
 protocol BackgroundPassSteps {
     func isProtectedDataAvailable() -> Bool
     func lastPatternRun() -> Date?
+    /// A foreground sync is in flight (storing workouts with Strava, backfilling history).
+    func isSyncing() -> Bool
     func refreshWorkouts() async throws
     /// Detects, then commits only if `commitGate` returns true; throws
     /// `PatternAnalysisError.commitDeclined` when it refuses.
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws
     func stamp(_ startedAt: Date)
-    func refreshCoachIfForeground() async
     func newestHRVSampleDate() async -> Date?
 }
 
@@ -74,6 +80,8 @@ final class BackgroundPatternPass {
         guard ReadinessRepository.shouldRunPatternAnalysis(
             lastRun: steps.lastPatternRun(), trigger: .background, now: startedAt
         ) else { return .throttled }
+        // A sync is rewriting the store; detecting over it would read half its writes.
+        guard !steps.isSyncing() else { return .skippedSyncing }
 
         // The refresh's failure may not block detection: a stale store is still checked by
         // the gate. A suspension inside it ends the pass, though: a run frozen
@@ -83,10 +91,9 @@ final class BackgroundPatternPass {
         try? await steps.refreshWorkouts()
         guard Self.isWithinBudget(startedAt: startedAt, now: now()) else { return .abandoned }
 
-        let clock = now
         do {
-            try await steps.analyzePatterns(commitGate: {
-                Self.isWithinBudget(startedAt: startedAt, now: clock())
+            try await steps.analyzePatterns(commitGate: { [self] in
+                await self.mayCommit(startedAt: startedAt)
             })
         } catch PatternAnalysisError.commitDeclined {
             return .abandoned
@@ -109,8 +116,13 @@ final class BackgroundPatternPass {
         if wake == .hrvDelivery, let newest = await steps.newestHRVSampleDate() {
             log.recordLatency(committedAt.timeIntervalSince(newest))
         }
-        await steps.refreshCoachIfForeground()
         return .completed
+    }
+
+    /// The commit gate: inside the budget (no suspension) and no foreground sync started
+    /// meanwhile (detection read a store the sync is now rewriting).
+    private func mayCommit(startedAt: Date) -> Bool {
+        Self.isWithinBudget(startedAt: startedAt, now: now()) && !steps.isSyncing()
     }
 
     /// A wake while the app is in the foreground skips the pass and records
@@ -177,8 +189,11 @@ struct BackgroundPassLog {
         increment(Self.wakeKey(wake, whileActive: appActive))
     }
 
+    /// A foreground skip is counted but leaves "last outcome" alone: that field is the
+    /// device checklist's evidence of what the last background pass did.
     func record(_ outcome: BackgroundPassOutcome, at date: Date) {
         increment("backgroundPass.outcome.\(outcome.rawValue)")
+        guard outcome != .skippedForeground else { return }
         defaults.set(outcome.rawValue, forKey: "backgroundPass.lastOutcome")
         defaults.set(date, forKey: "backgroundPass.lastOutcomeAt")
     }
@@ -217,6 +232,8 @@ struct LiveBackgroundPassSteps: BackgroundPassSteps {
         UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
     }
 
+    func isSyncing() -> Bool { SyncManager.shared.isSyncing }
+
     func refreshWorkouts() async throws { try await SyncManager.shared.refreshWorkoutsFromHealthKit() }
 
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws {
@@ -224,11 +241,6 @@ struct LiveBackgroundPassSteps: BackgroundPassSteps {
     }
 
     func stamp(_ startedAt: Date) { UserDefaults.standard.set(startedAt, forKey: "lastPatternAnalysisDate") }
-
-    func refreshCoachIfForeground() async {
-        guard repository.isAppInForeground() else { return }
-        await repository.refreshIfNecessary(modelContext: container.mainContext)
-    }
 
     func newestHRVSampleDate() async -> Date? {
         await withCheckedContinuation { continuation in

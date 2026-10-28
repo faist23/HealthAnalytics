@@ -77,6 +77,11 @@ class SyncManager: ObservableObject {
         // and skips the migration — preventing double-deletion of workouts.
         if !hasDeduplicatedWorkouts && !isMigrating {
             isMigrating = true
+            // A background refresh upserting while the dedup reads would insert a row the
+            // dedup never saw, and the flag below makes that permanent. `isMigrating` is
+            // set, so no new refresh starts (see `refreshWorkoutsFromHealthKit`); wait out
+            // one already running.
+            await backgroundRefresh.waitForInFlight()
             await dataHandler.removeDuplicateWorkouts()
             hasDeduplicatedWorkouts = true
             isMigrating = false
@@ -158,10 +163,10 @@ class SyncManager: ObservableObject {
     /// Strava, never posts `DataSyncCompleted` (its observer runs the Coach refresh),
     /// and never moves `lastSyncDate` — the next foreground sync must still pull Strava
     /// power data for this window. Does nothing (no fetch, no stamp) while a foreground
-    /// sync runs, and a sync starting meanwhile waits for it (`backgroundRefresh`), so the
-    /// two upserts never interleave and double-store a ride.
+    /// sync or the one-time workout dedup runs, and either one starting meanwhile waits
+    /// for it (`backgroundRefresh`), so the two never interleave and double-store a ride.
     func refreshWorkoutsFromHealthKit(now: Date = Date()) async throws {
-        try await backgroundRefresh.run(skippingWhile: isSyncing) { [self] in
+        try await backgroundRefresh.run(skippingWhile: isSyncing || isMigrating) { [self] in
             let start = Self.healthKitRefreshWindowStart(
                 lastBackgroundRefresh: lastBackgroundWorkoutRefresh, lastSync: lastSyncDate, now: now
             )

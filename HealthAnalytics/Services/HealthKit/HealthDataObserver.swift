@@ -60,6 +60,8 @@ final class HealthDataObserver {
 
     private let store = HKHealthStore()
     private var queries: [HKObserverQuery] = []
+    /// Types whose query has fired at least once in this process.
+    private var firedTypes: Set<BackgroundPassWake> = []
 
     private init() {}
 
@@ -77,8 +79,9 @@ final class HealthDataObserver {
                 }
                 nonisolated(unsafe) let done = completion
                 Task { @MainActor in
+                    let fire = Self.wakeForFire(wake, seen: &Self.shared.firedTypes)
                     await Self.handleUpdate(
-                        wake: wake,
+                        wake: fire,
                         run: { await Self.runHoldingBackgroundTime(wake: $0, run: onUpdate) },
                         completion: done
                     )
@@ -92,6 +95,15 @@ final class HealthDataObserver {
                 #endif
             }
         }
+    }
+
+    /// A query's first fire in a process is tagged `.launch`: iOS fires every query once
+    /// when it is executed, so on a background cold launch (an app-refresh launch, or a
+    /// delivery relaunch for the other type) it isn't evidence of a delivery. The pass
+    /// still runs for it (a relaunch delivery arrives this way too); it is just counted
+    /// apart and never measures HRV-to-commit latency.
+    static func wakeForFire(_ wake: BackgroundPassWake, seen: inout Set<BackgroundPassWake>) -> BackgroundPassWake {
+        seen.insert(wake).inserted ? .launch : wake
     }
 
     /// Always calls `completion`, whatever `run` does: iOS backs off delivery for an
