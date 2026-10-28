@@ -38,4 +38,12 @@ enum ScoreRowFinalization {
         }
         return start...yesterday
     }
+
+    /// Whether a backfill actually looked at the user's history: HRV or resting HR came
+    /// back non-empty. A locked device or missing permission reads nothing. Sleep is not
+    /// required: a user who doesn't track sleep still has HRV/RHR, and requiring it kept
+    /// their marker unset, so every run recomputed the whole horizon.
+    nonisolated static func readBiometrics(hrvCount: Int, restingHRCount: Int) -> Bool {
+        hrvCount > 0 || restingHRCount > 0
+    }
 }

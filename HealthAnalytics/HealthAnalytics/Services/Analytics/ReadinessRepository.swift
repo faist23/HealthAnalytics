@@ -1000,7 +1000,8 @@ class ReadinessRepository: ObservableObject {
     /// Runs once on first launch (UserDefaults gate) and re-runs whenever fewer than 14 records
     /// exist (e.g. after a data clear). This unlocks the 7-day forecast and 14-Day Signature
     /// without requiring 14 consecutive days of app opens.
-    /// Returns true only when biometric data was actually read (HRV or RHR, and sleep, non-empty).
+    /// Returns true only when biometric data was actually read (HRV or RHR non-empty;
+    /// see `ScoreRowFinalization.readBiometrics`).
     @discardableResult
     private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false, recomputeFrom: Date? = nil) async -> Bool {
         // V5: diagnose existingDates vs per-day filter failure.
@@ -1042,8 +1043,9 @@ class ReadinessRepository: ObservableObject {
             hkWorkoutFetch ?? []
         )
         // A failed or empty HealthKit read (locked device, no permission) must not count as
-        // having looked at the history.
-        let readBiometrics = (!allHRV.isEmpty || !allRHR.isEmpty) && !allSleep.isEmpty
+        // having looked at the history. HRV or RHR is enough; sleep is not required, or a
+        // user who doesn't track sleep never advances `scoresFinalizedThrough`.
+        let readBiometrics = ScoreRowFinalization.readBiometrics(hrvCount: allHRV.count, restingHRCount: allRHR.count)
 
 
         // Workouts: merge HealthKit history with StoredWorkout (has Strava power data).

@@ -57,4 +57,14 @@ final class ScoreRowFinalizationTests: XCTestCase {
         let range = ScoreRowFinalization.recomputeRange(finalizedThrough: lateOnDayMinus4, now: Date())
         XCTAssertEqual(range, day(-3)...day(-1))
     }
+
+    // MARK: - What counts as having read HealthKit (R4)
+
+    /// Users with no sleep tracking still have HRV or RHR. Requiring sleep kept their
+    /// marker unset forever, so every run recomputed the whole horizon.
+    func test_readBiometrics_hrvOrRestingHeartRateIsEnough_sleepIsNotRequired() {
+        XCTAssertTrue(ScoreRowFinalization.readBiometrics(hrvCount: 5, restingHRCount: 0))
+        XCTAssertTrue(ScoreRowFinalization.readBiometrics(hrvCount: 0, restingHRCount: 5))
+        XCTAssertFalse(ScoreRowFinalization.readBiometrics(hrvCount: 0, restingHRCount: 0))
+    }
 }
