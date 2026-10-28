@@ -207,6 +207,66 @@ final class RecentDailyLoadRefreshTests: XCTestCase {
         XCTAssertEqual(UserDefaults.standard.object(forKey: key) as? Date, stamp)
     }
 
+    // MARK: - Upgrade-flag orchestration
+
+    // Value: protects=first refreshRecentDailyLoads run does the 90-day only-raise pass then the 7-day exact pass and sets dailyLoadRecomputeV1Done, later runs do only the 7-day pass;
+    //   fails_when=the flag is not set, is set before the passes run, or onlyRaise lands on the wrong pass (HealthKit-only history lowered, or a stale recent row not lowered);
+    //   why_new=wiring tests call refreshDailyLoads directly and passes() is only tested as a pure list;
+    //   seam=none (ReadinessRepository.shared + in-memory store + UserDefaults); no_claim=pass order (the two passes commute on these fixtures) or that the app calls it on launch
+    func test_refreshRecentDailyLoads_firstRunDoesUpgradeThenRecentPass_setsFlag_laterRunsOnlyRecent() throws {
+        let defaults = UserDefaults.standard
+        let flagKey = RecentDailyLoadRefresh.upgradeDoneKey
+        let stampKey = "lastPatternAnalysisDate"
+        let savedFlag = defaults.object(forKey: flagKey)
+        let savedStamp = defaults.object(forKey: stampKey)
+        defer { defaults.set(savedFlag, forKey: flagKey); defaults.set(savedStamp, forKey: stampKey) }
+        defaults.removeObject(forKey: flagKey)
+
+        let ctx = ModelContext(try makeContainer())
+        func score(_ offset: Int, load: Double, count: Int) -> StoredDailyScore {
+            let row = StoredDailyScore(date: day(offset), readinessScore: 70, dailyStrain: 1.0, workoutCount: count, dailyLoad: load)
+            ctx.insert(row)
+            return row
+        }
+        func workout(_ id: String, on offset: Int) {
+            ctx.insert(StoredWorkout(id: id, type: .cycling, startDate: day(offset).addingTimeInterval(3600), duration: 3600,
+                                     distance: nil, power: nil, energy: nil, hr: nil, source: "Apple Watch"))
+        }
+        // Stored loads of 10_000 sit far above what one stored hour can weigh.
+        let healthKitOnly = score(-40, load: 10_000, count: 3)   // pre-first-sync HealthKit rides, never stored
+        let lateRide = score(-41, load: 0, count: 0)             // mid-day row, ride arrived later
+        let stale = score(-3, load: 10_000, count: 3)            // recent row, stored workouts are the truth
+        workout("hk", on: -40); workout("late", on: -41); workout("recent", on: -3)
+        try ctx.save()
+        defaults.set(Date(), forKey: stampKey)
+
+        ReadinessRepository.shared.refreshRecentDailyLoads(modelContext: ctx)
+
+        XCTAssertEqual(healthKitOnly.dailyLoad, 10_000, "90-day pass must only raise")
+        XCTAssertEqual(healthKitOnly.workoutCount, 3)
+        XCTAssertGreaterThan(lateRide.dailyLoad, 0, "90-day pass raises a lower row")
+        XCTAssertEqual(lateRide.workoutCount, 1)
+        XCTAssertLessThan(stale.dailyLoad, 10_000, "7-day pass is exact and lowers")
+        XCTAssertEqual(stale.workoutCount, 1)
+        XCTAssertTrue(defaults.bool(forKey: flagKey), "Upgrade flag set after the first run")
+
+        // Flag set: a 90-day-old row changed in between is out of the 7-day pass's reach.
+        let lateRaised = lateRide.dailyLoad
+        lateRide.dailyLoad = 0; lateRide.workoutCount = 0
+        let staleLowered = stale.dailyLoad
+        stale.dailyLoad = 10_000; stale.workoutCount = 3
+        try ctx.save()
+
+        ReadinessRepository.shared.refreshRecentDailyLoads(modelContext: ctx)
+
+        XCTAssertGreaterThan(lateRaised, 0)
+        XCTAssertEqual(lateRide.dailyLoad, 0, "No 90-day pass once the flag is set")
+        XCTAssertEqual(lateRide.workoutCount, 0)
+        XCTAssertEqual(stale.dailyLoad, staleLowered, "7-day pass still runs every time")
+        XCTAssertEqual(stale.workoutCount, 1)
+        XCTAssertTrue(defaults.bool(forKey: flagKey))
+    }
+
     // MARK: - Repository wiring (in-memory store, no HealthKit)
 
     func test_refreshDailyLoads_lateRideReachesItsDay_onlyLoadAndCountMove_noRowInserted() throws {
