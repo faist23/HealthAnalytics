@@ -27,7 +27,7 @@ protocol BackgroundPassSteps {
     func isProtectedDataAvailable() -> Bool
     func lastPatternRun() -> Date?
     func refreshWorkouts() async throws
-    func refreshRecentDailyLoads() async
+    func fillMissingScoreRows() async
     /// Detects, then commits only if `commitGate` returns true; throws
     /// `PatternAnalysisError.commitDeclined` when it refuses.
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws
@@ -82,7 +82,7 @@ final class BackgroundPatternPass {
         // joins that doomed run (its joiners rerun once; see `SingleFlight.run`).
         try? await steps.refreshWorkouts()
         guard Self.isWithinBudget(startedAt: startedAt, now: now()) else { return .abandoned }
-        await steps.refreshRecentDailyLoads()
+        await steps.fillMissingScoreRows()
         guard Self.isWithinBudget(startedAt: startedAt, now: now()) else { return .abandoned }
 
         let clock = now
@@ -216,11 +216,9 @@ struct LiveBackgroundPassSteps: BackgroundPassSteps {
 
     func refreshWorkouts() async throws { try await SyncManager.shared.refreshWorkoutsFromHealthKit() }
 
-    /// Load and count only, from StoredWorkout: a ride the pass just stored from
-    /// HealthKit reaches its day now, and the next foreground refresh re-derives the same
-    /// week after the Strava sync. Scores and ACWR are never rewritten.
-    func refreshRecentDailyLoads() async {
-        repository.refreshRecentDailyLoads(modelContext: container.mainContext)
+    /// Inserts score rows for days that have none; existing rows are never rewritten.
+    func fillMissingScoreRows() async {
+        await repository.backfillHistoricalScores(modelContext: container.mainContext)
     }
 
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws {

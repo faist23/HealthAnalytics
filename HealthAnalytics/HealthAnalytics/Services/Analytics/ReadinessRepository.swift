@@ -403,10 +403,8 @@ class ReadinessRepository: ObservableObject {
     // MARK: - Main Analysis Entry Point
     
     func refreshIfNecessary(modelContext: ModelContext) async {
-        // Backfill missing StoredDailyScore days, then bring the last week's load up to
-        // date (a ride that synced after its day's row was written).
+        // Backfill StoredDailyScore from HealthKit history on first launch.
         await backfillHistoricalScores(modelContext: modelContext)
-        refreshRecentDailyLoads(modelContext: modelContext)
         // One-time migration: populate dailyLoad on existing rows (default was 0.0 from schema add).
         backfillDailyLoad(modelContext: modelContext)
 
@@ -1004,7 +1002,7 @@ class ReadinessRepository: ObservableObject {
     /// Runs once on first launch (UserDefaults gate) and re-runs whenever fewer than 14 records
     /// exist (e.g. after a data clear). This unlocks the 7-day forecast and 14-Day Signature
     /// without requiring 14 consecutive days of app opens.
-    private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false) async {
+    func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false) async {
         // V5: diagnose existingDates vs per-day filter failure.
         let udKey = "historicalScoreBackfillV5Done"
         let existingCount = (try? modelContext.fetchCount(FetchDescriptor<StoredDailyScore>())) ?? 0
@@ -1131,59 +1129,6 @@ class ReadinessRepository: ObservableObject {
         #if DEBUG
         if inserted > 0 { print("📅 Backfill: inserted \(inserted) historical StoredDailyScore records") }
         #endif
-    }
-
-    // MARK: - Recent Daily Load Refresh
-
-    /// Re-derives `dailyLoad` and `workoutCount` for the last `recentLoadRecomputeDays`
-    /// complete days, so a ride that synced after its day's row was written still counts
-    /// toward that day. Once, on upgrade (`dailyLoadRecomputeV1Done`), a 90-day pass runs
-    /// first that only raises (see `RecentDailyLoadRefresh.passes`). Shared by the
-    /// foreground refresh and the background pass.
-    func refreshRecentDailyLoads(modelContext: ModelContext) {
-        let key = RecentDailyLoadRefresh.upgradeDoneKey
-        let upgradeDone = UserDefaults.standard.bool(forKey: key)
-        for pass in RecentDailyLoadRefresh.passes(upgradeDone: upgradeDone) {
-            refreshDailyLoads(modelContext: modelContext, days: pass.days, onlyRaise: pass.onlyRaise)
-        }
-        // StoredWorkout only, no HealthKit read that could come back empty: one run is enough.
-        if !upgradeDone { UserDefaults.standard.set(true, forKey: key) }
-    }
-
-    /// Updates load and count, from `StoredWorkout` only, on the existing rows (every
-    /// twin) of the `days` complete days before today, and only where they differ
-    /// (only upward with `onlyRaise`).
-    /// Never writes readinessScore or dailyStrain, never touches today's row, never
-    /// inserts. Returns the number of rows changed; any change clears
-    /// `lastPatternAnalysisDate`, since a late ride changes what the detectors see.
-    @discardableResult
-    func refreshDailyLoads(modelContext: ModelContext, days: Int, onlyRaise: Bool = false, now: Date = Date()) -> Int {
-        let calendar = Calendar.current
-        let dayList = RecentDailyLoadRefresh.completeDays(count: days, now: now, calendar: calendar)
-        guard let first = dayList.first else { return 0 }
-        let today = calendar.startOfDay(for: now)
-
-        let rows = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>(
-            predicate: #Predicate { $0.date >= first && $0.date < today }
-        ))) ?? []
-        guard !rows.isEmpty else { return 0 }
-        let workouts = (try? modelContext.fetch(FetchDescriptor<StoredWorkout>(
-            predicate: #Predicate { $0.startDate >= first && $0.startDate < today }
-        ))) ?? []
-        let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
-
-        let loads = RecentDailyLoadRefresh.loads(
-            days: dayList, workouts: workouts.map { WorkoutData(from: $0) }, calendar: calendar
-        ) { predictiveReadinessService.calculateWorkoutLoad($0, ftpSnapshots: ftpSnapshots) }
-        let changed = RecentDailyLoadRefresh.apply(loads, to: rows, calendar: calendar, onlyRaise: onlyRaise)
-        if changed > 0 {
-            try? modelContext.save()
-            UserDefaults.standard.removeObject(forKey: "lastPatternAnalysisDate")
-        }
-        #if DEBUG
-        if changed > 0 { print("📅 Daily load refresh: updated \(changed) StoredDailyScore rows") }
-        #endif
-        return changed
     }
 
     /// One-time migration: populates dailyLoad on all existing StoredDailyScore rows from StoredWorkout.
