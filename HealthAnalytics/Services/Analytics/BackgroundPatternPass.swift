@@ -75,9 +75,15 @@ final class BackgroundPatternPass {
             lastRun: steps.lastPatternRun(), trigger: .background, now: startedAt
         ) else { return .throttled }
 
-        // Neither step may block detection: a stale store is still checked by the gate.
+        // Neither step's failure may block detection: a stale store is still checked by
+        // the gate. A suspension inside either step ends the pass, though: a run frozen
+        // there resumes past its budget, and continuing would hold the flight through a
+        // whole detection only for the gate to refuse it, while a wake arriving meanwhile
+        // joins that doomed run (its joiners rerun once; see `SingleFlight.run`).
         try? await steps.refreshWorkouts()
+        guard Self.isWithinBudget(startedAt: startedAt, now: now()) else { return .abandoned }
         await steps.finalizeScoreRows()
+        guard Self.isWithinBudget(startedAt: startedAt, now: now()) else { return .abandoned }
 
         let clock = now
         do {

@@ -21,6 +21,10 @@ private final class FakeSteps: BackgroundPassSteps {
     var lastRun: Date?
     var analyzeError: Error?
     var refreshWorkoutsError: Error?
+    /// Advances the fake clock inside the workout refresh / score finalization (a
+    /// suspension mid-step).
+    var advanceDuringRefresh: TimeInterval = 0
+    var advanceDuringFinalize: TimeInterval = 0
     /// Advances the fake clock during analysis, before the gate is asked.
     var advanceDuringAnalysis: TimeInterval = 0
     var newestHRV: Date?
@@ -38,9 +42,13 @@ private final class FakeSteps: BackgroundPassSteps {
     func lastPatternRun() -> Date? { lastRun }
     func refreshWorkouts() async throws {
         calls.append("refreshWorkouts")
+        clock.now = clock.now.addingTimeInterval(advanceDuringRefresh)
         if let refreshWorkoutsError { throw refreshWorkoutsError }
     }
-    func finalizeScoreRows() async { calls.append("finalizeScoreRows") }
+    func finalizeScoreRows() async {
+        calls.append("finalizeScoreRows")
+        clock.now = clock.now.addingTimeInterval(advanceDuringFinalize)
+    }
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws {
         calls.append("analyze")
         if let analyzeError { throw analyzeError }
@@ -141,6 +149,36 @@ final class BackgroundPatternPassTests: XCTestCase {
         XCTAssertNil(steps.stamped, "An abandoned run must not stamp, so the next trigger runs fresh")
         XCTAssertFalse(steps.calls.contains("commit"))
         XCTAssertFalse(steps.calls.contains("coach"))
+        XCTAssertEqual(log.count(.abandoned), 1)
+    }
+
+    /// A pass frozen inside the workout refresh resumes past its budget. Detecting now
+    /// would read a store refreshed before the freeze; stop before finalize and analysis.
+    func test_suspensionDuringWorkoutRefresh_isAbandoned_beforeFinalizeOrAnalysis() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        steps.advanceDuringRefresh = BackgroundPatternPass.maxDuration + 1
+        let (pass, log) = makePass(steps, clock)
+
+        let outcome = await pass.run()
+
+        XCTAssertEqual(outcome, .abandoned)
+        XCTAssertEqual(steps.calls, ["refreshWorkouts"])
+        XCTAssertNil(steps.stamped)
+        XCTAssertEqual(log.count(.abandoned), 1)
+    }
+
+    func test_suspensionDuringScoreFinalization_isAbandoned_beforeAnalysis() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        steps.advanceDuringFinalize = BackgroundPatternPass.maxDuration + 1
+        let (pass, log) = makePass(steps, clock)
+
+        let outcome = await pass.run()
+
+        XCTAssertEqual(outcome, .abandoned)
+        XCTAssertEqual(steps.calls, ["refreshWorkouts", "finalizeScoreRows"])
+        XCTAssertNil(steps.stamped)
         XCTAssertEqual(log.count(.abandoned), 1)
     }
 
