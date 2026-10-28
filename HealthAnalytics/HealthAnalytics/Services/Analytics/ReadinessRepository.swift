@@ -1002,7 +1002,7 @@ class ReadinessRepository: ObservableObject {
     /// Runs once on first launch (UserDefaults gate) and re-runs whenever fewer than 14 records
     /// exist (e.g. after a data clear). This unlocks the 7-day forecast and 14-Day Signature
     /// without requiring 14 consecutive days of app opens.
-    func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false) async {
+    private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false) async {
         // V5: diagnose existingDates vs per-day filter failure.
         let udKey = "historicalScoreBackfillV5Done"
         let existingCount = (try? modelContext.fetchCount(FetchDescriptor<StoredDailyScore>())) ?? 0

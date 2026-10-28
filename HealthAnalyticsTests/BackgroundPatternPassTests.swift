@@ -21,10 +21,8 @@ private final class FakeSteps: BackgroundPassSteps {
     var lastRun: Date?
     var analyzeError: Error?
     var refreshWorkoutsError: Error?
-    /// Advances the fake clock inside the workout refresh / missing-score-row fill (a
-    /// suspension mid-step).
+    /// Advances the fake clock inside the workout refresh (a suspension mid-step).
     var advanceDuringRefresh: TimeInterval = 0
-    var advanceDuringFillMissing: TimeInterval = 0
     /// Advances the fake clock during analysis, before the gate is asked.
     var advanceDuringAnalysis: TimeInterval = 0
     var newestHRV: Date?
@@ -44,10 +42,6 @@ private final class FakeSteps: BackgroundPassSteps {
         calls.append("refreshWorkouts")
         clock.now = clock.now.addingTimeInterval(advanceDuringRefresh)
         if let refreshWorkoutsError { throw refreshWorkoutsError }
-    }
-    func fillMissingScoreRows() async {
-        calls.append("fillMissingScoreRows")
-        clock.now = clock.now.addingTimeInterval(advanceDuringFillMissing)
     }
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws {
         calls.append("analyze")
@@ -98,7 +92,7 @@ final class BackgroundPatternPassTests: XCTestCase {
         let outcome = await pass.run()
 
         XCTAssertEqual(outcome, .completed)
-        XCTAssertEqual(steps.calls, ["refreshWorkouts", "fillMissingScoreRows", "analyze", "commit", "stamp", "newestHRV", "coach"])
+        XCTAssertEqual(steps.calls, ["refreshWorkouts", "analyze", "commit", "stamp", "newestHRV", "coach"])
         XCTAssertEqual(steps.stamped, t0, "The stamp describes the data the run read: its start, not its end")
         XCTAssertEqual(log.count(.completed), 1)
     }
@@ -153,8 +147,8 @@ final class BackgroundPatternPassTests: XCTestCase {
     }
 
     /// A pass frozen inside the workout refresh resumes past its budget. Detecting now
-    /// would read a store refreshed before the freeze; stop before the fill and analysis.
-    func test_suspensionDuringWorkoutRefresh_isAbandoned_beforeFillMissingOrAnalysis() async {
+    /// would read a store refreshed before the freeze; stop before analysis.
+    func test_suspensionDuringWorkoutRefresh_isAbandoned_beforeAnalysis() async {
         let clock = FakeClock(t0)
         let steps = FakeSteps(clock: clock)
         steps.advanceDuringRefresh = BackgroundPatternPass.maxDuration + 1
@@ -164,20 +158,6 @@ final class BackgroundPatternPassTests: XCTestCase {
 
         XCTAssertEqual(outcome, .abandoned)
         XCTAssertEqual(steps.calls, ["refreshWorkouts"])
-        XCTAssertNil(steps.stamped)
-        XCTAssertEqual(log.count(.abandoned), 1)
-    }
-
-    func test_suspensionDuringFillMissingScoreRows_isAbandoned_beforeAnalysis() async {
-        let clock = FakeClock(t0)
-        let steps = FakeSteps(clock: clock)
-        steps.advanceDuringFillMissing = BackgroundPatternPass.maxDuration + 1
-        let (pass, log) = makePass(steps, clock)
-
-        let outcome = await pass.run()
-
-        XCTAssertEqual(outcome, .abandoned)
-        XCTAssertEqual(steps.calls, ["refreshWorkouts", "fillMissingScoreRows"])
         XCTAssertNil(steps.stamped)
         XCTAssertEqual(log.count(.abandoned), 1)
     }

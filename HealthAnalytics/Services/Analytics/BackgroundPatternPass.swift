@@ -4,9 +4,10 @@
 //
 //  The one thing background triggers (HealthKit delivery, app refresh) run. A wake
 //  while the app is in the foreground is skipped before the pass starts. Order:
-//  protected-data guard → throttle → HealthKit-only workout refresh → recent daily
-//  load refresh → detection behind a commit gate → stamp (start time) → Coach only
-//  if the app is in the foreground. Never posts DataSyncCompleted, never calls Strava.
+//  protected-data guard → throttle → HealthKit-only workout refresh → detection behind
+//  a commit gate → stamp (start time) → Coach only if the app is in the foreground.
+//  Never fills score rows (the foreground does, after the Strava sync), never posts
+//  DataSyncCompleted, never calls Strava.
 //
 
 import Foundation
@@ -27,7 +28,6 @@ protocol BackgroundPassSteps {
     func isProtectedDataAvailable() -> Bool
     func lastPatternRun() -> Date?
     func refreshWorkouts() async throws
-    func fillMissingScoreRows() async
     /// Detects, then commits only if `commitGate` returns true; throws
     /// `PatternAnalysisError.commitDeclined` when it refuses.
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws
@@ -75,14 +75,12 @@ final class BackgroundPatternPass {
             lastRun: steps.lastPatternRun(), trigger: .background, now: startedAt
         ) else { return .throttled }
 
-        // Neither step's failure may block detection: a stale store is still checked by
-        // the gate. A suspension inside either step ends the pass, though: a run frozen
+        // The refresh's failure may not block detection: a stale store is still checked by
+        // the gate. A suspension inside it ends the pass, though: a run frozen
         // there resumes past its budget, and continuing would hold the flight through a
         // whole detection only for the gate to refuse it, while a wake arriving meanwhile
         // joins that doomed run (its joiners rerun once; see `SingleFlight.run`).
         try? await steps.refreshWorkouts()
-        guard Self.isWithinBudget(startedAt: startedAt, now: now()) else { return .abandoned }
-        await steps.fillMissingScoreRows()
         guard Self.isWithinBudget(startedAt: startedAt, now: now()) else { return .abandoned }
 
         let clock = now
@@ -143,8 +141,8 @@ final class BackgroundPatternPass {
         }
     }
 
-    /// What a pass reports to `SingleFlight`: only `abandoned` (nothing stored, the run
-    /// spanned a suspension) is not completed, so only it makes joiners retry once.
+    /// What a pass reports to `SingleFlight`: only `abandoned` (no patterns, notification or stamp;
+    /// the run spanned a suspension) is not completed, so only it makes joiners retry once.
     nonisolated static func isCompleted(_ outcome: BackgroundPassOutcome) -> Bool {
         outcome != .abandoned
     }
@@ -215,11 +213,6 @@ struct LiveBackgroundPassSteps: BackgroundPassSteps {
     }
 
     func refreshWorkouts() async throws { try await SyncManager.shared.refreshWorkoutsFromHealthKit() }
-
-    /// Inserts score rows for days that have none; existing rows are never rewritten.
-    func fillMissingScoreRows() async {
-        await repository.backfillHistoricalScores(modelContext: container.mainContext)
-    }
 
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws {
         try await repository.analyzePatternsForBackgroundPass(container: container, commitGate: commitGate)
