@@ -118,7 +118,14 @@ final class HealthDataObserverTests: XCTestCase {
                 completion: { completed += 1 }
             )
         }
-        while fake.expire == nil { await Task.yield() }
+        var spins = 0
+        while fake.expire == nil && spins < 10_000 { await Task.yield(); spins += 1 }
+        guard fake.expire != nil else {
+            XCTFail("the hold never registered an expiration handler")
+            releaseWork.finish()
+            await pending.value
+            return
+        }
         fake.expire?()
         await pending.value
 

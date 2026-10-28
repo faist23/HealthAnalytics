@@ -11,7 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **Pattern checks look at complete days.** Taper, back-to-back and the other history checks now use whole days through yesterday, so a half-finished today can't fake or hide a pattern. Today's partial day is left out until it's complete, so a half-finished day can't fake or hide a pattern, and a quiet morning's low step count no longer looks like a sick day.
+- **Pattern checks look at complete days.** Taper, back-to-back and the other history checks now use whole days through yesterday, so a half-finished today can't fake or hide a pattern, and a quiet morning's low step count no longer looks like a sick day.
 
 ## [0.1.15.0] - 2026-10-27
 
