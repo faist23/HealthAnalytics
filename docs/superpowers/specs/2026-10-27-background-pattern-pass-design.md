@@ -66,7 +66,7 @@ enum BackgroundPassOutcome {
 
 **`BackgroundPassSteps`** (protocol; the live implementation lives beside the pass)
 - `refreshWorkoutsFromHealthKit(since:)`: a HealthKit-only refresh into `StoredWorkout`.
-- `finalizeScoreRows(through:)`: writes missing past rows and recomputes stale ones.
+- `refreshRecentDailyLoads()`: re-derives the last 7 complete days' load and workout count (see Structure fix; the original marker-based step is gone).
 - `detectPatterns()`: the analyzer's detect phase.
 - `commitPatterns(_:)`: upserts the patterns, sends notifications and saves.
 
@@ -100,11 +100,10 @@ Both triggers run the pass through the existing `patternAnalysisFlight`. Overlap
    - It does not post `DataSyncCompleted`.
    - It does not touch `SyncManager.lastSyncDate`, so the next open still runs the full foreground sync, including Strava power streams.
    - It stamps its own `lastBackgroundWorkoutRefresh`.
-5. **Score rows:** `finalizeScoreRows(through: yesterday)`.
-   - It writes missing rows through yesterday using the backfill's existing per-day computation, extracted so both callers share it.
-   - It recomputes every existing row from `scoresFinalizedThrough` (UserDefaults, a calendar day) through yesterday, then advances `scoresFinalizedThrough` to yesterday.
+5. **Recent daily loads:** `refreshRecentDailyLoads()` (as built after the structure fix; the original design recomputed whole rows behind a marker, see the history below).
+   - It updates `dailyLoad` and `workoutCount` on the existing rows of the 7 complete days ending yesterday, from `StoredWorkout` only, where they differ. It never writes `readinessScore` or `dailyStrain` and never inserts; missing days stay the foreground backfill's job.
    - It never writes a row for today. Today's row stays foreground-only, written by `upsertDailyScore`.
-   - The foreground runs the same step inside `refreshIfNecessary`, so the stale-row gap is closed for both paths.
+   - The foreground runs the same step inside `refreshIfNecessary`, after the backfill, so a late ride reaches its day on both paths.
 6. **Detect:** `detectPatterns()`.
 7. **Commit gate:** if `clock.now − startedAt > maxBackgroundPassDuration` (2 minutes; the budget is about 30 seconds), the run spanned a suspension.
    - The result is `abandoned`: no commit, no stamp, no notification.
@@ -149,7 +148,7 @@ The existing debug Settings screen (beside `WorkoutAuditView`) shows them in a n
 ## Error handling
 
 - Errors in the background stay silent, as in v0.1.15 (`isAppInForeground` / `isLockedDeviceError`). They are recorded as the `failed` outcome.
-- `refreshWorkoutsFromHealthKit` or `finalizeScoreRows` failing does not stop the pass. Detection still runs, and the commit gate still applies.
+- `refreshWorkoutsFromHealthKit` failing does not stop the pass. Detection still runs, and the commit gate still applies.
 - The observer completion handler is always called (`defer`).
 - The app-refresh task always resubmits before doing anything else.
 - `enableBackgroundDelivery` failing is logged (DEBUG). App refresh still covers the run.
@@ -173,10 +172,9 @@ Unit tests (simulator lane, no singleton, no HealthKit):
   - the taper fires with 28 complete days and no row for today
   - today's partial row is ignored by back-to-back and the taper
   - DST-safe fixtures (`day(n + 1) − 60s` for late-day rides)
-- **`finalizeScoreRows`:**
-  - a row written mid-day is recomputed once the day is complete
-  - `scoresFinalizedThrough` advances
-  - today is never written
+- **`RecentDailyLoadRefresh`:**
+  - a late ride reaches its past day's load and count, on every twin row
+  - readinessScore and dailyStrain are untouched; today is never written; days outside the window are untouched
 - **Config:** `BackgroundRefreshConfigTests` gains the background-delivery entitlement check.
 
 Device checklist (no seam):
@@ -199,7 +197,7 @@ Device checklist (no seam):
 | `Services/Analytics/BackgroundPatternPass.swift` | new |
 | `Services/HealthKit/HealthDataObserver.swift` | new |
 | `Services/Analytics/TrainingDNAAnalyzer.swift` | detect/commit split; complete-days anchoring |
-| `Services/Analytics/ReadinessRepository.swift` | shared per-day score computation; `finalizeScoreRows`; `runBackgroundPass` (background trigger runs the pass). The observer is registered from the AppDelegate's `didFinishLaunching` and right after onboarding in `HealthAnalyticsApp`, not from `bootstrap()` (see Architecture) |
+| `Services/Analytics/ReadinessRepository.swift` | shared per-day score computation; `refreshRecentDailyLoads` (was `finalizeScoreRows`, see Structure fix); `runBackgroundPass` (background trigger runs the pass). The observer is registered from the AppDelegate's `didFinishLaunching` and right after onboarding in `HealthAnalyticsApp`, not from `bootstrap()` (see Architecture) |
 | `Utilities/SyncManager.swift` | `refreshWorkoutsFromHealthKit(since:)` (HealthKit-only, no notification, no `lastSyncDate`) |
 | `HealthAnalyticsApp.swift` | app-refresh handler runs the pass; `UIApplicationDelegateAdaptor` registers `HealthDataObserver` at launch |
 | `HealthAnalytics.entitlements` | `com.apple.developer.healthkit.background-delivery` |
@@ -209,7 +207,7 @@ Device checklist (no seam):
 
 ## Post-review changes (2026-10-27)
 
-A red-team review found six holes; each is fixed on this branch.
+A red-team review found six holes; each is fixed on this branch. R1, R3 and R4 were later superseded by the structure fix below, which removed the marker they patched.
 
 - **R1. The pass no longer finalizes days.** Before the Strava sync the store may hold only the HealthKit copy of yesterday's ride, so a pass that advanced `scoresFinalizedThrough` froze that day at the HealthKit-only load. `finalizeScoreRows(advancesMarker:)` (default true) is called with false by `LiveBackgroundPassSteps`: the pass recomputes rows, and only the foreground refresh, which runs after the Strava sync, advances the marker. Rule: `ScoreRowFinalization.markerAdvance`.
 - **R2. A wake in the foreground skips the pass.** Observer queries fire once at registration, so every foreground cold launch ran a full pass. `runBackgroundPass` records the wake, then `BackgroundPatternPass.skipIfForeground` records the new `skippedForeground` outcome and returns before the flight.
@@ -217,3 +215,12 @@ A red-team review found six holes; each is fixed on this branch.
 - **R4. HRV or RHR is enough to count as having read HealthKit.** The marker rule no longer requires sleep (`ScoreRowFinalization.readBiometrics`), so users without sleep data advance it.
 - **R5. Budget checked between steps; joiners of an abandoned run rerun once.** The pass returns `abandoned` (no detection, no stamp) when the budget is gone after the workout refresh or after finalization. `SingleFlight.run`'s work returns whether it completed; a caller that joined a run that returned false runs its own work (or joins a fresh run another joiner started) exactly once. `runBackgroundPass` returns `outcome != .abandoned`, `runPatternAnalysis` true.
 - **R6. Background upsert and foreground sync are serialized.** `BackgroundRefreshGate` on `SyncManager` (main actor): `refreshWorkoutsFromHealthKit` does nothing while `isSyncing`, and `performSmartSync` / `resetAllData` wait for an in-flight refresh after setting `isSyncing`, before their own upsert.
+
+## Structure fix (2026-10-28): the marker is removed, not patched
+
+R1, R3 and R4 each patched `scoresFinalizedThrough`, and each review pass found a new way it advanced too early (before the Strava copy of a ride arrived, before HealthKit was readable, with no marker at all on upgrade). Separately, the recompute rewrote whole rows, so a past day's `readinessScore` and `dailyStrain` (ACWR) were overwritten with the backfill's weaker ±1-day biometric estimate. Three fixes that each relocated the violation meant the structure was wrong, so it was replaced.
+
+- **S1. Marker and whole-row recompute removed.** `scoresFinalizedThrough`, `finalizeScoreRows(modelContext:now:advancesMarker:)`, the backfill's `recomputeFrom:` parameter, its recompute branch and duplicate-twin rewrite, its Bool return and `readBiometrics`, and `ScoreRowFinalization` (`recomputeRange`, `markerAdvance`, `readBiometrics`, `maxRecomputeDays`) with its tests are gone. `backfillHistoricalScores` is back to `main`'s shape: it fills missing days only, and still clears `lastPatternAnalysisDate` only when it inserted rows.
+- **S2. Trailing 7-day, load-only recompute.** `ReadinessRepository.refreshRecentDailyLoads` re-derives `dailyLoad` and `workoutCount` for the 7 complete days ending yesterday from `StoredWorkout` only (no HealthKit read), with `calculateWorkoutLoad`, on every existing row of each day (twins included), only where they differ. It never writes `readinessScore` or `dailyStrain`, never touches today (`upsertDailyScore` owns it), never inserts. A change clears `lastPatternAnalysisDate`. Once on upgrade it covers 90 days (`dailyLoadRecomputeV1Done`, set unconditionally after the run: nothing it reads can come back empty for a transient reason, so there is nothing to gate on). The pure part is `RecentDailyLoadRefresh` (calendar days, DST-safe). `refreshIfNecessary` runs the backfill and then this; the pass's step is renamed `refreshRecentDailyLoads` and the budget is still checked after it. A ride the pass stores from HealthKit reaches its day at once, and the next foreground refresh re-derives the same week after the Strava sync, so there is no "who may advance" rule to get wrong.
+- **S3. A joiner's retry re-checks the foreground.** The skip ran only before the flight, so a wake that joined an abandoned pass and retried after the user opened the app ran a full pass. `BackgroundPatternPass.flightWork` checks inside the work handed to `patternAnalysisFlight` (records `skippedForeground`, reports completed); the pre-flight check stays so a foreground wake doesn't join at all.
+- **S4. Test gaps.** `BackgroundPatternPass.isCompleted` (only `abandoned` is not completed) over every outcome; `BackgroundRefreshGate`'s join branch and a failing in-flight refresh reaching its joiner; `SyncManager.healthKitRefreshWindowStart` extracted and tested.
