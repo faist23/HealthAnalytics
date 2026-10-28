@@ -416,9 +416,11 @@ actor TrainingDNAAnalyzer {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
 
-        // Load-gated workout days: only days with a real training session (load >= 0.5 TSS) count
-        // as "workout days" for sick-day proxy detection. Daily warmup spins (~0.17 TSS) are
-        // excluded so they don't block the proxy from firing on users who work out every day.
+        // Load-gated rest days: a day is a sick-day candidate only when its score row exists and
+        // shows no real training session (load < 0.5 TSS). Daily warmup spins (~0.17 TSS) still
+        // count as rest so they don't block the proxy on users who work out every day. A missing
+        // row is unknown, not rest: the background pass never writes rows, and a ride whose row
+        // isn't written yet would read as a sick day (a cyclist logs few steps).
         let cutoff = completeDayStart(daysBack: 180)
         let end = completeDaysEnd
         let dailyScores = (try? modelContext.fetch(
@@ -426,11 +428,11 @@ actor TrainingDNAAnalyzer {
                 predicate: #Predicate<StoredDailyScore> { $0.date >= cutoff && $0.date < end }
             )
         )) ?? []
-        let significantWorkoutDays: Set<String> = Set(
-            dailyScores.filter { $0.dailyLoad >= 0.5 }.map { fmt.string(from: $0.date) }
+        let restDays: Set<String> = Set(
+            dailyScores.filter { $0.dailyLoad < 0.5 }.map { fmt.string(from: $0.date) }
         )
 
-        // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days AND no significant workout.
+        // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days, each a known rest day.
         // Complete days only: today's count is partial (nearly everyone is under 2000 at 9am),
         // so yesterday + today would fake a window. HRV stays live.
         let stepsSorted = stepHistory.filter { $0.date < end }.sorted { $0.date < $1.date }
@@ -442,8 +444,8 @@ actor TrainingDNAAnalyzer {
                 b.date, inSameDayAs: Calendar.current.date(byAdding: .day, value: 1, to: a.date)!
             )
             if consecutive && a.steps < 2000 && b.steps < 2000
-                && !significantWorkoutDays.contains(fmt.string(from: a.date))
-                && !significantWorkoutDays.contains(fmt.string(from: b.date)) {
+                && restDays.contains(fmt.string(from: a.date))
+                && restDays.contains(fmt.string(from: b.date)) {
                 sickDayWindows.append(a.date)
                 i += 2; continue
             }
@@ -735,14 +737,17 @@ actor TrainingDNAAnalyzer {
             }
         }
 
-        // ACWR sweet-spot streak: consecutive trailing days where dailyStrain in [0.8, 1.3]
+        // ACWR sweet-spot streak: consecutive complete days ending yesterday where dailyStrain
+        // is in [0.8, 1.3]. Counts days, not rows: the background pass never writes rows, so the
+        // newest can be days old and history can have holes. A missing day is unknown and ends
+        // the streak, the same way a missed measurement ends the HRV streak above.
         var acwrStreakDays = 0
+        var expectedDay = Calendar.current.date(byAdding: .day, value: -1, to: end) ?? end
         for score in scores.reversed() {
-            if score.dailyStrain >= 0.8 && score.dailyStrain <= 1.3 {
-                acwrStreakDays += 1
-            } else {
-                break
-            }
+            guard Calendar.current.isDate(score.date, inSameDayAs: expectedDay),
+                  score.dailyStrain >= 0.8 && score.dailyStrain <= 1.3 else { break }
+            acwrStreakDays += 1
+            expectedDay = Calendar.current.date(byAdding: .day, value: -1, to: expectedDay) ?? expectedDay
         }
 
         let hrvScore  = min(1.0, Double(hrvStreakDays)  / 7.0)  * 0.60

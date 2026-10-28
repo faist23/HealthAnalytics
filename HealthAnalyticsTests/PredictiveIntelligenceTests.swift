@@ -221,6 +221,45 @@ final class PredictiveIntelligenceTests: XCTestCase {
         )
     }
 
+    /// HRV streak = 18 needs an ACWR streak of 5. Sweet-spot rows exist for days -1…-3 and
+    /// -5…-12, with no row for day -4. A missing day is unknown and ends the streak at 3
+    /// (0.72). Counting rows instead of days would make it 11 and fire.
+    func testPerformancePeak_missingDayEndsTheACWRStreak() async throws {
+        let fired = try await performancePeakFires(sweetSpotOffsets: Array(-12...(-5)) + [-3, -2, -1])
+        XCTAssertFalse(fired, "A day with no score row must end the ACWR streak")
+    }
+
+    /// No rows for yesterday or the day before: the newest row is two days stale. Ten
+    /// sweet-spot rows behind it would make a full streak; stale rows say nothing about now.
+    func testPerformancePeak_staleNewestRowGivesNoACWRStreak() async throws {
+        let fired = try await performancePeakFires(sweetSpotOffsets: Array(-12...(-3)))
+        XCTAssertFalse(fired, "The ACWR streak must start at yesterday's row")
+    }
+
+    /// Control: the same fixture with days -1…-5 all present fires at the 0.80 boundary.
+    func testPerformancePeak_contiguousRowsThroughYesterdayFire() async throws {
+        let fired = try await performancePeakFires(sweetSpotOffsets: Array(-5...(-1)))
+        XCTAssertTrue(fired, "Five contiguous sweet-spot days ending yesterday + HRV streak 18 → 0.80")
+    }
+
+    /// HRV streak 18; sweet-spot rows (strain 1.0) only at `sweetSpotOffsets`, below-spot
+    /// rows (0.5) for days -89…-13 so history exists, and no other rows.
+    private func performancePeakFires(sweetSpotOffsets: [Int]) async throws -> Bool {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeHRVPeakData(highDays: 18)
+        await analyzer.setDataProvider(mock)
+
+        let old = (13...89).map { StoredDailyScore(date: day(-$0), readinessScore: 70, dailyStrain: 0.5, workoutCount: 0) }
+        let sweet = sweetSpotOffsets.map { StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0) }
+        try await analyzer.insertDailyScores(old + sweet)
+        _ = try await analyzer.analyze()
+        return try await analyzer.fetchAllPatterns().contains { $0.patternType == .performancePeak }
+    }
+
     // MARK: - Part 3: compute7DayForecast
     //
     // Calls ReadinessRepository.shared.compute7DayForecast(modelContext:) directly.

@@ -181,7 +181,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
     /// Precursor HRV (48h before) = 45 ms vs baseline 60 ms.
     /// 45 < 60 × 0.85 = 51 → precursor match × 3. stats.mean = 45 < 60 × 0.90 = 54 → pattern fires.
     func testHRVPrecursor_happyPath() async throws {
-        let container = try makeContainer()
+        let container = try makeFullContainer()
         let analyzer = TrainingDNAAnalyzer(modelContainer: container)
 
         var mock = MockPatternDataProvider()
@@ -191,6 +191,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         mock.workoutDays = []
 
         await analyzer.setDataProvider(mock)
+        try await analyzer.insertDailyScores(makeRestDayRows(sickOffsets: [-80, -50, -20]))
         _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
@@ -236,8 +237,9 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         XCTAssertFalse(fired, "A significant workout on a sick-window day must block that window")
     }
 
-    /// Windows at -80, -50 and -2 (days -2/-1), plus one StoredDailyScore row with a
-    /// significant load at `workoutRowOffset`. Fires only if the third window counts.
+    /// Windows at -80, -50 and -2 (days -2/-1), each day with a rest row, plus one
+    /// StoredDailyScore row with a significant load at `workoutRowOffset` (replacing that
+    /// day's rest row). Fires only if the third window counts.
     private func hrvPrecursorFires(workoutRowOffset: Int) async throws -> Bool {
         let container = try makeFullContainer()
         let analyzer = TrainingDNAAnalyzer(modelContainer: container)
@@ -249,13 +251,38 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         mock.stepsData = makeHRVPrecursorSteps(windowCount: 3, sickOffsets: offsets)  // today = 8000
         await analyzer.setDataProvider(mock)
 
-        try await analyzer.insertDailyScores([
+        let rest = makeRestDayRows(sickOffsets: offsets).filter { $0.date != day(workoutRowOffset) }
+        try await analyzer.insertDailyScores(rest + [
             StoredDailyScore(date: day(workoutRowOffset), readinessScore: 70, dailyStrain: 1.0,
                              workoutCount: 1, dailyLoad: 1.5)
         ])
 
         _ = try await analyzer.analyze()
         return try await analyzer.fetchAllPatterns().contains { $0.patternType == .hrvPrecursor }
+    }
+
+    /// The third window's days have low steps but no score row. A missing row is unknown,
+    /// not a rest day: a ride whose row isn't written yet (the background pass never writes
+    /// them, and a cyclist logs few steps) would otherwise read as a sick day. The happy
+    /// path, with rows for all three windows, is the control.
+    func testHRVPrecursor_dayWithoutAScoreRowIsNotASickDay() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData   = makeHRVPrecursorHRV(baselineHRV: 60.0, precursorHRV: 45.0)
+        mock.stepsData = makeHRVPrecursorSteps(windowCount: 3)
+        await analyzer.setDataProvider(mock)
+
+        try await analyzer.insertDailyScores(makeRestDayRows(sickOffsets: [-80, -50]))
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .hrvPrecursor },
+            "A sick window whose days have no score row must not count"
+        )
     }
 
     /// Today's step count is partial: at 9am nearly everyone is under 2000. Two complete
@@ -276,6 +303,9 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         mock.stepsData = steps
         await analyzer.setDataProvider(mock)
 
+        // Rest rows on every candidate day, today included, so only the partial-steps
+        // rule can keep (yesterday, today) out.
+        try await analyzer.insertDailyScores(makeRestDayRows(sickOffsets: [-80, -50, -1]))
         _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
@@ -659,6 +689,16 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
             data.append((date: precursorDate, hrv: precursorHRV))
         }
         return data
+    }
+
+    /// Zero-load StoredDailyScore rows for both days of each sick window. The sick-day
+    /// proxy needs a row showing no significant load; a missing row is unknown.
+    private func makeRestDayRows(sickOffsets: [Int]) -> [StoredDailyScore] {
+        sickOffsets.flatMap { offset in
+            [offset, offset + 1].map {
+                StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0)
+            }
+        }
     }
 
     /// 90-day step series. Most days = 8000 steps. For the first `windowCount` sick offsets:
