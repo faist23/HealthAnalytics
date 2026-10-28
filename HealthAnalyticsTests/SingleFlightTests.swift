@@ -29,16 +29,23 @@ final class SingleFlightTests: XCTestCase {
         }
     }
 
+    /// `slowWork` for `run`: `completes` false is a run that ended abandoned (a background
+    /// pass whose commit gate refused), which its joiners must not take as done.
+    private func slowRun(_ probe: Probe, completes: Bool = true) -> @MainActor () async -> Bool {
+        let work = slowWork(probe)
+        return { await work(); return completes }
+    }
+
     /// A tab swipe cancels the view task that asked for pattern analysis. If that
     /// cancellation reached the work, MasterCoachEngine's LLM call would throw and
     /// the heuristic paragraph would be cached for the rest of the day.
     func test_run_callerCancellationDoesNotReachTheWork() async {
         let flight = SingleFlight()
         let probe = Probe()
-        let caller = Task { await flight.run(slowWork(probe)) }
+        let caller = Task { await flight.run(slowRun(probe)) }
         caller.cancel()
         await caller.value
-        await flight.run(slowWork(probe))   // joins the still-running work
+        await flight.run(slowRun(probe))   // joins the still-running work
 
         XCTAssertTrue(probe.finished)
         XCTAssertEqual(probe.runs, 1, "The cancelled caller's work must keep running, not restart")
@@ -50,7 +57,7 @@ final class SingleFlightTests: XCTestCase {
     func test_run_cancelledCallerStopsWaitingBeforeTheWorkFinishes() async {
         let flight = SingleFlight()
         let probe = Probe()
-        let caller = Task { await flight.run(slowWork(probe)) }
+        let caller = Task { await flight.run(slowRun(probe)) }
         caller.cancel()
         await caller.value
 
@@ -61,8 +68,8 @@ final class SingleFlightTests: XCTestCase {
     func test_run_overlappingCallersJoinOneRun() async {
         let flight = SingleFlight()
         let probe = Probe()
-        async let first: Void = flight.run(slowWork(probe))
-        async let second: Void = flight.run(slowWork(probe))
+        async let first: Void = flight.run(slowRun(probe))
+        async let second: Void = flight.run(slowRun(probe))
         _ = await (first, second)
 
         XCTAssertEqual(probe.runs, 1)
@@ -73,8 +80,8 @@ final class SingleFlightTests: XCTestCase {
     func test_run_afterCompletionRunsAgain() async {
         let flight = SingleFlight()
         let probe = Probe()
-        await flight.run(slowWork(probe))
-        await flight.run(slowWork(probe))
+        await flight.run(slowRun(probe))
+        await flight.run(slowRun(probe))
 
         XCTAssertEqual(probe.runs, 2)
     }
@@ -99,13 +106,13 @@ final class SingleFlightTests: XCTestCase {
     func test_run_cancellationWhileAlreadyWaitingStopsTheWait() async {
         let flight = SingleFlight()
         let probe = Probe()
-        let caller = Task { await flight.run(slowWork(probe)) }
+        let caller = Task { await flight.run(slowRun(probe)) }
         while probe.runs == 0 { await Task.yield() }   // caller is now suspended in wait()
         caller.cancel()
         await caller.value
 
         XCTAssertFalse(probe.finished, "Cancelling a caller mid-wait must end its wait before the work finishes")
-        await flight.run(slowWork(probe))   // joins the still-running work
+        await flight.run(slowRun(probe))   // joins the still-running work
         XCTAssertTrue(probe.finished)
         XCTAssertFalse(probe.sawCancellation)
     }
@@ -121,5 +128,84 @@ final class SingleFlightTests: XCTestCase {
         _ = await (first, second)
 
         XCTAssertEqual(probe.runs, 2, "shielded must not join: the repository relies on performFullAnalysis to coalesce")
+    }
+
+    // MARK: - Joiners of an abandoned run (R5)
+
+    /// A background pass frozen past its budget resumes and ends abandoned. A wake (or a
+    /// Recovery appear) that joined it would otherwise get nothing, and its own trigger
+    /// is spent. It runs its own work once more.
+    func test_run_joinerOfAnAbandonedRunRunsItsOwnWorkOnce() async {
+        let flight = SingleFlight()
+        let first = Probe()
+        let joiner = Probe()
+        async let a: Void = flight.run(slowRun(first, completes: false))
+        while first.runs == 0 { await Task.yield() }
+        async let b: Void = flight.run(slowRun(joiner))
+        _ = await (a, b)
+
+        XCTAssertEqual(first.runs, 1, "The caller that started the abandoned run does not retry")
+        XCTAssertEqual(joiner.runs, 1, "The joiner of an abandoned run gets one fresh run of its own")
+        XCTAssertTrue(joiner.finished)
+    }
+
+    func test_run_joinerOfACompletedRunDoesNotRunAgain() async {
+        let flight = SingleFlight()
+        let first = Probe()
+        let joiner = Probe()
+        async let a: Void = flight.run(slowRun(first))
+        while first.runs == 0 { await Task.yield() }
+        async let b: Void = flight.run(slowRun(joiner))
+        _ = await (a, b)
+
+        XCTAssertEqual(first.runs, 1)
+        XCTAssertEqual(joiner.runs, 0)
+    }
+
+    /// The retry is at most once: a joiner whose fresh run also abandons stops there.
+    func test_run_joinerRetriesAtMostOnce_evenIfItsOwnRunAbandons() async {
+        let flight = SingleFlight()
+        let first = Probe()
+        let joiner = Probe()
+        async let a: Void = flight.run(slowRun(first, completes: false))
+        while first.runs == 0 { await Task.yield() }
+        async let b: Void = flight.run(slowRun(joiner, completes: false))
+        _ = await (a, b)
+
+        XCTAssertEqual(first.runs, 1)
+        XCTAssertEqual(joiner.runs, 1, "Never loop: one fresh run, whatever it returns")
+    }
+
+    /// Two joiners of one abandoned run share a single fresh run: the first to resume
+    /// starts it, the second joins it and does not retry again.
+    func test_run_twoJoinersOfAnAbandonedRunShareOneFreshRun() async {
+        let flight = SingleFlight()
+        let first = Probe()
+        let joiners = Probe()
+        async let a: Void = flight.run(slowRun(first, completes: false))
+        while first.runs == 0 { await Task.yield() }
+        async let b: Void = flight.run(slowRun(joiners, completes: false))
+        async let c: Void = flight.run(slowRun(joiners, completes: false))
+        _ = await (a, b, c)
+
+        XCTAssertEqual(first.runs, 1)
+        XCTAssertEqual(joiners.runs, 1, "One fresh run for both joiners, and no retry of that one")
+    }
+
+    /// A joiner cancelled while waiting (background budget expired) must return, not
+    /// start a fresh run after the abandoned one ends.
+    func test_run_cancelledJoinerOfAnAbandonedRunDoesNotRetry() async {
+        let flight = SingleFlight()
+        let first = Probe()
+        let joiner = Probe()
+        let starter = Task { await flight.run(slowRun(first, completes: false)) }
+        while first.runs == 0 { await Task.yield() }
+        let joining = Task { await flight.run(slowRun(joiner)) }
+        joining.cancel()
+        await joining.value
+        await starter.value
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(joiner.runs, 0)
     }
 }

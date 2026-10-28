@@ -71,6 +71,7 @@ final class HealthDataObserverTests: XCTestCase {
                     await flight.run {
                         for await _ in release {}
                         workFinished = true
+                        return true
                     }
                 },
                 completion: { completed += 1 }
@@ -110,6 +111,7 @@ final class HealthDataObserverTests: XCTestCase {
                         await flight.run {
                             for await _ in release {}
                             workFinished = true
+                            return true
                         }
                     }, time: fake.time)
                 },
@@ -125,7 +127,7 @@ final class HealthDataObserverTests: XCTestCase {
         XCTAssertFalse(workFinished, "Expiry ends the wait, not the work")
 
         releaseWork.finish()
-        await flight.run {}   // joins the work if it is still running, so it has finished after this
+        await flight.run { true }   // joins the work if it is still running, so it has finished after this
         XCTAssertTrue(workFinished)
     }
 

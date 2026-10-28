@@ -178,15 +178,21 @@ class ReadinessRepository: ObservableObject {
     /// Callers await the run but never own it — see `patternAnalysisFlight`. A request
     /// that arrives mid-run joins it. Joiners need no follow-up: the run itself decides,
     /// when it finishes, whether to refresh Coach and report errors (`isAppInForeground`).
+    /// The one exception is a joined background pass that ended `abandoned` (it stored
+    /// nothing): `SingleFlight` then runs this request once on its own. A foreground run
+    /// always counts as completed (its own failures are retried by the next appear).
     func runPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
         await patternAnalysisFlight.run { [self] in
             await performPatternAnalysis(container: container, trigger: trigger)
+            return true
         }
     }
 
     /// The background pattern pass (HealthKit delivery, app refresh). Shares
     /// `patternAnalysisFlight` with the foreground, so overlapping wakes and a Recovery
-    /// visit during a background run still produce one run.
+    /// visit during a background run still produce one run. A pass that ends `abandoned`
+    /// reports not-completed, so a wake or appear that joined it runs once more instead
+    /// of being swallowed by a run that stored nothing.
     func runBackgroundPass(container: ModelContainer, wake: BackgroundPassWake) async {
         let log = BackgroundPassLog.standard
         // `!= .background`, not `== .active`: a foreground cold launch is still `.inactive`
@@ -199,7 +205,8 @@ class ReadinessRepository: ObservableObject {
         if BackgroundPatternPass.skipIfForeground(appInForeground: inForeground, log: log, at: Date()) { return }
         await patternAnalysisFlight.run { [self] in
             let steps = LiveBackgroundPassSteps(repository: self, container: container)
-            await BackgroundPatternPass(steps: steps, log: log, wake: wake).run()
+            let outcome = await BackgroundPatternPass(steps: steps, log: log, wake: wake).run()
+            return outcome != .abandoned
         }
     }
 
