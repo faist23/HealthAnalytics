@@ -252,17 +252,24 @@ final class BackgroundPatternPassTests: XCTestCase {
 
     /// Only an HRV delivery measures HRV-to-commit latency; an app-refresh (or workout)
     /// wake must not overwrite it with a gap that has nothing to do with delivery.
+    // Extended by /ship test coverage audit (Claude Code), pass 1: workoutDelivery row.
+    // Value: protects=only an HRV wake records latency; a workout wake records none; fails_when=the guard is
+    //   rewritten as `wake != .appRefresh`; why_new=only appRefresh was checked, which that rewrite still passes;
+    //   seam=none; no_claim=real HealthKit delivery (fake steps; unit only)
     func test_appRefreshPass_recordsNoLatency() async {
-        let clock = FakeClock(t0)
-        let steps = FakeSteps(clock: clock)
-        steps.newestHRV = t0.addingTimeInterval(-6 * 3600)
-        let (pass, log) = makePass(steps, clock, wake: .appRefresh)
+        for wake in [BackgroundPassWake.appRefresh, .workoutDelivery] {
+            defaults.removePersistentDomain(forName: "BackgroundPatternPassTests")
+            let clock = FakeClock(t0)
+            let steps = FakeSteps(clock: clock)
+            steps.newestHRV = t0.addingTimeInterval(-6 * 3600)
+            let (pass, log) = makePass(steps, clock, wake: wake)
 
-        let outcome = await pass.run()
+            let outcome = await pass.run()
 
-        XCTAssertEqual(outcome, .completed)
-        XCTAssertNil(log.lastLatency)
-        XCTAssertFalse(steps.calls.contains("newestHRV"), "No latency to record, so no HRV query")
+            XCTAssertEqual(outcome, .completed, "\(wake)")
+            XCTAssertNil(log.lastLatency, "\(wake)")
+            XCTAssertFalse(steps.calls.contains("newestHRV"), "No latency to record, so no HRV query (\(wake))")
+        }
     }
 
     func test_log_countsWakesPerTrigger() {
