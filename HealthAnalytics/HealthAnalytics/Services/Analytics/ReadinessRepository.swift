@@ -1136,24 +1136,28 @@ class ReadinessRepository: ObservableObject {
     // MARK: - Recent Daily Load Refresh
 
     /// Re-derives `dailyLoad` and `workoutCount` for the last `recentLoadRecomputeDays`
-    /// complete days (90 once, on upgrade: `dailyLoadRecomputeV1Done`), so a ride that
-    /// synced after its day's row was written still counts toward that day. Shared by the
-    /// foreground refresh and the background pass. See `RecentDailyLoadRefresh`.
+    /// complete days, so a ride that synced after its day's row was written still counts
+    /// toward that day. Once, on upgrade (`dailyLoadRecomputeV1Done`), a 90-day pass runs
+    /// first that only raises (see `RecentDailyLoadRefresh.passes`). Shared by the
+    /// foreground refresh and the background pass.
     func refreshRecentDailyLoads(modelContext: ModelContext) {
         let key = RecentDailyLoadRefresh.upgradeDoneKey
         let upgradeDone = UserDefaults.standard.bool(forKey: key)
-        refreshDailyLoads(modelContext: modelContext, days: RecentDailyLoadRefresh.daysToRefresh(upgradeDone: upgradeDone))
+        for pass in RecentDailyLoadRefresh.passes(upgradeDone: upgradeDone) {
+            refreshDailyLoads(modelContext: modelContext, days: pass.days, onlyRaise: pass.onlyRaise)
+        }
         // StoredWorkout only, no HealthKit read that could come back empty: one run is enough.
         if !upgradeDone { UserDefaults.standard.set(true, forKey: key) }
     }
 
     /// Updates load and count, from `StoredWorkout` only, on the existing rows (every
-    /// twin) of the `days` complete days before today, and only where they differ.
+    /// twin) of the `days` complete days before today, and only where they differ
+    /// (only upward with `onlyRaise`).
     /// Never writes readinessScore or dailyStrain, never touches today's row, never
     /// inserts. Returns the number of rows changed; any change clears
     /// `lastPatternAnalysisDate`, since a late ride changes what the detectors see.
     @discardableResult
-    func refreshDailyLoads(modelContext: ModelContext, days: Int, now: Date = Date()) -> Int {
+    func refreshDailyLoads(modelContext: ModelContext, days: Int, onlyRaise: Bool = false, now: Date = Date()) -> Int {
         let calendar = Calendar.current
         let dayList = RecentDailyLoadRefresh.completeDays(count: days, now: now, calendar: calendar)
         guard let first = dayList.first else { return 0 }
@@ -1171,7 +1175,7 @@ class ReadinessRepository: ObservableObject {
         let loads = RecentDailyLoadRefresh.loads(
             days: dayList, workouts: workouts.map { WorkoutData(from: $0) }, calendar: calendar
         ) { predictiveReadinessService.calculateWorkoutLoad($0, ftpSnapshots: ftpSnapshots) }
-        let changed = RecentDailyLoadRefresh.apply(loads, to: rows, calendar: calendar)
+        let changed = RecentDailyLoadRefresh.apply(loads, to: rows, calendar: calendar, onlyRaise: onlyRaise)
         if changed > 0 {
             try? modelContext.save()
             UserDefaults.standard.removeObject(forKey: "lastPatternAnalysisDate")

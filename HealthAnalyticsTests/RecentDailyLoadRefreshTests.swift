@@ -41,9 +41,11 @@ final class RecentDailyLoadRefreshTests: XCTestCase {
         XCTAssertFalse(days.contains(today))
     }
 
-    func test_daysToRefresh_upgradeRunsNinetyDaysOnce_thenSeven() {
-        XCTAssertEqual(RecentDailyLoadRefresh.daysToRefresh(upgradeDone: false), 90)
-        XCTAssertEqual(RecentDailyLoadRefresh.daysToRefresh(upgradeDone: true), 7)
+    /// The upgrade run does the only-raise 90-day pass, then still the exact 7-day one.
+    func test_passes_upgradeRunsNinetyDaysOnlyRaiseOnce_thenSevenExact() {
+        XCTAssertEqual(RecentDailyLoadRefresh.passes(upgradeDone: false),
+                       [.init(days: 90, onlyRaise: true), .init(days: 7, onlyRaise: false)])
+        XCTAssertEqual(RecentDailyLoadRefresh.passes(upgradeDone: true), [.init(days: 7, onlyRaise: false)])
     }
 
     /// A 23-hour DST day: days are calendar days (startOfDay arithmetic), not 24h steps.
@@ -138,6 +140,71 @@ final class RecentDailyLoadRefreshTests: XCTestCase {
         XCTAssertEqual(RecentDailyLoadRefresh.apply(loads, to: [todayRow, oldRow]), 0)
         XCTAssertEqual(todayRow.dailyLoad, 0)
         XCTAssertEqual(oldRow.dailyLoad, 0)
+    }
+
+    // MARK: - Only-raise policy (the one-time 90-day pass)
+
+    /// Before the app's first sync, the original backfill counted HealthKit workouts that
+    /// were never stored as StoredWorkout. A stored-only recompute would wrongly lower
+    /// those days, so the one-time pass may only raise.
+    func test_apply_onlyRaise_leavesAHigherCurrentLoadUnchanged() throws {
+        let ctx = ModelContext(try makeContainer())
+        let row = StoredDailyScore(date: day(-40), readinessScore: 70, dailyStrain: 1.0, workoutCount: 2, dailyLoad: 80)
+        ctx.insert(row)
+
+        let changed = RecentDailyLoadRefresh.apply([day(-40): .init(dailyLoad: 30, workoutCount: 1)], to: [row], onlyRaise: true)
+
+        XCTAssertEqual(changed, 0)
+        XCTAssertEqual(row.dailyLoad, 80)
+        XCTAssertEqual(row.workoutCount, 2)
+    }
+
+    func test_apply_onlyRaise_raisesALowerCurrentLoad() throws {
+        let ctx = ModelContext(try makeContainer())
+        let row = StoredDailyScore(date: day(-40), readinessScore: 70, dailyStrain: 1.0, workoutCount: 1, dailyLoad: 30)
+        ctx.insert(row)
+
+        let changed = RecentDailyLoadRefresh.apply([day(-40): .init(dailyLoad: 75, workoutCount: 2)], to: [row], onlyRaise: true)
+
+        XCTAssertEqual(changed, 1)
+        XCTAssertEqual(row.dailyLoad, 75)
+        XCTAssertEqual(row.workoutCount, 2)
+        XCTAssertEqual(row.readinessScore, 70)
+        XCTAssertEqual(row.dailyStrain, 1.0)
+    }
+
+    /// The trailing 7-day refresh stays exact: the sync stores every HealthKit workout in
+    /// that range, so a lower stored load is the truth (a deleted or deduplicated ride).
+    func test_apply_exactMode_stillLowers() throws {
+        let ctx = ModelContext(try makeContainer())
+        let row = StoredDailyScore(date: day(-2), readinessScore: 70, dailyStrain: 1.0, workoutCount: 2, dailyLoad: 80)
+        ctx.insert(row)
+
+        let changed = RecentDailyLoadRefresh.apply([day(-2): .init(dailyLoad: 30, workoutCount: 1)], to: [row])
+
+        XCTAssertEqual(changed, 1)
+        XCTAssertEqual(row.dailyLoad, 30)
+        XCTAssertEqual(row.workoutCount, 1)
+    }
+
+    /// Wiring: the 90-day pass passes only-raise through; the 7-day refresh does not.
+    func test_refreshDailyLoads_onlyRaise_neverLowersAStoredRow() throws {
+        let key = "lastPatternAnalysisDate"
+        let saved = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(saved, forKey: key) }
+
+        let ctx = ModelContext(try makeContainer())
+        // A pre-first-sync HealthKit ride: counted by the backfill, never stored.
+        let healthKitOnlyDay = StoredDailyScore(date: day(-40), readinessScore: 70, dailyStrain: 1.0, workoutCount: 1, dailyLoad: 50)
+        ctx.insert(healthKitOnlyDay)
+        try ctx.save()
+        let stamp = Date()
+        UserDefaults.standard.set(stamp, forKey: key)
+
+        XCTAssertEqual(ReadinessRepository.shared.refreshDailyLoads(modelContext: ctx, days: 90, onlyRaise: true), 0)
+        XCTAssertEqual(healthKitOnlyDay.dailyLoad, 50)
+        XCTAssertEqual(healthKitOnlyDay.workoutCount, 1)
+        XCTAssertEqual(UserDefaults.standard.object(forKey: key) as? Date, stamp)
     }
 
     // MARK: - Repository wiring (in-memory store, no HealthKit)

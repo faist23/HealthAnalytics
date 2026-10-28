@@ -15,7 +15,9 @@ enum RecentDailyLoadRefresh {
     /// Complete days re-derived on every refresh: a ride syncing late lands within a week.
     nonisolated static let recentLoadRecomputeDays = 7
     /// One-time pass on upgrade, matching the backfill horizon: rows the old backfill
-    /// wrote mid-day on any of those days get their full load once.
+    /// wrote mid-day on any of those days get their full load once. Only-raise: before
+    /// the app's first sync the backfill counted HealthKit workouts that were never stored
+    /// as StoredWorkout, and a stored-only recompute would wrongly lower those days.
     nonisolated static let upgradeLoadRecomputeDays = 90
     nonisolated static let upgradeDoneKey = "dailyLoadRecomputeV1Done"
 
@@ -24,8 +26,17 @@ enum RecentDailyLoadRefresh {
         var workoutCount: Int
     }
 
-    nonisolated static func daysToRefresh(upgradeDone: Bool) -> Int {
-        upgradeDone ? recentLoadRecomputeDays : upgradeLoadRecomputeDays
+    struct Pass: Equatable, Sendable {
+        let days: Int
+        let onlyRaise: Bool
+    }
+
+    /// The passes one refresh runs, in order: the one-time 90-day only-raise pass until
+    /// it has run, then always the exact 7-day pass (the sync stores every HealthKit
+    /// workout in that range, so a lower stored load there is the truth).
+    nonisolated static func passes(upgradeDone: Bool) -> [Pass] {
+        let recent = Pass(days: recentLoadRecomputeDays, onlyRaise: false)
+        return upgradeDone ? [recent] : [Pass(days: upgradeLoadRecomputeDays, onlyRaise: true), recent]
     }
 
     /// The `count` complete calendar days before today, oldest first, each at its start
@@ -52,17 +63,18 @@ enum RecentDailyLoadRefresh {
     }
 
     /// Writes `dailyLoad` and `workoutCount` onto every row (duplicate twins included)
-    /// whose day has an entry in `loads` and whose values differ. Rows on any other day
-    /// are untouched; readinessScore and dailyStrain are never written. Returns the
-    /// number of rows changed.
-    static func apply(_ loads: [Date: DayLoad], to rows: [StoredDailyScore], calendar: Calendar = .current) -> Int {
+    /// whose day has an entry in `loads` and whose values differ. With `onlyRaise`, each
+    /// field moves only upward (the one-time pass). Rows on any other day are untouched;
+    /// readinessScore and dailyStrain are never written. Returns the number of rows changed.
+    static func apply(_ loads: [Date: DayLoad], to rows: [StoredDailyScore], calendar: Calendar = .current, onlyRaise: Bool = false) -> Int {
         var changed = 0
         for row in rows {
-            guard let target = loads[calendar.startOfDay(for: row.date)],
-                  row.dailyLoad != target.dailyLoad || row.workoutCount != target.workoutCount
-            else { continue }
-            row.dailyLoad = target.dailyLoad
-            row.workoutCount = target.workoutCount
+            guard let target = loads[calendar.startOfDay(for: row.date)] else { continue }
+            let load = onlyRaise ? max(row.dailyLoad, target.dailyLoad) : target.dailyLoad
+            let count = onlyRaise ? max(row.workoutCount, target.workoutCount) : target.workoutCount
+            guard row.dailyLoad != load || row.workoutCount != count else { continue }
+            row.dailyLoad = load
+            row.workoutCount = count
             changed += 1
         }
         return changed
