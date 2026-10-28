@@ -124,21 +124,26 @@ final class BackgroundPatternPass {
         return true
     }
 
-    /// The work a background wake hands `patternAnalysisFlight`. The foreground check is
-    /// inside it, not only before the flight: a wake that joined an abandoned pass runs
-    /// this closure again later (`SingleFlight.run`), and by then the user may have
-    /// opened the app. That retry records `skippedForeground` and reports completed
-    /// (a skip leaves nothing for anyone to redo).
+    /// The work a background wake hands `patternAnalysisFlight`: run the pass and report
+    /// whether it completed.
     static func flightWork(
-        appInForeground: @escaping @MainActor () -> Bool,
-        log: BackgroundPassLog,
-        now: @escaping @MainActor () -> Date = { Date() },
         makePass: @escaping @MainActor () -> BackgroundPatternPass
     ) -> @MainActor () async -> Bool {
-        {
-            if skipIfForeground(appInForeground: appInForeground(), log: log, at: now()) { return true }
-            return isCompleted(await makePass().run())
-        }
+        { isCompleted(await makePass().run()) }
+    }
+
+    /// The `shouldStart` gate a background wake hands `patternAnalysisFlight`. The
+    /// foreground check runs here, not only before the flight: a wake that joined an
+    /// abandoned pass starts a run of its own later (`SingleFlight.run`), and by then the
+    /// user may have opened the app. That retry records `skippedForeground` and starts
+    /// nothing, so a foreground caller beside it runs its own analysis instead of joining
+    /// a skip.
+    static func shouldStart(
+        appInForeground: @escaping @MainActor () -> Bool,
+        log: BackgroundPassLog,
+        now: @escaping @MainActor () -> Date = { Date() }
+    ) -> @MainActor () -> Bool {
+        { !skipIfForeground(appInForeground: appInForeground(), log: log, at: now()) }
     }
 
     /// What a pass reports to `SingleFlight`: only `abandoned` (no patterns, notification or stamp;

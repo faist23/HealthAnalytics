@@ -40,7 +40,7 @@ Constraints carried over from v0.1.15:
 
 The stored tables are written by the foreground today: `StoredWorkout` by `SyncManager.performSmartSync`, today's score row by `performFullAnalysis` → `upsertDailyScore`, and past score rows by `backfillHistoricalScores`.
 
-A pre-existing gap, fixed here: `backfillHistoricalScores` skips any day that already has a row. A row written mid-afternoon on the user's last open keeps that partial load forever, including after an evening ride.
+A pre-existing gap, NOT fixed here (see Recompute backed out and the TODOS.md entry): `backfillHistoricalScores` skips any day that already has a row. A row written mid-afternoon on the user's last open keeps that partial load forever, including after an evening ride.
 
 ## Architecture
 
@@ -65,10 +65,7 @@ enum BackgroundPassOutcome {
 `abandoned` means the run spanned a suspension, so its results were discarded.
 
 **`BackgroundPassSteps`** (protocol; the live implementation lives beside the pass)
-- `refreshWorkoutsFromHealthKit(since:)`: a HealthKit-only refresh into `StoredWorkout`.
-- `fillMissingScoreRows()`: the fill-missing score backfill (existing rows are never rewritten; see Recompute backed out).
-- `detectPatterns()`: the analyzer's detect phase.
-- `commitPatterns(_:)`: upserts the patterns, sends notifications and saves.
+As built: `isProtectedDataAvailable`, `lastPatternRun`, `refreshWorkouts()` (HealthKit-only refresh into `StoredWorkout`), `analyzePatterns(commitGate:)` (detection and the gated commit in one call), `stamp(_:)`, `refreshCoachIfForeground()` and `newestHRVSampleDate()`. There is no score-row step (see Background fill removed) and no separate detect/commit split.
 
 **`HealthDataObserver`** (new file, `Services/HealthKit/HealthDataObserver.swift`)
 - Registers one `HKObserverQuery` for `heartRateVariabilitySDNN` and one for `HKWorkoutType`, each with `enableBackgroundDelivery(for:frequency: .immediate)`.
@@ -94,21 +91,18 @@ Both triggers run the pass through the existing `patternAnalysisFlight`. Overlap
 1. **Guard:** `UIApplication.shared.isProtectedDataAvailable` is false → `skippedLocked`.
 2. **Throttle:** `shouldRunPatternAnalysis(lastRun:trigger: .background)` is false → `throttled`.
 3. **Record the start:** `startedAt = clock.now`.
-4. **Workouts:** `refreshWorkoutsFromHealthKit(since: lastBackgroundWorkoutRefresh ?? lastSyncDate − 1 day)`.
-   - It reuses `HealthKitManager.fetchWorkouts` and the existing `DataPersistenceActor` save, the same dedup path the foreground sync uses.
+4. **Workouts:** `refreshWorkoutsFromHealthKit()`, reading from `healthKitRefreshWindowStart`: the later of the last background refresh and the last sync, else a week back, minus one day.
+   - It saves through `DataPersistenceActor.upsertHealthKitWorkoutsOnly`, which drops any HealthKit ride that pairs with a stored Strava workout, and is serialized with the foreground sync by `BackgroundRefreshGate`.
    - It does not call Strava.
    - It does not post `DataSyncCompleted`.
    - It does not touch `SyncManager.lastSyncDate`, so the next open still runs the full foreground sync, including Strava power streams.
    - It stamps its own `lastBackgroundWorkoutRefresh`.
-5. **Fill missing score rows:** `fillMissingScoreRows()` calls `backfillHistoricalScores`, which inserts rows for days that have none and never rewrites an existing row.
-   - It never writes a row for today. Today's row stays foreground-only, written by `upsertDailyScore`.
-   - The foreground runs the same backfill inside `refreshIfNecessary`.
-   - A past day's load is frozen at its first write; see "Recompute backed out" below.
+5. **No score-row step.** The pass never fills score rows (see Background fill removed). Missing rows are filled only by the foreground `refreshIfNecessary`, and the detectors treat a missing or stale row as unknown.
 6. **Detect:** `detectPatterns()`.
 7. **Commit gate:** if `clock.now − startedAt > maxBackgroundPassDuration` (2 minutes; the budget is about 30 seconds), the run spanned a suspension.
    - The result is `abandoned`: no commit, no stamp, no notification.
    - Because nothing was stamped, the next trigger can run straight away.
-   - The gate applies to every pass, whoever is waiting on it. A foreground Recovery visit that joined a pass which was later frozen and resumed gets no new patterns from it. Its next `.appear` runs fresh, because nothing was stamped.
+   - The gate applies to every pass, whoever is waiting on it. A caller that joined a pass which was later frozen and resumed runs its own work once (`SingleFlight.run`), because the abandoned pass reports not-completed.
 8. **Commit:** `commitPatterns(detection)`. This upserts the patterns, renewing `detectedAt`, and sends notifications, which stay once ever per pattern through `notificationSent`.
 9. **Stamp:** `lastPatternAnalysisDate = startedAt`, not completion time. The stamp then describes the data the run actually read.
 10. **Coach:** never in the background. If the app is in the foreground at completion (`isAppInForeground`), run the existing `refreshIfNecessary`, as `performPatternAnalysis` does today.
@@ -133,7 +127,7 @@ Consequences:
 - A partial day can't skew any check.
 - Today's ride counts in these checks from tomorrow onward.
 
-`taperIsCorroborated(referenceDate:)` already takes a reference date. Every store-based check takes an explicit `throughDay` (yesterday) instead of reading `Date()`, which also makes their tests clock-proof.
+As built: `taperIsCorroborated(endingBefore: completeDaysEnd)`, and every store-based check bounds its reads with `completeDaysEnd` / `completeDayStart(daysBack:)` instead of `Date()`.
 
 ## Measurement
 
@@ -161,7 +155,7 @@ Unit tests (simulator lane, no singleton, no HealthKit):
   - step order
   - `skippedLocked` and `throttled` short-circuits (no steps run)
   - a step failure that doesn't block detection
-  - the abandon rule: a clock advanced past `maxBackgroundPassDuration` between detect and commit → no commit, no stamp
+  - the abandon rule: a clock advanced past `BackgroundPatternPass.maxDuration` between detect and commit → no commit, no stamp
   - the stamp equals `startedAt`
   - outcome counters
 - **`TrainingDNAAnalyzer` detect/commit**, with the existing `MockPatternDataProvider` and in-memory container:
@@ -194,7 +188,7 @@ Device checklist (no seam):
 | `Services/Analytics/BackgroundPatternPass.swift` | new |
 | `Services/HealthKit/HealthDataObserver.swift` | new |
 | `Services/Analytics/TrainingDNAAnalyzer.swift` | detect/commit split; complete-days anchoring |
-| `Services/Analytics/ReadinessRepository.swift` | shared per-day score computation; `backfillHistoricalScores` (fill-missing only; the recompute was backed out, see below); `runBackgroundPass` (background trigger runs the pass). The observer is registered from the AppDelegate's `didFinishLaunching` and right after onboarding in `HealthAnalyticsApp`, not from `bootstrap()` (see Architecture) |
+| `Services/Analytics/ReadinessRepository.swift` | `runBackgroundPass` (background trigger runs the pass), `analyzePatternsForBackgroundPass`, and `runPatternAnalysis`'s flight work returning true; `backfillHistoricalScores` is unchanged from main. The observer is registered from the AppDelegate's `didFinishLaunching` and right after onboarding in `HealthAnalyticsApp`, not from `bootstrap()` (see Architecture) |
 | `Utilities/SyncManager.swift` | `refreshWorkoutsFromHealthKit(since:)` (HealthKit-only, no notification, no `lastSyncDate`) |
 | `HealthAnalyticsApp.swift` | app-refresh handler runs the pass; `UIApplicationDelegateAdaptor` registers `HealthDataObserver` at launch |
 | `HealthAnalytics.entitlements` | `com.apple.developer.healthkit.background-delivery` |

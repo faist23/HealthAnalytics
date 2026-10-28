@@ -242,6 +242,13 @@ final class PredictiveIntelligenceTests: XCTestCase {
         XCTAssertTrue(fired, "Five contiguous sweet-spot days ending yesterday + HRV streak 18 → 0.80")
     }
 
+    /// A day with two sweet-spot rows is one day. Five days -1…-5 with a duplicate on -3
+    /// still make a streak of 5 (0.80); walking rows would stop at the twin (streak 2).
+    func testPerformancePeak_duplicateDayRowDoesNotEndTheACWRStreak() async throws {
+        let fired = try await performancePeakFires(sweetSpotOffsets: Array(-5...(-1)) + [-3])
+        XCTAssertTrue(fired, "A duplicate-day row must not end the ACWR streak")
+    }
+
     /// HRV streak 18; sweet-spot rows (strain 1.0) only at `sweetSpotOffsets`, below-spot
     /// rows (0.5) for days -89…-13 so history exists, and no other rows.
     private func performancePeakFires(sweetSpotOffsets: [Int]) async throws -> Bool {

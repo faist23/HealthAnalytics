@@ -12,6 +12,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 
 - **Pattern checks look at complete days.** Taper, back-to-back and the other history checks now use whole days through yesterday, so a half-finished today can't fake or hide a pattern, and a quiet morning's low step count no longer looks like a sick day.
+- **The illness warning and the peak-form alert no longer fire from incomplete data.** A day the app hasn't scored yet, a ride logged after you last opened the app, or a leftover duplicate record no longer counts as a rest day for the illness warning or stretches a peak-form streak.
+- **A pattern alert is never sent twice.** The app records an alert as sent before sending it, so being closed by iOS at the wrong moment costs at most one missed alert, never a repeat. A check that iOS paused partway through and resumed later now throws its results away, whether it started in the background or while you had the app open.
 
 ## [0.1.15.0] - 2026-10-27
 

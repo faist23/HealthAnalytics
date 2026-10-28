@@ -334,16 +334,24 @@ actor TrainingDNAAnalyzer {
 
         try upsertPatterns(detected)
 
+        // Notifications are once ever, so `notificationSent` is saved BEFORE anything is
+        // sent: a background wake can be suspended and killed between the send and a later
+        // save, which would lose the flag and alert again. A kill between this save and the
+        // send costs at most one missed alert, never a duplicate. A failed save sends nothing.
         let allStored = (try? modelContext.fetch(FetchDescriptor<TrainingPattern>())) ?? []
         let detectedTypes = detected.map(\.patternType)
         let unsent = allStored.filter { !$0.notificationSent && detectedTypes.contains($0.patternType) }
-        await PatternNotificationService.shared.notifyIfNew(unsent)
+        let notifier = PatternNotificationService.shared
+        let toSend = await notifier.isAuthorized() ? unsent : []
+        for pattern in toSend { pattern.notificationSent = true }
 
         do {
             try modelContext.save()
         } catch {
             throw PatternAnalysisError.persistenceFailed(error)
         }
+
+        await notifier.send(toSend.map(\.patternType))
 
         return historyDays
     }
@@ -421,6 +429,10 @@ actor TrainingDNAAnalyzer {
         // count as rest so they don't block the proxy on users who work out every day. A missing
         // row is unknown, not rest: the background pass never writes rows, and a ride whose row
         // isn't written yet would read as a sick day (a cyclist logs few steps).
+        // A day's load is its highest row: a 0.0 twin written before the ride synced must not
+        // make a ride day look like rest. A stored workout with real load vetoes rest too: a row
+        // written mid-morning keeps a later ride at 0 forever (TODOS: "A day's load is frozen").
+        // The workout store can double-count or miss rides; either only makes rest less likely.
         let cutoff = completeDayStart(daysBack: 180)
         let end = completeDaysEnd
         let dailyScores = (try? modelContext.fetch(
@@ -428,8 +440,14 @@ actor TrainingDNAAnalyzer {
                 predicate: #Predicate<StoredDailyScore> { $0.date >= cutoff && $0.date < end }
             )
         )) ?? []
+        var rowLoadByDay: [String: Double] = [:]
+        for score in dailyScores {
+            let key = fmt.string(from: score.date)
+            rowLoadByDay[key] = max(rowLoadByDay[key] ?? 0, score.dailyLoad)
+        }
+        let storedTrainingDays = daysWithStoredWorkoutLoad(atLeast: 0.5, from: cutoff, to: end, keyedBy: fmt)
         let restDays: Set<String> = Set(
-            dailyScores.filter { $0.dailyLoad < 0.5 }.map { fmt.string(from: $0.date) }
+            rowLoadByDay.filter { $0.value < 0.5 && !storedTrainingDays.contains($0.key) }.keys
         )
 
         // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days, each a known rest day.
@@ -740,14 +758,15 @@ actor TrainingDNAAnalyzer {
         // ACWR sweet-spot streak: consecutive complete days ending yesterday where dailyStrain
         // is in [0.8, 1.3]. Counts days, not rows: the background pass never writes rows, so the
         // newest can be days old and history can have holes. A missing day is unknown and ends
-        // the streak, the same way a missed measurement ends the HRV streak above.
+        // the streak, the same way a missed measurement ends the HRV streak above. A day with
+        // duplicate rows counts once, and only if every row is in the sweet spot.
+        let rowsByDay = Dictionary(grouping: scores) { Calendar.current.startOfDay(for: $0.date) }
         var acwrStreakDays = 0
-        var expectedDay = Calendar.current.date(byAdding: .day, value: -1, to: end) ?? end
-        for score in scores.reversed() {
-            guard Calendar.current.isDate(score.date, inSameDayAs: expectedDay),
-                  score.dailyStrain >= 0.8 && score.dailyStrain <= 1.3 else { break }
+        var day = Calendar.current.date(byAdding: .day, value: -1, to: end) ?? end
+        while let rows = rowsByDay[day], rows.allSatisfy({ $0.dailyStrain >= 0.8 && $0.dailyStrain <= 1.3 }) {
             acwrStreakDays += 1
-            expectedDay = Calendar.current.date(byAdding: .day, value: -1, to: expectedDay) ?? expectedDay
+            guard let previous = Calendar.current.date(byAdding: .day, value: -1, to: day) else { break }
+            day = previous
         }
 
         let hrvScore  = min(1.0, Double(hrvStreakDays)  / 7.0)  * 0.60
@@ -966,6 +985,23 @@ actor TrainingDNAAnalyzer {
         guard baselineIntensity > 0 else { return true }
 
         return recentIntensity >= baselineIntensity * Self.taperIntensityRetention
+    }
+
+    /// Days (keyed by `fmt`) in `[start, end)` whose stored workouts add up to at least
+    /// `threshold` load, computed by the one load engine (`PredictiveReadinessService`).
+    private func daysWithStoredWorkoutLoad(atLeast threshold: Double, from start: Date, to end: Date, keyedBy fmt: DateFormatter) -> Set<String> {
+        let stored = (try? modelContext.fetch(FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate { $0.startDate >= start && $0.startDate < end }
+        ))) ?? []
+        guard !stored.isEmpty else { return [] }
+        let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+        let loadService = PredictiveReadinessService()
+        var loadByDay: [String: Double] = [:]
+        for workout in stored {
+            let key = fmt.string(from: workout.startDate)
+            loadByDay[key, default: 0] += loadService.calculateWorkoutLoad(WorkoutData(from: workout), ftpSnapshots: ftpSnapshots)
+        }
+        return Set(loadByDay.filter { $0.value >= threshold }.keys)
     }
 
     // MARK: - Upsert

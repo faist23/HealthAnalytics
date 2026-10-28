@@ -94,7 +94,7 @@
 ### Taper detection requires all 28 of the last 28 days to have a stored score
 **Priority:** P3 — pre-existing, but now load-bearing
 
-**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (`ReadinessRepository.swift:926`). One night without the watch inside the window silences taper detection until that day rolls off. The window is now the 28 complete days ending yesterday (not including today).
+**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (its `!sleepDay.isEmpty` guard). One night without the watch inside the window silences taper detection until that day rolls off. The window is now the 28 complete days ending yesterday (not including today).
 
 **Why:** v0.1.13.0's headline claim is that the detector now catches a genuine 50% volume cut. For intermittent watch-wearers that improvement may be unreachable.
 

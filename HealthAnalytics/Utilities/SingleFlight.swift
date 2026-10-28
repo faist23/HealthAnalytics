@@ -20,25 +20,39 @@ import Foundation
 /// a fresh run another joiner already started — exactly once, whatever that returns.
 /// The caller that started the abandoned run never retries, and a cancelled joiner
 /// just returns.
+///
+/// `shouldStart` is asked right before this caller would start a run (never when it
+/// joins one). False starts nothing, so no other caller can join a run that does no
+/// work: a background wake retrying after the user opened the app declines, and a
+/// foreground caller that resumed beside it starts its own analysis.
 @MainActor
 final class SingleFlight {
     private var current: Task<Bool, Never>?
 
-    func run(_ work: @escaping @MainActor () async -> Bool) async {
+    func run(
+        _ work: @escaping @MainActor () async -> Bool,
+        shouldStart: @escaping @MainActor () -> Bool = { true }
+    ) async {
         if let current {
             let completed = await Self.wait(for: current)
             // nil: this caller was cancelled while waiting. true: nothing to redo.
             guard completed == false, !Task.isCancelled else { return }
         }
-        await start(work)
+        await start(work, shouldStart: shouldStart)
     }
 
     /// Starts `work`, or joins the run in flight without any further retry.
-    private func start(_ work: @escaping @MainActor () async -> Bool) async {
+    private func start(
+        _ work: @escaping @MainActor () async -> Bool,
+        shouldStart: @MainActor () -> Bool
+    ) async {
         if let current {
             await Self.wait(for: current)
             return
         }
+        // No await between this check and setting `current`, so no caller can start or
+        // join in between.
+        guard shouldStart() else { return }
         let task = Task { [weak self] in
             let completed = await work()
             // Cleared from inside the task so it happens at completion, before any

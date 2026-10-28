@@ -178,13 +178,12 @@ class ReadinessRepository: ObservableObject {
     /// Callers await the run but never own it — see `patternAnalysisFlight`. A request
     /// that arrives mid-run joins it. Joiners need no follow-up: the run itself decides,
     /// when it finishes, whether to refresh Coach and report errors (`isAppInForeground`).
-    /// The one exception is a joined background pass that ended `abandoned` (it stored
-    /// nothing): `SingleFlight` then runs this request once on its own. A foreground run
-    /// always counts as completed (its own failures are retried by the next appear).
+    /// The one exception is a joined run that stored nothing because it spanned a
+    /// suspension (a background pass that ended `abandoned`, or a foreground run whose
+    /// commit gate declined): `SingleFlight` then runs this request once on its own.
     func runPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
         await patternAnalysisFlight.run { [self] in
             await performPatternAnalysis(container: container, trigger: trigger)
-            return true
         }
     }
 
@@ -202,19 +201,20 @@ class ReadinessRepository: ObservableObject {
         log.recordWake(wake, appActive: inForeground)
         // The observers' registration callbacks on every foreground cold launch would
         // otherwise run a full pass; the foreground's own sync and refresh cover it.
-        // Checked here to avoid joining a run at all, and again inside the work, which is
-        // the check that matters: a joiner's retry runs the work later, maybe after the
+        // Checked here to avoid joining a run at all, and again by `shouldStart`, which is
+        // the check that matters: a joiner's retry starts a run later, maybe after the
         // user opened the app.
         if BackgroundPatternPass.skipIfForeground(appInForeground: inForeground, log: log, at: Date()) { return }
-        await patternAnalysisFlight.run(BackgroundPatternPass.flightWork(
-            appInForeground: { Self.applicationIsInForeground() },
-            log: log,
-            makePass: { [self] in
+        await patternAnalysisFlight.run(
+            BackgroundPatternPass.flightWork(makePass: { [self] in
                 BackgroundPatternPass(
                     steps: LiveBackgroundPassSteps(repository: self, container: container), log: log, wake: wake
                 )
-            }
-        ))
+            }),
+            shouldStart: BackgroundPatternPass.shouldStart(
+                appInForeground: { Self.applicationIsInForeground() }, log: log
+            )
+        )
     }
 
     /// Detection + gated commit for the background pass, on the same analyzer instance
@@ -239,9 +239,11 @@ class ReadinessRepository: ObservableObject {
         ) ?? .auto
     }
 
-    private func performPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
+    /// Returns false only when the commit gate declined, so joiners rerun (see
+    /// `runPatternAnalysis`); every other outcome counts as completed.
+    private func performPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async -> Bool {
         let lastRun = UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
-        guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return }
+        guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return true }
 
         // The throttle is stamped AFTER a run that actually reached upsertPatterns —
         // never before. `analyze()` refreshes every pattern's `detectedAt`, which is
@@ -256,9 +258,17 @@ class ReadinessRepository: ObservableObject {
 
         let analyzer = trainingDNAAnalyzer!
         let preference = hrvSourcePreference
+        // Same abandon rule as the background pass: a run the user left mid-detection can be
+        // suspended and resumed hours later by a delivery wake, mixing reads from both
+        // moments. Past `BackgroundPatternPass.maxDuration` it commits nothing, sends no
+        // alert and stays unstamped.
+        let startedAt = Date()
 
         do {
-            let historyDays = try await analyzer.analyze(sourcePreference: preference)
+            let historyDays = try await analyzer.analyze(
+                sourcePreference: preference,
+                commitGate: { BackgroundPatternPass.isWithinBudget(startedAt: startedAt, now: Date()) }
+            )
             UserDefaults.standard.set(historyDays, forKey: "healthKitHistoryDays")
             // `analyze()` returns normally when cancelled (its guards `return historyDays`),
             // so a clean return is NOT proof the patterns were refreshed. Callers can no
@@ -275,6 +285,12 @@ class ReadinessRepository: ObservableObject {
                     await refreshIfNecessary(modelContext: container.mainContext)
                 }
             }
+        } catch PatternAnalysisError.commitDeclined {
+            // Spanned a suspension: silent and unstamped, and joiners rerun.
+            #if DEBUG
+            print("⚠️ Pattern analysis spanned a suspension; nothing committed")
+            #endif
+            return false
         } catch PatternAnalysisError.insufficientData {
             // < 60 days of history — silent, no error surfaced. Safe to throttle: there
             // are no patterns to keep alive, so nothing can go stale behind the window.
@@ -290,6 +306,7 @@ class ReadinessRepository: ObservableObject {
                 await MainActor.run { self.analysisError = "Pattern analysis failed: \(error.localizedDescription)" }
             }
         }
+        return true
     }
     
     // MARK: - Models
