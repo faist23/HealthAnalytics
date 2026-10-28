@@ -139,9 +139,14 @@ final class BackgroundPatternPass {
     ) -> @MainActor () async -> Bool {
         {
             if skipIfForeground(appInForeground: appInForeground(), log: log, at: now()) { return true }
-            let outcome = await makePass().run()
-            return outcome != .abandoned
+            return isCompleted(await makePass().run())
         }
+    }
+
+    /// What a pass reports to `SingleFlight`: only `abandoned` (nothing stored, the run
+    /// spanned a suspension) is not completed, so only it makes joiners retry once.
+    nonisolated static func isCompleted(_ outcome: BackgroundPassOutcome) -> Bool {
+        outcome != .abandoned
     }
 
     /// Inside the budget and not before the start (a clock moved backwards proves

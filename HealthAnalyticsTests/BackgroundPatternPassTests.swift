@@ -386,6 +386,15 @@ final class BackgroundPatternPassTests: XCTestCase {
         XCTAssertTrue(steps.calls.isEmpty)
     }
 
+    /// What `SingleFlight` hears from a background pass: only `abandoned` (nothing
+    /// stored, the run spanned a suspension) makes its joiners retry. Every other outcome,
+    /// skips included, already did or decided all there was to do.
+    func test_isCompleted_onlyAbandonedIsNotCompleted() {
+        for outcome in BackgroundPassOutcome.allCases {
+            XCTAssertEqual(BackgroundPatternPass.isCompleted(outcome), outcome != .abandoned, "\(outcome)")
+        }
+    }
+
     func test_isWithinBudget_edges() {
         XCTAssertTrue(BackgroundPatternPass.isWithinBudget(startedAt: t0, now: t0))
         XCTAssertTrue(BackgroundPatternPass.isWithinBudget(startedAt: t0, now: t0.addingTimeInterval(BackgroundPatternPass.maxDuration)))

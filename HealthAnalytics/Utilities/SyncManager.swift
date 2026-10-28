@@ -162,14 +162,24 @@ class SyncManager: ObservableObject {
     /// two upserts never interleave and double-store a ride.
     func refreshWorkoutsFromHealthKit(now: Date = Date()) async throws {
         try await backgroundRefresh.run(skippingWhile: isSyncing) { [self] in
-            let since = [lastBackgroundWorkoutRefresh, lastSyncDate].compactMap { $0 }.max()
-                ?? now.addingTimeInterval(-7 * 86400)
-            let start = Calendar.current.date(byAdding: .day, value: -1, to: since) ?? since
+            let start = Self.healthKitRefreshWindowStart(
+                lastBackgroundRefresh: lastBackgroundWorkoutRefresh, lastSync: lastSyncDate, now: now
+            )
             let workouts = try await healthKitManager.fetchWorkouts(startDate: start, endDate: now)
             let dataHandler = DataPersistenceActor(modelContainer: HealthDataContainer.shared)
             await dataHandler.upsertHealthKitWorkoutsOnly(workouts, since: start)
             lastBackgroundWorkoutRefresh = now
         }
+    }
+
+    /// Where the HealthKit-only refresh starts reading: the later of the last background
+    /// refresh and the last full sync (a week back when neither happened), minus one day
+    /// so a workout HealthKit reported late is still picked up.
+    nonisolated static func healthKitRefreshWindowStart(
+        lastBackgroundRefresh: Date?, lastSync: Date?, now: Date, calendar: Calendar = .current
+    ) -> Date {
+        let since = [lastBackgroundRefresh, lastSync].compactMap { $0 }.max() ?? now.addingTimeInterval(-7 * 86400)
+        return calendar.date(byAdding: .day, value: -1, to: since) ?? since
     }
 
     // MARK: - Metric Name Migration
