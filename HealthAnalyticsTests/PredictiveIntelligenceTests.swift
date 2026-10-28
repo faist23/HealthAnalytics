@@ -249,9 +249,16 @@ final class PredictiveIntelligenceTests: XCTestCase {
         XCTAssertTrue(fired, "A duplicate-day row must not end the ACWR streak")
     }
 
+    /// A duplicate day counts only if every row is in the sweet spot: a 0.5-strain twin on
+    /// -3 ends the streak at 2, so the pattern does not fire.
+    func testPerformancePeak_duplicateDayWithAnOutOfSpotRowEndsTheStreak() async throws {
+        let fired = try await performancePeakFires(sweetSpotOffsets: Array(-5...(-1)), outOfSpotOffsets: [-3])
+        XCTAssertFalse(fired, "A day with any out-of-spot row must end the ACWR streak")
+    }
+
     /// HRV streak 18; sweet-spot rows (strain 1.0) only at `sweetSpotOffsets`, below-spot
-    /// rows (0.5) for days -89…-13 so history exists, and no other rows.
-    private func performancePeakFires(sweetSpotOffsets: [Int]) async throws -> Bool {
+    /// rows (0.5) for days -89…-13 and at `outOfSpotOffsets`, and no other rows.
+    private func performancePeakFires(sweetSpotOffsets: [Int], outOfSpotOffsets: [Int] = []) async throws -> Bool {
         let container = try makeFullContainer()
         let analyzer = TrainingDNAAnalyzer(modelContainer: container)
 
@@ -260,7 +267,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         mock.hrvData = makeHRVPeakData(highDays: 18)
         await analyzer.setDataProvider(mock)
 
-        let old = (13...89).map { StoredDailyScore(date: day(-$0), readinessScore: 70, dailyStrain: 0.5, workoutCount: 0) }
+        let old = ((13...89).map { -$0 } + outOfSpotOffsets).map { StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 0.5, workoutCount: 0) }
         let sweet = sweetSpotOffsets.map { StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0) }
         try await analyzer.insertDailyScores(old + sweet)
         _ = try await analyzer.analyze()

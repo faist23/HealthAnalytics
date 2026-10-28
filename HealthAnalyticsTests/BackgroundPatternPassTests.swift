@@ -306,7 +306,7 @@ final class BackgroundPatternPassTests: XCTestCase {
     /// A wake that joined an abandoned pass retries on its own (`SingleFlight.run`). If
     /// the user opened the app meanwhile, that retry must skip like any foreground wake,
     /// not run a full pass the foreground's own sync and refresh already cover.
-    func test_flightWork_joinerRetryWhileForeground_runsNoStepsAndRecordsSkippedForeground() async {
+    func test_shouldStart_joinerRetryWhileForeground_runsNoStepsAndRecordsSkippedForeground() async {
         let clock = FakeClock(t0)
         let steps = FakeSteps(clock: clock)
         let log = BackgroundPassLog(defaults: defaults)

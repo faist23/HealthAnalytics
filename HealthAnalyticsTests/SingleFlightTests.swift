@@ -210,4 +210,33 @@ final class SingleFlightTests: XCTestCase {
         XCTAssertEqual(first.runs, 1)
         XCTAssertEqual(joiner.runs, 0)
     }
+
+    /// `shouldStart` is asked only when this caller would start a run. Declining starts
+    /// nothing, so a later caller runs its own work rather than finding a run to join.
+    func test_run_decliningShouldStartStartsNothing() async {
+        let flight = SingleFlight()
+        let declined = Probe()
+        let later = Probe()
+
+        await flight.run(slowRun(declined), shouldStart: { false })
+        await flight.run(slowRun(later))
+
+        XCTAssertEqual(declined.runs, 0)
+        XCTAssertEqual(later.runs, 1)
+    }
+
+    /// A caller that joins a run in flight never asks `shouldStart`: a background wake that
+    /// only joined must not record a foreground skip.
+    func test_run_joinerNeverAsksShouldStart() async {
+        let flight = SingleFlight()
+        let first = Probe()
+        var asked = 0
+        async let a: Void = flight.run(slowRun(first))
+        while first.runs == 0 { await Task.yield() }
+        async let b: Void = flight.run(slowRun(Probe()), shouldStart: { asked += 1; return true })
+        _ = await (a, b)
+
+        XCTAssertEqual(first.runs, 1)
+        XCTAssertEqual(asked, 0)
+    }
 }

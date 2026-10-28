@@ -330,6 +330,11 @@ actor TrainingDNAAnalyzer {
 
         guard !Task.isCancelled else { return historyDays }
 
+        // Read before the gate, so nothing awaits between the gate and the save: a run
+        // suspended at that await would otherwise commit stale reads when it resumes.
+        let notifier = PatternNotificationService.shared
+        let authorized = await notifier.isAuthorized()
+
         guard await commitGate() else { throw PatternAnalysisError.commitDeclined }
 
         try upsertPatterns(detected)
@@ -337,17 +342,19 @@ actor TrainingDNAAnalyzer {
         // Notifications are once ever, so `notificationSent` is saved BEFORE anything is
         // sent: a background wake can be suspended and killed between the send and a later
         // save, which would lose the flag and alert again. A kill between this save and the
-        // send costs at most one missed alert, never a duplicate. A failed save sends nothing.
+        // send costs at most one missed alert, never a duplicate. A failed save sends nothing
+        // and rolls back, so the marks don't linger in this context and suppress the alert
+        // on the next run.
         let allStored = (try? modelContext.fetch(FetchDescriptor<TrainingPattern>())) ?? []
         let detectedTypes = detected.map(\.patternType)
         let unsent = allStored.filter { !$0.notificationSent && detectedTypes.contains($0.patternType) }
-        let notifier = PatternNotificationService.shared
-        let toSend = await notifier.isAuthorized() ? unsent : []
+        let toSend = authorized ? unsent : []
         for pattern in toSend { pattern.notificationSent = true }
 
         do {
             try modelContext.save()
         } catch {
+            modelContext.rollback()
             throw PatternAnalysisError.persistenceFailed(error)
         }
 
@@ -445,9 +452,9 @@ actor TrainingDNAAnalyzer {
             let key = fmt.string(from: score.date)
             rowLoadByDay[key] = max(rowLoadByDay[key] ?? 0, score.dailyLoad)
         }
-        let storedTrainingDays = daysWithStoredWorkoutLoad(atLeast: 0.5, from: cutoff, to: end, keyedBy: fmt)
+        let storedTrainingDays = daysWithStoredWorkoutLoad(atLeast: Self.restDayLoadThreshold, from: cutoff, to: end, keyedBy: fmt)
         let restDays: Set<String> = Set(
-            rowLoadByDay.filter { $0.value < 0.5 && !storedTrainingDays.contains($0.key) }.keys
+            rowLoadByDay.filter { $0.value < Self.restDayLoadThreshold && !storedTrainingDays.contains($0.key) }.keys
         )
 
         // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days, each a known rest day.
@@ -795,6 +802,10 @@ actor TrainingDNAAnalyzer {
     }
 
     // MARK: - Pattern 6: Taper Underway
+
+    /// Below this daily load (TSS-equivalent) a day is rest for the sick-day proxy, in both
+    /// the score-row check and the stored-workout veto. A warmup spin scores ~0.17.
+    static let restDayLoadThreshold = 0.5
 
     /// Minimum mean daily load over the 21-day baseline for a taper to be meaningful.
     /// On this project's TSS scale a 60-min zone-2 ride ≈ 1.0 and `hardDayLoadThreshold`

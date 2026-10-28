@@ -317,6 +317,24 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         XCTAssertFalse(fired, "A stored ride with real load must veto a zero-load row's rest verdict")
     }
 
+    /// The veto is a load test, not a presence test: a 10-minute walk (load well under
+    /// `restDayLoadThreshold`) leaves a rest day a rest day.
+    func testHRVPrecursor_lowLoadStoredWorkoutDoesNotVetoRest() async throws {
+        let fired = try await hrvPrecursorFiresWithThirdWindow(
+            thirdWindowRows: { offsets in
+                offsets.map { StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0) }
+            },
+            workouts: [
+                StoredWorkout(
+                    id: "short-walk", type: .walking,
+                    startDate: Calendar.current.date(byAdding: .hour, value: 15, to: day(-1))!,
+                    duration: 10 * 60, distance: nil, power: nil, energy: nil, hr: 90, source: "test"
+                )
+            ]
+        )
+        XCTAssertTrue(fired, "A workout below the rest threshold must not veto a rest day")
+    }
+
     /// Control: the same third window with plain rest rows and no ride fires.
     func testHRVPrecursor_thirdWindowWithRestRowsFires() async throws {
         let fired = try await hrvPrecursorFiresWithThirdWindow { offsets in
