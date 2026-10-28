@@ -225,3 +225,7 @@ R1, R3 and R4 each patched `scoresFinalizedThrough`, and each review pass found 
 ## Recompute backed out (2026-10-28)
 
 The S2 trailing 7-day load recompute (`RecentDailyLoadRefresh`, `refreshRecentDailyLoads`, the one-time 90-day upgrade pass) was removed. It trusted `StoredWorkout`, which is not trustworthy: the foreground sync matches HealthKit rides only against the Strava list fetched in that call, so a silent Strava failure stores Health-UUID duplicates of Strava rides (a recompute would double the load); and it can miss rides (late HealthKit writers outside the `lastSyncDate - 1 day` window, and swallowed sync errors that still advance `lastSyncDate`). Every variant (finalized-through marker, foreground-only marker, trailing recompute) inherited the same flaw. The pass's step is now `fillMissingScoreRows()`, the fill-missing backfill as on `main`. A day's load stays fixed at its first write; the follow-up and its design constraints are in `TODOS.md` ("A day's load is frozen at the first write, and recomputing it needs a trustworthy workout store").
+
+## Background fill removed (2026-10-28)
+
+The pass's `fillMissingScoreRows()` step was removed. It inserted rows for days the user did not open the app, before the foreground Strava sync; since nothing rewrites rows, those days kept a Health-only load forever. Missing rows are filled only by the foreground `refreshIfNecessary`, after `performSmartSync`, as on `main`. The pass is now: guard, throttle, HealthKit-only workout refresh, gated detection, stamp, Coach only if foreground.

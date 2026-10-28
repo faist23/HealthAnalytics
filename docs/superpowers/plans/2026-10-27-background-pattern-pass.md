@@ -1,5 +1,7 @@
 # Background Pattern Pass Implementation Plan
 
+> **Note (2026-10-28):** Task 3 (score-row finalization) was backed out, and the background pass has no score-row step at all (missing rows are filled only by the foreground refresh). The plan body below is the original and is not updated; see the spec's post-review section.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Pattern alerts (above all the HRV precursor illness warning) arrive within minutes of the first unlock after new Health data, without opening the app, and never from stale or half-synced stores.

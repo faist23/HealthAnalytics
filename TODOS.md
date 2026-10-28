@@ -87,6 +87,7 @@
 4. Don't run during resetAllData/performFullResync (StoredWorkout is emptied first).
 5. Key days by `dateString`, not `startOfDay(row.date)` (westward time-zone travel shifts rows a day).
 6. Compare loads with a tolerance and fetch workouts sorted.
+7. Missing rows must not be filled before the Strava sync: a background fill freezes Health-only loads.
 
 **Effort:** M
 
@@ -207,7 +208,7 @@
 
 ## Completed
 
-- **P2 — Design the background pattern run properly** — **Completed:** unreleased (2026-10-27). HealthKit background delivery (HRV + workouts) and app refresh both run one `BackgroundPatternPass` (finalize score rows, HealthKit-only workout refresh, gated detection, abandon after 2 min); store-based pattern checks read complete days ending yesterday; counters in Settings → Background Pass.
+- **P2 — Design the background pattern run properly** — **Completed:** unreleased (2026-10-27). HealthKit background delivery (HRV + workouts) and app refresh both run one `BackgroundPatternPass` (HealthKit-only workout refresh, gated detection, abandon after 2 min; no score-row step in the background, missing rows are still filled only by the foreground refresh); store-based pattern checks read complete days ending yesterday; counters in Settings → Background Pass.
 - **P2 — Background pattern-analysis task likely never runs** — **Completed:** v0.1.15.0 (2026-10-27). Request is now `BGAppRefreshTaskRequest` (matching the SwiftUI `.appRefresh` handler), Info.plist declares `UIBackgroundModes` `fetch` (missing entirely before, so `submit` always threw), and the handler routes through `runPatternAnalysis(container:trigger: .background)`. Verified firing on device by Craig.
 - **P2 — Repository should own the pattern-analysis → Coach hand-off** — **Completed:** v0.1.15.0 (2026-10-27). `SingleFlight` owns pattern analysis (joins overlap, ignores caller cancellation, 5-min forced-run throttle) and shields `performFullAnalysis` from caller cancellation, so a tab swipe can no longer cache the heuristic Coach paragraph; `resetForTesting()` clears the cache state. `SingleFlightTests`, `ReadinessRepositoryPatternThrottleTests`.
 - **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis usually can't leave Coach behind; `ReadinessRepositoryCacheTests`. The remaining hand-off gaps were closed by "Repository should own the pattern-analysis → Coach hand-off" above.
