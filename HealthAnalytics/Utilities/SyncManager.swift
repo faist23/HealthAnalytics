@@ -38,6 +38,10 @@ class SyncManager: ObservableObject {
     private var isMigrating = false
     private var isBackfillingZones = false
     
+    /// Serializes the background pass's HealthKit-only upsert with this sync's upsert
+    /// (see `BackgroundRefreshGate`).
+    private let backgroundRefresh = BackgroundRefreshGate()
+
     private let healthKitManager = HealthKitManager.shared
     private let stravaManager = StravaManager.shared
     
@@ -95,6 +99,9 @@ class SyncManager: ObservableObject {
         }
 
         isSyncing = true
+        // A background refresh already upserting must finish first, or both upserts can
+        // miss each other's copy of a ride. `isSyncing` is set, so no new one starts.
+        await backgroundRefresh.waitForInFlight()
 
         do {
             
@@ -150,15 +157,19 @@ class SyncManager: ObservableObject {
     /// HealthKit-only workout refresh for the background pattern pass. Never calls
     /// Strava, never posts `DataSyncCompleted` (its observer runs the Coach refresh),
     /// and never moves `lastSyncDate` — the next foreground sync must still pull Strava
-    /// power data for this window.
+    /// power data for this window. Does nothing (no fetch, no stamp) while a foreground
+    /// sync runs, and a sync starting meanwhile waits for it (`backgroundRefresh`), so the
+    /// two upserts never interleave and double-store a ride.
     func refreshWorkoutsFromHealthKit(now: Date = Date()) async throws {
-        let since = [lastBackgroundWorkoutRefresh, lastSyncDate].compactMap { $0 }.max()
-            ?? now.addingTimeInterval(-7 * 86400)
-        let start = Calendar.current.date(byAdding: .day, value: -1, to: since) ?? since
-        let workouts = try await healthKitManager.fetchWorkouts(startDate: start, endDate: now)
-        let dataHandler = DataPersistenceActor(modelContainer: HealthDataContainer.shared)
-        await dataHandler.upsertHealthKitWorkoutsOnly(workouts, since: start)
-        lastBackgroundWorkoutRefresh = now
+        try await backgroundRefresh.run(skippingWhile: isSyncing) { [self] in
+            let since = [lastBackgroundWorkoutRefresh, lastSyncDate].compactMap { $0 }.max()
+                ?? now.addingTimeInterval(-7 * 86400)
+            let start = Calendar.current.date(byAdding: .day, value: -1, to: since) ?? since
+            let workouts = try await healthKitManager.fetchWorkouts(startDate: start, endDate: now)
+            let dataHandler = DataPersistenceActor(modelContainer: HealthDataContainer.shared)
+            await dataHandler.upsertHealthKitWorkoutsOnly(workouts, since: start)
+            lastBackgroundWorkoutRefresh = now
+        }
     }
 
     // MARK: - Metric Name Migration
@@ -691,6 +702,7 @@ class SyncManager: ObservableObject {
         }
         
         isSyncing = true
+        await backgroundRefresh.waitForInFlight()
         
         let container = HealthDataContainer.shared
         let dataHandler = DataPersistenceActor(modelContainer: container)
