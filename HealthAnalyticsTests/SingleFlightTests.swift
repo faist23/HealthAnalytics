@@ -202,10 +202,12 @@ final class SingleFlightTests: XCTestCase {
         while first.runs == 0 { await Task.yield() }
         let joining = Task { await flight.run(slowRun(joiner)) }
         joining.cancel()
+        // Awaiting the joiner's own completion is the synchronization: any retry it
+        // would start runs inside `run`, so it has finished by the time this returns.
         await joining.value
         await starter.value
-        try? await Task.sleep(for: .milliseconds(50))
 
+        XCTAssertEqual(first.runs, 1)
         XCTAssertEqual(joiner.runs, 0)
     }
 }
