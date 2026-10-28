@@ -21,10 +21,10 @@ private final class FakeSteps: BackgroundPassSteps {
     var lastRun: Date?
     var analyzeError: Error?
     var refreshWorkoutsError: Error?
-    /// Advances the fake clock inside the workout refresh / score finalization (a
+    /// Advances the fake clock inside the workout refresh / daily load refresh (a
     /// suspension mid-step).
     var advanceDuringRefresh: TimeInterval = 0
-    var advanceDuringFinalize: TimeInterval = 0
+    var advanceDuringLoadRefresh: TimeInterval = 0
     /// Advances the fake clock during analysis, before the gate is asked.
     var advanceDuringAnalysis: TimeInterval = 0
     var newestHRV: Date?
@@ -45,9 +45,9 @@ private final class FakeSteps: BackgroundPassSteps {
         clock.now = clock.now.addingTimeInterval(advanceDuringRefresh)
         if let refreshWorkoutsError { throw refreshWorkoutsError }
     }
-    func finalizeScoreRows() async {
-        calls.append("finalizeScoreRows")
-        clock.now = clock.now.addingTimeInterval(advanceDuringFinalize)
+    func refreshRecentDailyLoads() async {
+        calls.append("refreshRecentDailyLoads")
+        clock.now = clock.now.addingTimeInterval(advanceDuringLoadRefresh)
     }
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws {
         calls.append("analyze")
@@ -98,7 +98,7 @@ final class BackgroundPatternPassTests: XCTestCase {
         let outcome = await pass.run()
 
         XCTAssertEqual(outcome, .completed)
-        XCTAssertEqual(steps.calls, ["refreshWorkouts", "finalizeScoreRows", "analyze", "commit", "stamp", "newestHRV", "coach"])
+        XCTAssertEqual(steps.calls, ["refreshWorkouts", "refreshRecentDailyLoads", "analyze", "commit", "stamp", "newestHRV", "coach"])
         XCTAssertEqual(steps.stamped, t0, "The stamp describes the data the run read: its start, not its end")
         XCTAssertEqual(log.count(.completed), 1)
     }
@@ -153,8 +153,8 @@ final class BackgroundPatternPassTests: XCTestCase {
     }
 
     /// A pass frozen inside the workout refresh resumes past its budget. Detecting now
-    /// would read a store refreshed before the freeze; stop before finalize and analysis.
-    func test_suspensionDuringWorkoutRefresh_isAbandoned_beforeFinalizeOrAnalysis() async {
+    /// would read a store refreshed before the freeze; stop before the load refresh and analysis.
+    func test_suspensionDuringWorkoutRefresh_isAbandoned_beforeLoadRefreshOrAnalysis() async {
         let clock = FakeClock(t0)
         let steps = FakeSteps(clock: clock)
         steps.advanceDuringRefresh = BackgroundPatternPass.maxDuration + 1
@@ -168,16 +168,16 @@ final class BackgroundPatternPassTests: XCTestCase {
         XCTAssertEqual(log.count(.abandoned), 1)
     }
 
-    func test_suspensionDuringScoreFinalization_isAbandoned_beforeAnalysis() async {
+    func test_suspensionDuringDailyLoadRefresh_isAbandoned_beforeAnalysis() async {
         let clock = FakeClock(t0)
         let steps = FakeSteps(clock: clock)
-        steps.advanceDuringFinalize = BackgroundPatternPass.maxDuration + 1
+        steps.advanceDuringLoadRefresh = BackgroundPatternPass.maxDuration + 1
         let (pass, log) = makePass(steps, clock)
 
         let outcome = await pass.run()
 
         XCTAssertEqual(outcome, .abandoned)
-        XCTAssertEqual(steps.calls, ["refreshWorkouts", "finalizeScoreRows"])
+        XCTAssertEqual(steps.calls, ["refreshWorkouts", "refreshRecentDailyLoads"])
         XCTAssertNil(steps.stamped)
         XCTAssertEqual(log.count(.abandoned), 1)
     }

@@ -396,9 +396,10 @@ class ReadinessRepository: ObservableObject {
     // MARK: - Main Analysis Entry Point
     
     func refreshIfNecessary(modelContext: ModelContext) async {
-        // Backfill missing StoredDailyScore days and recompute any written before
-        // their day ended.
-        await finalizeScoreRows(modelContext: modelContext)
+        // Backfill missing StoredDailyScore days, then bring the last week's load up to
+        // date (a ride that synced after its day's row was written).
+        await backfillHistoricalScores(modelContext: modelContext)
+        refreshRecentDailyLoads(modelContext: modelContext)
         // One-time migration: populate dailyLoad on existing rows (default was 0.0 from schema add).
         backfillDailyLoad(modelContext: modelContext)
 
@@ -992,36 +993,11 @@ class ReadinessRepository: ObservableObject {
 
     // MARK: - Historical Score Backfill
 
-    /// Writes missing past score rows and recomputes stale ones (days from the one
-    /// after `scoresFinalizedThrough` through yesterday). Never touches today's row.
-    /// The marker advances only after HealthKit data was actually read, so a transient
-    /// failure leaves those days due for the next run.
-    /// Shared by the foreground refresh and the background pattern pass. Only the
-    /// foreground (`advancesMarker: true`, after the Strava sync) moves the marker: the
-    /// background pass passes false because it may have seen only the HealthKit copy of a
-    /// ride, and the next foreground refresh recomputes the same days with Strava data.
-    func finalizeScoreRows(modelContext: ModelContext, now: Date = Date(), advancesMarker: Bool = true) async {
-        let key = "scoresFinalizedThrough"
-        let range = ScoreRowFinalization.recomputeRange(
-            finalizedThrough: UserDefaults.standard.object(forKey: key) as? Date,
-            now: now
-        )
-        let readHealthKit = await backfillHistoricalScores(modelContext: modelContext, recomputeFrom: range?.lowerBound)
-        if let through = ScoreRowFinalization.markerAdvance(
-            range: range, readBiometrics: readHealthKit, advancesMarker: advancesMarker
-        ) {
-            UserDefaults.standard.set(through, forKey: key)
-        }
-    }
-
     /// Populates StoredDailyScore for the last 90 days from already-synced SwiftData records.
     /// Runs once on first launch (UserDefaults gate) and re-runs whenever fewer than 14 records
     /// exist (e.g. after a data clear). This unlocks the 7-day forecast and 14-Day Signature
     /// without requiring 14 consecutive days of app opens.
-    /// Returns true only when biometric data was actually read (HRV or RHR non-empty;
-    /// see `ScoreRowFinalization.readBiometrics`).
-    @discardableResult
-    private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false, recomputeFrom: Date? = nil) async -> Bool {
+    private func backfillHistoricalScores(modelContext: ModelContext, force: Bool = false) async {
         // V5: diagnose existingDates vs per-day filter failure.
         let udKey = "historicalScoreBackfillV5Done"
         let existingCount = (try? modelContext.fetchCount(FetchDescriptor<StoredDailyScore>())) ?? 0
@@ -1036,14 +1012,14 @@ class ReadinessRepository: ObservableObject {
             return (cal.dateComponents([.day], from: lastDate, to: yday).day ?? 0) >= 1
         }()
 
-        guard force || recomputeFrom != nil || !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 || hasRecentGap else { return false }
+        guard force || !UserDefaults.standard.bool(forKey: udKey) || existingCount < 14 || hasRecentGap else { return }
 
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         guard let ninetyDaysAgo  = calendar.date(byAdding: .day, value: -90, to: today),
               let yesterday       = calendar.date(byAdding: .day, value:  -1, to: today),
               let fetchStart      = calendar.date(byAdding: .day, value: -28, to: ninetyDaysAgo)
-        else { return false }
+        else { return }
 
         let hk = HealthKitManager.shared
 
@@ -1060,10 +1036,6 @@ class ReadinessRepository: ObservableObject {
             sleepFetch ?? [],
             hkWorkoutFetch ?? []
         )
-        // A failed or empty HealthKit read (locked device, no permission) must not count as
-        // having looked at the history. HRV or RHR is enough; sleep is not required, or a
-        // user who doesn't track sleep never advances `scoresFinalizedThrough`.
-        let readBiometrics = ScoreRowFinalization.readBiometrics(hrvCount: allHRV.count, restingHRCount: allRHR.count)
 
 
         // Workouts: merge HealthKit history with StoredWorkout (has Strava power data).
@@ -1083,11 +1055,6 @@ class ReadinessRepository: ObservableObject {
         // Skip dates that already have a StoredDailyScore.
         let allExisting  = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
         let existingDates = Set(allExisting.map { $0.dateString })
-        // Every row per day. A day can carry duplicate twins, and the detectors don't agree
-        // on which one wins (back-to-back crash takes the last one read), so a recompute
-        // rewrites all of them; updating just one left the verdict to fetch order.
-        let existingByDate = Dictionary(grouping: allExisting, by: \.dateString)
-        let recomputeStart = recomputeFrom.map { calendar.startOfDay(for: $0) }
 
         let formatter = Self.dailyScoreDateFormatter
         var inserted = 0
@@ -1097,8 +1064,7 @@ class ReadinessRepository: ObservableObject {
             let dateStr = formatter.string(from: day)
             defer { day = calendar.date(byAdding: .day, value: 1, to: day) ?? today }
 
-            let isRecompute = recomputeStart.map { day >= $0 } ?? false
-            guard isRecompute || !existingDates.contains(dateStr) else { continue }
+            guard !existingDates.contains(dateStr) else { continue }
 
             guard let dayEnd          = calendar.date(byAdding: .day, value:  1, to: day),
                   let window7Start    = calendar.date(byAdding: .day, value:  -7, to: day),
@@ -1135,34 +1101,17 @@ class ReadinessRepository: ObservableObject {
             let dayLoad = todayWorkouts.reduce(0.0) {
                 $0 + predictiveReadinessService.calculateWorkoutLoad($1, ftpSnapshots: ftpSnapshots)
             }
-            if isRecompute, let rows = existingByDate[dateStr], !rows.isEmpty {
-                // Count only real changes (once per date), so an unchanged day doesn't
-                // clear the pattern stamp below.
-                var changed = false
-                for row in rows where row.readinessScore != readiness.score
-                    || row.dailyStrain != acwr
-                    || row.workoutCount != todayWorkouts.count
-                    || row.dailyLoad != dayLoad {
-                    row.readinessScore = readiness.score
-                    row.dailyStrain = acwr
-                    row.workoutCount = todayWorkouts.count
-                    row.dailyLoad = dayLoad
-                    changed = true
-                }
-                guard changed else { continue }
-            } else {
-                modelContext.insert(StoredDailyScore(
-                    date: day,
-                    readinessScore: readiness.score,
-                    dailyStrain: acwr,
-                    workoutCount: todayWorkouts.count,
-                    dailyLoad: dayLoad
-                ))
-            }
+            modelContext.insert(StoredDailyScore(
+                date: day,
+                readinessScore: readiness.score,
+                dailyStrain: acwr,
+                workoutCount: todayWorkouts.count,
+                dailyLoad: dayLoad
+            ))
             inserted += 1
         }
 
-        // New or recomputed history changes what the detectors see, so let patterns re-run. Only then:
+        // New history changes what the detectors see, so let patterns re-run. Only then:
         // this backfill runs inside the Coach refresh that follows a pattern run, and an
         // unconditional clear would erase that run's stamp and defeat the throttle for
         // anyone it keeps re-checking (no sleep data, or a skipped day).
@@ -1175,7 +1124,6 @@ class ReadinessRepository: ObservableObject {
         #if DEBUG
         if inserted > 0 { print("📅 Backfill: inserted \(inserted) historical StoredDailyScore records") }
         #endif
-        return readBiometrics
     }
 
     // MARK: - Recent Daily Load Refresh

@@ -4,8 +4,8 @@
 //
 //  The one thing background triggers (HealthKit delivery, app refresh) run. A wake
 //  while the app is in the foreground is skipped before the pass starts. Order:
-//  protected-data guard → throttle → HealthKit-only workout refresh → score-row
-//  finalization → detection behind a commit gate → stamp (start time) → Coach only
+//  protected-data guard → throttle → HealthKit-only workout refresh → recent daily
+//  load refresh → detection behind a commit gate → stamp (start time) → Coach only
 //  if the app is in the foreground. Never posts DataSyncCompleted, never calls Strava.
 //
 
@@ -27,7 +27,7 @@ protocol BackgroundPassSteps {
     func isProtectedDataAvailable() -> Bool
     func lastPatternRun() -> Date?
     func refreshWorkouts() async throws
-    func finalizeScoreRows() async
+    func refreshRecentDailyLoads() async
     /// Detects, then commits only if `commitGate` returns true; throws
     /// `PatternAnalysisError.commitDeclined` when it refuses.
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws
@@ -82,7 +82,7 @@ final class BackgroundPatternPass {
         // joins that doomed run (its joiners rerun once; see `SingleFlight.run`).
         try? await steps.refreshWorkouts()
         guard Self.isWithinBudget(startedAt: startedAt, now: now()) else { return .abandoned }
-        await steps.finalizeScoreRows()
+        await steps.refreshRecentDailyLoads()
         guard Self.isWithinBudget(startedAt: startedAt, now: now()) else { return .abandoned }
 
         let clock = now
@@ -193,11 +193,11 @@ struct LiveBackgroundPassSteps: BackgroundPassSteps {
 
     func refreshWorkouts() async throws { try await SyncManager.shared.refreshWorkoutsFromHealthKit() }
 
-    /// Recomputes rows but never advances `scoresFinalizedThrough`: before the Strava
-    /// sync the store may hold only the HealthKit copy of yesterday's ride, and the next
-    /// foreground refresh recomputes the same days with the Strava data.
-    func finalizeScoreRows() async {
-        await repository.finalizeScoreRows(modelContext: container.mainContext, advancesMarker: false)
+    /// Load and count only, from StoredWorkout: a ride the pass just stored from
+    /// HealthKit reaches its day now, and the next foreground refresh re-derives the same
+    /// week after the Strava sync. Scores and ACWR are never rewritten.
+    func refreshRecentDailyLoads() async {
+        repository.refreshRecentDailyLoads(modelContext: container.mainContext)
     }
 
     func analyzePatterns(commitGate: @escaping @Sendable () async -> Bool) async throws {
