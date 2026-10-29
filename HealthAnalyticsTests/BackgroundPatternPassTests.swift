@@ -30,6 +30,12 @@ private final class FakeSteps: BackgroundPassSteps {
     var syncing = false
     /// A foreground sync starts during analysis, before the gate is asked.
     var startSyncDuringAnalysis = false
+    /// A whole sync (or the one-time dedup) starts and finishes during analysis.
+    var syncStartsAndFinishesDuringAnalysis = false
+    /// Bumped each time a sync or the dedup starts (`SyncManager.storeRewriteGeneration`).
+    var generation = 0
+    var appInForeground = false
+    var lastSync: Date?
     /// Advances the fake clock inside the newest-HRV query, after the commit.
     var advanceDuringHRVQuery: TimeInterval = 0
     let clock: FakeClock
@@ -43,6 +49,10 @@ private final class FakeSteps: BackgroundPassSteps {
     func isProtectedDataAvailable() -> Bool { protectedDataAvailable }
     func lastPatternRun() -> Date? { lastRun }
     func isSyncing() -> Bool { syncing }
+    func storeGeneration() -> Int { generation }
+    func isAppInForeground() -> Bool { appInForeground }
+    func lastSyncDate() -> Date? { lastSync }
+    func refreshCoach() async { calls.append("coach") }
     func refreshWorkouts() async throws {
         calls.append("refreshWorkouts")
         clock.now = clock.now.addingTimeInterval(advanceDuringRefresh)
@@ -52,7 +62,8 @@ private final class FakeSteps: BackgroundPassSteps {
         calls.append("analyze")
         if let analyzeError { throw analyzeError }
         clock.now = clock.now.addingTimeInterval(advanceDuringAnalysis)
-        if startSyncDuringAnalysis { syncing = true }
+        if startSyncDuringAnalysis { syncing = true; generation += 1 }
+        if syncStartsAndFinishesDuringAnalysis { generation += 1 }
         let ok = await commitGate()
         gateResult = ok
         if !ok { throw PatternAnalysisError.commitDeclined }
@@ -180,6 +191,73 @@ final class BackgroundPatternPassTests: XCTestCase {
         XCTAssertEqual(outcome, .abandoned)
         XCTAssertEqual(steps.gateResult, false)
         XCTAssertNil(steps.stamped)
+    }
+
+    /// A quick sync (or the dedup) can start AND finish while detection reads the store,
+    /// so nothing is syncing by commit time. The rewrite generation moved: refuse.
+    func test_syncThatStartsAndFinishesDuringAnalysis_isAbandoned() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        steps.syncStartsAndFinishesDuringAnalysis = true
+        let (pass, _) = makePass(steps, clock)
+
+        let outcome = await pass.run()
+
+        XCTAssertEqual(outcome, .abandoned)
+        XCTAssertEqual(steps.gateResult, false)
+        XCTAssertNil(steps.stamped)
+    }
+
+    /// The app was opened soon after a sync (so `.active`'s sync was throttled and its
+    /// Coach refresh already ran): a pass committing now must refresh Coach itself, or
+    /// Coach misses the new pattern set. The store already has the Strava data, so the
+    /// refresh's backfill can't fill rows ahead of it.
+    func test_completedPass_inForeground_afterARecentSync_refreshesCoachLast() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        steps.appInForeground = true
+        steps.lastSync = t0.addingTimeInterval(-10 * 60)
+        let (pass, _) = makePass(steps, clock, wake: .appRefresh)
+
+        let outcome = await pass.run()
+
+        XCTAssertEqual(outcome, .completed)
+        XCTAssertEqual(steps.calls.last, "coach")
+    }
+
+    /// No Coach refresh when it could fill rows before a sync: in the background, with no
+    /// recent sync (one is about to run), or with no sync ever.
+    func test_completedPass_refreshesNoCoach_unlessForegroundAndRecentlySynced() async {
+        let cases: [(foreground: Bool, lastSync: Date?)] = [
+            (false, t0.addingTimeInterval(-10 * 60)),
+            (true, t0.addingTimeInterval(-(SyncManager.smartSyncMinInterval + 60))),
+            (true, nil),
+        ]
+        for c in cases {
+            let clock = FakeClock(t0)
+            let steps = FakeSteps(clock: clock)
+            steps.appInForeground = c.foreground
+            steps.lastSync = c.lastSync
+            let (pass, _) = makePass(steps, clock, wake: .appRefresh)
+
+            _ = await pass.run()
+
+            XCTAssertFalse(steps.calls.contains("coach"), "foreground \(c.foreground), lastSync \(String(describing: c.lastSync))")
+        }
+    }
+
+    /// An abandoned pass committed nothing, so it refreshes no Coach either.
+    func test_abandonedPass_inForeground_refreshesNoCoach() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        steps.appInForeground = true
+        steps.lastSync = t0.addingTimeInterval(-10 * 60)
+        steps.advanceDuringAnalysis = BackgroundPatternPass.maxDuration + 1
+        let (pass, _) = makePass(steps, clock)
+
+        _ = await pass.run()
+
+        XCTAssertFalse(steps.calls.contains("coach"))
     }
 
     /// A pass frozen inside the workout refresh resumes past its budget. Detecting now

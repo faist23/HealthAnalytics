@@ -27,6 +27,17 @@ class SyncManager: ObservableObject {
     }
     
     @Published var isSyncing = false
+
+    /// `performSmartSync` skips a sync within this long of the last one (unless forced).
+    nonisolated static let smartSyncMinInterval: TimeInterval = 30 * 60
+
+    /// A sync or the one-time workout dedup is rewriting the store. The background
+    /// pattern pass neither starts nor commits while this is true.
+    var isRewritingStore: Bool { isSyncing || isMigrating }
+
+    /// Bumped whenever a sync or the dedup starts, so the background pass can tell a
+    /// rewrite that started and finished while it was detecting.
+    private(set) var storeRewriteGeneration = 0
     @Published var syncProgress: String = ""
     @Published var isBackfillingHistory: Bool = false
     @Published var backfillProgress: Double = 0
@@ -59,7 +70,7 @@ class SyncManager: ObservableObject {
         print("   lastSyncDate: \(lastSyncDate?.formatted() ?? "nil")")
         if let last = lastSyncDate {
             print("   Time since last: \(Date().timeIntervalSince(last)) seconds")
-            print("   Should skip: \(!force && Date().timeIntervalSince(last) < 1800)")
+            print("   Should skip: \(!force && Date().timeIntervalSince(last) < Self.smartSyncMinInterval)")
         }
         #endif
         
@@ -77,6 +88,7 @@ class SyncManager: ObservableObject {
         // and skips the migration — preventing double-deletion of workouts.
         if !hasDeduplicatedWorkouts && !isMigrating {
             isMigrating = true
+            storeRewriteGeneration += 1
             // A background refresh upserting while the dedup reads would insert a row the
             // dedup never saw, and the flag below makes that permanent. `isMigrating` is
             // set, so no new refresh starts (see `refreshWorkoutsFromHealthKit`); wait out
@@ -89,7 +101,7 @@ class SyncManager: ObservableObject {
 
         // Prevent redundant syncs - only sync if 30+ minutes have passed.
         // `force` bypasses for user-initiated refreshes.
-        if !force, let last = lastSyncDate, Date().timeIntervalSince(last) < 1800 {
+        if !force, let last = lastSyncDate, Date().timeIntervalSince(last) < Self.smartSyncMinInterval {
             #if DEBUG
             print("🛡️ Sync Guard: Synced \(Int(Date().timeIntervalSince(last)/60))m ago. Skipping.")
             #endif
@@ -104,6 +116,7 @@ class SyncManager: ObservableObject {
         }
 
         isSyncing = true
+        storeRewriteGeneration += 1
         // A background refresh already upserting must finish first, or both upserts can
         // miss each other's copy of a ride. `isSyncing` is set, so no new one starts.
         await backgroundRefresh.waitForInFlight()
@@ -717,6 +730,7 @@ class SyncManager: ObservableObject {
         }
         
         isSyncing = true
+        storeRewriteGeneration += 1
         await backgroundRefresh.waitForInFlight()
         
         let container = HealthDataContainer.shared

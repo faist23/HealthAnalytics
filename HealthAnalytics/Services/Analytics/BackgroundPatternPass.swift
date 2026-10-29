@@ -6,11 +6,11 @@
 //  while the app is in the foreground is skipped before the pass starts. Order:
 //  protected-data guard → throttle → sync guard → HealthKit-only workout refresh →
 //  detection behind a commit gate → stamp (start time).
-//  Touches no foreground state: never fills score rows (the foreground does, after the
-//  Strava sync), never refreshes Coach (that runs `refreshIfNecessary`, whose backfill
-//  fills rows; the next foreground trigger refreshes Coach, since the active pattern set
-//  is in its cache key), never runs or commits while a foreground sync is in flight,
-//  never posts DataSyncCompleted, never calls Strava.
+//  Never fills score rows ahead of the Strava sync: it never starts or commits while a
+//  sync or the one-time dedup rewrites the store (or one ran during detection), and it
+//  refreshes Coach (whose backfill fills rows) only when the app is in the foreground
+//  and the last sync finished within `SyncManager.smartSyncMinInterval`, so the store
+//  already has the Strava data. Never posts DataSyncCompleted, never calls Strava.
 //
 
 import Foundation
@@ -32,8 +32,13 @@ enum BackgroundPassOutcome: String, CaseIterable, Sendable {
 protocol BackgroundPassSteps {
     func isProtectedDataAvailable() -> Bool
     func lastPatternRun() -> Date?
-    /// A foreground sync is in flight (storing workouts with Strava, backfilling history).
+    /// A sync or the one-time dedup is rewriting the store.
     func isSyncing() -> Bool
+    /// Bumped whenever a store rewrite starts.
+    func storeGeneration() -> Int
+    func isAppInForeground() -> Bool
+    func lastSyncDate() -> Date?
+    func refreshCoach() async
     func refreshWorkouts() async throws
     /// Detects, then commits only if `commitGate` returns true; throws
     /// `PatternAnalysisError.commitDeclined` when it refuses.
@@ -82,6 +87,7 @@ final class BackgroundPatternPass {
         ) else { return .throttled }
         // A sync is rewriting the store; detecting over it would read half its writes.
         guard !steps.isSyncing() else { return .skippedSyncing }
+        let generation = steps.storeGeneration()
 
         // The refresh's failure may not block detection: a stale store is still checked by
         // the gate. A suspension inside it ends the pass, though: a run frozen
@@ -93,7 +99,7 @@ final class BackgroundPatternPass {
 
         do {
             try await steps.analyzePatterns(commitGate: { [self] in
-                await self.mayCommit(startedAt: startedAt)
+                await self.mayCommit(startedAt: startedAt, generation: generation)
             })
         } catch PatternAnalysisError.commitDeclined {
             return .abandoned
@@ -116,13 +122,29 @@ final class BackgroundPatternPass {
         if wake == .hrvDelivery, let newest = await steps.newestHRVSampleDate() {
             log.recordLatency(committedAt.timeIntervalSince(newest))
         }
+        // Opened soon after a sync, the foreground's own Coach refresh already ran (its
+        // sync was throttled) and won't see this commit. Safe only then: the store has
+        // the Strava data, so the refresh's backfill can't fill rows ahead of it.
+        if Self.mayRefreshCoach(
+            appInForeground: steps.isAppInForeground(), rewriting: steps.isSyncing(),
+            lastSync: steps.lastSyncDate(), now: now()
+        ) {
+            await steps.refreshCoach()
+        }
         return .completed
     }
 
-    /// The commit gate: inside the budget (no suspension) and no foreground sync started
-    /// meanwhile (detection read a store the sync is now rewriting).
-    private func mayCommit(startedAt: Date) -> Bool {
-        Self.isWithinBudget(startedAt: startedAt, now: now()) && !steps.isSyncing()
+    /// The commit gate: inside the budget (no suspension), and no store rewrite running
+    /// or started since the pass began (detection would have read part of its writes).
+    private func mayCommit(startedAt: Date, generation: Int) -> Bool {
+        Self.isWithinBudget(startedAt: startedAt, now: now())
+            && !steps.isSyncing() && steps.storeGeneration() == generation
+    }
+
+    nonisolated static func mayRefreshCoach(appInForeground: Bool, rewriting: Bool, lastSync: Date?, now: Date) -> Bool {
+        guard appInForeground, !rewriting, let lastSync else { return false }
+        let age = now.timeIntervalSince(lastSync)
+        return age >= 0 && age < SyncManager.smartSyncMinInterval
     }
 
     /// A wake while the app is in the foreground skips the pass and records
@@ -232,7 +254,11 @@ struct LiveBackgroundPassSteps: BackgroundPassSteps {
         UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
     }
 
-    func isSyncing() -> Bool { SyncManager.shared.isSyncing }
+    func isSyncing() -> Bool { SyncManager.shared.isRewritingStore }
+    func storeGeneration() -> Int { SyncManager.shared.storeRewriteGeneration }
+    func isAppInForeground() -> Bool { repository.isAppInForeground() }
+    func lastSyncDate() -> Date? { SyncManager.shared.lastSyncDate }
+    func refreshCoach() async { await repository.refreshIfNecessary(modelContext: container.mainContext) }
 
     func refreshWorkouts() async throws { try await SyncManager.shared.refreshWorkoutsFromHealthKit() }
 
