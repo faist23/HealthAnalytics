@@ -31,11 +31,12 @@ class SyncManager: ObservableObject {
     /// `performSmartSync` skips a sync within this long of the last one (unless forced).
     nonisolated static let smartSyncMinInterval: TimeInterval = 30 * 60
 
-    /// A sync or the one-time workout dedup is rewriting the store. The background
-    /// pattern pass neither starts nor commits while this is true.
-    var isRewritingStore: Bool { isSyncing || isMigrating }
+    /// A sync, the one-time workout dedup or the power-zone backfill (which runs on after
+    /// the sync) is rewriting the store. The background pattern pass neither starts nor
+    /// commits while this is true.
+    var isRewritingStore: Bool { isSyncing || isMigrating || isBackfillingZones }
 
-    /// Bumped whenever a sync or the dedup starts, so the background pass can tell a
+    /// Bumped whenever one of those rewrites starts, so the background pass can tell a
     /// rewrite that started and finished while it was detecting.
     private(set) var storeRewriteGeneration = 0
     @Published var syncProgress: String = ""
@@ -561,6 +562,7 @@ class SyncManager: ObservableObject {
         // that would double Strava API calls and produce torn writes to powerZoneSecondsCSV.
         guard !isBackfillingZones else { return }
         isBackfillingZones = true
+        storeRewriteGeneration += 1
         defer { isBackfillingZones = false }
 
         guard StravaManager.shared.isAuthenticated else { return }

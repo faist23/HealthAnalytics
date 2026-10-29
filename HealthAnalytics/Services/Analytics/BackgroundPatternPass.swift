@@ -4,13 +4,14 @@
 //
 //  The one thing background triggers (HealthKit delivery, app refresh) run. A wake
 //  while the app is in the foreground is skipped before the pass starts. Order:
-//  protected-data guard → throttle → sync guard → HealthKit-only workout refresh →
-//  detection behind a commit gate → stamp (start time).
-//  Never fills score rows ahead of the Strava sync: it never starts or commits while a
-//  sync or the one-time dedup rewrites the store (or one ran during detection), and it
-//  refreshes Coach (whose backfill fills rows) only when the app is in the foreground
-//  and the last sync finished within `SyncManager.smartSyncMinInterval`, so the store
-//  already has the Strava data. Never posts DataSyncCompleted, never calls Strava.
+//  protected-data guard → throttle → rewrite guard → HealthKit-only workout refresh →
+//  detection behind a commit gate → stamp (start time) → guarded Coach refresh.
+//  Never starts or commits while a sync, the one-time dedup or the power-zone backfill
+//  rewrites the store (or one ran during detection). Refreshes Coach (whose backfill
+//  fills rows) only in the foreground when the last sync ran within
+//  `SyncManager.smartSyncMinInterval`: the same state the foreground's own post-sync
+//  refresh fills rows in, so it adds no earlier row write. Never posts
+//  DataSyncCompleted, never calls Strava.
 //
 
 import Foundation
@@ -32,8 +33,8 @@ enum BackgroundPassOutcome: String, CaseIterable, Sendable {
 protocol BackgroundPassSteps {
     func isProtectedDataAvailable() -> Bool
     func lastPatternRun() -> Date?
-    /// A sync or the one-time dedup is rewriting the store.
-    func isSyncing() -> Bool
+    /// A sync, the one-time dedup or the power-zone backfill is rewriting the store.
+    func isRewritingStore() -> Bool
     /// Bumped whenever a store rewrite starts.
     func storeGeneration() -> Int
     func isAppInForeground() -> Bool
@@ -86,7 +87,7 @@ final class BackgroundPatternPass {
             lastRun: steps.lastPatternRun(), trigger: .background, now: startedAt
         ) else { return .throttled }
         // A sync is rewriting the store; detecting over it would read half its writes.
-        guard !steps.isSyncing() else { return .skippedSyncing }
+        guard !steps.isRewritingStore() else { return .skippedSyncing }
         let generation = steps.storeGeneration()
 
         // The refresh's failure may not block detection: a stale store is still checked by
@@ -123,10 +124,10 @@ final class BackgroundPatternPass {
             log.recordLatency(committedAt.timeIntervalSince(newest))
         }
         // Opened soon after a sync, the foreground's own Coach refresh already ran (its
-        // sync was throttled) and won't see this commit. Safe only then: the store has
-        // the Strava data, so the refresh's backfill can't fill rows ahead of it.
+        // sync was throttled) and won't see this commit. Only then: the last sync ran
+        // recently, the same state the foreground's own refresh fills rows in.
         if Self.mayRefreshCoach(
-            appInForeground: steps.isAppInForeground(), rewriting: steps.isSyncing(),
+            appInForeground: steps.isAppInForeground(), rewriting: steps.isRewritingStore(),
             lastSync: steps.lastSyncDate(), now: now()
         ) {
             await steps.refreshCoach()
@@ -138,7 +139,7 @@ final class BackgroundPatternPass {
     /// or started since the pass began (detection would have read part of its writes).
     private func mayCommit(startedAt: Date, generation: Int) -> Bool {
         Self.isWithinBudget(startedAt: startedAt, now: now())
-            && !steps.isSyncing() && steps.storeGeneration() == generation
+            && !steps.isRewritingStore() && steps.storeGeneration() == generation
     }
 
     nonisolated static func mayRefreshCoach(appInForeground: Bool, rewriting: Bool, lastSync: Date?, now: Date) -> Bool {
@@ -254,7 +255,7 @@ struct LiveBackgroundPassSteps: BackgroundPassSteps {
         UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
     }
 
-    func isSyncing() -> Bool { SyncManager.shared.isRewritingStore }
+    func isRewritingStore() -> Bool { SyncManager.shared.isRewritingStore }
     func storeGeneration() -> Int { SyncManager.shared.storeRewriteGeneration }
     func isAppInForeground() -> Bool { repository.isAppInForeground() }
     func lastSyncDate() -> Date? { SyncManager.shared.lastSyncDate }

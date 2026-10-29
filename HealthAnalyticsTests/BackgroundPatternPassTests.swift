@@ -36,6 +36,8 @@ private final class FakeSteps: BackgroundPassSteps {
     var generation = 0
     var appInForeground = false
     var lastSync: Date?
+    /// A store rewrite starts right after the commit (at the stamp).
+    var startRewriteAfterCommit = false
     /// Advances the fake clock inside the newest-HRV query, after the commit.
     var advanceDuringHRVQuery: TimeInterval = 0
     let clock: FakeClock
@@ -48,7 +50,7 @@ private final class FakeSteps: BackgroundPassSteps {
 
     func isProtectedDataAvailable() -> Bool { protectedDataAvailable }
     func lastPatternRun() -> Date? { lastRun }
-    func isSyncing() -> Bool { syncing }
+    func isRewritingStore() -> Bool { syncing }
     func storeGeneration() -> Int { generation }
     func isAppInForeground() -> Bool { appInForeground }
     func lastSyncDate() -> Date? { lastSync }
@@ -69,7 +71,10 @@ private final class FakeSteps: BackgroundPassSteps {
         if !ok { throw PatternAnalysisError.commitDeclined }
         calls.append("commit")
     }
-    func stamp(_ startedAt: Date) { calls.append("stamp"); stamped = startedAt }
+    func stamp(_ startedAt: Date) {
+        calls.append("stamp"); stamped = startedAt
+        if startRewriteAfterCommit { syncing = true; generation += 1 }
+    }
     func newestHRVSampleDate() async -> Date? {
         calls.append("newestHRV")
         clock.now = clock.now.addingTimeInterval(advanceDuringHRVQuery)
@@ -244,6 +249,40 @@ final class BackgroundPatternPassTests: XCTestCase {
 
             XCTAssertFalse(steps.calls.contains("coach"), "foreground \(c.foreground), lastSync \(String(describing: c.lastSync))")
         }
+    }
+
+    /// The Coach refresh's backfill fills score rows, so each condition must hold on its
+    /// own: foreground, no store rewrite (a sync, the dedup or the zone backfill), and a
+    /// sync that finished under `smartSyncMinInterval` ago (never one dated in the future).
+    func test_mayRefreshCoach_requiresForegroundNoRewriteAndARecentPastSync() {
+        let recent = t0.addingTimeInterval(-10 * 60)
+        let window = SyncManager.smartSyncMinInterval
+
+        XCTAssertTrue(BackgroundPatternPass.mayRefreshCoach(appInForeground: true, rewriting: false, lastSync: recent, now: t0))
+        XCTAssertFalse(BackgroundPatternPass.mayRefreshCoach(appInForeground: true, rewriting: true, lastSync: recent, now: t0),
+                       "A rewrite running at the Coach check")
+        XCTAssertFalse(BackgroundPatternPass.mayRefreshCoach(appInForeground: false, rewriting: false, lastSync: recent, now: t0))
+        XCTAssertFalse(BackgroundPatternPass.mayRefreshCoach(appInForeground: true, rewriting: false, lastSync: nil, now: t0))
+        XCTAssertTrue(BackgroundPatternPass.mayRefreshCoach(appInForeground: true, rewriting: false, lastSync: t0.addingTimeInterval(-(window - 1)), now: t0))
+        XCTAssertFalse(BackgroundPatternPass.mayRefreshCoach(appInForeground: true, rewriting: false, lastSync: t0.addingTimeInterval(-window), now: t0),
+                       "The window is exclusive: at exactly the throttle interval a sync would run")
+        XCTAssertFalse(BackgroundPatternPass.mayRefreshCoach(appInForeground: true, rewriting: false, lastSync: t0.addingTimeInterval(60), now: t0),
+                       "A sync dated in the future (clock moved back) proves nothing")
+    }
+
+    /// A rewrite that starts after the commit (a forced sync) blocks the Coach refresh.
+    func test_completedPass_rewriteStartedAfterCommit_refreshesNoCoach() async {
+        let clock = FakeClock(t0)
+        let steps = FakeSteps(clock: clock)
+        steps.appInForeground = true
+        steps.lastSync = t0.addingTimeInterval(-10 * 60)
+        steps.startRewriteAfterCommit = true
+        let (pass, _) = makePass(steps, clock)
+
+        let outcome = await pass.run()
+
+        XCTAssertEqual(outcome, .completed)
+        XCTAssertFalse(steps.calls.contains("coach"))
     }
 
     /// An abandoned pass committed nothing, so it refreshes no Coach either.
