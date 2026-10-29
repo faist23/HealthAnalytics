@@ -253,7 +253,7 @@ final class BackgroundPatternPassTests: XCTestCase {
 
     /// The Coach refresh's backfill fills score rows, so each condition must hold on its
     /// own: foreground, no store rewrite (a sync, the dedup or the zone backfill), and a
-    /// sync that finished under `smartSyncMinInterval` ago (never one dated in the future).
+    /// sync that ran under `smartSyncMinInterval` ago (`lastSyncDate`; never one dated in the future).
     func test_mayRefreshCoach_requiresForegroundNoRewriteAndARecentPastSync() {
         let recent = t0.addingTimeInterval(-10 * 60)
         let window = SyncManager.smartSyncMinInterval

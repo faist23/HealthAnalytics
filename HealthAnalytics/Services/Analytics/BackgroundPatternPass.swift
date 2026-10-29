@@ -7,7 +7,7 @@
 //  protected-data guard → throttle → rewrite guard → HealthKit-only workout refresh →
 //  detection behind a commit gate → stamp (start time) → guarded Coach refresh.
 //  Never starts or commits while a sync, the one-time dedup or the power-zone backfill
-//  rewrites the store (or one ran during detection). Refreshes Coach (whose backfill
+//  (after a sync or an FTP edit) rewrites the store (or one ran during detection). Refreshes Coach (whose backfill
 //  fills rows) only in the foreground when the last sync ran within
 //  `SyncManager.smartSyncMinInterval`: the same state the foreground's own post-sync
 //  refresh fills rows in, so it adds no earlier row write. Never posts
@@ -86,7 +86,8 @@ final class BackgroundPatternPass {
         guard ReadinessRepository.shouldRunPatternAnalysis(
             lastRun: steps.lastPatternRun(), trigger: .background, now: startedAt
         ) else { return .throttled }
-        // A sync is rewriting the store; detecting over it would read half its writes.
+        // A store rewrite (sync, dedup or zone backfill) is running; detecting over it
+        // would read half its writes.
         guard !steps.isRewritingStore() else { return .skippedSyncing }
         let generation = steps.storeGeneration()
 

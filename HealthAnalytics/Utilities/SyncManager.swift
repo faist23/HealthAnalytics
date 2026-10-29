@@ -31,14 +31,20 @@ class SyncManager: ObservableObject {
     /// `performSmartSync` skips a sync within this long of the last one (unless forced).
     nonisolated static let smartSyncMinInterval: TimeInterval = 30 * 60
 
-    /// A sync, the one-time workout dedup or the power-zone backfill (which runs on after
-    /// the sync) is rewriting the store. The background pattern pass neither starts nor
+    /// A sync, the one-time workout dedup or the power-zone backfill (after a sync or an
+    /// FTP edit) is rewriting the store. The background pattern pass neither starts nor
     /// commits while this is true.
     var isRewritingStore: Bool { isSyncing || isMigrating || isBackfillingZones }
 
     /// Bumped whenever one of those rewrites starts, so the background pass can tell a
     /// rewrite that started and finished while it was detecting.
     private(set) var storeRewriteGeneration = 0
+
+    /// `powerZoneSecondsCSV` for a Strava ride with no watts stream (estimated power).
+    /// Decodes as no zones (`StoredWorkout.powerZoneSeconds` needs 7 values), and the
+    /// backfill only fetches `nil` rows, so it stops re-fetching these after every sync;
+    /// each one held the store-rewrite flag and made background passes skip.
+    nonisolated static let noPowerStreamCSV = ""
     @Published var syncProgress: String = ""
     @Published var isBackfillingHistory: Bool = false
     @Published var backfillProgress: Double = 0
@@ -607,22 +613,22 @@ class SyncManager: ObservableObject {
                 : StoredFTPSnapshot.resolved(for: startDate, ftpValues: ftpValues)
 
             do {
-                if let zoneSecs = try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: ftp) {
-                    let csv = zoneSecs.map { String(Int($0)) }.joined(separator: ",")
-                    await MainActor.run {
-                        var desc = FetchDescriptor<StoredWorkout>(
-                            predicate: #Predicate { $0.id == workoutID }
-                        )
-                        desc.fetchLimit = 1
-                        if let w = try? context.fetch(desc).first {
-                            w.powerZoneSecondsCSV = csv
-                            w.zoneComputedAtFTP = ftp
-                        }
+                // nil only when Strava has no watts stream; failures throw.
+                let zoneSecs = try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: ftp)
+                let csv = zoneSecs.map { $0.map { String(Int($0)) }.joined(separator: ",") } ?? Self.noPowerStreamCSV
+                await MainActor.run {
+                    var desc = FetchDescriptor<StoredWorkout>(
+                        predicate: #Predicate { $0.id == workoutID }
+                    )
+                    desc.fetchLimit = 1
+                    if let w = try? context.fetch(desc).first {
+                        w.powerZoneSecondsCSV = csv
+                        w.zoneComputedAtFTP = ftp
                     }
-                    fetched += 1
-                    consecutiveErrors = 0
-                    self.zoneBackfillProgress = (current: fetched, total: total)
                 }
+                fetched += 1
+                consecutiveErrors = 0
+                self.zoneBackfillProgress = (current: fetched, total: total)
             } catch {
                 consecutiveErrors += 1
                 #if DEBUG
@@ -682,8 +688,9 @@ class SyncManager: ObservableObject {
                 ? PredictiveReadinessService.resolvedFTP()
                 : StoredFTPSnapshot.resolved(for: workout.startDate, snapshots: snapshots)
 
-            // Clear if the FTP used to compute zones no longer matches what's resolved for that date
-            if workout.zoneComputedAtFTP != resolvedFTP {
+            // Clear if the FTP used to compute zones no longer matches what's resolved for that date.
+            // A ride with no watts stream has no zones at any FTP; leave its marker.
+            if workout.powerZoneSecondsCSV != Self.noPowerStreamCSV, workout.zoneComputedAtFTP != resolvedFTP {
                 workout.powerZoneSecondsCSV = nil
                 workout.zoneComputedAtFTP = nil
                 invalidated += 1

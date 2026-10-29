@@ -280,4 +280,23 @@ final class PredictiveReadinessServiceLoadTests: XCTestCase {
         let load = service.calculateWorkoutLoad(workout, ftpSnapshots: [snapshot])
         XCTAssertEqual(load, 0.5, accuracy: 0.01, "Zone path should win over NP path")
     }
+
+    // MARK: - No-power-stream marker
+
+    /// A Strava ride with estimated power has no watts stream, so the zone backfill marks
+    /// it (`SyncManager.noPowerStreamCSV`) instead of re-fetching it after every sync. The
+    /// marker must read exactly like "no zones": no zone seconds, and load from the next
+    /// path down, never a zone-weighted load of zero.
+    func test_noPowerStreamMarker_decodesAsNoZones_andLoadUsesTheNextPath() {
+        let ride = StoredWorkout(
+            id: "estimated-power", type: .cycling,
+            startDate: Date(timeIntervalSince1970: 1_790_000_000),
+            duration: 3600, distance: nil, power: 180, energy: nil, hr: nil, source: "Strava"
+        )
+        ride.powerZoneSecondsCSV = SyncManager.noPowerStreamCSV
+
+        XCTAssertNil(ride.powerZoneSeconds)
+        let load = PredictiveReadinessService().calculateWorkoutLoad(WorkoutData(from: ride), ftpSnapshots: [])
+        XCTAssertGreaterThan(load, 0.5, "A marked one-hour ride still carries real load")
+    }
 }
