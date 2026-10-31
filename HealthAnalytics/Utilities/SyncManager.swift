@@ -123,15 +123,44 @@ class SyncManager: ObservableObject {
     }
 
     /// Stores a backfill result on its ride, with the FTP it was computed at (an FTP edit
-    /// re-zones rides whose `zoneComputedAtFTP` no longer matches).
-    static func writeZoneCSV(_ csv: String, for row: ZoneBackfillRow, in context: ModelContext) {
+    /// re-zones rides whose `zoneComputedAtFTP` no longer matches). Compare-and-set: writes
+    /// nothing, and returns false, when the ride changed since the pass picked it (an FTP edit's
+    /// invalidation, a reconnect's marker clear) or the FTP in effect on its date is no longer
+    /// the one the zones were computed at. The ride then waits for the next pass.
+    @discardableResult
+    static func writeZoneCSV(_ csv: String, for row: ZoneBackfillRow, in context: ModelContext,
+                             defaultFTP: () -> Double) -> Bool {
         let workoutID = row.id
         var desc = FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.id == workoutID })
         desc.fetchLimit = 1
-        if let w = try? context.fetch(desc).first {
-            w.powerZoneSecondsCSV = csv
-            w.zoneComputedAtFTP = row.ftp
+        guard let w = try? context.fetch(desc).first, w.powerZoneSecondsCSV == row.csv else { return false }
+        let snapshots = (try? context.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+        let ftpNow = snapshots.isEmpty ? defaultFTP() : StoredFTPSnapshot.resolved(for: w.startDate, snapshots: snapshots)
+        guard ftpNow == row.ftp else { return false }
+        w.powerZoneSecondsCSV = csv
+        w.zoneComputedAtFTP = row.ftp
+        return true
+    }
+
+    /// Resets every "no power data" marker (`noPowerStreamCSV` and retry markers) to unfetched,
+    /// so the next backfill asks Strava again. Called when Strava connects: a 404 or a missing
+    /// stream under one login says nothing about the next (another athlete, re-granted access).
+    /// Returns how many rides were reset.
+    @discardableResult
+    static func clearNoPowerMarkers(in context: ModelContext) -> Int {
+        let permanent: String? = noPowerStreamCSV
+        let retryPrefix = noPowerStreamRetryPrefix
+        let marked = ((try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
+            $0.powerZoneSecondsCSV == permanent
+        }))) ?? []) + ((try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
+            $0.powerZoneSecondsCSV?.starts(with: retryPrefix) == true
+        }))) ?? [])
+        for w in marked {
+            w.powerZoneSecondsCSV = nil
+            w.zoneComputedAtFTP = nil
         }
+        if !marked.isEmpty { try? context.save() }
+        return marked.count
     }
 
     /// The zone backfill's loop, given the Strava fetch, the store write and the pause between
@@ -142,7 +171,7 @@ class SyncManager: ObservableObject {
     static func runZoneBackfill(
         _ rows: [ZoneBackfillRow],
         fetch: (ZoneBackfillRow) async throws -> [Double]?,
-        write: (ZoneBackfillRow, String) async -> Void,
+        write: (ZoneBackfillRow, String) async -> Bool,
         pause: () async -> Bool,
         now: () -> Date = { Date() },
         onProgress: (Int) -> Void = { _ in }
@@ -168,8 +197,7 @@ class SyncManager: ObservableObject {
                 #endif
                 if consecutiveErrors >= 3 { return (fetched, true) }
             }
-            if let csv {
-                await write(row, csv)
+            if let csv, await write(row, csv) {
                 fetched += 1
                 onProgress(fetched)
             }
@@ -704,11 +732,36 @@ class SyncManager: ObservableObject {
         // Re-entrancy guard: set synchronously on MainActor before the first `await`.
         // Prevents concurrent FTP edits from spawning multiple parallel backfill passes
         // that would double Strava API calls and produce torn writes to powerZoneSecondsCSV.
-        guard !isBackfillingZones else { return }
+        guard !isBackfillingZones else {
+            // An FTP edit or reconnect mid-pass: the running pass skips rides it changed
+            // (writeZoneCSV), so run again once it ends to zone them at the new FTP.
+            zoneBackfillRerunRequested = true
+            return
+        }
         isBackfillingZones = true
         storeRewriteGeneration += 1
         defer { isBackfillingZones = false }
 
+        repeat {
+            zoneBackfillRerunRequested = false
+            await runZoneBackfillPass()
+        } while zoneBackfillRerunRequested
+    }
+
+    /// Strava just connected (first time, re-granted, or another athlete): give every ride
+    /// marked "no power data" another look on the next backfill.
+    func stravaDidConnect() {
+        let cleared = Self.clearNoPowerMarkers(in: HealthDataContainer.shared.mainContext)
+        #if DEBUG
+        if cleared > 0 { print("⚡️ Strava connected: \(cleared) no-power-data rides will be re-checked") }
+        #endif
+    }
+
+    /// Set when a backfill is requested while one runs; that pass then runs once more.
+    private var zoneBackfillRerunRequested = false
+
+    private func runZoneBackfillPass() async {
+        zoneBackfillError = nil
         guard StravaManager.shared.isAuthenticated else { return }
 
         let context = HealthDataContainer.shared.mainContext
@@ -720,7 +773,6 @@ class SyncManager: ObservableObject {
         #endif
 
         let total = rows.count
-        zoneBackfillError = nil
         let result = await Self.runZoneBackfill(
             rows,
             fetch: { row in
@@ -728,7 +780,9 @@ class SyncManager: ObservableObject {
                 guard let activityId = Int(row.id) else { throw StravaError.activityNotFound }
                 return try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: row.ftp)
             },
-            write: { row, csv in Self.writeZoneCSV(csv, for: row, in: context) },
+            write: { row, csv in
+                Self.writeZoneCSV(csv, for: row, in: context, defaultFTP: { PredictiveReadinessService.resolvedFTP() })
+            },
             // Rate limit: 1 req/sec → well under 100/15 min. Cancellation (app backgrounding)
             // ends the pass.
             pause: { (try? await Task.sleep(nanoseconds: 1_000_000_000)) != nil },

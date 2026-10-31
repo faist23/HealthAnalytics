@@ -439,7 +439,7 @@ final class ZoneBackfillLoopTests: XCTestCase {
                 case .failed: throw Boom()
                 }
             },
-            write: { row, csv in writes[row.id] = csv },
+            write: { row, csv in writes[row.id] = csv; return true },
             pause: { pauses },
             now: { self.now },
             onProgress: { progress.append($0) }
@@ -593,10 +593,71 @@ final class ZoneBackfillStoreTests: XCTestCase {
         let other = ride("2", daysAgo: 2)
         try context.save()
 
-        SyncManager.writeZoneCSV("5,0,0,0,0,0,0", for: SyncManager.ZoneBackfillRow(id: "1", startDate: target.startDate, csv: nil, ftp: 240), in: context)
+        let wrote = SyncManager.writeZoneCSV("5,0,0,0,0,0,0", for: SyncManager.ZoneBackfillRow(id: "1", startDate: target.startDate, csv: nil, ftp: 240), in: context, defaultFTP: { 240 })
 
+        XCTAssertTrue(wrote)
         XCTAssertEqual(target.powerZoneSecondsCSV, "5,0,0,0,0,0,0")
         XCTAssertEqual(target.zoneComputedAtFTP, 240)
         XCTAssertNil(other.powerZoneSecondsCSV)
+    }
+
+    // Value: protects=an FTP edit during a running pass can't leave old-FTP zones stamped as
+    //   current; fails_when=the write ignores an FTP change since the row was picked;
+    //   why_new=pre-existing race found in the v0.1.18.0 adversarial review; seam=writeZoneCSV
+    //   (non-test callers: 1); no_claim=the rerun after the pass (singleton wiring)
+    func test_write_skipsWhenTheRidesFTPChangedSinceThePassPickedIt() throws {
+        let target = ride("1", daysAgo: 1)
+        context.insert(StoredFTPSnapshot(date: now.addingTimeInterval(-30 * 86400), watts: 280, source: "manual"))
+        try context.save()
+        // Picked at 250; the user has since set 280 for that date.
+        let wrote = SyncManager.writeZoneCSV("5,0,0,0,0,0,0", for: SyncManager.ZoneBackfillRow(id: "1", startDate: target.startDate, csv: nil, ftp: 250), in: context, defaultFTP: { 250 })
+        XCTAssertFalse(wrote)
+        XCTAssertNil(target.powerZoneSecondsCSV, "left for the next pass at the new FTP")
+    }
+
+    // Value: protects=a write never overwrites a ride something else changed mid-pass (an FTP
+    //   edit's invalidation, a reconnect's marker clear); fails_when=the compare-and-set is
+    //   dropped; why_new=new guard; seam=writeZoneCSV (non-test callers: 1); no_claim=none
+    func test_write_skipsWhenTheRideChangedSinceThePassPickedIt() throws {
+        let target = ride("1", daysAgo: 1, csv: nil)
+        try context.save()
+        let pickedAsRetry = SyncManager.ZoneBackfillRow(id: "1", startDate: target.startDate,
+                                                        csv: SyncManager.noPowerStreamRetryMarker(at: now), ftp: 250)
+        XCTAssertFalse(SyncManager.writeZoneCSV(SyncManager.noPowerStreamCSV, for: pickedAsRetry, in: context, defaultFTP: { 250 }))
+        XCTAssertNil(target.powerZoneSecondsCSV)
+    }
+
+    // Value: protects=reconnecting Strava (a new athlete, or re-granting access) gives every
+    //   ride marked "no power data" another look; fails_when=the clear misses either marker or
+    //   touches real zones; why_new=new; seam=clearNoPowerMarkers (non-test callers: 1, the
+    //   OAuth callback); no_claim=the callback wiring itself
+    func test_clearNoPowerMarkers_resetsBothMarkers_leavesZones() throws {
+        let permanent = ride("1", daysAgo: 1, csv: SyncManager.noPowerStreamCSV)
+        let retry = ride("2", daysAgo: 2, csv: SyncManager.noPowerStreamRetryMarker(at: now))
+        let zoned = ride("3", daysAgo: 3, csv: "1,1,1,1,1,1,1")
+        permanent.zoneComputedAtFTP = 250; retry.zoneComputedAtFTP = 250; zoned.zoneComputedAtFTP = 250
+        try context.save()
+
+        XCTAssertEqual(SyncManager.clearNoPowerMarkers(in: context), 2)
+
+        XCTAssertNil(permanent.powerZoneSecondsCSV); XCTAssertNil(permanent.zoneComputedAtFTP)
+        XCTAssertNil(retry.powerZoneSecondsCSV); XCTAssertNil(retry.zoneComputedAtFTP)
+        XCTAssertEqual(zoned.powerZoneSecondsCSV, "1,1,1,1,1,1,1")
+        XCTAssertEqual(zoned.zoneComputedAtFTP, 250)
+    }
+}
+
+extension ZoneBackfillLoopTests {
+    // Value: protects=a skipped write (the ride changed mid-pass) isn't counted as fetched or
+    //   shown as progress; fails_when=the loop counts a write the store refused; why_new=writes
+    //   can now be refused; seam=runZoneBackfill (non-test callers: 1); no_claim=none
+    func test_refusedWrite_isNotCounted() async {
+        let result = await SyncManager.runZoneBackfill(
+            [SyncManager.ZoneBackfillRow(id: "1", startDate: Date(), csv: nil, ftp: 200)],
+            fetch: { _ in [1, 1, 1, 1, 1, 1, 1] },
+            write: { _, _ in false },
+            pause: { true }
+        )
+        XCTAssertEqual(result.fetched, 0)
     }
 }
