@@ -294,9 +294,30 @@ final class PredictiveReadinessServiceLoadTests: XCTestCase {
             duration: 3600, distance: nil, power: 180, energy: nil, hr: nil, source: "Strava"
         )
         ride.powerZoneSecondsCSV = SyncManager.noPowerStreamCSV
+        // FTP pinned by snapshot: with none, the NP path reads the simulator's stored FTP.
+        let ftp = [StoredFTPSnapshot(date: Date(timeIntervalSince1970: 1_700_000_000), watts: 200, source: "manual")]
 
         XCTAssertNil(ride.powerZoneSeconds)
-        let load = PredictiveReadinessService().calculateWorkoutLoad(WorkoutData(from: ride), ftpSnapshots: [])
+        let load = PredictiveReadinessService().calculateWorkoutLoad(WorkoutData(from: ride), ftpSnapshots: ftp)
         XCTAssertGreaterThan(load, 0.5, "A marked one-hour ride still carries real load")
+    }
+
+    // Value: protects=a ride whose Strava watts stream is all null (stored as seven zero zones)
+    //   keeps real load; fails_when=the decoder hands zero zones to calculateWorkoutLoad's zone
+    //   path, scoring the ride 0 so its day reads as rest (false sick-day window);
+    //   why_new=only the "" marker was pinned; seam=none; no_claim=Strava's real stream shape
+    //   (synthetic CSV; unit only)
+    func test_allZeroZones_decodeAsNoZones_andLoadUsesTheNextPath() {
+        let ride = StoredWorkout(
+            id: "dropout", type: .cycling,
+            startDate: Date(timeIntervalSince1970: 1_790_000_000),
+            duration: 3600, distance: nil, power: 180, energy: nil, hr: nil, source: "Strava"
+        )
+        ride.powerZoneSecondsCSV = "0,0,0,0,0,0,0"
+        let ftp = [StoredFTPSnapshot(date: Date(timeIntervalSince1970: 1_700_000_000), watts: 200, source: "manual")]
+
+        XCTAssertNil(ride.powerZoneSeconds, "Zero seconds in every zone is no zone data")
+        let load = PredictiveReadinessService().calculateWorkoutLoad(WorkoutData(from: ride), ftpSnapshots: ftp)
+        XCTAssertGreaterThan(load, 0.5, "A one-hour ride with a power dropout still carries real load")
     }
 }

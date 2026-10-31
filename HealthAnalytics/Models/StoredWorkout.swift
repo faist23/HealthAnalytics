@@ -44,11 +44,13 @@ final class StoredWorkout {
     }
 
     /// Decoded zone seconds [z1, z2, z3, z4, z5, z6, z7]. nil if the stream is not yet
-    /// fetched, or fetched with no watts stream (`SyncManager.noPowerStreamCSV`).
+    /// fetched, or fetched with no watts stream (`SyncManager.noPowerStreamCSV`), or the
+    /// stream had no samples (all zeros: a power-meter dropout Strava still lists as a
+    /// watts stream). Zero zones would score the ride 0 load and make its day read as rest.
     var powerZoneSeconds: [Double]? {
         guard let csv = powerZoneSecondsCSV else { return nil }
         let vals = csv.split(separator: ",").compactMap { Double($0) }
-        return vals.count == 7 ? vals : nil
+        return vals.count == 7 && vals.reduce(0, +) > 0 ? vals : nil
     }
     
     var workoutType: HKWorkoutActivityType {
