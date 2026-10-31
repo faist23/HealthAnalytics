@@ -102,6 +102,59 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~10min)
 
+### Mark the load engine's pure functions `nonisolated`
+**Priority:** P3 — deferred from the v0.1.16.0 review (user decision)
+
+**What:** `PredictiveReadinessService.calculateWorkoutLoad`, `WorkoutData(from:)` and `TrainingLoadVisualizationService.estimateIntensity` are pure but inherit main-actor isolation, so `TrainingDNAAnalyzer` (a `@ModelActor`) calls them across actors and the compiler warns.
+
+**Why:** The warnings become errors under Swift 6 strict concurrency, and the hop is needless work inside every background pass.
+
+**How to apply:** Mark the pure functions `nonisolated`; check `resolvedFTP()` (reads UserDefaults) stays safe off the main actor.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10min)
+
+### Test gaps: zero-twin insertion order and `detectedAt` renewal on commit
+**Priority:** P3 — deferred from the v0.1.16.0 review (user decision)
+
+**What:** No test pins that the HRV-precursor zero-twin rule holds whichever duplicate row is inserted first, or that an existing pattern's `detectedAt` is renewed only when the commit gate accepts.
+
+**Why:** Both are rules a refactor of `detectHRVPrecursor` or `upsertPatterns` could break silently; the second keeps a declined background pass from keeping a stale pattern alive.
+
+**How to apply:** Add the reverse-order row to `testHRVPrecursor_zeroTwinBesideARideRowIsNotRest`, and an accept/decline pair over an existing `TrainingPattern` in `TrainingDNAAnalyzerTests`.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10min)
+
+### Stale comments: `TrainingDNAAnalyzer.analyze` docstring and the `SingleFlight` header
+**Priority:** P3 — deferred from the v0.1.16.0 review (user decision)
+
+**What:** Re-read both against the shipped behavior (mark-and-save before send, the commit gate, the abandoned-run retry, `shouldStart`) and correct what drifted.
+
+**Why:** These are the first comments anyone changing the background pass reads.
+
+**Effort:** S (human: ~30min / CC+gstack: ~5min)
+
+### Intent labels can be orphaned by the background workout refresh
+**Priority:** P3 — surfaced by the v0.1.16.0 adversarial review (user deferred)
+
+**What:** `autoClassifyWorkoutIntents()` runs after the background HealthKit-only upsert, so a Watch ride stored under its HealthKit UUID gets a `StoredIntentLabel`. The next foreground sync matches the ride to Strava and deletes the HealthKit row, leaving the label pointing at a workout that no longer exists.
+
+**Why:** Orphan labels accumulate and any future join that counts labels rather than workouts will miscount.
+
+**How to apply:** Delete or re-key the label when `upsertRecentData` deletes a stale HealthKit row.
+
+**Effort:** S (human: ~2h / CC+gstack: ~15min)
+
+### Background pass throttle on battery
+**Priority:** P3 — surfaced by the v0.1.16.0 adversarial review (user deferred)
+
+**What:** HRV and workout deliveries use `.immediate` frequency, and the `.background` throttle is 5 minutes, so every delivery more than 5 minutes after the last stamp runs a full pass (HealthKit refresh, 180-day sick-day reads, the load engine over every stored workout).
+
+**Why:** iOS can throttle background delivery for an app that spends its budget, which would delay the alerts this feature exists for.
+
+**How to apply:** Measure on a device with Settings → Background Pass, then consider a longer background window (e.g. 1h) or `.hourly` delivery for HRV.
+
+**Effort:** S (human: ~2h / CC+gstack: ~15min)
+
 ## Coach
 
 ### A hung analysis blocks every later pattern-analysis request
@@ -208,7 +261,7 @@
 
 ## Completed
 
-- **P2 — Design the background pattern run properly** — **Completed:** unreleased (2026-10-27). HealthKit background delivery (HRV + workouts) and app refresh both run one `BackgroundPatternPass` (HealthKit-only workout refresh, gated detection, abandon after 2 min; no score-row step in the background, missing rows are still filled only by the foreground refresh); store-based pattern checks read complete days ending yesterday; counters in Settings → Background Pass.
+- **P2 — Design the background pattern run properly** — **Completed:** v0.1.16.0 (2026-10-31). HealthKit background delivery (HRV + workouts) and app refresh both run one `BackgroundPatternPass` (HealthKit-only workout refresh, gated detection, abandon after 2 min; no score-row step in the background, missing rows are still filled only by the foreground refresh); store-based pattern checks read complete days ending yesterday; counters in Settings → Background Pass.
 - **P2 — Background pattern-analysis task likely never runs** — **Completed:** v0.1.15.0 (2026-10-27). Request is now `BGAppRefreshTaskRequest` (matching the SwiftUI `.appRefresh` handler), Info.plist declares `UIBackgroundModes` `fetch` (missing entirely before, so `submit` always threw), and the handler routes through `runPatternAnalysis(container:trigger: .background)`. Verified firing on device by Craig.
 - **P2 — Repository should own the pattern-analysis → Coach hand-off** — **Completed:** v0.1.15.0 (2026-10-27). `SingleFlight` owns pattern analysis (joins overlap, ignores caller cancellation, 5-min forced-run throttle) and shields `performFullAnalysis` from caller cancellation, so a tab swipe can no longer cache the heuristic Coach paragraph; `resetForTesting()` clears the cache state. `SingleFlightTests`, `ReadinessRepositoryPatternThrottleTests`.
 - **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis usually can't leave Coach behind; `ReadinessRepositoryCacheTests`. The remaining hand-off gaps were closed by "Repository should own the pattern-analysis → Coach hand-off" above.

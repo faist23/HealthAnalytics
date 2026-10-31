@@ -3,14 +3,18 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.1.16.0] - 2026-10-31
 
 ### Added
 
 - **New patterns can reach you soon after your Health data does.** When a new HRV reading or workout lands in Apple Health, the app now checks your patterns in the background as soon as you unlock your phone, so a newly discovered pattern can notify you without opening the app.
+- **A new Background Pass screen in Settings shows what the background check did.** How often HealthKit and iOS woke the app, how each check ended, and how long after your latest HRV reading it finished.
 
 ### Fixed
 
+- **A ride with a power-meter dropout keeps its training load.** When Strava had a power channel with no readings in it, the ride was scored as zero load, so that day could count as a rest day and feed a false illness warning. It now falls back to average power or duration like any ride without power detail.
+- **A ride recorded on both your Watch and Strava is stored once,** including when the background check picks it up before your next sync.
+- **Rides with estimated power stop being re-downloaded after every sync.** Strava has no power detail for them, so the app now remembers that instead of asking again each time.
 - **Pattern checks look at complete days.** Taper, back-to-back and the other history checks now use whole days through yesterday, so a half-finished today can't fake or hide a pattern, and a quiet morning's low step count no longer looks like a sick day.
 - **The illness warning and the peak-form alert no longer fire from incomplete data.** A day the app hasn't scored yet, a ride logged after you last opened the app, or a leftover duplicate record no longer counts as a rest day for the illness warning or stretches a peak-form streak.
 - **A pattern alert is never sent twice.** The app records an alert as sent before sending it, so being closed by iOS at the wrong moment costs at most one missed alert, never a repeat. A check that iOS paused partway through and resumed later now throws its results away, whether it started in the background or while you had the app open.
