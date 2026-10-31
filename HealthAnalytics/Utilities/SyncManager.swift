@@ -69,11 +69,13 @@ class SyncManager: ObservableObject {
         return now.timeIntervalSince(missedAt) >= noPowerStreamRetryAge
     }
 
-    /// What the backfill writes for a ride whose stream fetch threw: the permanent marker when
-    /// the activity is gone from Strava (no retry can fix it, so it must not count toward the
-    /// pass's error limit), nil for anything that may pass (rate limit, network, auth).
-    nonisolated static func zoneCSVAfterFetchError(_ error: Error) -> String? {
-        (error as? StravaError) == .activityNotFound ? noPowerStreamCSV : nil
+    /// What the backfill writes for a ride whose stream fetch threw: for a 404 (deleted on
+    /// Strava, or not visible to this login after switching athletes) the same marker as a
+    /// missing stream, a retry on the first miss and permanent on the retry's, and it never
+    /// counts toward the pass's error limit; nil for anything that may pass (rate limit,
+    /// network, auth), which keeps the row as it was.
+    nonisolated static func zoneCSVAfterFetchError(_ error: Error, current: String?, now: Date) -> String? {
+        (error as? StravaError) == .activityNotFound ? zoneCSVForNoPowerStream(current: current, now: now) : nil
     }
 
     /// One ride the zone backfill will fetch: its current `powerZoneSecondsCSV` and the FTP
@@ -134,8 +136,8 @@ class SyncManager: ObservableObject {
 
     /// The zone backfill's loop, given the Strava fetch, the store write and the pause between
     /// requests (`backfillPowerZones` passes the real ones). Writes zones, or a no-stream marker
-    /// (retry on a first miss, permanent on a retry or a deleted activity). Stops after three
-    /// consecutive errors that may pass (rate limit, network); a deleted activity neither counts
+    /// for a missing stream or a 404 (retry on a first miss, permanent on the retry's). Stops
+    /// after three consecutive errors that may pass (rate limit, network); a 404 neither counts
     /// nor resets that run, and a success resets it. `pause` returning false ends the pass.
     static func runZoneBackfill(
         _ rows: [ZoneBackfillRow],
@@ -155,10 +157,10 @@ class SyncManager: ObservableObject {
                 csv = zoneSecs.map { $0.map { String(Int($0)) }.joined(separator: ",") }
                     ?? zoneCSVForNoPowerStream(current: row.csv, now: now())
                 consecutiveErrors = 0
-            } catch let error where zoneCSVAfterFetchError(error) != nil {
-                // Deleted on Strava: final for this ride, and not an error that stops the pass.
-                // Counting it let three deleted rides stop every pass before older rides.
-                csv = zoneCSVAfterFetchError(error)
+            } catch let error where zoneCSVAfterFetchError(error, current: row.csv, now: now()) != nil {
+                // Not found on Strava: marked like a missing stream, never an error that stops
+                // the pass. Counting it let three deleted rides stop every pass before older rides.
+                csv = zoneCSVAfterFetchError(error, current: row.csv, now: now())
             } catch {
                 consecutiveErrors += 1
                 #if DEBUG
@@ -722,7 +724,9 @@ class SyncManager: ObservableObject {
         let result = await Self.runZoneBackfill(
             rows,
             fetch: { row in
-                try await StravaManager.shared.fetchPowerZoneSeconds(activityId: Int(row.id)!, ftp: row.ftp)
+                // zoneBackfillRows drops non-numeric ids; a row without one is treated as not found.
+                guard let activityId = Int(row.id) else { throw StravaError.activityNotFound }
+                return try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: row.ftp)
             },
             write: { row, csv in Self.writeZoneCSV(csv, for: row, in: context) },
             // Rate limit: 1 req/sec → well under 100/15 min. Cancellation (app backgrounding)

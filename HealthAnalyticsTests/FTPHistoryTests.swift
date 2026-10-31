@@ -387,15 +387,20 @@ final class ZoneBackfillDeletedActivityTests: XCTestCase {
         }
     }
 
-    // Value: protects=a deleted activity resolves to the permanent no-stream marker and only
-    //   that error does; fails_when=a rate limit/network error is classified as permanent, or a
-    //   404 stops being; why_new=new rule; seam=none; no_claim=the loop's error counting
-    //   (ZoneBackfillLoopTests)
-    func test_onlyADeletedActivity_resolvesToThePermanentMarker() {
-        XCTAssertEqual(SyncManager.zoneCSVAfterFetchError(StravaError.activityNotFound), SyncManager.noPowerStreamCSV)
-        XCTAssertNil(SyncManager.zoneCSVAfterFetchError(StravaError.fetchFailed))
-        XCTAssertNil(SyncManager.zoneCSVAfterFetchError(StravaError.notAuthenticated))
-        XCTAssertNil(SyncManager.zoneCSVAfterFetchError(URLError(.notConnectedToInternet)))
+    // Value: protects=a 404 is marked like a missing stream (retry first, permanent on the
+    //   retry) and only a 404 is; fails_when=a first 404 becomes permanent (a reconnected
+    //   athlete's rides lose zones for good), or a rate limit/network error gets marked;
+    //   why_new=new rule; seam=none; no_claim=the loop's error counting (ZoneBackfillLoopTests)
+    func test_only404_marksTheRide_retryFirstThenPermanent() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let retry = SyncManager.noPowerStreamRetryMarker(at: now.addingTimeInterval(-2 * 86400))
+        XCTAssertEqual(SyncManager.zoneCSVAfterFetchError(StravaError.activityNotFound, current: nil, now: now),
+                       SyncManager.noPowerStreamRetryMarker(at: now))
+        XCTAssertEqual(SyncManager.zoneCSVAfterFetchError(StravaError.activityNotFound, current: retry, now: now),
+                       SyncManager.noPowerStreamCSV)
+        for other: Error in [StravaError.fetchFailed, StravaError.notAuthenticated, URLError(.notConnectedToInternet)] {
+            XCTAssertNil(SyncManager.zoneCSVAfterFetchError(other, current: nil, now: now))
+        }
     }
 }
 
@@ -450,7 +455,7 @@ final class ZoneBackfillLoopTests: XCTestCase {
         let out = await run(rows(4), [.deleted, .deleted, .deleted, .zones([60, 0, 0, 0, 0, 0, 0])])
         XCTAssertFalse(out.result.stoppedOnErrors)
         XCTAssertEqual(out.fetchedIDs.count, 4, "the ride after three deleted ones is still fetched")
-        XCTAssertEqual(out.writes["100"], SyncManager.noPowerStreamCSV)
+        XCTAssertEqual(out.writes["100"], SyncManager.noPowerStreamRetryMarker(at: now), "a first 404 is retried once")
         XCTAssertEqual(out.writes["103"], "60,0,0,0,0,0,0")
         XCTAssertEqual(out.result.fetched, 4)
         // Extended by /ship coverage pass 2: the progress the FTP screen shows counts every written ride.
@@ -477,7 +482,7 @@ final class ZoneBackfillLoopTests: XCTestCase {
         XCTAssertFalse(reset.result.stoppedOnErrors)
         let notReset = await run(rows(4), [.failed, .failed, .deleted, .failed])
         XCTAssertTrue(notReset.result.stoppedOnErrors)
-        XCTAssertEqual(notReset.writes["102"], SyncManager.noPowerStreamCSV)
+        XCTAssertEqual(notReset.writes["102"], SyncManager.noPowerStreamRetryMarker(at: now))
     }
 
     // Value: protects=a no-watts answer writes the retry marker on a fresh row and the

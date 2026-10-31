@@ -294,15 +294,15 @@ class StravaManager: ObservableObject {
         saveTokensToKeychain()
     }
     
-    /// Fetch raw watts stream for a cycling activity and return seconds spent in each of 7 power zones.
-    /// Zones are computed against `ftp`. Returns nil if the activity has no power data.
-    /// Zone boundaries: Z1 <55%, Z2 55-75%, Z3 76-90%, Z4 91-105%, Z5 106-120%, Z6 121-150%, Z7 >150%
-    /// A streams request's failure: 404 means the activity is gone from Strava (deleted),
-    /// which no retry will fix; anything else (rate limit, server, auth) may pass.
+    /// A streams request's failure: 404 means this login can't find the activity (deleted on
+    /// Strava, or another athlete's); anything else (rate limit, server, auth) may pass.
     nonisolated static func streamsError(forStatus status: Int) -> StravaError {
         status == 404 ? .activityNotFound : .fetchFailed
     }
 
+    /// Fetch raw watts stream for a cycling activity and return seconds spent in each of 7 power zones.
+    /// Zones are computed against `ftp`. Returns nil if the activity has no power data.
+    /// Zone boundaries: Z1 <55%, Z2 55-75%, Z3 76-90%, Z4 91-105%, Z5 106-120%, Z6 121-150%, Z7 >150%
     func fetchPowerZoneSeconds(activityId: Int, ftp: Double) async throws -> [Double]? {
         try await refreshTokenIfNeeded()
         guard let token = accessToken else { throw StravaError.notAuthenticated }
