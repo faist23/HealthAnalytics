@@ -297,6 +297,12 @@ class StravaManager: ObservableObject {
     /// Fetch raw watts stream for a cycling activity and return seconds spent in each of 7 power zones.
     /// Zones are computed against `ftp`. Returns nil if the activity has no power data.
     /// Zone boundaries: Z1 <55%, Z2 55-75%, Z3 76-90%, Z4 91-105%, Z5 106-120%, Z6 121-150%, Z7 >150%
+    /// A streams request's failure: 404 means the activity is gone from Strava (deleted),
+    /// which no retry will fix; anything else (rate limit, server, auth) may pass.
+    nonisolated static func streamsError(forStatus status: Int) -> StravaError {
+        status == 404 ? .activityNotFound : .fetchFailed
+    }
+
     func fetchPowerZoneSeconds(activityId: Int, ftp: Double) async throws -> [Double]? {
         try await refreshTokenIfNeeded()
         guard let token = accessToken else { throw StravaError.notAuthenticated }
@@ -306,9 +312,8 @@ class StravaManager: ObservableObject {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw StravaError.fetchFailed
-        }
+        guard let http = response as? HTTPURLResponse else { throw StravaError.fetchFailed }
+        guard http.statusCode == 200 else { throw Self.streamsError(forStatus: http.statusCode) }
 
         struct WattsStream: Decodable {
             struct StreamData: Decodable { let data: [Double?] }
@@ -444,6 +449,7 @@ enum StravaError: Error, LocalizedError {
     case notAuthenticated
     case invalidURL
     case fetchFailed
+    case activityNotFound
     case apiError
     
     var errorDescription: String? {
@@ -458,6 +464,8 @@ enum StravaError: Error, LocalizedError {
             return "Invalid URL"
         case .fetchFailed:
             return "Failed to fetch data from Strava"
+        case .activityNotFound:
+            return "Activity not found on Strava"
         case .apiError:
             return "Strava API returned an error"
         }

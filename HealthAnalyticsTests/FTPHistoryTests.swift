@@ -368,3 +368,33 @@ final class NoPowerStreamMarkerTests: XCTestCase {
         XCTAssertNil(ride.powerZoneSeconds)
     }
 }
+
+// MARK: - Deleted Strava activities don't stall the zone backfill
+
+/// The backfill stops a pass after three consecutive fetch errors. An activity deleted on
+/// Strava answers 404 on every pass, so three of them in a row used to stop every pass at
+/// the same spot and older rides never got zones. A 404 is now final for that ride (marked
+/// no power stream) and never counts toward the limit; rate limits and network errors still do.
+final class ZoneBackfillDeletedActivityTests: XCTestCase {
+
+    // Value: protects=a 404 from the streams endpoint is told apart from other failures;
+    //   fails_when=every non-200 maps to fetchFailed again; why_new=new mapping; seam=none;
+    //   no_claim=Strava's real response for a deleted activity (status code only)
+    func test_streams404_isActivityNotFound_otherStatusesAreFetchFailed() {
+        XCTAssertEqual(StravaManager.streamsError(forStatus: 404), .activityNotFound)
+        for status in [401, 403, 429, 500, 503] {
+            XCTAssertEqual(StravaManager.streamsError(forStatus: status), .fetchFailed, "status \(status)")
+        }
+    }
+
+    // Value: protects=a deleted activity resolves to the permanent no-stream marker and only
+    //   that error does; fails_when=a 404 is counted toward the 3-error stop again, or a rate
+    //   limit/network error is written as permanent; why_new=new rule; seam=none;
+    //   no_claim=the backfill loop itself (SyncManager singleton, shared store)
+    func test_onlyADeletedActivity_resolvesToThePermanentMarker() {
+        XCTAssertEqual(SyncManager.zoneCSVAfterFetchError(StravaError.activityNotFound), SyncManager.noPowerStreamCSV)
+        XCTAssertNil(SyncManager.zoneCSVAfterFetchError(StravaError.fetchFailed))
+        XCTAssertNil(SyncManager.zoneCSVAfterFetchError(StravaError.notAuthenticated))
+        XCTAssertNil(SyncManager.zoneCSVAfterFetchError(URLError(.notConnectedToInternet)))
+    }
+}

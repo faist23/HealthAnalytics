@@ -69,6 +69,13 @@ class SyncManager: ObservableObject {
         return now.timeIntervalSince(missedAt) >= noPowerStreamRetryAge
     }
 
+    /// What the backfill writes for a ride whose stream fetch threw: the permanent marker when
+    /// the activity is gone from Strava (no retry can fix it, so it must not count toward the
+    /// pass's error limit), nil for anything that may pass (rate limit, network, auth).
+    nonisolated static func zoneCSVAfterFetchError(_ error: Error) -> String? {
+        (error as? StravaError) == .activityNotFound ? noPowerStreamCSV : nil
+    }
+
     /// The marker the backfill writes when Strava has no watts stream: a retry on the first
     /// miss, permanent on the retry's miss.
     nonisolated static func zoneCSVForNoPowerStream(current: String?, now: Date) -> String {
@@ -655,24 +662,17 @@ class SyncManager: ObservableObject {
                 ? PredictiveReadinessService.resolvedFTP()
                 : StoredFTPSnapshot.resolved(for: startDate, ftpValues: ftpValues)
 
+            var csv: String?
             do {
                 // nil only when Strava has no watts stream; failures throw.
                 let zoneSecs = try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: ftp)
-                let csv = zoneSecs.map { $0.map { String(Int($0)) }.joined(separator: ",") }
+                csv = zoneSecs.map { $0.map { String(Int($0)) }.joined(separator: ",") }
                     ?? Self.zoneCSVForNoPowerStream(current: currentCSV, now: Date())
-                await MainActor.run {
-                    var desc = FetchDescriptor<StoredWorkout>(
-                        predicate: #Predicate { $0.id == workoutID }
-                    )
-                    desc.fetchLimit = 1
-                    if let w = try? context.fetch(desc).first {
-                        w.powerZoneSecondsCSV = csv
-                        w.zoneComputedAtFTP = ftp
-                    }
-                }
-                fetched += 1
                 consecutiveErrors = 0
-                self.zoneBackfillProgress = (current: fetched, total: total)
+            } catch let error where Self.zoneCSVAfterFetchError(error) != nil {
+                // Deleted on Strava: final for this ride, and not an error that stops the pass.
+                // Counting it let three deleted rides stop every pass before older rides.
+                csv = Self.zoneCSVAfterFetchError(error)
             } catch {
                 consecutiveErrors += 1
                 #if DEBUG
@@ -684,6 +684,21 @@ class SyncManager: ObservableObject {
                     self.zoneBackfillError = "Zone update paused — Strava rate limit or network issue. Try again later."
                     break
                 }
+            }
+
+            if let csv {
+                await MainActor.run {
+                    var desc = FetchDescriptor<StoredWorkout>(
+                        predicate: #Predicate { $0.id == workoutID }
+                    )
+                    desc.fetchLimit = 1
+                    if let w = try? context.fetch(desc).first {
+                        w.powerZoneSecondsCSV = csv
+                        w.zoneComputedAtFTP = ftp
+                    }
+                }
+                fetched += 1
+                self.zoneBackfillProgress = (current: fetched, total: total)
             }
 
             // Rate limit: 1 req/sec → well under 100/15 min
