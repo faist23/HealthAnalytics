@@ -64,8 +64,10 @@ enum BackgroundPassOutcome {
 
 `abandoned` means the run spanned a suspension, so its results were discarded.
 
+As built, the enum also has `skippedForeground` (a wake while the app is in the foreground; see R2) and `skippedSyncing` (a store rewrite is running; see the As built note under Data flow).
+
 **`BackgroundPassSteps`** (protocol; the live implementation lives beside the pass)
-As built: `isProtectedDataAvailable`, `lastPatternRun`, `refreshWorkouts()` (HealthKit-only refresh into `StoredWorkout`), `analyzePatterns(commitGate:)` (detection and the gated commit in one call), `stamp(_:)`, `refreshCoachIfForeground()` and `newestHRVSampleDate()`. There is no score-row step (see Background fill removed) and no separate detect/commit split.
+As built: `isProtectedDataAvailable`, `lastPatternRun`, `isRewritingStore`, `storeGeneration`, `isAppInForeground`, `lastSyncDate`, `refreshCoach()`, `refreshWorkouts()` (HealthKit-only refresh into `StoredWorkout`), `analyzePatterns(commitGate:)` (detection and the gated commit in one call), `stamp(_:)` and `newestHRVSampleDate()`. The pass decides whether to call `refreshCoach()` (`BackgroundPatternPass.mayRefreshCoach`). There is no score-row step (see Background fill removed) and no separate detect/commit split.
 
 **`HealthDataObserver`** (new file, `Services/HealthKit/HealthDataObserver.swift`)
 - Registers one `HKObserverQuery` for `heartRateVariabilitySDNN` and one for `HKWorkoutType`, each with `enableBackgroundDelivery(for:frequency: .immediate)`.
@@ -109,6 +111,12 @@ Both triggers run the pass through the existing `patternAnalysisFlight`. Overlap
 10. **Coach:** never in the background. If the app is in the foreground at completion (`isAppInForeground`), run the existing `refreshIfNecessary`, as `performPatternAnalysis` does today.
 11. **Record** the outcome (see "Measurement").
 
+As built, the pass differs from the steps above in four places:
+- **Rewrite guard** after the throttle: while `SyncManager.isRewritingStore` (a sync, the one-time workout dedup, or the power-zone backfill that runs after a sync or an FTP edit) the pass returns `skippedSyncing` and runs no steps. It records `SyncManager.storeRewriteGeneration` before the workout refresh.
+- **Budget check after the workout refresh:** a pass past `BackgroundPatternPass.maxDuration` there returns `abandoned` before detection (no stamp).
+- **The commit gate** also refuses when a store rewrite is running at commit or `storeRewriteGeneration` moved since the pass started (a quick sync can start and finish inside detection).
+- **Coach** is refreshed only when `BackgroundPatternPass.mayRefreshCoach` holds: app in the foreground, no store rewrite running, and the last sync within `SyncManager.smartSyncMinInterval` (30 minutes). Foreground alone is not enough: a Coach refresh fills missing score rows, and before a sync those rows would get HealthKit-only loads.
+
 ## Complete-days anchoring
 
 Store-based checks read complete calendar days ending yesterday, in both the foreground and the background:
@@ -138,7 +146,9 @@ The pass records counters in UserDefaults (`backgroundPass.*`):
 - the last outcome and its time
 - the latency from the newest HRV sample's `endDate` to the commit
 
-The existing debug Settings screen (beside `WorkoutAuditView`) shows them in a new "Background Pass" row. A few days of real use answer the run-rate question that the "BGProcessingTask Promotion" TODO is waiting on.
+The existing debug Settings screen (beside `WorkoutAuditView`) shows them in a new "Background Pass" row.
+
+As built (`BackgroundPassLog`, `BackgroundPassStatsView`): wakes also count `launch` (a query's first fire in a process, which iOS fires on registration, so it is not delivery evidence), and every wake counts separately while the app is active; latency is recorded only for HRV-delivery wakes; a `skippedForeground` outcome is counted but never overwrites the last outcome. A few days of real use answer the run-rate question that the "BGProcessingTask Promotion" TODO is waiting on.
 
 ## Error handling
 
@@ -163,6 +173,7 @@ Unit tests (simulator lane, no singleton, no HealthKit):
   - `detect` writes nothing (no `TrainingPattern` rows, no notifications)
   - `commit` upserts the patterns and sends notifications
   - `analyze` equals `detect` followed by `commit`
+  - As built (no split): `analyze(commitGate:)` tests in `PredictiveIntelligenceTests` (a declined gate writes nothing and keeps an existing pattern; an accepted gate persists as before).
 - **Complete-days anchoring:**
   - the taper fires with 28 complete days and no row for today
   - today's partial row is ignored by back-to-back and the taper
@@ -190,7 +201,12 @@ Device checklist (no seam):
 | `Services/HealthKit/HealthDataObserver.swift` | new |
 | `Services/Analytics/TrainingDNAAnalyzer.swift` | commit gate; `notificationSent` saved before send; complete-days anchoring |
 | `Services/Analytics/ReadinessRepository.swift` | `runBackgroundPass` (background trigger runs the pass), `analyzePatternsForBackgroundPass`, and `runPatternAnalysis`'s flight work returning false only when its commit gate declined (foreground runs use the same commit gate); `backfillHistoricalScores` is unchanged from main. The observer is registered from the AppDelegate's `didFinishLaunching` and right after onboarding in `HealthAnalyticsApp`, not from `bootstrap()` (see Architecture) |
-| `Utilities/SyncManager.swift` | `refreshWorkoutsFromHealthKit(since:)` (HealthKit-only, no notification, no `lastSyncDate`) |
+| `Utilities/SyncManager.swift` | `refreshWorkoutsFromHealthKit()` (HealthKit-only, no notification, no `lastSyncDate`; window from `healthKitRefreshWindowStart`); `isRewritingStore` and `storeRewriteGeneration` for the rewrite guard; `noPowerStreamCSV` marks a ride with no watts stream |
+| `Utilities/BackgroundRefreshGate.swift` | new: serializes the background upsert with the foreground sync (R6) |
+| `Utilities/SingleFlight.swift` | work reports completion; a joiner of an uncompleted run reruns once; `shouldStart` gate |
+| `Services/PatternNotificationService.swift` | `isAuthorized()`; `send` takes types, the analyzer marks and saves first |
+| `Models/StoredWorkout.swift` | `powerZoneSeconds` is nil for `noPowerStreamCSV` and for all-zero zones |
+| `Views/BackgroundPassStatsView.swift` | new: the Background Pass counters screen |
 | `HealthAnalyticsApp.swift` | app-refresh handler runs the pass; `UIApplicationDelegateAdaptor` registers `HealthDataObserver` at launch |
 | `HealthAnalytics.entitlements` | `com.apple.developer.healthkit.background-delivery` |
 | `Views/SettingsView.swift` | debug "Background Pass" counters row |
@@ -205,7 +221,7 @@ A red-team review found six holes; each is fixed on this branch. R1, R3 and R4 w
 - **R2. A wake in the foreground skips the pass.** Observer queries fire once at registration, so every foreground cold launch ran a full pass. `runBackgroundPass` records the wake, then `BackgroundPatternPass.skipIfForeground` records the new `skippedForeground` outcome and returns before the flight.
 - **R3. One-time 90-day recompute on upgrade.** With no marker, `recomputeRange` now starts at the horizon (today − 90), not yesterday, so mid-day rows the old backfill froze on any of those days are corrected once.
 - **R4. HRV or RHR is enough to count as having read HealthKit.** The marker rule no longer requires sleep (`ScoreRowFinalization.readBiometrics`), so users without sleep data advance it.
-- **R5. Budget checked between steps; joiners of an abandoned run rerun once.** The pass returns `abandoned` (no detection, no stamp) when the budget is gone after the workout refresh or after finalization. `SingleFlight.run`'s work returns whether it completed; a caller that joined a run that returned false runs its own work (or joins a fresh run another joiner started) exactly once. `runBackgroundPass` returns `outcome != .abandoned`, `runPatternAnalysis` true.
+- **R5. Budget checked between steps; joiners of an abandoned run rerun once.** The pass returns `abandoned` (no detection, no stamp) when the budget is gone after the workout refresh or after finalization. `SingleFlight.run`'s work returns whether it completed; a caller that joined a run that returned false runs its own work (or joins a fresh run another joiner started) exactly once. `runBackgroundPass` returns `outcome != .abandoned`, `runPatternAnalysis` true. (Superseded in part: finalization was removed in S1, so the budget check now follows only the workout refresh, and `runPatternAnalysis`'s work returns false when its commit gate declines; see Files touched.)
 - **R6. Background upsert and foreground sync are serialized.** `BackgroundRefreshGate` on `SyncManager` (main actor): `refreshWorkoutsFromHealthKit` does nothing while `isSyncing`, and `performSmartSync` / `resetAllData` wait for an in-flight refresh after setting `isSyncing`, before their own upsert.
 
 ## Structure fix (2026-10-28): the marker is removed, not patched
@@ -223,4 +239,4 @@ The S2 trailing 7-day load recompute (`RecentDailyLoadRefresh`, `refreshRecentDa
 
 ## Background fill removed (2026-10-28)
 
-The pass's `fillMissingScoreRows()` step was removed. It inserted rows for days the user did not open the app, before the foreground Strava sync; since nothing rewrites rows, those days kept a Health-only load forever. Missing rows are filled only by the foreground `refreshIfNecessary`, after `performSmartSync`, as on `main`. The pass is now: guard, throttle, HealthKit-only workout refresh, gated detection, stamp, Coach only if foreground.
+The pass's `fillMissingScoreRows()` step was removed. It inserted rows for days the user did not open the app, before the foreground Strava sync; since nothing rewrites rows, those days kept a Health-only load forever. Missing rows are filled only by the foreground `refreshIfNecessary`, after `performSmartSync`, as on `main`. The pass is now: guard, throttle, HealthKit-only workout refresh, gated detection, stamp, Coach only if foreground. (Later: a rewrite guard follows the throttle, the gate also checks store rewrites, and Coach needs a recent sync too; see the As built note under Data flow.)
