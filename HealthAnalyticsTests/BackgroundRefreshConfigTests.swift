@@ -31,4 +31,20 @@ final class BackgroundRefreshConfigTests: XCTestCase {
         XCTAssertTrue(permitted.contains(patternAnalysisTaskID),
                       "BGTaskScheduler rejects identifiers missing from BGTaskSchedulerPermittedIdentifiers")
     }
+
+    // Value: protects=HealthKit background delivery entitlement stays declared in HealthAnalytics.entitlements;
+    //   fails_when=com.apple.developer.healthkit.background-delivery (or com.apple.developer.healthkit) is removed or set false, so delivery silently never arrives;
+    //   why_new=BackgroundRefreshConfigTests pins Info.plist only; seam=none;
+    //   no_claim=that the provisioning profile grants it (device)
+    func test_entitlementsDeclareHealthKitBackgroundDelivery() throws {
+        // .../HealthAnalytics/HealthAnalyticsTests/<file> -> repo root is two levels up.
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let url = root.appendingPathComponent("HealthAnalytics/HealthAnalytics.entitlements")
+        let data = try Data(contentsOf: url)
+        let plist = try XCTUnwrap(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+
+        XCTAssertEqual(plist["com.apple.developer.healthkit"] as? Bool, true)
+        XCTAssertEqual(plist["com.apple.developer.healthkit.background-delivery"] as? Bool, true,
+                       "Without this entitlement HealthKit background delivery never arrives")
+    }
 }

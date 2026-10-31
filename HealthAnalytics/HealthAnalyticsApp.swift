@@ -11,12 +11,36 @@ import SwiftData
 import BackgroundTasks
 import UIKit
 
+/// Registers HealthKit background delivery at every launch. A delivery relaunches the
+/// app in the background, possibly without connecting a scene, so the WindowGroup's
+/// `.task` can't be relied on to register in time.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        if UserDefaults.standard.bool(forKey: "isOnboardingComplete") {
+            HealthAnalyticsApp.registerHealthDataObserver()
+        }
+        return true
+    }
+}
+
 @main
 struct HealthAnalyticsApp: App {
     /// Must match `BGTaskSchedulerPermittedIdentifiers` in Info.plist (pinned by
     /// `BackgroundRefreshConfigTests`); a mismatch makes `submit` throw silently.
     nonisolated static let patternAnalysisTaskID = "com.craigfaist.HealthAnalytics.patternAnalysis"
     nonisolated static let patternAnalysisMinBackgroundInterval: TimeInterval = 6 * 3600
+
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    /// Idempotent. Called at launch (onboarded users) and after onboarding completes.
+    @MainActor static func registerHealthDataObserver() {
+        HealthDataObserver.shared.register { wake in
+            await ReadinessRepository.shared.runBackgroundPass(container: HealthDataContainer.shared, wake: wake)
+        }
+    }
 
     @AppStorage("isOnboardingComplete") private var isOnboardingComplete = false
     @StateObject private var tabCoordinator = TabCoordinator()
@@ -33,6 +57,9 @@ struct HealthAnalyticsApp: App {
                     }
                     .task {
                         ReadinessRepository.shared.bootstrap()
+                        // Covers the first session after onboarding, when didFinishLaunching
+                        // ran before HealthKit authorization was requested.
+                        Self.registerHealthDataObserver()
                         // A background app-refresh launch can connect the scene too. Leave sync,
                         // the Coach refresh and the permission prompt to `.active`: run locked,
                         // HealthKit refuses reads and the day's Coach would be cached from nothing.
@@ -55,14 +82,8 @@ struct HealthAnalyticsApp: App {
             // Keep the chain going: iOS runs each request once, and otherwise the next one
             // is only submitted when the user next leaves the app.
             Self.schedulePatternAnalysisTask()
-            // HealthKit refuses reads while the device is locked; don't spend the refresh
-            // budget on a run that can only fail.
-            guard await MainActor.run(body: { UIApplication.shared.isProtectedDataAvailable }) else { return }
-            // Same path as the foreground (the throttle is stamped only when patterns were
-            // actually refreshed). Finishing in the background it stays silent on errors and
-            // skips the Coach refresh — see `ReadinessRepository.isAppInForeground`. On budget expiry the handler stops
-            // waiting; the run resumes next time the app is awake.
-            await ReadinessRepository.shared.runPatternAnalysis(container: HealthDataContainer.shared, trigger: .background)
+            // The pass owns the locked-device guard, throttle, abandon rule and stamp.
+            await ReadinessRepository.shared.runBackgroundPass(container: HealthDataContainer.shared, wake: .appRefresh)
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active && isOnboardingComplete {

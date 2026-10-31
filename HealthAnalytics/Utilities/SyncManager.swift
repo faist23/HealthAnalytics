@@ -27,6 +27,24 @@ class SyncManager: ObservableObject {
     }
     
     @Published var isSyncing = false
+
+    /// `performSmartSync` skips a sync within this long of the last one (unless forced).
+    nonisolated static let smartSyncMinInterval: TimeInterval = 30 * 60
+
+    /// A sync, the one-time workout dedup or the power-zone backfill (after a sync or an
+    /// FTP edit) is rewriting the store. The background pattern pass neither starts nor
+    /// commits while this is true.
+    var isRewritingStore: Bool { isSyncing || isMigrating || isBackfillingZones }
+
+    /// Bumped whenever one of those rewrites starts, so the background pass can tell a
+    /// rewrite that started and finished while it was detecting.
+    private(set) var storeRewriteGeneration = 0
+
+    /// `powerZoneSecondsCSV` for a Strava ride with no watts stream (estimated power).
+    /// Decodes as no zones (`StoredWorkout.powerZoneSeconds` needs 7 values), and the
+    /// backfill only fetches `nil` rows, so it stops re-fetching these after every sync;
+    /// each one held the store-rewrite flag and made background passes skip.
+    nonisolated static let noPowerStreamCSV = ""
     @Published var syncProgress: String = ""
     @Published var isBackfillingHistory: Bool = false
     @Published var backfillProgress: Double = 0
@@ -38,6 +56,10 @@ class SyncManager: ObservableObject {
     private var isMigrating = false
     private var isBackfillingZones = false
     
+    /// Serializes the background pass's HealthKit-only upsert with this sync's upsert
+    /// (see `BackgroundRefreshGate`).
+    private let backgroundRefresh = BackgroundRefreshGate()
+
     private let healthKitManager = HealthKitManager.shared
     private let stravaManager = StravaManager.shared
     
@@ -55,7 +77,7 @@ class SyncManager: ObservableObject {
         print("   lastSyncDate: \(lastSyncDate?.formatted() ?? "nil")")
         if let last = lastSyncDate {
             print("   Time since last: \(Date().timeIntervalSince(last)) seconds")
-            print("   Should skip: \(!force && Date().timeIntervalSince(last) < 1800)")
+            print("   Should skip: \(!force && Date().timeIntervalSince(last) < Self.smartSyncMinInterval)")
         }
         #endif
         
@@ -73,6 +95,12 @@ class SyncManager: ObservableObject {
         // and skips the migration — preventing double-deletion of workouts.
         if !hasDeduplicatedWorkouts && !isMigrating {
             isMigrating = true
+            storeRewriteGeneration += 1
+            // A background refresh upserting while the dedup reads would insert a row the
+            // dedup never saw, and the flag below makes that permanent. `isMigrating` is
+            // set, so no new refresh starts (see `refreshWorkoutsFromHealthKit`); wait out
+            // one already running.
+            await backgroundRefresh.waitForInFlight()
             await dataHandler.removeDuplicateWorkouts()
             hasDeduplicatedWorkouts = true
             isMigrating = false
@@ -80,7 +108,7 @@ class SyncManager: ObservableObject {
 
         // Prevent redundant syncs - only sync if 30+ minutes have passed.
         // `force` bypasses for user-initiated refreshes.
-        if !force, let last = lastSyncDate, Date().timeIntervalSince(last) < 1800 {
+        if !force, let last = lastSyncDate, Date().timeIntervalSince(last) < Self.smartSyncMinInterval {
             #if DEBUG
             print("🛡️ Sync Guard: Synced \(Int(Date().timeIntervalSince(last)/60))m ago. Skipping.")
             #endif
@@ -95,6 +123,10 @@ class SyncManager: ObservableObject {
         }
 
         isSyncing = true
+        storeRewriteGeneration += 1
+        // A background refresh already upserting must finish first, or both upserts can
+        // miss each other's copy of a ride. `isSyncing` is set, so no new one starts.
+        await backgroundRefresh.waitForInFlight()
 
         do {
             
@@ -141,9 +173,42 @@ class SyncManager: ObservableObject {
         
         isSyncing = false
     }
-    
+
+    private var lastBackgroundWorkoutRefresh: Date? {
+        get { UserDefaults.standard.object(forKey: "lastBackgroundWorkoutRefresh") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "lastBackgroundWorkoutRefresh") }
+    }
+
+    /// HealthKit-only workout refresh for the background pattern pass. Never calls
+    /// Strava, never posts `DataSyncCompleted` (its observer runs the Coach refresh),
+    /// and never moves `lastSyncDate` — the next foreground sync must still pull Strava
+    /// power data for this window. Does nothing (no fetch, no stamp) while a foreground
+    /// sync or the one-time workout dedup runs, and either one starting meanwhile waits
+    /// for it (`backgroundRefresh`), so the two never interleave and double-store a ride.
+    func refreshWorkoutsFromHealthKit(now: Date = Date()) async throws {
+        try await backgroundRefresh.run(skippingWhile: isSyncing || isMigrating) { [self] in
+            let start = Self.healthKitRefreshWindowStart(
+                lastBackgroundRefresh: lastBackgroundWorkoutRefresh, lastSync: lastSyncDate, now: now
+            )
+            let workouts = try await healthKitManager.fetchWorkouts(startDate: start, endDate: now)
+            let dataHandler = DataPersistenceActor(modelContainer: HealthDataContainer.shared)
+            await dataHandler.upsertHealthKitWorkoutsOnly(workouts, since: start)
+            lastBackgroundWorkoutRefresh = now
+        }
+    }
+
+    /// Where the HealthKit-only refresh starts reading: the later of the last background
+    /// refresh and the last full sync (a week back when neither happened), minus one day
+    /// so a workout HealthKit reported late is still picked up.
+    nonisolated static func healthKitRefreshWindowStart(
+        lastBackgroundRefresh: Date?, lastSync: Date?, now: Date, calendar: Calendar = .current
+    ) -> Date {
+        let since = [lastBackgroundRefresh, lastSync].compactMap { $0 }.max() ?? now.addingTimeInterval(-7 * 86400)
+        return calendar.date(byAdding: .day, value: -1, to: since) ?? since
+    }
+
     // MARK: - Metric Name Migration
-    
+
     private func migrateMetricNames(dataHandler: DataPersistenceActor) async {
         #if DEBUG
         print("🔄 Migrating metric type names to standardized format...")
@@ -503,6 +568,7 @@ class SyncManager: ObservableObject {
         // that would double Strava API calls and produce torn writes to powerZoneSecondsCSV.
         guard !isBackfillingZones else { return }
         isBackfillingZones = true
+        storeRewriteGeneration += 1
         defer { isBackfillingZones = false }
 
         guard StravaManager.shared.isAuthenticated else { return }
@@ -547,22 +613,22 @@ class SyncManager: ObservableObject {
                 : StoredFTPSnapshot.resolved(for: startDate, ftpValues: ftpValues)
 
             do {
-                if let zoneSecs = try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: ftp) {
-                    let csv = zoneSecs.map { String(Int($0)) }.joined(separator: ",")
-                    await MainActor.run {
-                        var desc = FetchDescriptor<StoredWorkout>(
-                            predicate: #Predicate { $0.id == workoutID }
-                        )
-                        desc.fetchLimit = 1
-                        if let w = try? context.fetch(desc).first {
-                            w.powerZoneSecondsCSV = csv
-                            w.zoneComputedAtFTP = ftp
-                        }
+                // nil only when Strava has no watts stream; failures throw.
+                let zoneSecs = try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: ftp)
+                let csv = zoneSecs.map { $0.map { String(Int($0)) }.joined(separator: ",") } ?? Self.noPowerStreamCSV
+                await MainActor.run {
+                    var desc = FetchDescriptor<StoredWorkout>(
+                        predicate: #Predicate { $0.id == workoutID }
+                    )
+                    desc.fetchLimit = 1
+                    if let w = try? context.fetch(desc).first {
+                        w.powerZoneSecondsCSV = csv
+                        w.zoneComputedAtFTP = ftp
                     }
-                    fetched += 1
-                    consecutiveErrors = 0
-                    self.zoneBackfillProgress = (current: fetched, total: total)
                 }
+                fetched += 1
+                consecutiveErrors = 0
+                self.zoneBackfillProgress = (current: fetched, total: total)
             } catch {
                 consecutiveErrors += 1
                 #if DEBUG
@@ -622,8 +688,9 @@ class SyncManager: ObservableObject {
                 ? PredictiveReadinessService.resolvedFTP()
                 : StoredFTPSnapshot.resolved(for: workout.startDate, snapshots: snapshots)
 
-            // Clear if the FTP used to compute zones no longer matches what's resolved for that date
-            if workout.zoneComputedAtFTP != resolvedFTP {
+            // Clear if the FTP used to compute zones no longer matches what's resolved for that date.
+            // A ride with no watts stream has no zones at any FTP; leave its marker.
+            if workout.powerZoneSecondsCSV != Self.noPowerStreamCSV, workout.zoneComputedAtFTP != resolvedFTP {
                 workout.powerZoneSecondsCSV = nil
                 workout.zoneComputedAtFTP = nil
                 invalidated += 1
@@ -672,6 +739,8 @@ class SyncManager: ObservableObject {
         }
         
         isSyncing = true
+        storeRewriteGeneration += 1
+        await backgroundRefresh.waitForInFlight()
         
         let container = HealthDataContainer.shared
         let dataHandler = DataPersistenceActor(modelContainer: container)
@@ -983,7 +1052,47 @@ actor DataPersistenceActor {
         print("💾 Recent data upserted")
         #endif
     }
-    
+
+    /// HealthKit-only workout upsert for the background pattern pass. Rides the
+    /// foreground already stored as their Strava copy are skipped: `upsertRecentData`
+    /// matches HealthKit workouts only against the Strava list it is handed, and the
+    /// background hands it none, so without this filter a stored Strava ride would gain
+    /// a second HealthKit-UUID row (double load). A ride not yet on Strava is stored
+    /// under its HealthKit UUID; the next foreground sync's match replaces it.
+    func upsertHealthKitWorkoutsOnly(_ workouts: [WorkoutData], since: Date) {
+        let windowStart = since.addingTimeInterval(-86400)
+        let descriptor = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate { $0.startDate >= windowStart && $0.source == "Strava" }
+        )
+        let storedStrava = ((try? modelContext.fetch(descriptor)) ?? []).map(Self.stravaImport(from:))
+        let uncovered = Self.healthKitWorkoutsNotCoveredByStrava(workouts, storedStrava: storedStrava)
+        guard !uncovered.isEmpty else { return }
+        upsertRecentData(workouts: uncovered, strava: [], sleep: [], hrv: [], rhr: [],
+                         steps: [], weight: [], nutrition: [], vo2max: [])
+    }
+
+    nonisolated static func healthKitWorkoutsNotCoveredByStrava(
+        _ healthKit: [WorkoutData],
+        storedStrava: [StravaImportData]
+    ) -> [WorkoutData] {
+        healthKit.filter { WorkoutMatcher.findMatch(for: $0, in: storedStrava) == nil }
+    }
+
+    private static func stravaImport(from stored: StoredWorkout) -> StravaImportData {
+        StravaImportData(
+            id: stored.id,
+            title: stored.title ?? "",
+            workoutType: HKWorkoutActivityType(rawValue: UInt(stored.workoutTypeInt)) ?? .other,
+            startDate: stored.startDate,
+            duration: stored.duration,
+            distance: stored.distance,
+            power: stored.averagePower,
+            normalizedPower: stored.normalizedPower,
+            energy: stored.totalEnergyBurned,
+            averageHeartRate: stored.averageHeartRate
+        )
+    }
+
     // MARK: - Append Historical Batch
     
     func appendHistoricalBatch(

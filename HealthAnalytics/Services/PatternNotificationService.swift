@@ -26,22 +26,21 @@ actor PatternNotificationService {
 
     // MARK: - Dispatch
 
-    /// Sends a notification for each pattern where notificationSent == false.
-    /// Sets notificationSent = true on each sent pattern.
-    /// Caller is responsible for calling modelContext.save() after this returns.
-    func notifyIfNew(_ patterns: [TrainingPattern]) async {
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        guard settings.authorizationStatus == .authorized else { return }
+    /// Whether alerts can be delivered. Patterns are marked sent only when this is true,
+    /// so a user who grants permission later still gets them.
+    func isAuthorized() async -> Bool {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .authorized
+    }
 
-        for pattern in patterns where !pattern.notificationSent {
-            let bodyText = body(for: pattern.patternType)
-            guard !bodyText.isEmpty else {
-                // Pattern types with empty body (e.g. .tapering) are planning tools —
-                // intentionally suppressed from user notification.
-                pattern.notificationSent = true
-                continue
-            }
+    /// Sends one notification per pattern type. The caller marks and saves
+    /// `notificationSent` first (see `TrainingDNAAnalyzer.analyze`), so this never
+    /// touches SwiftData models. Types with an empty body (e.g. `.tapering`) are planning
+    /// tools and are intentionally not delivered.
+    func send(_ types: [PatternType]) async {
+        let center = UNUserNotificationCenter.current()
+        for type in types {
+            let bodyText = body(for: type)
+            guard !bodyText.isEmpty else { continue }
 
             let content = UNMutableNotificationContent()
             content.title = "Training DNA found"
@@ -49,13 +48,11 @@ actor PatternNotificationService {
             content.sound = .default
 
             let request = UNNotificationRequest(
-                identifier: "trainingDNA.\(pattern.patternType.rawValue)",
+                identifier: "trainingDNA.\(type.rawValue)",
                 content: content,
                 trigger: nil
             )
-
             try? await center.add(request)
-            pattern.notificationSent = true
         }
     }
 

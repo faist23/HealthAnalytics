@@ -16,7 +16,7 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~10min)
 
-**Depends on / blocked by:** Phase 2a must ship. Then 3 months of production data. Also "Design the background pattern run properly" below: until the background run syncs and stamps correctly, its fire rate says little about whether it can be primary.
+**Depends on / blocked by:** Phase 2a must ship. Then 3 months of production data. The Background Pass counters (Settings → Background Pass) now measure the run rate.
 
 ### Phase 2b: Manual Illness Log
 **Priority:** P2 — dependent on Phase 2a validation
@@ -66,18 +66,6 @@
 
 **Effort:** S (human: ~1h / CC+gstack: ~10min)
 
-### Design the background pattern run properly
-**Priority:** P2 — surfaced by the v0.1.15 adversarial reviews; each pass on the background path found a new gap, so it needs one design, not more patches
-
-**What:** v0.1.15 made the `.appRefresh` task actually run, but the run is a thin wrapper around the foreground path and several things don't hold in the background:
-- **No sync, no today's row.** The handler skips `performSmartSync` and `performFullAnalysis`, so `StoredWorkout` / `StoredDailyScore` are frozen at the last foreground while HealthKit HRV is read fresh. Back-to-back, performance peak, the HRV precursor's sick-day proxy and taper Tier 1 read those tables, so a once-ever notification can fire from the mix. `detectTaperUnderway` needs 28 distinct scored days in `now - 28d`, which only holds once today's row exists, so a run before the day's first open can never detect a taper.
-- **Stale stamp after a freeze.** On budget expiry the handler stops waiting but the flight's task keeps going and is suspended with the app; it can finish hours later on mixed pre/post-freeze reads, stamp `lastPatternAnalysisDate = Date()`, renew `detectedAt`, and the Recovery `.appear` request joins it instead of running fresh.
-- **Run rate unknown.** iOS runs app-refresh mostly while locked, where the `isProtectedDataAvailable` guard (correctly) skips, and only one request is pending per 6h, so most opportunities may be spent on no-ops.
-
-**How to apply:** Measure first: log fire / skip-locked / complete counts on a device (`_simulateLaunchForTaskWithIdentifier` for the path, a few days of real use for the rate). Then give the background run its own path: sync after the protected-data guard without the `DataSyncCompleted` → `refreshIfNecessary` Coach refresh, write today's score row (or anchor the taper score window to the latest scored day), and stamp with the run's start time or refuse to stamp when start-to-finish spans a suspension. Consider HealthKit background delivery (`HKObserverQuery` + `enableBackgroundDelivery`) instead of, or alongside, app refresh.
-
-**Effort:** M (human: ~1 day / CC+gstack: ~1-2h)
-
 ### First-launch pattern analysis can run on pre-backfill scores
 **Priority:** P3 — surfaced by the v0.1.14.0 red-team review; pre-existing
 
@@ -87,16 +75,85 @@
 
 **Effort:** S (human: ~1h / CC+gstack: ~10min)
 
+### A day's load is frozen at the first write, and recomputing it needs a trustworthy workout store
+**Priority:** P2
+
+**What:** A day's `StoredDailyScore.dailyLoad` is fixed when the row is written (often mid-day), so later rides never count. Three designs on feat/background-pattern-pass (finalized-through marker; foreground-only marker; trailing 7-day recompute) were backed out because `StoredWorkout` isn't trustworthy.
+
+**Design constraints (from the reviews):**
+1. The foreground sync must dedupe HealthKit rides against STORED Strava rows, not only the Strava list fetched in that call (a failed or absent Strava fetch currently stores HK-UUID duplicates).
+2. HealthKit workouts must be fetched over a fixed trailing window (late writers like Garmin/Zwift/Wahoo backdate rides), and `lastSyncDate` must not advance when `syncRecentData`'s fetch fails.
+3. Never rewrite readinessScore/dailyStrain: load and count only.
+4. Don't run during resetAllData/performFullResync (StoredWorkout is emptied first).
+5. Key days by `dateString`, not `startOfDay(row.date)` (westward time-zone travel shifts rows a day).
+6. Compare loads with a tolerance and fetch workouts sorted.
+7. Missing rows must not be filled before the Strava sync: a background fill freezes Health-only loads.
+
+**Effort:** M
+
 ### Taper detection requires all 28 of the last 28 days to have a stored score
 **Priority:** P3 — pre-existing, but now load-bearing
 
-**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (`ReadinessRepository.swift:926`). One night without the watch inside the window silences taper detection until that day rolls off.
+**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (its `!sleepDay.isEmpty` guard). One night without the watch inside the window silences taper detection until that day rolls off. The window is now the 28 complete days ending yesterday (not including today).
 
 **Why:** v0.1.13.0's headline claim is that the detector now catches a genuine 50% volume cut. For intermittent watch-wearers that improvement may be unreachable.
 
 **How to apply:** Consider relaxing to a distinct-day count (e.g. ≥ 24 of 28) with the means computed over available days.
 
 **Effort:** S (human: ~2h / CC+gstack: ~10min)
+
+### Mark the load engine's pure functions `nonisolated`
+**Priority:** P3 — deferred from the v0.1.16.0 review (user decision)
+
+**What:** `PredictiveReadinessService.calculateWorkoutLoad`, `WorkoutData(from:)` and `TrainingLoadVisualizationService.estimateIntensity` are pure but inherit main-actor isolation, so `TrainingDNAAnalyzer` (a `@ModelActor`) calls them across actors and the compiler warns.
+
+**Why:** The warnings become errors under Swift 6 strict concurrency, and the hop is needless work inside every background pass.
+
+**How to apply:** Mark the pure functions `nonisolated`; check `resolvedFTP()` (reads UserDefaults) stays safe off the main actor.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10min)
+
+### Test gaps: zero-twin insertion order and `detectedAt` renewal on commit
+**Priority:** P3 — deferred from the v0.1.16.0 review (user decision)
+
+**What:** No test pins that the HRV-precursor zero-twin rule holds whichever duplicate row is inserted first, or that an existing pattern's `detectedAt` is renewed only when the commit gate accepts.
+
+**Why:** Both are rules a refactor of `detectHRVPrecursor` or `upsertPatterns` could break silently; the second keeps a declined background pass from keeping a stale pattern alive.
+
+**How to apply:** Add the reverse-order row to `testHRVPrecursor_zeroTwinBesideARideRowIsNotRest`, and an accept/decline pair over an existing `TrainingPattern` in `TrainingDNAAnalyzerTests`.
+
+**Effort:** S (human: ~1h / CC+gstack: ~10min)
+
+### Stale comments: `TrainingDNAAnalyzer.analyze` docstring and the `SingleFlight` header
+**Priority:** P3 — deferred from the v0.1.16.0 review (user decision)
+
+**What:** Re-read both against the shipped behavior (mark-and-save before send, the commit gate, the abandoned-run retry, `shouldStart`) and correct what drifted.
+
+**Why:** These are the first comments anyone changing the background pass reads.
+
+**Effort:** S (human: ~30min / CC+gstack: ~5min)
+
+### Intent labels can be orphaned by the background workout refresh
+**Priority:** P3 — surfaced by the v0.1.16.0 adversarial review (user deferred)
+
+**What:** `autoClassifyWorkoutIntents()` runs after the background HealthKit-only upsert, so a Watch ride stored under its HealthKit UUID gets a `StoredIntentLabel`. The next foreground sync matches the ride to Strava and deletes the HealthKit row, leaving the label pointing at a workout that no longer exists.
+
+**Why:** Orphan labels accumulate and any future join that counts labels rather than workouts will miscount.
+
+**How to apply:** Delete or re-key the label when `upsertRecentData` deletes a stale HealthKit row.
+
+**Effort:** S (human: ~2h / CC+gstack: ~15min)
+
+### Background pass throttle on battery
+**Priority:** P3 — surfaced by the v0.1.16.0 adversarial review (user deferred)
+
+**What:** HRV and workout deliveries use `.immediate` frequency, and the `.background` throttle is 5 minutes, so every delivery more than 5 minutes after the last stamp runs a full pass (HealthKit refresh, 180-day sick-day reads, the load engine over every stored workout).
+
+**Why:** iOS can throttle background delivery for an app that spends its budget, which would delay the alerts this feature exists for.
+
+**How to apply:** Measure on a device with Settings → Background Pass, then consider a longer background window (e.g. 1h) or `.hourly` delivery for HRV.
+
+**Effort:** S (human: ~2h / CC+gstack: ~15min)
 
 ## Coach
 
@@ -204,6 +261,7 @@
 
 ## Completed
 
+- **P2 — Design the background pattern run properly** — **Completed:** v0.1.16.0 (2026-10-31). HealthKit background delivery (HRV + workouts) and app refresh both run one `BackgroundPatternPass` (HealthKit-only workout refresh, gated detection, abandon after 2 min; no score-row step in the background, missing rows are still filled only by the foreground refresh); store-based pattern checks read complete days ending yesterday; counters in Settings → Background Pass.
 - **P2 — Background pattern-analysis task likely never runs** — **Completed:** v0.1.15.0 (2026-10-27). Request is now `BGAppRefreshTaskRequest` (matching the SwiftUI `.appRefresh` handler), Info.plist declares `UIBackgroundModes` `fetch` (missing entirely before, so `submit` always threw), and the handler routes through `runPatternAnalysis(container:trigger: .background)`. Verified firing on device by Craig.
 - **P2 — Repository should own the pattern-analysis → Coach hand-off** — **Completed:** v0.1.15.0 (2026-10-27). `SingleFlight` owns pattern analysis (joins overlap, ignores caller cancellation, 5-min forced-run throttle) and shields `performFullAnalysis` from caller cancellation, so a tab swipe can no longer cache the heuristic Coach paragraph; `resetForTesting()` clears the cache state. `SingleFlightTests`, `ReadinessRepositoryPatternThrottleTests`.
 - **P2 — Coach paragraph outlives the pattern card** — **Completed:** v0.1.14.0 (2026-10-26). Active pattern set added to the `refreshIfNecessary` cache check via `ReadinessRepository.canReuseCachedAnalysis`, and a successful `runPatternAnalysis` re-checks it so a launch-time analysis usually can't leave Coach behind; `ReadinessRepositoryCacheTests`. The remaining hand-off gaps were closed by "Repository should own the pattern-analysis → Coach hand-off" above.

@@ -224,6 +224,8 @@ struct LivePatternDataProvider: PatternDataProvider {
 enum PatternAnalysisError: Error {
     case insufficientData
     case persistenceFailed(Error)
+    /// The caller's commit gate refused after detection; nothing was written.
+    case commitDeclined
 }
 
 // MARK: - TrainingDNAAnalyzer
@@ -239,6 +241,19 @@ actor TrainingDNAAnalyzer {
         f.timeZone = TimeZone.current
         return f
     }()
+
+    /// Store-based checks read complete calendar days only, ending yesterday. Today's
+    /// StoredDailyScore row is partial (written on each foreground open) and the
+    /// background pass never writes one, so including it made a verdict depend on who
+    /// ran the analysis and when. Live HealthKit series (HRV, RHR, sleep) still include
+    /// today, so the latest HRV reading is used. The HRV precursor's sick-day steps are
+    /// the exception: today's count is partial, so they are complete days too.
+    private var completeDaysEnd: Date { Calendar.current.startOfDay(for: Date()) }
+
+    /// Start of the complete-days window `daysBack` days before `completeDaysEnd`.
+    private func completeDayStart(daysBack: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: -daysBack, to: completeDaysEnd) ?? completeDaysEnd
+    }
 
     // MARK: - Dependency Injection
 
@@ -278,7 +293,13 @@ actor TrainingDNAAnalyzer {
     // MARK: - Main Entry Point
 
     /// Returns the total HealthKit history days so callers can persist it for section-visibility gating.
-    func analyze(sourcePreference: HRVSourcePreference = .auto) async throws -> Int {
+    /// `commitGate` runs after detection and before any write. The background pass uses
+    /// it to discard a run that spanned a suspension (stale and fresh reads mixed); the
+    /// default commits, so foreground callers behave exactly as before.
+    func analyze(
+        sourcePreference: HRVSourcePreference = .auto,
+        commitGate: @Sendable () async -> Bool = { true }
+    ) async throws -> Int {
         guard !Task.isCancelled else { return 0 }
 
         let historyDays = try await dataProvider.totalHealthKitHistoryDays()
@@ -309,18 +330,35 @@ actor TrainingDNAAnalyzer {
 
         guard !Task.isCancelled else { return historyDays }
 
+        // Read before the gate, so nothing awaits between the gate and the save: a run
+        // suspended at that await would otherwise commit stale reads when it resumes.
+        let notifier = PatternNotificationService.shared
+        let authorized = await notifier.isAuthorized()
+
+        guard await commitGate() else { throw PatternAnalysisError.commitDeclined }
+
         try upsertPatterns(detected)
 
+        // Notifications are once ever, so `notificationSent` is saved BEFORE anything is
+        // sent: a background wake can be suspended and killed between the send and a later
+        // save, which would lose the flag and alert again. A kill between this save and the
+        // send costs at most one missed alert, never a duplicate. A failed save sends nothing
+        // and rolls back, so the marks don't linger in this context and suppress the alert
+        // on the next run.
         let allStored = (try? modelContext.fetch(FetchDescriptor<TrainingPattern>())) ?? []
         let detectedTypes = detected.map(\.patternType)
         let unsent = allStored.filter { !$0.notificationSent && detectedTypes.contains($0.patternType) }
-        await PatternNotificationService.shared.notifyIfNew(unsent)
+        let toSend = authorized ? unsent : []
+        for pattern in toSend { pattern.notificationSent = true }
 
         do {
             try modelContext.save()
         } catch {
+            modelContext.rollback()
             throw PatternAnalysisError.persistenceFailed(error)
         }
+
+        await notifier.send(toSend.map(\.patternType))
 
         return historyDays
     }
@@ -393,21 +431,36 @@ actor TrainingDNAAnalyzer {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
 
-        // Load-gated workout days: only days with a real training session (load >= 0.5 TSS) count
-        // as "workout days" for sick-day proxy detection. Daily warmup spins (~0.17 TSS) are
-        // excluded so they don't block the proxy from firing on users who work out every day.
-        let cutoff = Calendar.current.date(byAdding: .day, value: -180, to: Date()) ?? Date()
+        // Load-gated rest days: a day is a sick-day candidate only when its score row exists and
+        // shows no real training session (load < 0.5 TSS). Daily warmup spins (~0.17 TSS) still
+        // count as rest so they don't block the proxy on users who work out every day. A missing
+        // row is unknown, not rest: the background pass never writes rows, and a ride whose row
+        // isn't written yet would read as a sick day (a cyclist logs few steps).
+        // A day's load is its highest row: a 0.0 twin written before the ride synced must not
+        // make a ride day look like rest. A stored workout with real load vetoes rest too: a row
+        // written mid-morning keeps a later ride at 0 forever (TODOS: "A day's load is frozen").
+        // The workout store can double-count or miss rides; either only makes rest less likely.
+        let cutoff = completeDayStart(daysBack: 180)
+        let end = completeDaysEnd
         let dailyScores = (try? modelContext.fetch(
             FetchDescriptor<StoredDailyScore>(
-                predicate: #Predicate<StoredDailyScore> { $0.date >= cutoff }
+                predicate: #Predicate<StoredDailyScore> { $0.date >= cutoff && $0.date < end }
             )
         )) ?? []
-        let significantWorkoutDays: Set<String> = Set(
-            dailyScores.filter { $0.dailyLoad >= 0.5 }.map { fmt.string(from: $0.date) }
+        var rowLoadByDay: [String: Double] = [:]
+        for score in dailyScores {
+            let key = fmt.string(from: score.date)
+            rowLoadByDay[key] = max(rowLoadByDay[key] ?? 0, score.dailyLoad)
+        }
+        let storedTrainingDays = daysWithStoredWorkoutLoad(atLeast: Self.restDayLoadThreshold, from: cutoff, to: end, keyedBy: fmt)
+        let restDays: Set<String> = Set(
+            rowLoadByDay.filter { $0.value < Self.restDayLoadThreshold && !storedTrainingDays.contains($0.key) }.keys
         )
 
-        // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days AND no significant workout
-        let stepsSorted = stepHistory.sorted { $0.date < $1.date }
+        // Detect sick day proxies: step count < 2000 for 2+ CONSECUTIVE days, each a known rest day.
+        // Complete days only: today's count is partial (nearly everyone is under 2000 at 9am),
+        // so yesterday + today would fake a window. HRV stays live.
+        let stepsSorted = stepHistory.filter { $0.date < end }.sorted { $0.date < $1.date }
         var sickDayWindows: [Date] = []
         var i = 0
         while i < stepsSorted.count - 1 {
@@ -416,8 +469,8 @@ actor TrainingDNAAnalyzer {
                 b.date, inSameDayAs: Calendar.current.date(byAdding: .day, value: 1, to: a.date)!
             )
             if consecutive && a.steps < 2000 && b.steps < 2000
-                && !significantWorkoutDays.contains(fmt.string(from: a.date))
-                && !significantWorkoutDays.contains(fmt.string(from: b.date)) {
+                && restDays.contains(fmt.string(from: a.date))
+                && restDays.contains(fmt.string(from: b.date)) {
                 sickDayWindows.append(a.date)
                 i += 2; continue
             }
@@ -541,8 +594,9 @@ actor TrainingDNAAnalyzer {
     /// Data source: StoredDailyScore — fetched directly from this actor's modelContext
     /// (StoredDailyScore is in the shared schema since HealthDataContainer was updated).
     private func detectBackToBackReadinessCrash() async throws -> TrainingPattern? {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
-        let predicate = #Predicate<StoredDailyScore> { $0.date >= cutoff }
+        let cutoff = completeDayStart(daysBack: 90)
+        let end = completeDaysEnd
+        let predicate = #Predicate<StoredDailyScore> { $0.date >= cutoff && $0.date < end }
         let scores = (try? modelContext.fetch(
             FetchDescriptor<StoredDailyScore>(predicate: predicate, sortBy: [SortDescriptor(\.date)])
         )) ?? []
@@ -668,8 +722,9 @@ actor TrainingDNAAnalyzer {
         guard hrvHistory.count >= 7 else { return nil }
 
         // ACWR streak from StoredDailyScore (same source as detectBackToBackReadinessCrash)
-        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
-        let predicate90 = #Predicate<StoredDailyScore> { $0.date >= cutoff }
+        let cutoff = completeDayStart(daysBack: 90)
+        let end = completeDaysEnd
+        let predicate90 = #Predicate<StoredDailyScore> { $0.date >= cutoff && $0.date < end }
         let scores = (try? modelContext.fetch(
             FetchDescriptor<StoredDailyScore>(predicate: predicate90, sortBy: [SortDescriptor(\.date)])
         )) ?? []
@@ -707,14 +762,18 @@ actor TrainingDNAAnalyzer {
             }
         }
 
-        // ACWR sweet-spot streak: consecutive trailing days where dailyStrain in [0.8, 1.3]
+        // ACWR sweet-spot streak: consecutive complete days ending yesterday where dailyStrain
+        // is in [0.8, 1.3]. Counts days, not rows: the background pass never writes rows, so the
+        // newest can be days old and history can have holes. A missing day is unknown and ends
+        // the streak, the same way a missed measurement ends the HRV streak above. A day with
+        // duplicate rows counts once, and only if every row is in the sweet spot.
+        let rowsByDay = Dictionary(grouping: scores) { Calendar.current.startOfDay(for: $0.date) }
         var acwrStreakDays = 0
-        for score in scores.reversed() {
-            if score.dailyStrain >= 0.8 && score.dailyStrain <= 1.3 {
-                acwrStreakDays += 1
-            } else {
-                break
-            }
+        var day = Calendar.current.date(byAdding: .day, value: -1, to: end) ?? end
+        while let rows = rowsByDay[day], rows.allSatisfy({ $0.dailyStrain >= 0.8 && $0.dailyStrain <= 1.3 }) {
+            acwrStreakDays += 1
+            guard let previous = Calendar.current.date(byAdding: .day, value: -1, to: day) else { break }
+            day = previous
         }
 
         let hrvScore  = min(1.0, Double(hrvStreakDays)  / 7.0)  * 0.60
@@ -743,6 +802,10 @@ actor TrainingDNAAnalyzer {
     }
 
     // MARK: - Pattern 6: Taper Underway
+
+    /// Below this daily load (TSS-equivalent) a day is rest for the sick-day proxy, in both
+    /// the score-row check and the stored-workout veto. A warmup spin scores ~0.17.
+    static let restDayLoadThreshold = 0.5
 
     /// Minimum mean daily load over the 21-day baseline for a taper to be meaningful.
     /// On this project's TSS scale a 60-min zone-2 ride ≈ 1.0 and `hardDayLoadThreshold`
@@ -781,8 +844,10 @@ actor TrainingDNAAnalyzer {
     /// correctly showed ACWR ~1.0 — and it simultaneously MISSED a genuine 50% volume
     /// cut (only a 24% ACWR move). Do not reconnect this to `dailyStrain`.
     private func detectTaperUnderway(sourcePreference: HRVSourcePreference) async throws -> TrainingPattern? {
-        let cutoff28 = Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? Date()
-        let predicate28 = #Predicate<StoredDailyScore> { $0.date >= cutoff28 }
+        // The 28 complete days ending yesterday.
+        let cutoff28 = completeDayStart(daysBack: 28)
+        let end = completeDaysEnd
+        let predicate28 = #Predicate<StoredDailyScore> { $0.date >= cutoff28 && $0.date < end }
         let scores28 = (try? modelContext.fetch(
             FetchDescriptor<StoredDailyScore>(predicate: predicate28, sortBy: [SortDescriptor(\.date)])
         )) ?? []
@@ -828,7 +893,7 @@ actor TrainingDNAAnalyzer {
         // week of work travel — HRV rises on rest either way, so those two inputs alone
         // cannot tell a taper from a stoppage. What separates them is intensity: a taper
         // cuts volume and KEEPS the hard efforts; a stoppage drops both.
-        guard taperIsCorroborated(referenceDate: Date()) else { return nil }
+        guard taperIsCorroborated(endingBefore: completeDaysEnd) else { return nil }
 
         // HRV trend: positive slope over last 7 days
         let hrvHistory = try await dataProvider.fetchDailyHRV(days: 7, sourcePreference: sourcePreference)
@@ -871,15 +936,17 @@ actor TrainingDNAAnalyzer {
         )
     }
 
-    /// Two-tier check that a volume drop was chosen rather than forced.
+    /// Two-tier check that a volume drop was chosen rather than forced. Reads complete
+    /// calendar days only: the recent week is the 7 days ending yesterday (days 1–7 ago)
+    /// and the baseline the 21 days before it (days 8–28 ago); today's workouts are excluded.
     ///
     /// **Tier 1 — session presence (every user).** At least
-    /// `taperMinimumRecentSessions` workouts in the last 7 days. Needs no power or HR,
+    /// `taperMinimumRecentSessions` workouts in the 7 complete days. Needs no power or HR,
     /// so it protects users with no sensors at all, and it catches the worst case: a
     /// rider who crashed and hasn't ridden since being told their peak is 14 days out.
     ///
     /// **Tier 2 — intensity retention (users with a signal).** Mean intensity over the
-    /// last 7 days must hold at `taperIntensityRetention` of the days 8–28 baseline.
+    /// recent week must hold at `taperIntensityRetention` of the days 8–28 baseline.
     /// Only applied when BOTH windows contain at least one workout carrying real
     /// power/HR data: `estimateIntensity` returns a neutral 5.0 when a workout has no
     /// signal, and averaging measured values against placeholders would invent a
@@ -890,19 +957,18 @@ actor TrainingDNAAnalyzer {
     ///
     /// Intensity comes from `TrainingLoadVisualizationService.estimateIntensity`, the
     /// existing signal-derived scorer. It is not reimplemented here.
-    private func taperIsCorroborated(referenceDate: Date) -> Bool {
+    private func taperIsCorroborated(endingBefore end: Date) -> Bool {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: referenceDate)
-        // Both ends in calendar days, matching the volume comparison's 28 daily scores:
-        // recent = today and the 6 before, baseline = the 21 days before that. Rolling
-        // 7×24h / 28×24h windows let a ride on day 7 or day 28 count or not depending on
-        // the time of day the analysis ran.
-        guard let windowStart = cal.date(byAdding: .day, value: -27, to: today),
-              let recentStart = cal.date(byAdding: .day, value: -6, to: today)
+        let end = cal.startOfDay(for: end)
+        // Complete calendar days, matching the volume comparison's 28 daily scores:
+        // recent = the 7 days ending yesterday, baseline = the 21 days before that.
+        // Today's workouts count from tomorrow.
+        guard let windowStart = cal.date(byAdding: .day, value: -28, to: end),
+              let recentStart = cal.date(byAdding: .day, value: -7, to: end)
         else { return false }
 
         let descriptor = FetchDescriptor<StoredWorkout>(
-            predicate: #Predicate { $0.startDate >= windowStart },
+            predicate: #Predicate { $0.startDate >= windowStart && $0.startDate < end },
             sortBy: [SortDescriptor(\.startDate)]
         )
         let stored = (try? modelContext.fetch(descriptor)) ?? []
@@ -930,6 +996,23 @@ actor TrainingDNAAnalyzer {
         guard baselineIntensity > 0 else { return true }
 
         return recentIntensity >= baselineIntensity * Self.taperIntensityRetention
+    }
+
+    /// Days (keyed by `fmt`) in `[start, end)` whose stored workouts add up to at least
+    /// `threshold` load, computed by the one load engine (`PredictiveReadinessService`).
+    private func daysWithStoredWorkoutLoad(atLeast threshold: Double, from start: Date, to end: Date, keyedBy fmt: DateFormatter) -> Set<String> {
+        let stored = (try? modelContext.fetch(FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate { $0.startDate >= start && $0.startDate < end }
+        ))) ?? []
+        guard !stored.isEmpty else { return [] }
+        let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+        let loadService = PredictiveReadinessService()
+        var loadByDay: [String: Double] = [:]
+        for workout in stored {
+            let key = fmt.string(from: workout.startDate)
+            loadByDay[key, default: 0] += loadService.calculateWorkoutLoad(WorkoutData(from: workout), ftpSnapshots: ftpSnapshots)
+        }
+        return Set(loadByDay.filter { $0.value >= threshold }.keys)
     }
 
     // MARK: - Upsert

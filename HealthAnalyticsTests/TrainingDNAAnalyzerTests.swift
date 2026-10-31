@@ -15,6 +15,7 @@
 
 import XCTest
 import SwiftData
+import HealthKit
 @testable import HealthAnalytics
 
 // MARK: - MockPatternDataProvider
@@ -181,7 +182,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
     /// Precursor HRV (48h before) = 45 ms vs baseline 60 ms.
     /// 45 < 60 × 0.85 = 51 → precursor match × 3. stats.mean = 45 < 60 × 0.90 = 54 → pattern fires.
     func testHRVPrecursor_happyPath() async throws {
-        let container = try makeContainer()
+        let container = try makeFullContainer()
         let analyzer = TrainingDNAAnalyzer(modelContainer: container)
 
         var mock = MockPatternDataProvider()
@@ -191,6 +192,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         mock.workoutDays = []
 
         await analyzer.setDataProvider(mock)
+        try await analyzer.insertDailyScores(makeRestDayRows(sickOffsets: [-80, -50, -20]))
         _ = try await analyzer.analyze()
 
         let patterns = try await analyzer.fetchAllPatterns()
@@ -218,6 +220,179 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         XCTAssertFalse(
             patterns.contains { $0.patternType == .hrvPrecursor },
             "Only 2 sick windows should not meet the 3-window minimum"
+        )
+    }
+
+    /// Today's StoredDailyScore row is partial and ignored. The third sick window is the
+    /// two complete days ending yesterday; today's row carries a significant workout load
+    /// and today's live steps are normal, so the row is the only thing that could touch
+    /// the verdict. The control below proves the fixture is sensitive to a workout row.
+    func testHRVPrecursor_todaysPartialWorkoutRowCannotBlockASickWindow() async throws {
+        let fired = try await hrvPrecursorFires(workoutRowOffset: 0)
+        XCTAssertTrue(fired, "Today's partial row must not block a complete-days sick window")
+    }
+
+    /// Control: the same significant-load row on yesterday (inside the third window) blocks it.
+    func testHRVPrecursor_completeDayWorkoutRowBlocksASickWindow() async throws {
+        let fired = try await hrvPrecursorFires(workoutRowOffset: -1)
+        XCTAssertFalse(fired, "A significant workout on a sick-window day must block that window")
+    }
+
+    /// Windows at -80, -50 and -2 (days -2/-1), each day with a rest row, plus one
+    /// StoredDailyScore row with a significant load at `workoutRowOffset` (replacing that
+    /// day's rest row). Fires only if the third window counts.
+    private func hrvPrecursorFires(workoutRowOffset: Int) async throws -> Bool {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        let offsets = [-80, -50, -2]
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeHRVPrecursorHRV(baselineHRV: 60.0, precursorHRV: 45.0, sickOffsets: offsets)
+        mock.stepsData = makeHRVPrecursorSteps(windowCount: 3, sickOffsets: offsets)  // today = 8000
+        await analyzer.setDataProvider(mock)
+
+        let rest = makeRestDayRows(sickOffsets: offsets).filter { $0.date != day(workoutRowOffset) }
+        try await analyzer.insertDailyScores(rest + [
+            StoredDailyScore(date: day(workoutRowOffset), readinessScore: 70, dailyStrain: 1.0,
+                             workoutCount: 1, dailyLoad: 1.5)
+        ])
+
+        _ = try await analyzer.analyze()
+        return try await analyzer.fetchAllPatterns().contains { $0.patternType == .hrvPrecursor }
+    }
+
+    /// The third window's days have low steps but no score row. A missing row is unknown,
+    /// not a rest day: a ride whose row isn't written yet (the background pass never writes
+    /// them, and a cyclist logs few steps) would otherwise read as a sick day. The happy
+    /// path, with rows for all three windows, is the control.
+    func testHRVPrecursor_dayWithoutAScoreRowIsNotASickDay() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData   = makeHRVPrecursorHRV(baselineHRV: 60.0, precursorHRV: 45.0)
+        mock.stepsData = makeHRVPrecursorSteps(windowCount: 3)
+        await analyzer.setDataProvider(mock)
+
+        try await analyzer.insertDailyScores(makeRestDayRows(sickOffsets: [-80, -50]))
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .hrvPrecursor },
+            "A sick window whose days have no score row must not count"
+        )
+    }
+
+    /// A day can hold two score rows (a 0.0 twin from a write before the ride synced, and
+    /// the real one). The day's load is its highest row, so the third window's ride days
+    /// are not rest, and only two windows remain.
+    func testHRVPrecursor_zeroTwinBesideARideRowIsNotRest() async throws {
+        let fired = try await hrvPrecursorFiresWithThirdWindow { offsets in
+            offsets.flatMap { [
+                StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0),
+                StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 1, dailyLoad: 3.0)
+            ] }
+        }
+        XCTAssertFalse(fired, "A 0.0 twin must not turn a ride day into a rest day")
+    }
+
+    /// A row written mid-morning keeps a ride later that day at load 0 forever. A stored
+    /// workout with real load that day means it is not a rest day, whatever the row says.
+    func testHRVPrecursor_storedRideOnAZeroLoadRowDayIsNotRest() async throws {
+        let fired = try await hrvPrecursorFiresWithThirdWindow(
+            thirdWindowRows: { offsets in
+                offsets.map { StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0) }
+            },
+            workouts: [
+                StoredWorkout(
+                    id: "afternoon-ride", type: .cycling,
+                    startDate: Calendar.current.date(byAdding: .hour, value: 15, to: day(-1))!,
+                    duration: 90 * 60, distance: nil, power: nil, energy: nil, hr: 150, source: "test"
+                )
+            ]
+        )
+        XCTAssertFalse(fired, "A stored ride with real load must veto a zero-load row's rest verdict")
+    }
+
+    /// The veto is a load test, not a presence test: a 10-minute walk (load well under
+    /// `restDayLoadThreshold`) leaves a rest day a rest day.
+    func testHRVPrecursor_lowLoadStoredWorkoutDoesNotVetoRest() async throws {
+        let fired = try await hrvPrecursorFiresWithThirdWindow(
+            thirdWindowRows: { offsets in
+                offsets.map { StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0) }
+            },
+            workouts: [
+                StoredWorkout(
+                    id: "short-walk", type: .walking,
+                    startDate: Calendar.current.date(byAdding: .hour, value: 15, to: day(-1))!,
+                    duration: 10 * 60, distance: nil, power: nil, energy: nil, hr: 90, source: "test"
+                )
+            ]
+        )
+        XCTAssertTrue(fired, "A workout below the rest threshold must not veto a rest day")
+    }
+
+    /// Control: the same third window with plain rest rows and no ride fires.
+    func testHRVPrecursor_thirdWindowWithRestRowsFires() async throws {
+        let fired = try await hrvPrecursorFiresWithThirdWindow { offsets in
+            offsets.map { StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0) }
+        }
+        XCTAssertTrue(fired, "Three sick windows on rest rows must fire")
+    }
+
+    /// Windows at -80 and -50 on plain rest rows; the third window (days -2/-1) gets the
+    /// rows `thirdWindowRows` builds for offsets [-2, -1], plus any `workouts`.
+    private func hrvPrecursorFiresWithThirdWindow(
+        thirdWindowRows: ([Int]) -> [StoredDailyScore],
+        workouts: [StoredWorkout] = []
+    ) async throws -> Bool {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        let offsets = [-80, -50, -2]
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeHRVPrecursorHRV(baselineHRV: 60.0, precursorHRV: 45.0, sickOffsets: offsets)
+        mock.stepsData = makeHRVPrecursorSteps(windowCount: 3, sickOffsets: offsets)
+        await analyzer.setDataProvider(mock)
+
+        try await analyzer.insertDailyScores(makeRestDayRows(sickOffsets: [-80, -50]) + thirdWindowRows([-2, -1]))
+        try await analyzer.insertWorkouts(workouts)
+
+        _ = try await analyzer.analyze()
+        return try await analyzer.fetchAllPatterns().contains { $0.patternType == .hrvPrecursor }
+    }
+
+    /// Today's step count is partial: at 9am nearly everyone is under 2000. Two complete
+    /// sick windows, then yesterday low and today near-zero. Counted, (yesterday, today)
+    /// would be the third window (its HRV precursor is seeded), so the pattern would fire.
+    func testHRVPrecursor_todaysPartialStepsCannotFormASickWindow() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeHRVPrecursorHRV(baselineHRV: 60.0, precursorHRV: 45.0, sickOffsets: [-80, -50, -1])
+        var steps = makeHRVPrecursorSteps(windowCount: 2, sickOffsets: [-80, -50])
+        for (offset, count) in [(-1, 1000), (0, 200)] {
+            let idx = try XCTUnwrap(steps.firstIndex { Calendar.current.isDate($0.date, inSameDayAs: day(offset)) })
+            steps[idx] = (date: steps[idx].date, steps: count)
+        }
+        mock.stepsData = steps
+        await analyzer.setDataProvider(mock)
+
+        // Rest rows on every candidate day, today included, so only the partial-steps
+        // rule can keep (yesterday, today) out.
+        try await analyzer.insertDailyScores(makeRestDayRows(sickOffsets: [-80, -50, -1]))
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .hrvPrecursor },
+            "Today's partial step count must not pair with yesterday to form a sick window"
         )
     }
 
@@ -597,6 +772,16 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         return data
     }
 
+    /// Zero-load StoredDailyScore rows for both days of each sick window. The sick-day
+    /// proxy needs a row showing no significant load; a missing row is unknown.
+    private func makeRestDayRows(sickOffsets: [Int]) -> [StoredDailyScore] {
+        sickOffsets.flatMap { offset in
+            [offset, offset + 1].map {
+                StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0)
+            }
+        }
+    }
+
     /// 90-day step series. Most days = 8000 steps. For the first `windowCount` sick offsets:
     /// two consecutive days each with 1000 steps (sick-day proxy, no workout).
     private func makeHRVPrecursorSteps(
@@ -619,6 +804,36 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         return data
     }
 
+    /// Three sequences from complete days, plus a fourth whose crash day is today.
+    /// Today's row is partial, so the fourth must not count and the n >= 4 gate holds.
+    func testBackToBackCrash_todaysRowCannotCompleteASequence() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        await analyzer.setDataProvider(mock)
+
+        let yesterday = day(-1), twoDaysAgo = day(-2)
+        var scores = makeBackToBackScores(confirmedCount: 3, totalSequences: 3)
+            .filter { $0.date != yesterday && $0.date != twoDaysAgo }
+        scores.append(StoredDailyScore(date: twoDaysAgo, readinessScore: 70, dailyStrain: 1.0,
+                                       workoutCount: 1, dailyLoad: 1.5))
+        scores.append(StoredDailyScore(date: yesterday, readinessScore: 65, dailyStrain: 1.0,
+                                       workoutCount: 1, dailyLoad: 1.5))
+        scores.append(StoredDailyScore(date: day(0), readinessScore: 45, dailyStrain: 1.0,
+                                       workoutCount: 0, dailyLoad: 0.0))
+        try await analyzer.insertDailyScores(scores)
+
+        _ = try await analyzer.analyze()
+
+        let patterns = try await analyzer.fetchAllPatterns()
+        XCTAssertFalse(
+            patterns.contains { $0.patternType == .backToBackCrash },
+            "Only 3 complete-day sequences; today's row must not supply a fourth"
+        )
+    }
+
     // MARK: - Back-to-Back Crash Fixtures
 
     /// Generates 90 days of StoredDailyScore covering `totalSequences` back-to-back triplets.
@@ -638,7 +853,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         daysBack: Int = 90
     ) -> [StoredDailyScore] {
         (0..<daysBack).map { i in
-            let date = day(-(daysBack - 1 - i))
+            let date = day(-(daysBack - i))
             let seqIdx = i / 10
             let slot = i % 10
 
@@ -672,7 +887,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
     /// No day should qualify as a "hard day" so the detector must return nil regardless of readiness drops.
     func testWarmupDaysDoNotCountAsHardDays() async throws {
         let scores = (0..<90).map { i -> StoredDailyScore in
-            let date = day(-(89 - i))
+            let date = day(-(90 - i))
             // Alternate score to create apparent readiness drops — these should be ignored
             // because the dailyLoad never reaches hardDayLoadThreshold (1.0).
             let score = i % 3 == 2 ? 45 : 70
