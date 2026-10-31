@@ -84,7 +84,7 @@
 1. The foreground sync must dedupe HealthKit rides against STORED Strava rows, not only the Strava list fetched in that call (a failed or absent Strava fetch currently stores HK-UUID duplicates).
 2. HealthKit workouts must be fetched over a fixed trailing window (late writers like Garmin/Zwift/Wahoo backdate rides), and `lastSyncDate` must not advance when `syncRecentData`'s fetch fails.
 3. Never rewrite readinessScore/dailyStrain: load and count only.
-4. Don't run during resetAllData/performFullResync (StoredWorkout is emptied first).
+4. Don't run during resetAllData (StoredWorkout is emptied first).
 5. Key days by `dateString`, not `startOfDay(row.date)` (westward time-zone travel shifts rows a day).
 6. Compare loads with a tolerance and fetch workouts sorted.
 7. Missing rows must not be filled before the Strava sync: a background fill freezes Health-only loads.
