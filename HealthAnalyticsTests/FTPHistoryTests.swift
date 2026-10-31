@@ -388,13 +388,110 @@ final class ZoneBackfillDeletedActivityTests: XCTestCase {
     }
 
     // Value: protects=a deleted activity resolves to the permanent no-stream marker and only
-    //   that error does; fails_when=a 404 is counted toward the 3-error stop again, or a rate
-    //   limit/network error is written as permanent; why_new=new rule; seam=none;
-    //   no_claim=the backfill loop itself (SyncManager singleton, shared store)
+    //   that error does; fails_when=a rate limit/network error is classified as permanent, or a
+    //   404 stops being; why_new=new rule; seam=none; no_claim=the loop's error counting
+    //   (ZoneBackfillLoopTests)
     func test_onlyADeletedActivity_resolvesToThePermanentMarker() {
         XCTAssertEqual(SyncManager.zoneCSVAfterFetchError(StravaError.activityNotFound), SyncManager.noPowerStreamCSV)
         XCTAssertNil(SyncManager.zoneCSVAfterFetchError(StravaError.fetchFailed))
         XCTAssertNil(SyncManager.zoneCSVAfterFetchError(StravaError.notAuthenticated))
         XCTAssertNil(SyncManager.zoneCSVAfterFetchError(URLError(.notConnectedToInternet)))
+    }
+}
+
+// MARK: - Zone backfill loop (fake fetch, write and pause)
+
+/// Drives `SyncManager.runZoneBackfill`, the loop `backfillPowerZones` runs with the real
+/// Strava fetch, store write and 1 s pause, through fakes.
+@MainActor
+final class ZoneBackfillLoopTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_790_000_000)
+
+    private enum Answer { case zones([Double]), noStream, deleted, failed }
+    private struct Boom: Error {}
+
+    private func rows(_ count: Int, csv: String? = nil) -> [SyncManager.ZoneBackfillRow] {
+        (0..<count).map { i in
+            SyncManager.ZoneBackfillRow(id: "\(100 + i)", startDate: now.addingTimeInterval(-Double(i) * 86400), csv: csv, ftp: 200)
+        }
+    }
+
+    /// Runs the loop with one scripted answer per row; returns what was written and the result.
+    private func run(_ rows: [SyncManager.ZoneBackfillRow], _ answers: [Answer], pauses: Bool = true)
+        async -> (writes: [String: String], fetchedIDs: [String], result: (fetched: Int, stoppedOnErrors: Bool)) {
+        var writes: [String: String] = [:]
+        var fetchedIDs: [String] = []
+        var script = answers
+        let result = await SyncManager.runZoneBackfill(
+            rows,
+            fetch: { row in
+                fetchedIDs.append(row.id)
+                switch script.removeFirst() {
+                case .zones(let z): return z
+                case .noStream: return nil
+                case .deleted: throw StravaError.activityNotFound
+                case .failed: throw Boom()
+                }
+            },
+            write: { row, csv in writes[row.id] = csv },
+            pause: { pauses },
+            now: { self.now }
+        )
+        return (writes, fetchedIDs, result)
+    }
+
+    // Value: protects=three rides deleted on Strava in a row no longer stop the pass, so older
+    //   rides still get zones; fails_when=a 404 counts toward the 3-error stop again; why_new=the
+    //   loop had no test; seam=runZoneBackfill (non-test callers: 1, backfillPowerZones);
+    //   no_claim=Strava's real 404 (scripted fetch)
+    func test_threeDeletedRidesInARow_doNotStopThePass() async {
+        let out = await run(rows(4), [.deleted, .deleted, .deleted, .zones([60, 0, 0, 0, 0, 0, 0])])
+        XCTAssertFalse(out.result.stoppedOnErrors)
+        XCTAssertEqual(out.fetchedIDs.count, 4, "the ride after three deleted ones is still fetched")
+        XCTAssertEqual(out.writes["100"], SyncManager.noPowerStreamCSV)
+        XCTAssertEqual(out.writes["103"], "60,0,0,0,0,0,0")
+        XCTAssertEqual(out.result.fetched, 4)
+    }
+
+    // Value: protects=rate-limit/network errors still stop the pass after three in a row and
+    //   write nothing; fails_when=the stop is removed or failures get written as permanent;
+    //   why_new=the loop had no test; seam=runZoneBackfill (non-test callers: 1);
+    //   no_claim=which real errors Strava returns (scripted)
+    func test_threeFailuresInARow_stopThePass_andWriteNothing() async {
+        let out = await run(rows(4), [.failed, .failed, .failed, .zones([1, 1, 1, 1, 1, 1, 1])])
+        XCTAssertTrue(out.result.stoppedOnErrors)
+        XCTAssertEqual(out.fetchedIDs.count, 3)
+        XCTAssertTrue(out.writes.isEmpty)
+    }
+
+    // Value: protects=a success resets the error run, and a 404 neither counts nor resets it;
+    //   fails_when=either rule flips; why_new=the loop had no test; seam=runZoneBackfill
+    //   (non-test callers: 1); no_claim=none beyond protects
+    func test_successResetsTheErrorRun_deletedNeitherCountsNorResets() async {
+        let reset = await run(rows(5), [.failed, .failed, .zones([1, 1, 1, 1, 1, 1, 1]), .failed, .failed])
+        XCTAssertFalse(reset.result.stoppedOnErrors)
+        let notReset = await run(rows(4), [.failed, .failed, .deleted, .failed])
+        XCTAssertTrue(notReset.result.stoppedOnErrors)
+        XCTAssertEqual(notReset.writes["102"], SyncManager.noPowerStreamCSV)
+    }
+
+    // Value: protects=a no-watts answer writes the retry marker on a fresh row and the
+    //   permanent marker on a retry row; fails_when=the loop passes the wrong current CSV;
+    //   why_new=only the pure rule was tested; seam=runZoneBackfill (non-test callers: 1);
+    //   no_claim=none beyond protects
+    func test_noStream_writesRetryOnFirstMiss_permanentOnTheRetry() async {
+        let fresh = await run(rows(1), [.noStream])
+        XCTAssertEqual(fresh.writes["100"], SyncManager.noPowerStreamRetryMarker(at: now))
+        let retried = await run(rows(1, csv: SyncManager.noPowerStreamRetryMarker(at: now.addingTimeInterval(-2 * 86400))), [.noStream])
+        XCTAssertEqual(retried.writes["100"], SyncManager.noPowerStreamCSV)
+    }
+
+    // Value: protects=a cancelled pause (app backgrounded) ends the pass after the current row;
+    //   fails_when=the loop ignores cancellation; why_new=the loop had no test;
+    //   seam=runZoneBackfill (non-test callers: 1); no_claim=real Task cancellation
+    func test_cancelledPause_endsThePass() async {
+        let out = await run(rows(3), [.zones([1, 1, 1, 1, 1, 1, 1]), .zones([1, 1, 1, 1, 1, 1, 1]), .zones([1, 1, 1, 1, 1, 1, 1])], pauses: false)
+        XCTAssertEqual(out.fetchedIDs, ["100"])
+        XCTAssertEqual(out.result.fetched, 1)
     }
 }
