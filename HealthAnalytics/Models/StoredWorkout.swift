@@ -21,7 +21,7 @@ final class StoredWorkout {
     var distance: Double?
     var averagePower: Double?           // mean watts (for display)
     var normalizedPower: Double?        // Strava weighted_average_watts (NP)
-    var powerZoneSecondsCSV: String?    // "z1,z2,z3,z4,z5,z6,z7" seconds from stream — nil until fetched
+    var powerZoneSecondsCSV: String?    // "z1,z2,z3,z4,z5,z6,z7" seconds from stream — nil until fetched; SyncManager.noPowerStreamCSV ("") when Strava has no watts stream
     var zoneComputedAtFTP: Double?      // FTP used when powerZoneSecondsCSV was last computed; nil if zones not yet fetched
     var totalEnergyBurned: Double?
     var source: String
@@ -43,7 +43,8 @@ final class StoredWorkout {
         self.averageHeartRate = hr
     }
 
-    /// Decoded zone seconds [z1, z2, z3, z4, z5, z6, z7]. nil if stream not yet fetched.
+    /// Decoded zone seconds [z1, z2, z3, z4, z5, z6, z7]. nil if the stream is not yet
+    /// fetched, or fetched with no watts stream (`SyncManager.noPowerStreamCSV`).
     var powerZoneSeconds: [Double]? {
         guard let csv = powerZoneSecondsCSV else { return nil }
         let vals = csv.split(separator: ",").compactMap { Double($0) }

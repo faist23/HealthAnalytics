@@ -253,7 +253,7 @@ struct LiveBackgroundPassSteps: BackgroundPassSteps {
     func isProtectedDataAvailable() -> Bool { UIApplication.shared.isProtectedDataAvailable }
 
     func lastPatternRun() -> Date? {
-        UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
+        UserDefaults.standard.object(forKey: ReadinessRepository.lastPatternAnalysisKey) as? Date
     }
 
     func isRewritingStore() -> Bool { SyncManager.shared.isRewritingStore }
@@ -268,7 +268,7 @@ struct LiveBackgroundPassSteps: BackgroundPassSteps {
         try await repository.analyzePatternsForBackgroundPass(container: container, commitGate: commitGate)
     }
 
-    func stamp(_ startedAt: Date) { UserDefaults.standard.set(startedAt, forKey: "lastPatternAnalysisDate") }
+    func stamp(_ startedAt: Date) { UserDefaults.standard.set(startedAt, forKey: ReadinessRepository.lastPatternAnalysisKey) }
 
     func newestHRVSampleDate() async -> Date? {
         await withCheckedContinuation { continuation in

@@ -19,9 +19,8 @@ final class BackgroundRefreshGateTests: XCTestCase {
         let gate = BackgroundRefreshGate()
         var ran = false
 
-        let didRun = try await gate.run(skippingWhile: true) { ran = true }
+        try await gate.run(skippingWhile: true) { ran = true }
 
-        XCTAssertFalse(didRun)
         XCTAssertFalse(ran)
     }
 
@@ -29,9 +28,8 @@ final class BackgroundRefreshGateTests: XCTestCase {
         let gate = BackgroundRefreshGate()
         var ran = false
 
-        let didRun = try await gate.run(skippingWhile: false) { ran = true }
+        try await gate.run(skippingWhile: false) { ran = true }
 
-        XCTAssertTrue(didRun)
         XCTAssertTrue(ran)
     }
 
@@ -86,7 +84,7 @@ final class BackgroundRefreshGateTests: XCTestCase {
     // MARK: - Joining an in-flight refresh
 
     /// A second refresh requested while one runs (an HRV and a workout delivery back to
-    /// back) joins it: the work runs once and both callers hear it ran.
+    /// back) joins it: the work runs once and both callers return after it.
     func test_run_whileOneIsInFlight_joinsIt_workRunsOnce() async throws {
         let gate = BackgroundRefreshGate()
         let (release, releaseWork) = AsyncStream<Never>.makeStream()
@@ -105,12 +103,10 @@ final class BackgroundRefreshGateTests: XCTestCase {
         for _ in 0..<20 { await Task.yield() }
 
         releaseWork.finish()
-        let firstRan = try await first.value
-        let secondRan = try await second.value
+        try await first.value
+        try await second.value
 
         XCTAssertEqual(runs, 1, "The joiner must not start a second upsert")
-        XCTAssertTrue(firstRan)
-        XCTAssertTrue(secondRan)
     }
 
     /// The in-flight refresh fails: the joiner sees the same error, not a silent success.

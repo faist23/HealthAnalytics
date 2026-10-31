@@ -130,6 +130,10 @@ class ReadinessRepository: ObservableObject {
     /// below `TrainingPattern.activeWindowDays` or patterns expire before their refresh.
     nonisolated static let patternAnalysisStalenessInterval: TimeInterval = 7 * 86400
 
+    /// UserDefaults key for the pattern-analysis throttle stamp, shared by the foreground
+    /// run and the background pass.
+    nonisolated static let lastPatternAnalysisKey = "lastPatternAnalysisDate"
+
     private static let dailyScoreDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
@@ -242,7 +246,7 @@ class ReadinessRepository: ObservableObject {
     /// Returns false only when the commit gate declined, so joiners rerun (see
     /// `runPatternAnalysis`); every other outcome counts as completed.
     private func performPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async -> Bool {
-        let lastRun = UserDefaults.standard.object(forKey: "lastPatternAnalysisDate") as? Date
+        let lastRun = UserDefaults.standard.object(forKey: Self.lastPatternAnalysisKey) as? Date
         guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return true }
 
         // The throttle is stamped AFTER a run that actually reached upsertPatterns —
@@ -274,7 +278,7 @@ class ReadinessRepository: ObservableObject {
             // so a clean return is NOT proof the patterns were refreshed. Callers can no
             // longer cancel this task (it belongs to the flight), but check anyway.
             if !Task.isCancelled {
-                UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
+                UserDefaults.standard.set(Date(), forKey: Self.lastPatternAnalysisKey)
                 // The Coach paragraph bakes in the active pattern set. A run that
                 // detected or expired a pattern must re-check the cache now, or a
                 // launch-time analysis that finished after the coach read leaves
@@ -294,7 +298,7 @@ class ReadinessRepository: ObservableObject {
         } catch PatternAnalysisError.insufficientData {
             // < 60 days of history — silent, no error surfaced. Safe to throttle: there
             // are no patterns to keep alive, so nothing can go stale behind the window.
-            UserDefaults.standard.set(Date(), forKey: "lastPatternAnalysisDate")
+            UserDefaults.standard.set(Date(), forKey: Self.lastPatternAnalysisKey)
         } catch {
             // Deliberately NOT stamping — a failed run must be retried on next appear,
             // not locked out for a week.
@@ -1139,7 +1143,7 @@ class ReadinessRepository: ObservableObject {
         // anyone it keeps re-checking (no sleep data, or a skipped day).
         if inserted > 0 {
             try? modelContext.save()
-            UserDefaults.standard.removeObject(forKey: "lastPatternAnalysisDate")
+            UserDefaults.standard.removeObject(forKey: Self.lastPatternAnalysisKey)
         }
         UserDefaults.standard.set(true, forKey: udKey)
 

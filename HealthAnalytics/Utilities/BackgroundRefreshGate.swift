@@ -19,14 +19,13 @@ final class BackgroundRefreshGate {
     private var inFlight: Task<Void, Error>?
 
     /// Runs `work` unless a foreground sync is running (`isSyncing`), in which case it
-    /// does nothing and returns false — the sync is storing that window with the Strava
-    /// copies. A refresh requested while another is in flight joins it.
-    @discardableResult
-    func run(skippingWhile isSyncing: Bool, _ work: @escaping @MainActor () async throws -> Void) async throws -> Bool {
-        guard !isSyncing else { return false }
+    /// does nothing — the sync is storing that window with the Strava copies. A refresh
+    /// requested while another is in flight joins it.
+    func run(skippingWhile isSyncing: Bool, _ work: @escaping @MainActor () async throws -> Void) async throws {
+        guard !isSyncing else { return }
         if let inFlight {
             try await inFlight.value
-            return true
+            return
         }
         let task = Task { [weak self] in
             // Cleared from inside the task, at completion, so a sync can't wait on a
@@ -36,7 +35,6 @@ final class BackgroundRefreshGate {
         }
         inFlight = task
         try await task.value
-        return true
     }
 
     /// Returns once any in-flight background refresh has finished, failed or not.
