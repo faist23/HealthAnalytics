@@ -623,10 +623,12 @@ class SyncManager: ObservableObject {
         )
 
         // Capture value-type tuples before leaving MainActor — @Model objects are not Sendable.
-        // Due retries go first so a large re-zone pass can't push them past the cap.
+        // Newest first, retries included: a retry whose fetch keeps failing (a deleted
+        // activity) must not sit ahead of new rides, or three of them stop every pass at
+        // the error limit before a new ride is reached.
         let workoutTuples: [(id: String, startDate: Date, csv: String?)] = await MainActor.run {
             let due = ((try? context.fetch(retries)) ?? []).filter { Self.isNoPowerStreamRetryDue($0.powerZoneSecondsCSV, now: now) }
-            let rows = due + ((try? context.fetch(unfetched)) ?? [])
+            let rows = (due + ((try? context.fetch(unfetched)) ?? [])).sorted { $0.startDate > $1.startDate }
             return rows.prefix(50).map { ($0.id, $0.startDate, $0.powerZoneSecondsCSV) }
         }
         guard !workoutTuples.isEmpty else { return }
