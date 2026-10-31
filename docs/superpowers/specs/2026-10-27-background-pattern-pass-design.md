@@ -201,11 +201,11 @@ Device checklist (no seam):
 | `Services/HealthKit/HealthDataObserver.swift` | new |
 | `Services/Analytics/TrainingDNAAnalyzer.swift` | commit gate; `notificationSent` saved before send; complete-days anchoring |
 | `Services/Analytics/ReadinessRepository.swift` | `runBackgroundPass` (background trigger runs the pass), `analyzePatternsForBackgroundPass`, and `runPatternAnalysis`'s flight work returning false only when its commit gate declined (foreground runs use the same commit gate); `backfillHistoricalScores` is unchanged from main. The observer is registered from the AppDelegate's `didFinishLaunching` and right after onboarding in `HealthAnalyticsApp`, not from `bootstrap()` (see Architecture) |
-| `Utilities/SyncManager.swift` | `refreshWorkoutsFromHealthKit()` (HealthKit-only, no notification, no `lastSyncDate`; window from `healthKitRefreshWindowStart`); `isRewritingStore` and `storeRewriteGeneration` for the rewrite guard; `noPowerStreamCSV` marks a ride with no watts stream |
+| `Utilities/SyncManager.swift` | `refreshWorkoutsFromHealthKit()` (HealthKit-only, no notification, no `lastSyncDate`; window from `healthKitRefreshWindowStart`); `isRewritingStore` and `storeRewriteGeneration` for the rewrite guard; `noPowerStreamCSV` marks a ride with no watts stream (the first such answer writes `noPowerStreamRetryMarker`, retried once at least a day after the miss) |
 | `Utilities/BackgroundRefreshGate.swift` | new: serializes the background upsert with the foreground sync (R6) |
 | `Utilities/SingleFlight.swift` | work reports completion; a joiner of an uncompleted run reruns once; `shouldStart` gate |
 | `Services/PatternNotificationService.swift` | `isAuthorized()`; `send` takes types, the analyzer marks and saves first |
-| `Models/StoredWorkout.swift` | `powerZoneSeconds` is nil for `noPowerStreamCSV` and for all-zero zones |
+| `Models/StoredWorkout.swift` | `powerZoneSeconds` is nil for `noPowerStreamCSV`, for a `noPowerStreamRetryMarker` and for all-zero zones |
 | `Views/BackgroundPassStatsView.swift` | new: the Background Pass counters screen |
 | `HealthAnalyticsApp.swift` | app-refresh handler runs the pass; `UIApplicationDelegateAdaptor` registers `HealthDataObserver` at launch |
 | `HealthAnalytics.entitlements` | `com.apple.developer.healthkit.background-delivery` |
