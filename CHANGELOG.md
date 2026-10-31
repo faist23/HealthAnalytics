@@ -3,6 +3,12 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.17.0] - 2026-10-31
+
+### Fixed
+
+- **A ride whose power data wasn't ready on Strava gets a second look.** When Strava has no power detail for a ride the first time the app asks, the app now asks once more, at least a day later, before settling on average power, so a ride whose upload was still being processed can still get its full power breakdown. This includes rides uploaded days after you rode them.
+
 ## [0.1.16.0] - 2026-10-31
 
 ### Added

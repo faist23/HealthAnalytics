@@ -321,3 +321,50 @@ final class PredictiveReadinessServiceLoadTests: XCTestCase {
         XCTAssertGreaterThan(load, 0.5, "A one-hour ride with a power dropout still carries real load")
     }
 }
+
+// MARK: - No-power-stream marker: one retry a day after the miss
+
+/// A Strava answer with no watts stream is retried once, a day after that answer, then
+/// marked permanent. The clock is the miss, not the ride's start: a stream that isn't
+/// processed yet happens when the ride reaches Strava, which can be days after the ride.
+final class NoPowerStreamMarkerTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_790_000_000)
+
+    // Value: protects=any ride's first no-watts answer gets one retry, a late upload included;
+    //   fails_when=the first miss writes the permanent marker, or keys the retry on the ride's
+    //   age again; why_new=the rule changed; seam=none; no_claim=the SwiftData fetch (singleton store)
+    func test_firstMiss_writesARetryMarkerStampedWithTheMiss() {
+        let csv = SyncManager.zoneCSVForNoPowerStream(current: nil, now: now)
+        XCTAssertEqual(SyncManager.noPowerStreamRetryDate(csv), now)
+    }
+
+    // Value: protects=the retried ride's second miss is final, so it is never fetched again;
+    //   fails_when=a retry marker is re-stamped instead, re-fetching it every day;
+    //   why_new=new rule; seam=none; no_claim=the SwiftData fetch (singleton store)
+    func test_missOnARetriedRide_writesThePermanentMarker() {
+        let retried = SyncManager.noPowerStreamRetryMarker(at: now.addingTimeInterval(-2 * 86400))
+        XCTAssertEqual(SyncManager.zoneCSVForNoPowerStream(current: retried, now: now), SyncManager.noPowerStreamCSV)
+    }
+
+    // Value: protects=the retry waits a full day after the miss; fails_when=the age check is
+    //   inverted or dropped, re-fetching a fresh retry on the next sync; why_new=new rule;
+    //   seam=none; no_claim=none beyond protects
+    func test_retryIsDueADayAfterTheMiss() {
+        let marker = SyncManager.noPowerStreamRetryMarker(at: now)
+        XCTAssertFalse(SyncManager.isNoPowerStreamRetryDue(marker, now: now.addingTimeInterval(23 * 3600)))
+        XCTAssertTrue(SyncManager.isNoPowerStreamRetryDue(marker, now: now.addingTimeInterval(SyncManager.noPowerStreamRetryAge)))
+        XCTAssertFalse(SyncManager.isNoPowerStreamRetryDue(SyncManager.noPowerStreamCSV, now: now))
+        XCTAssertFalse(SyncManager.isNoPowerStreamRetryDue(nil, now: now))
+    }
+
+    // Value: protects=the retry marker reads as "no zones" everywhere; fails_when=its format
+    //   decodes as zones; why_new=new value; seam=none; no_claim=none beyond protects
+    func test_retryMarker_decodesAsNoZones() {
+        let ride = StoredWorkout(
+            id: "fresh", type: .cycling, startDate: now, duration: 3600,
+            distance: nil, power: 180, energy: nil, hr: nil, source: "Strava"
+        )
+        ride.powerZoneSecondsCSV = SyncManager.noPowerStreamRetryMarker(at: now)
+        XCTAssertNil(ride.powerZoneSeconds)
+    }
+}

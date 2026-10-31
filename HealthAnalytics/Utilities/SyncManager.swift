@@ -42,9 +42,38 @@ class SyncManager: ObservableObject {
 
     /// `powerZoneSecondsCSV` for a Strava ride with no watts stream (estimated power).
     /// Decodes as no zones (`StoredWorkout.powerZoneSeconds` needs 7 values), and the
-    /// backfill only fetches `nil` rows, so it stops re-fetching these after every sync;
-    /// each one held the store-rewrite flag and made background passes skip.
+    /// backfill never fetches it again; re-fetching these after every sync held the
+    /// store-rewrite flag and made background passes skip.
     nonisolated static let noPowerStreamCSV = ""
+
+    /// A first no-watts answer: `"retry:<seconds since 1970 of the miss>"`. The stream may
+    /// not be processed yet (that happens when the ride reaches Strava, which can be days
+    /// after the ride), so the backfill re-fetches it once, `noPowerStreamRetryAge` after the
+    /// miss, and a second miss writes `noPowerStreamCSV`. Decodes as no zones.
+    nonisolated static let noPowerStreamRetryPrefix = "retry:"
+    nonisolated static let noPowerStreamRetryAge: TimeInterval = 86400
+
+    nonisolated static func noPowerStreamRetryMarker(at date: Date) -> String {
+        noPowerStreamRetryPrefix + String(Int(date.timeIntervalSince1970))
+    }
+
+    /// When the miss behind a retry marker happened; nil for anything else.
+    nonisolated static func noPowerStreamRetryDate(_ csv: String?) -> Date? {
+        guard let csv, csv.hasPrefix(noPowerStreamRetryPrefix),
+              let seconds = Int(csv.dropFirst(noPowerStreamRetryPrefix.count)) else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(seconds))
+    }
+
+    nonisolated static func isNoPowerStreamRetryDue(_ csv: String?, now: Date) -> Bool {
+        guard let missedAt = noPowerStreamRetryDate(csv) else { return false }
+        return now.timeIntervalSince(missedAt) >= noPowerStreamRetryAge
+    }
+
+    /// The marker the backfill writes when Strava has no watts stream: a retry on the first
+    /// miss, permanent on the retry's miss.
+    nonisolated static func zoneCSVForNoPowerStream(current: String?, now: Date) -> String {
+        noPowerStreamRetryDate(current) == nil ? noPowerStreamRetryMarker(at: now) : noPowerStreamCSV
+    }
     @Published var syncProgress: String = ""
     @Published var isBackfillingHistory: Bool = false
     @Published var backfillProgress: Double = 0
@@ -574,7 +603,8 @@ class SyncManager: ObservableObject {
         guard StravaManager.shared.isAuthenticated else { return }
 
         let context = HealthDataContainer.shared.mainContext
-        var descriptor = FetchDescriptor<StoredWorkout>(
+        let now = Date()
+        var unfetched = FetchDescriptor<StoredWorkout>(
             predicate: #Predicate<StoredWorkout> {
                 $0.source == "Strava" &&
                 $0.averagePower != nil &&
@@ -582,11 +612,24 @@ class SyncManager: ObservableObject {
             },
             sortBy: [SortDescriptor(\.startDate, order: .reverse)]
         )
-        descriptor.fetchLimit = 50
+        unfetched.fetchLimit = 50
+        // Rides whose first no-watts answer is a day old: one more try. Few rows carry the
+        // marker, so the due check runs here rather than in the predicate.
+        let retryPrefix = Self.noPowerStreamRetryPrefix
+        let retries = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate<StoredWorkout> {
+                ($0.powerZoneSecondsCSV ?? "").starts(with: retryPrefix)
+            }
+        )
 
-        // Capture value-type tuples before leaving MainActor — @Model objects are not Sendable
-        let workoutTuples: [(id: String, startDate: Date)] = await MainActor.run {
-            ((try? context.fetch(descriptor)) ?? []).map { ($0.id, $0.startDate) }
+        // Capture value-type tuples before leaving MainActor — @Model objects are not Sendable.
+        // Newest first, retries included: a retry whose fetch keeps failing (a deleted
+        // activity) must not sit ahead of new rides, or three of them stop every pass at
+        // the error limit before a new ride is reached.
+        let workoutTuples: [(id: String, startDate: Date, csv: String?)] = await MainActor.run {
+            let due = ((try? context.fetch(retries)) ?? []).filter { Self.isNoPowerStreamRetryDue($0.powerZoneSecondsCSV, now: now) }
+            let rows = (due + ((try? context.fetch(unfetched)) ?? [])).sorted { $0.startDate > $1.startDate }
+            return rows.prefix(50).map { ($0.id, $0.startDate, $0.powerZoneSecondsCSV) }
         }
         guard !workoutTuples.isEmpty else { return }
 
@@ -605,7 +648,7 @@ class SyncManager: ObservableObject {
         var fetched = 0
         var consecutiveErrors = 0
         zoneBackfillError = nil
-        for (workoutID, startDate) in workoutTuples {
+        for (workoutID, startDate, currentCSV) in workoutTuples {
             guard let activityId = Int(workoutID) else { continue }
 
             let ftp = ftpValues.isEmpty
@@ -615,7 +658,8 @@ class SyncManager: ObservableObject {
             do {
                 // nil only when Strava has no watts stream; failures throw.
                 let zoneSecs = try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: ftp)
-                let csv = zoneSecs.map { $0.map { String(Int($0)) }.joined(separator: ",") } ?? Self.noPowerStreamCSV
+                let csv = zoneSecs.map { $0.map { String(Int($0)) }.joined(separator: ",") }
+                    ?? Self.zoneCSVForNoPowerStream(current: currentCSV, now: Date())
                 await MainActor.run {
                     var desc = FetchDescriptor<StoredWorkout>(
                         predicate: #Predicate { $0.id == workoutID }
@@ -711,21 +755,6 @@ class SyncManager: ObservableObject {
 
     // MARK: - Manual Operations
 
-    func performFullResync() async {
-        #if DEBUG
-        print("🔄 Forcing full resync...")
-        #endif
-        
-        hasCompletedHistoricalBackfill = false
-        lastSyncDate = nil
-        
-        let container = HealthDataContainer.shared
-        let dataHandler = DataPersistenceActor(modelContainer: container)
-        
-        await dataHandler.deleteAll()
-        await performSmartSync()
-    }
-    
     func resetAllData() async {
         #if DEBUG
         print("🗑️ Resetting all data...")
