@@ -418,9 +418,10 @@ final class ZoneBackfillLoopTests: XCTestCase {
 
     /// Runs the loop with one scripted answer per row; returns what was written and the result.
     private func run(_ rows: [SyncManager.ZoneBackfillRow], _ answers: [Answer], pauses: Bool = true)
-        async -> (writes: [String: String], fetchedIDs: [String], result: (fetched: Int, stoppedOnErrors: Bool)) {
+        async -> (writes: [String: String], fetchedIDs: [String], progress: [Int], result: (fetched: Int, stoppedOnErrors: Bool)) {
         var writes: [String: String] = [:]
         var fetchedIDs: [String] = []
+        var progress: [Int] = []
         var script = answers
         let result = await SyncManager.runZoneBackfill(
             rows,
@@ -435,9 +436,10 @@ final class ZoneBackfillLoopTests: XCTestCase {
             },
             write: { row, csv in writes[row.id] = csv },
             pause: { pauses },
-            now: { self.now }
+            now: { self.now },
+            onProgress: { progress.append($0) }
         )
-        return (writes, fetchedIDs, result)
+        return (writes, fetchedIDs, progress, result)
     }
 
     // Value: protects=three rides deleted on Strava in a row no longer stop the pass, so older
@@ -451,6 +453,8 @@ final class ZoneBackfillLoopTests: XCTestCase {
         XCTAssertEqual(out.writes["100"], SyncManager.noPowerStreamCSV)
         XCTAssertEqual(out.writes["103"], "60,0,0,0,0,0,0")
         XCTAssertEqual(out.result.fetched, 4)
+        // Extended by /ship coverage pass 2: the progress the FTP screen shows counts every written ride.
+        XCTAssertEqual(out.progress, [1, 2, 3, 4])
     }
 
     // Value: protects=rate-limit/network errors still stop the pass after three in a row and
@@ -462,6 +466,7 @@ final class ZoneBackfillLoopTests: XCTestCase {
         XCTAssertTrue(out.result.stoppedOnErrors)
         XCTAssertEqual(out.fetchedIDs.count, 3)
         XCTAssertTrue(out.writes.isEmpty)
+        XCTAssertTrue(out.progress.isEmpty, "no progress for rides that wrote nothing")
     }
 
     // Value: protects=a success resets the error run, and a 404 neither counts nor resets it;
@@ -493,5 +498,100 @@ final class ZoneBackfillLoopTests: XCTestCase {
         let out = await run(rows(3), [.zones([1, 1, 1, 1, 1, 1, 1]), .zones([1, 1, 1, 1, 1, 1, 1]), .zones([1, 1, 1, 1, 1, 1, 1])], pauses: false)
         XCTAssertEqual(out.fetchedIDs, ["100"])
         XCTAssertEqual(out.result.fetched, 1)
+        // Extended by /ship coverage pass 2: a cancelled pass is not reported as Strava errors.
+        XCTAssertFalse(out.result.stoppedOnErrors)
+    }
+}
+
+// MARK: - Zone backfill row selection and write (in-memory store)
+
+/// `backfillPowerZones` picks its rows with `SyncManager.zoneBackfillRows` and stores each
+/// result with `writeZoneCSV`, both against the context it is given.
+@MainActor
+final class ZoneBackfillStoreTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_790_000_000)
+    private var container: ModelContainer!
+    private var context: ModelContext { container.mainContext }
+
+    override func setUp() async throws {
+        let schema = Schema([StoredWorkout.self, StoredFTPSnapshot.self])
+        container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+    }
+
+    @discardableResult
+    private func ride(_ id: String, daysAgo: Double, power: Double? = 180, csv: String? = nil, source: String = "Strava") -> StoredWorkout {
+        let w = StoredWorkout(id: id, type: .cycling, startDate: now.addingTimeInterval(-daysAgo * 86400),
+                              duration: 3600, distance: nil, power: power, energy: nil, hr: nil, source: source)
+        w.powerZoneSecondsCSV = csv
+        context.insert(w)
+        return w
+    }
+
+    // Value: protects=the backfill fetches exactly the rides that need zones: unfetched Strava
+    //   rides with power, plus retries a day past their miss; fails_when=either query or the due
+    //   filter drifts (e.g. re-fetching "" rides every sync, or never retrying); why_new=the
+    //   queries had no test; seam=zoneBackfillRows (non-test callers: 1, backfillPowerZones);
+    //   no_claim=the on-device store (in-memory SwiftData)
+    func test_rows_selectUnfetchedAndDueRetriesOnly() throws {
+        ride("1", daysAgo: 1)                                                                     // unfetched: yes
+        ride("2", daysAgo: 2, csv: "1,1,1,1,1,1,1")                                               // has zones: no
+        ride("3", daysAgo: 3, csv: SyncManager.noPowerStreamCSV)                                  // permanent: no
+        ride("4", daysAgo: 4, csv: SyncManager.noPowerStreamRetryMarker(at: now.addingTimeInterval(-2 * 86400))) // due: yes
+        ride("5", daysAgo: 5, csv: SyncManager.noPowerStreamRetryMarker(at: now.addingTimeInterval(-3600)))      // not due: no
+        ride("6", daysAgo: 6, power: nil)                                                         // no power: no
+        ride("7", daysAgo: 7, source: "AppleWatch")                                               // not Strava: no
+        ride("not-a-number", daysAgo: 8)                                                          // no activity id: no
+        try context.save()
+
+        let ids = SyncManager.zoneBackfillRows(context: context, now: now, defaultFTP: { 250 }).map(\.id)
+        XCTAssertEqual(ids, ["1", "4"])
+    }
+
+    // Value: protects=rows come newest-first and capped, retries included in date order;
+    //   fails_when=the order or cap changes (a failing old retry ahead of new rides stalls the
+    //   pass); why_new=the ordering had no test; seam=zoneBackfillRows (non-test callers: 1);
+    //   no_claim=none beyond protects
+    func test_rows_areNewestFirstAndCapped() throws {
+        ride("10", daysAgo: 10, csv: SyncManager.noPowerStreamRetryMarker(at: now.addingTimeInterval(-2 * 86400)))  // old due retry
+        for d in 1...4 { ride("\(d)", daysAgo: Double(d)) }
+        try context.save()
+
+        let ids = SyncManager.zoneBackfillRows(context: context, now: now, limit: 3, defaultFTP: { 250 }).map(\.id)
+        XCTAssertEqual(ids, ["1", "2", "3"])
+    }
+
+    // Value: protects=each ride is zoned at the FTP in effect on its date, else the stored
+    //   default; fails_when=FTP resolution uses today's FTP or ignores snapshots; why_new=the
+    //   per-ride lookup had no test; seam=zoneBackfillRows (non-test callers: 1);
+    //   no_claim=StoredFTPSnapshot.resolved itself (tested above)
+    func test_rows_carryTheFTPInEffectOnTheRideDate() throws {
+        ride("20", daysAgo: 20)
+        ride("1", daysAgo: 1)
+        context.insert(StoredFTPSnapshot(date: now.addingTimeInterval(-30 * 86400), watts: 200, source: "manual"))
+        context.insert(StoredFTPSnapshot(date: now.addingTimeInterval(-10 * 86400), watts: 260, source: "manual"))
+        try context.save()
+        let ftps = Dictionary(uniqueKeysWithValues: SyncManager.zoneBackfillRows(context: context, now: now, defaultFTP: { 999 }).map { ($0.id, $0.ftp) })
+        XCTAssertEqual(ftps["20"], 200)
+        XCTAssertEqual(ftps["1"], 260)
+
+        try context.delete(model: StoredFTPSnapshot.self)
+        try context.save()
+        XCTAssertEqual(SyncManager.zoneBackfillRows(context: context, now: now, defaultFTP: { 999 }).first?.ftp, 999)
+    }
+
+    // Value: protects=a result is stored on its own ride with the FTP it was computed at;
+    //   fails_when=the write targets the wrong row or drops zoneComputedAtFTP (FTP edits then
+    //   never re-zone it); why_new=the write had no test; seam=writeZoneCSV (non-test callers: 1);
+    //   no_claim=none beyond protects
+    func test_write_setsCSVAndFTPOnThatRideOnly() throws {
+        let target = ride("1", daysAgo: 1)
+        let other = ride("2", daysAgo: 2)
+        try context.save()
+
+        SyncManager.writeZoneCSV("5,0,0,0,0,0,0", for: SyncManager.ZoneBackfillRow(id: "1", startDate: target.startDate, csv: nil, ftp: 240), in: context)
+
+        XCTAssertEqual(target.powerZoneSecondsCSV, "5,0,0,0,0,0,0")
+        XCTAssertEqual(target.zoneComputedAtFTP, 240)
+        XCTAssertNil(other.powerZoneSecondsCSV)
     }
 }
