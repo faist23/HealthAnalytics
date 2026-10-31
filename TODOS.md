@@ -155,6 +155,17 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15min)
 
+### Rides deleted on Strava can stop power zones from updating for your other rides
+**Priority:** P2 — surfaced by the v0.1.17.0 review; pre-existing
+
+**What:** `SyncManager.backfillPowerZones` walks up to 50 rides newest-first and stops the pass after 3 consecutive fetch errors (`consecutiveErrors >= 3`). `StravaManager.fetchPowerZoneSeconds` throws `fetchFailed` for every non-200, including a 404 for an activity deleted on Strava, and a throwing row keeps its `nil` (or `retry:` marker) so it is picked again next pass. Three such rides next to each other in date order stop every pass at the same spot.
+
+**Why:** It never recovers on its own. Every ride older than the stuck ones (including a late upload, or rides an FTP edit cleared for re-zoning) never gets zones, so its load stays on the less accurate average-power path and it is classified by heart rate instead of power. "Zone update paused" shows after every sync, and each pass holds the store-rewrite flag, so background pattern checks that land during it skip (`skippedSyncing`).
+
+**How to apply:** Make `fetchPowerZoneSeconds` report a 404 distinctly (its own `StravaError` case), and have the backfill write `SyncManager.noPowerStreamCSV` for that ride without counting it toward the error limit. Keep 429 and network errors as they are (stop and retry later). Also consider skipping a row that failed on its last pass instead of stopping, so one unrelated bad row can't block the rest.
+
+**Effort:** S (human: ~2h / CC+gstack: ~15min)
+
 ## Coach
 
 ### A hung analysis blocks every later pattern-analysis request
