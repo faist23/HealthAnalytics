@@ -138,9 +138,34 @@ final class StravaDeletedRidesTests: XCTestCase {
         let answers: [String: StravaManager.ActivityStatus] = ["gone": .gone, "edited": .exists, "flaky": .unknown]
         let gone = await SyncManager.confirmDeletedOnStrava(["gone", "edited", "flaky"], stillSameConnection: { true }) { answers[$0]! }
         XCTAssertEqual(gone, ["gone"])
-        XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: 404), .gone)
-        XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: 200), .exists)
-        for status in [401, 403, 429, 500] { XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: status), .unknown) }
+        let notFound = Data(#"{"message":"Record Not Found","errors":[{"resource":"Activity","field":"id","code":"invalid"}]}"#.utf8)
+        XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: 404, body: notFound), .gone)
+        XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: 200, body: Data()), .exists)
+        XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: 429, body: Data()), .rateLimited)
+        for status in [401, 403, 500] { XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: status, body: notFound), .unknown) }
+    }
+
+    // Value: protects=only Strava's own "Record Not Found" 404 counts as deleted; a 404 from a
+    //   proxy, CDN or an outage page doesn't; fails_when=any 404 is taken as gone again;
+    //   why_new=adversarial finding; seam=none; no_claim=Strava's exact body in production
+    func test_a404WithoutStravasNotFoundBody_isUnknown() {
+        XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: 404, body: Data("<html>Not Found</html>".utf8)), .unknown)
+        XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: 404, body: Data()), .unknown)
+        XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: 404, body: Data(#"{"message":"Not Found"}"#.utf8)), .unknown)
+    }
+
+    // Value: protects=a rate limit stops the checks (no burst of calls Strava will refuse) and
+    //   keeps every ride not yet confirmed; fails_when=the loop keeps calling after a 429;
+    //   why_new=adversarial finding; seam=confirmDeletedOnStrava (non-test callers: 1);
+    //   no_claim=Strava's real rate limiter
+    func test_aRateLimitStopsTheChecks() async {
+        var asked: [String] = []
+        let answers: [String: StravaManager.ActivityStatus] = ["a": .gone, "b": .rateLimited, "c": .gone]
+        let gone = await SyncManager.confirmDeletedOnStrava(["a", "b", "c"], stillSameConnection: { true }) { id in
+            asked.append(id); return answers[id]!
+        }
+        XCTAssertEqual(asked, ["a", "b"])
+        XCTAssertEqual(gone, ["a"], "confirmed before the limit still counts")
     }
 
     // Value: protects=a confirmed ride and its intent label are removed, nothing else; fails_when=

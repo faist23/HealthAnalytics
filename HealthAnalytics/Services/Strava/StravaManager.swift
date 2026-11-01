@@ -27,12 +27,18 @@ class StravaManager: ObservableObject {
         scope?.split(separator: ",").contains("activity:read_all") ?? false
     }
 
-    enum ActivityStatus: Equatable, Sendable { case exists, gone, unknown }
+    enum ActivityStatus: Equatable, Sendable { case exists, gone, rateLimited, unknown }
 
-    nonisolated static func activityStatus(forHTTPStatus status: Int) -> ActivityStatus {
+    /// `.gone` only for Strava's own answer that the record doesn't exist (a 404 whose JSON
+    /// message is "Record Not Found"); a 404 from anything else (a proxy, an outage page) says
+    /// nothing about the ride.
+    nonisolated static func activityStatus(forHTTPStatus status: Int, body: Data) -> ActivityStatus {
         switch status {
         case 200: return .exists
-        case 404: return .gone
+        case 429: return .rateLimited
+        case 404:
+            struct Fault: Decodable { let message: String }
+            return (try? JSONDecoder().decode(Fault.self, from: body))?.message == "Record Not Found" ? .gone : .unknown
         default: return .unknown
         }
     }
@@ -44,9 +50,9 @@ class StravaManager: ObservableObject {
               let url = URL(string: "\(StravaConfig.apiBaseURL)/activities/\(activityId)") else { return .unknown }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        guard let (_, response) = try? await URLSession.shared.data(for: request),
+        guard let (body, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse else { return .unknown }
-        return Self.activityStatus(forHTTPStatus: http.statusCode)
+        return Self.activityStatus(forHTTPStatus: http.statusCode, body: body)
     }
 
     /// Bumped on every token exchange and sign-out. Work that started under one connection
@@ -292,6 +298,9 @@ class StravaManager: ObservableObject {
     
     /// Checks if token needs refresh and refreshes it automatically
     private func refreshTokenIfNeeded() async throws {
+        // Captured before the tokens are read: a sign-out or reconnect while this refresh is in
+        // flight makes its result the old login's, which must not replace (or clear) the current one.
+        let generationAtRequest = await MainActor.run { connectionGeneration }
         guard let _ = accessToken,
               let refreshToken = refreshToken,
               let expiresAt = tokenExpiresAt else {
@@ -312,9 +321,6 @@ class StravaManager: ObservableObject {
         guard let tokenURL = URL(string: StravaConfig.tokenURL) else {
             throw StravaError.invalidURL
         }
-        // A sign-out or reconnect while this refresh is in flight: its tokens are the old
-        // login's and must not replace (or clear) the current ones.
-        let generationAtRequest = await MainActor.run { connectionGeneration }
 
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"

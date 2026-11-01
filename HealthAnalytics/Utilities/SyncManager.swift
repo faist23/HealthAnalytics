@@ -800,6 +800,7 @@ class SyncManager: ObservableObject {
         for id in candidates {
             let answer = await status(id)
             guard stillSameConnection() else { return [] }
+            if answer == .rateLimited { break }   // the rest wait for a later sync
             if answer == .gone { gone.append(id) }
         }
         return gone
