@@ -4,9 +4,9 @@
 //
 //  A ride deleted on Strava used to stay in the store and keep adding load. Each sync now
 //  compares stored Strava rides with Strava's newest page of activities. A ride missing from
-//  it is only a candidate: it is deleted when Strava answers 404 for that ride, and only for
-//  the athlete whose rides the store holds, with read_all granted, on a store not mixed by an
-//  account switch.
+//  it is only a candidate: it is deleted when Strava answers 404 for that ride, only if it is
+//  tagged with the connected athlete (set when that athlete's own list returned it), and only
+//  with read_all granted.
 //
 
 import XCTest
@@ -29,9 +29,10 @@ final class StravaDeletedRidesTests: XCTestCase {
     private func day(_ n: Double) -> Date { now.addingTimeInterval(-n * 86400) }
 
     @discardableResult
-    private func stored(_ id: String, daysAgo: Double, source: String = "Strava") -> StoredWorkout {
+    private func stored(_ id: String, daysAgo: Double, source: String = "Strava", athlete: Int? = 7) -> StoredWorkout {
         let w = StoredWorkout(id: id, type: .cycling, startDate: day(daysAgo), duration: 3600,
                               distance: nil, power: 180, energy: nil, hr: nil, source: source)
+        w.stravaAthleteId = source == "Strava" ? athlete : nil
         context.insert(w)
         return w
     }
@@ -40,9 +41,9 @@ final class StravaDeletedRidesTests: XCTestCase {
         check(listed: listed, oldestDaysAgo: oldestDaysAgo, full: full).ids.sorted()
     }
 
-    private func check(listed: Set<String>, oldestDaysAgo: Double?, full: Bool) -> DataPersistenceActor.StravaDeletionCheck {
+    private func check(listed: Set<String>, oldestDaysAgo: Double?, full: Bool, athlete: Int = 7) -> DataPersistenceActor.StravaDeletionCheck {
         DataPersistenceActor.stravaDeletionCandidates(
-            listedIDs: listed, oldestListed: oldestDaysAgo.map(day), pageWasFull: full, in: context
+            athlete: athlete, listedIDs: listed, oldestListed: oldestDaysAgo.map(day), pageWasFull: full, in: context
         )
     }
 
@@ -115,6 +116,18 @@ final class StravaDeletedRidesTests: XCTestCase {
         XCTAssertTrue(check(listed: ["kept"], oldestDaysAgo: 0.5, full: false).refused)
     }
 
+    // Value: protects=exactly the cap is still trusted; fails_when=`>` becomes `>=`;
+    //   why_new=review finding (one-sided boundary); seam=stravaDeletionCandidates (non-test
+    //   callers: 1); no_claim=none beyond protects
+    func test_exactlyTheCap_isStillTrusted() throws {
+        stored("kept", daysAgo: 0.5)
+        for d in 1...DataPersistenceActor.maxStravaDeletionCandidates { stored("m\(d)", daysAgo: Double(d)) }
+        try context.save()
+        let c = check(listed: ["kept"], oldestDaysAgo: 0.5, full: false)
+        XCTAssertFalse(c.refused)
+        XCTAssertEqual(c.ids.count, DataPersistenceActor.maxStravaDeletionCandidates)
+    }
+
     // MARK: Confirm and remove
 
     // Value: protects=only a ride Strava answers 404 for is deleted; a ride it still has (edited
@@ -143,42 +156,56 @@ final class StravaDeletedRidesTests: XCTestCase {
         XCTAssertEqual(Set(try context.fetch(FetchDescriptor<StoredIntentLabel>()).map(\.workoutId)), ["1"])
     }
 
-    // MARK: Who the store belongs to
+    // MARK: Whose rides they are
 
-    // Value: protects=deletion runs only for the store's athlete, with read_all granted, on a
-    //   store not mixed by a switch; fails_when=any of the four conditions is dropped (another
-    //   account's or a private-less list deletes rides); why_new=review findings;
-    //   seam=none; no_claim=the persistence of the values (UserDefaults)
+    // Value: protects=only rides tagged with the connected athlete can be deleted; another
+    //   account's rides, and rides never seen on a list (untagged, e.g. from before this release),
+    //   are never candidates; fails_when=the tag filter is dropped (a switched account's list
+    //   marks the other account's rides); why_new=review findings (account switches);
+    //   seam=stravaDeletionCandidates (non-test callers: 1); no_claim=none beyond protects
+    func test_onlyTheConnectedAthletesTaggedRides_areCandidates() throws {
+        stored("mine-listed", daysAgo: 1); stored("mine-gone", daysAgo: 2)
+        stored("other", daysAgo: 2, athlete: 8); stored("untagged", daysAgo: 3, athlete: nil)
+        try context.save()
+        XCTAssertEqual(candidates(listed: ["mine-listed"], oldestDaysAgo: 4, full: true), ["mine-gone"])
+    }
+
+    // Value: protects=a ride the connected athlete's own list returns is tagged with that athlete
+    //   (the only way a ride becomes deletable), and a HealthKit row with a listed id isn't;
+    //   fails_when=tagging stops or tags non-Strava rows; why_new=new; seam=tagStravaRides
+    //   (non-test callers: 1, the foreground sync); no_claim=none beyond protects
+    func test_listedRidesAreTaggedWithTheConnectedAthlete() throws {
+        let untagged = stored("1", daysAgo: 1, athlete: nil)
+        let other = stored("2", daysAgo: 2, athlete: 8)
+        let hk = stored("3", daysAgo: 3, source: "AppleWatch")
+        let unlisted = stored("4", daysAgo: 4, athlete: nil)
+        try context.save()
+        DataPersistenceActor.tagStravaRides(ids: ["1", "2", "3"], athlete: 7, in: context)
+        XCTAssertEqual(untagged.stravaAthleteId, 7)
+        XCTAssertEqual(other.stravaAthleteId, 7, "a ride on this athlete's own list is this athlete's")
+        XCTAssertNil(hk.stravaAthleteId)
+        XCTAssertNil(unlisted.stravaAthleteId)
+    }
+
+    // Value: protects=deletion runs only with a known connected athlete and read_all granted
+    //   (without it private rides are off the list); fails_when=either condition is dropped;
+    //   why_new=review finding (private rides); seam=none; no_claim=the persistence of the values
     func test_deletionGate() {
-        XCTAssertTrue(SyncManager.mayRemoveRidesDeletedOnStrava(connected: 7, baseline: 7, mixed: false, grantedScope: readAll))
-        XCTAssertFalse(SyncManager.mayRemoveRidesDeletedOnStrava(connected: 8, baseline: 7, mixed: false, grantedScope: readAll))
-        XCTAssertFalse(SyncManager.mayRemoveRidesDeletedOnStrava(connected: 7, baseline: 7, mixed: true, grantedScope: readAll))
-        XCTAssertFalse(SyncManager.mayRemoveRidesDeletedOnStrava(connected: 7, baseline: 7, mixed: false, grantedScope: "read,activity:read"))
-        XCTAssertFalse(SyncManager.mayRemoveRidesDeletedOnStrava(connected: 7, baseline: 7, mixed: false, grantedScope: nil))
-        XCTAssertFalse(SyncManager.mayRemoveRidesDeletedOnStrava(connected: nil, baseline: 7, mixed: false, grantedScope: readAll))
-        XCTAssertFalse(SyncManager.mayRemoveRidesDeletedOnStrava(connected: 7, baseline: nil, mixed: false, grantedScope: readAll))
+        XCTAssertTrue(SyncManager.mayRemoveRidesDeletedOnStrava(connected: 7, grantedScope: readAll))
+        XCTAssertFalse(SyncManager.mayRemoveRidesDeletedOnStrava(connected: 7, grantedScope: "read,activity:read"))
+        XCTAssertFalse(SyncManager.mayRemoveRidesDeletedOnStrava(connected: 7, grantedScope: nil))
+        XCTAssertFalse(SyncManager.mayRemoveRidesDeletedOnStrava(connected: nil, grantedScope: readAll))
     }
 
-    // Value: protects=an unbound store binds only on a sync where the page lists every stored ride
-    //   in its span (so a store already holding another account's rides never binds); fails_when=
-    //   binding goes back to "whoever is connected"; why_new=review finding (pre-upgrade switch);
-    //   seam=none; no_claim=none beyond protects
-    func test_bindingNeedsAVerifiedPage() {
-        XCTAssertEqual(SyncManager.rideStoreAthleteToBind(baseline: nil, connected: 7, grantedScope: readAll, candidateCount: 0, verified: true), 7)
-        XCTAssertNil(SyncManager.rideStoreAthleteToBind(baseline: nil, connected: 7, grantedScope: readAll, candidateCount: 1, verified: true))
-        XCTAssertNil(SyncManager.rideStoreAthleteToBind(baseline: nil, connected: 7, grantedScope: readAll, candidateCount: 0, verified: false))
-        XCTAssertNil(SyncManager.rideStoreAthleteToBind(baseline: 5, connected: 7, grantedScope: readAll, candidateCount: 0, verified: true))
-        XCTAssertNil(SyncManager.rideStoreAthleteToBind(baseline: nil, connected: 7, grantedScope: "read", candidateCount: 0, verified: true))
-    }
-
-    // Value: protects=connecting a different athlete while the store is bound marks it mixed, and
-    //   it stays mixed through a switch back (A→B→A no longer deletes B's rides); fails_when=the
-    //   mixed flag is dropped or cleared by reconnecting the original athlete; why_new=review
-    //   finding (A→B→A); seam=none; no_claim=resetAllData clearing it (singleton)
-    func test_connectingAnotherAthlete_marksTheStoreMixed_untilReset() {
-        XCTAssertTrue(SyncManager.rideStoreIsMixed(afterConnecting: 8, baseline: 7, wasMixed: false))
-        XCTAssertTrue(SyncManager.rideStoreIsMixed(afterConnecting: 7, baseline: 7, wasMixed: true), "switching back stays mixed")
-        XCTAssertFalse(SyncManager.rideStoreIsMixed(afterConnecting: 7, baseline: 7, wasMixed: false))
-        XCTAssertFalse(SyncManager.rideStoreIsMixed(afterConnecting: 7, baseline: nil, wasMixed: false))
+    // Value: protects=the granted scope is read from Strava's callback, so an unticked read_all
+    //   box turns deletion off; fails_when=the parse breaks (deletion silently never runs, or the
+    //   gate sees the wrong value); why_new=review finding; seam=none; no_claim=Strava's real redirect
+    func test_grantedScopeIsReadFromTheCallback() {
+        let full = URL(string: "healthanalytics://cb?state=&code=abc&scope=read,activity:read_all,profile:read_all")!
+        let unticked = URL(string: "healthanalytics://cb?state=&code=abc&scope=read,activity:read")!
+        let none = URL(string: "healthanalytics://cb?code=abc")!
+        XCTAssertTrue(StravaManager.grantsReadAll(StravaManager.grantedScope(fromCallback: full)))
+        XCTAssertFalse(StravaManager.grantsReadAll(StravaManager.grantedScope(fromCallback: unticked)))
+        XCTAssertNil(StravaManager.grantedScope(fromCallback: none))
     }
 }

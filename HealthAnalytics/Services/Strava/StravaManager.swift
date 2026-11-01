@@ -86,7 +86,12 @@ class StravaManager: ObservableObject {
         }
         
         try await exchangeCodeForToken(code: code)
-        grantedScope = components.queryItems?.first(where: { $0.name == "scope" })?.value
+        grantedScope = Self.grantedScope(fromCallback: url)
+    }
+
+    /// The scope Strava says the athlete granted, from the OAuth callback URL.
+    nonisolated static func grantedScope(fromCallback url: URL) -> String? {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "scope" })?.value
     }
     
     private func exchangeCodeForToken(code: String) async throws {
