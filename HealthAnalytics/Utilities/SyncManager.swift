@@ -509,6 +509,14 @@ class SyncManager: ObservableObject {
                 var keepFetching = true
                 let startDateTimestamp = Int(startDate.timeIntervalSince1970)
                 var firstPage: [StravaActivity]?
+                // Whose list this is: captured before the first request, checked before any write.
+                let athleteAtFetch = stravaManager.connectedAthleteId
+                let generationAtFetch = stravaManager.connectionGeneration
+                let sameConnection = { [stravaManager] in
+                    Self.isSameStravaConnection(athleteAtFetch: athleteAtFetch, generationAtFetch: generationAtFetch,
+                                                athleteNow: stravaManager.connectedAthleteId,
+                                                generationNow: stravaManager.connectionGeneration)
+                }
 
                 while keepFetching {
                     if let batch = try? await stravaManager.fetchActivities(page: page, perPage: Self.stravaActivitiesPageSize) {
@@ -550,7 +558,7 @@ class SyncManager: ObservableObject {
                 // Rides deleted on Strava: compare with the newest page, which every sync loads
                 // anyway. Rides the list returns are tagged as the connected athlete's; of those,
                 // delete only what Strava confirms (404) is gone.
-                if let firstPage, let athlete = stravaManager.connectedAthleteId {
+                if let firstPage, let athlete = athleteAtFetch, sameConnection() {
                     let listedIDs = Set(firstPage.map { String($0.id) })
                     await dataHandler.tagStravaRides(ids: listedIDs, athlete: athlete)
                     if Self.mayRemoveRidesDeletedOnStrava(connected: athlete, grantedScope: stravaManager.grantedScope) {
@@ -560,11 +568,11 @@ class SyncManager: ObservableObject {
                             oldestListed: firstPage.compactMap(\.startDateFormatted).min(),
                             pageWasFull: firstPage.count == Self.stravaActivitiesPageSize
                         )
-                        let gone = await Self.confirmDeletedOnStrava(check.ids) { id in
+                        let gone = await Self.confirmDeletedOnStrava(check.ids, stillSameConnection: sameConnection) { id in
                             guard let activityId = Int(id) else { return .unknown }
                             return await self.stravaManager.activityStatus(activityId: activityId)
                         }
-                        await dataHandler.removeStravaRides(ids: gone)
+                        if sameConnection() { await dataHandler.removeStravaRides(ids: gone) }
                         #if DEBUG
                         if !gone.isEmpty { print("   🗑️ Removed \(gone.count) ride(s) deleted on Strava") }
                         #endif
@@ -783,11 +791,25 @@ class SyncManager: ObservableObject {
 
     /// The deletions Strava confirms: a candidate is deleted only when Strava answers 404 for it.
     /// A ride it still has (an edited start date, a private ride) or can't answer for is kept.
+    /// If the Strava connection changes during the checks, nothing is confirmed: an answer from
+    /// the new login says nothing about the old one's rides.
     static func confirmDeletedOnStrava(_ candidates: [String],
+                                       stillSameConnection: () -> Bool,
                                        status: (String) async -> StravaManager.ActivityStatus) async -> [String] {
         var gone: [String] = []
-        for id in candidates where await status(id) == .gone { gone.append(id) }
+        for id in candidates {
+            let answer = await status(id)
+            guard stillSameConnection() else { return [] }
+            if answer == .gone { gone.append(id) }
+        }
         return gone
+    }
+
+    /// Whether the Strava connection a sync fetched its list under is still the current one:
+    /// same athlete and no connect or sign-out since.
+    nonisolated static func isSameStravaConnection(athleteAtFetch: Int?, generationAtFetch: Int,
+                                                   athleteNow: Int?, generationNow: Int) -> Bool {
+        athleteAtFetch != nil && athleteAtFetch == athleteNow && generationAtFetch == generationNow
     }
 
     /// Strava activities per list page; a page shorter than this is the whole history.

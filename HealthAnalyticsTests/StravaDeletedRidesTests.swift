@@ -136,7 +136,7 @@ final class StravaDeletedRidesTests: XCTestCase {
     //   seam=confirmDeletedOnStrava (non-test callers: 1); no_claim=Strava's real responses (scripted)
     func test_onlyA404ConfirmsADeletion() async {
         let answers: [String: StravaManager.ActivityStatus] = ["gone": .gone, "edited": .exists, "flaky": .unknown]
-        let gone = await SyncManager.confirmDeletedOnStrava(["gone", "edited", "flaky"]) { answers[$0]! }
+        let gone = await SyncManager.confirmDeletedOnStrava(["gone", "edited", "flaky"], stillSameConnection: { true }) { answers[$0]! }
         XCTAssertEqual(gone, ["gone"])
         XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: 404), .gone)
         XCTAssertEqual(StravaManager.activityStatus(forHTTPStatus: 200), .exists)
@@ -207,5 +207,40 @@ final class StravaDeletedRidesTests: XCTestCase {
         XCTAssertTrue(StravaManager.grantsReadAll(StravaManager.grantedScope(fromCallback: full)))
         XCTAssertFalse(StravaManager.grantsReadAll(StravaManager.grantedScope(fromCallback: unticked)))
         XCTAssertNil(StravaManager.grantedScope(fromCallback: none))
+    }
+
+    // Value: protects=a sync whose Strava connection changed (reconnect, sign-out, another
+    //   account) after it fetched the list tags and deletes nothing; fails_when=the athlete is
+    //   read after the fetch again, so a mid-sync reconnect tags one account's rides as another's;
+    //   why_new=fix-check finding (reconnect race); seam=none; no_claim=the generation bump sites
+    func test_aChangedConnection_isNotTheSameConnection() {
+        XCTAssertTrue(SyncManager.isSameStravaConnection(athleteAtFetch: 7, generationAtFetch: 3, athleteNow: 7, generationNow: 3))
+        XCTAssertFalse(SyncManager.isSameStravaConnection(athleteAtFetch: 7, generationAtFetch: 3, athleteNow: 8, generationNow: 4))
+        XCTAssertFalse(SyncManager.isSameStravaConnection(athleteAtFetch: 7, generationAtFetch: 3, athleteNow: 7, generationNow: 4), "reconnected as the same athlete still restarts")
+        XCTAssertFalse(SyncManager.isSameStravaConnection(athleteAtFetch: nil, generationAtFetch: 3, athleteNow: nil, generationNow: 3))
+    }
+
+    // Value: protects=the 404 checks stop as soon as the connection changes, so later candidates
+    //   aren't judged by the new login's token; fails_when=the loop ignores the check;
+    //   why_new=fix-check finding; seam=confirmDeletedOnStrava (non-test callers: 1);
+    //   no_claim=none beyond protects
+    func test_confirmStops_whenTheConnectionChangesMidLoop() async {
+        var asked: [String] = []
+        var same = true
+        let gone = await SyncManager.confirmDeletedOnStrava(["a", "b", "c"], stillSameConnection: { same }) { id in
+            asked.append(id)
+            if id == "a" { same = false }   // a reconnect lands while "a" is being checked
+            return .gone
+        }
+        XCTAssertEqual(asked, ["a"])
+        XCTAssertEqual(gone, [], "nothing judged across a connection change is deleted")
+    }
+
+    // Value: protects=a profile fetch that started under an older connection doesn't overwrite
+    //   the connected athlete; fails_when=the generation check is dropped; why_new=fix-check
+    //   finding (stale profile); seam=none; no_claim=the bump sites
+    func test_staleProfileFetch_doesNotRecordItsAthlete() {
+        XCTAssertTrue(StravaManager.mayRecordFetchedAthlete(generationAtRequest: 2, generationNow: 2))
+        XCTAssertFalse(StravaManager.mayRecordFetchedAthlete(generationAtRequest: 2, generationNow: 3))
     }
 }

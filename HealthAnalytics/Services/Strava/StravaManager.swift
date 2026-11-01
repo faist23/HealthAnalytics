@@ -49,6 +49,14 @@ class StravaManager: ObservableObject {
         return Self.activityStatus(forHTTPStatus: http.statusCode)
     }
 
+    /// Bumped on every token exchange and sign-out. Work that started under one connection
+    /// (a sync's list fetch, a profile fetch) writes nothing athlete-related once it has moved.
+    private(set) var connectionGeneration = 0
+
+    nonisolated static func mayRecordFetchedAthlete(generationAtRequest: Int, generationNow: Int) -> Bool {
+        generationAtRequest == generationNow
+    }
+
     /// The athlete these tokens belong to, kept across launches (`athlete` is not). Set at
     /// connect and whenever the profile is fetched; cleared on sign-out.
     var connectedAthleteId: Int? {
@@ -145,7 +153,9 @@ class StravaManager: ObservableObject {
             self.refreshToken = tokenResponse.refreshToken
             self.tokenExpiresAt = Date(timeIntervalSince1970: TimeInterval(tokenResponse.expiresAt))
             self.athlete = tokenResponse.athlete
-            if let id = tokenResponse.athlete?.id { self.connectedAthleteId = id }
+            // nil when the response names no athlete: never keep the previous login's id.
+            self.connectedAthleteId = tokenResponse.athlete?.id
+            self.connectionGeneration += 1
             self.isAuthenticated = true
             #if DEBUG
             print("✅ Successfully authenticated as \(tokenResponse.athlete?.fullName ?? "Unknown")")
@@ -199,6 +209,7 @@ class StravaManager: ObservableObject {
     /// The caller is responsible for persisting an FTPSnapshot if the value changed.
     @discardableResult
     func fetchAthleteProfile() async throws -> Int? {
+        let generationAtRequest = await MainActor.run { connectionGeneration }
         try await refreshTokenIfNeeded()
         guard let token = accessToken else { throw StravaError.notAuthenticated }
         var request = URLRequest(url: URL(string: "\(StravaConfig.apiBaseURL)/athlete")!)
@@ -220,6 +231,8 @@ class StravaManager: ObservableObject {
             UserDefaults.standard.set(ftp, forKey: "strava_ftp")
         }
         await MainActor.run {
+            // A reconnect while this was in flight: these are the old login's details.
+            guard Self.mayRecordFetchedAthlete(generationAtRequest: generationAtRequest, generationNow: self.connectionGeneration) else { return }
             self.athlete = fetched
             self.connectedAthleteId = fetched.id
         }
@@ -235,6 +248,7 @@ class StravaManager: ObservableObject {
         athlete = nil
         connectedAthleteId = nil
         grantedScope = nil
+        connectionGeneration += 1
         isAuthenticated = false
         activities = []
         clearTokensFromKeychain()
