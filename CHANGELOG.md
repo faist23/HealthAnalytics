@@ -3,6 +3,13 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.19.0] - 2026-11-01
+
+### Fixed
+
+- **A ride you delete on Strava stops counting toward your training load.** The app used to keep every ride it had ever imported, so a duplicate or accidental upload you removed on Strava kept adding to your load. Each sync now checks your recent rides against Strava and removes one only after Strava confirms it's gone. If the ride was also recorded on your Watch, the Watch copy stays and counts once. Rides from another Strava account are never touched. To turn this on for an existing connection, disconnect and reconnect Strava once in Settings.
+- **Signing out of Strava, or switching accounts, can no longer be undone by a background token refresh.** A refresh that finished after you signed out used to sign you back in, or put the old account's login back in place.
+
 ## [0.1.18.0] - 2026-10-31
 
 ### Fixed

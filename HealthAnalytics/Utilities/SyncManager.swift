@@ -508,9 +508,19 @@ class SyncManager: ObservableObject {
                 var page = 1
                 var keepFetching = true
                 let startDateTimestamp = Int(startDate.timeIntervalSince1970)
-                
+                var firstPage: [StravaActivity]?
+                // Whose list this is: captured before the first request, checked before any write.
+                let athleteAtFetch = stravaManager.connectedAthleteId
+                let generationAtFetch = stravaManager.connectionGeneration
+                let sameConnection = { [stravaManager] in
+                    Self.isSameStravaConnection(athleteAtFetch: athleteAtFetch, generationAtFetch: generationAtFetch,
+                                                athleteNow: stravaManager.connectedAthleteId,
+                                                generationNow: stravaManager.connectionGeneration)
+                }
+
                 while keepFetching {
-                    if let batch = try? await stravaManager.fetchActivities(page: page, perPage: 200) {
+                    if let batch = try? await stravaManager.fetchActivities(page: page, perPage: Self.stravaActivitiesPageSize) {
+                        if page == 1 { firstPage = batch }
                         if batch.isEmpty {
                             keepFetching = false
                         } else {
@@ -544,6 +554,30 @@ class SyncManager: ObservableObject {
                 }
                 
                 stravaActivities = allActivities.compactMap { mapStravaActivity($0) }
+
+                // Rides deleted on Strava: compare with the newest page, which every sync loads
+                // anyway. Rides the list returns are tagged as the connected athlete's; of those,
+                // delete only what Strava confirms (404) is gone.
+                if let firstPage, let athlete = athleteAtFetch, sameConnection() {
+                    let listedIDs = Set(firstPage.map { String($0.id) })
+                    await dataHandler.tagStravaRides(ids: listedIDs, athlete: athlete)
+                    if Self.mayRemoveRidesDeletedOnStrava(connected: athlete, grantedScope: stravaManager.grantedScope) {
+                        let check = await dataHandler.stravaDeletionCandidates(
+                            athlete: athlete,
+                            listedIDs: listedIDs,
+                            oldestListed: firstPage.compactMap(\.startDateFormatted).min(),
+                            pageWasFull: firstPage.count == Self.stravaActivitiesPageSize
+                        )
+                        let gone = await Self.confirmDeletedOnStrava(check.ids, stillSameConnection: sameConnection) { id in
+                            guard let activityId = Int(id) else { return .unknown }
+                            return await self.stravaManager.activityStatus(activityId: activityId)
+                        }
+                        if sameConnection() { await dataHandler.removeStravaRides(ids: gone) }
+                        #if DEBUG
+                        if !gone.isEmpty { print("   🗑️ Removed \(gone.count) ride(s) deleted on Strava") }
+                        #endif
+                    }
+                }
                 #if DEBUG
                 print("   ✅ Total Strava activities fetched: \(stravaActivities.count)")
                 #endif
@@ -748,6 +782,40 @@ class SyncManager: ObservableObject {
         } while zoneBackfillRerunRequested
     }
 
+    /// Rides deleted on Strava are removed only with a known connected athlete and
+    /// `activity:read_all` granted (without it Strava leaves private rides off the list, and they
+    /// would look deleted). Whose rides they are is the ride's own tag (`stravaAthleteId`).
+    nonisolated static func mayRemoveRidesDeletedOnStrava(connected: Int?, grantedScope: String?) -> Bool {
+        connected != nil && StravaManager.grantsReadAll(grantedScope)
+    }
+
+    /// The deletions Strava confirms: a candidate is deleted only when Strava answers 404 for it.
+    /// A ride it still has (an edited start date, a private ride) or can't answer for is kept.
+    /// If the Strava connection changes during the checks, nothing is confirmed: an answer from
+    /// the new login says nothing about the old one's rides.
+    static func confirmDeletedOnStrava(_ candidates: [String],
+                                       stillSameConnection: () -> Bool,
+                                       status: (String) async -> StravaManager.ActivityStatus) async -> [String] {
+        var gone: [String] = []
+        for id in candidates {
+            let answer = await status(id)
+            guard stillSameConnection() else { return [] }
+            if answer == .rateLimited { break }   // the rest wait for a later sync
+            if answer == .gone { gone.append(id) }
+        }
+        return gone
+    }
+
+    /// Whether the Strava connection a sync fetched its list under is still the current one:
+    /// same athlete and no connect or sign-out since.
+    nonisolated static func isSameStravaConnection(athleteAtFetch: Int?, generationAtFetch: Int,
+                                                   athleteNow: Int?, generationNow: Int) -> Bool {
+        athleteAtFetch != nil && athleteAtFetch == athleteNow && generationAtFetch == generationNow
+    }
+
+    /// Strava activities per list page; a page shorter than this is the whole history.
+    nonisolated static let stravaActivitiesPageSize = 200
+
     /// Strava just connected (first time, re-granted, or another athlete): give every ride
     /// marked "no power data" another look on the next backfill.
     func stravaDidConnect() {
@@ -882,7 +950,7 @@ class SyncManager: ObservableObject {
         lastSyncDate = nil
         
         await dataHandler.deleteAll()
-        
+
         // Fetch ALL historical data (10 years back)
         await syncAllHistoricalData(dataHandler: dataHandler)
         
@@ -937,6 +1005,80 @@ class SyncManager: ObservableObject {
 
 @ModelActor
 actor DataPersistenceActor {
+
+    /// More than this many stored rides missing from Strava's newest page is treated as bad data
+    /// (a short page, another account's list), not deletions.
+    static let maxStravaDeletionCandidates = 10
+
+    /// Which stored Strava rides Strava's newest page no longer lists. `refused` when the page
+    /// can't be trusted to say: it is empty or has no parsed date, none of the athlete's stored
+    /// rides in its span are on it, or more than `maxStravaDeletionCandidates` are missing. A
+    /// refused check deletes nothing.
+    struct StravaDeletionCheck: Sendable {
+        let ids: [String]
+        let refused: Bool
+    }
+
+    /// Candidates only: a ride is deleted after Strava answers 404 for it
+    /// (`SyncManager.confirmDeletedOnStrava`). Only rides tagged with `athlete` (the connected
+    /// one, see `tagStravaRides`) are considered: another account's rides and rides no list has
+    /// returned yet are never candidates. `listedIDs` is every activity on the page (dates
+    /// that fail to parse don't drop an id); `oldestListed` is its oldest parsed date. A full page
+    /// vouches only for rides dated after that (a ride at exactly that date is kept); a partial
+    /// page is the whole history. An empty page or no parsed date yields nothing. HealthKit rides
+    /// are never candidates.
+    static func stravaDeletionCandidates(athlete: Int, listedIDs: Set<String>, oldestListed: Date?, pageWasFull: Bool,
+                                         in context: ModelContext) -> StravaDeletionCheck {
+        guard !listedIDs.isEmpty, let oldestListed else { return StravaDeletionCheck(ids: [], refused: true) }
+        let after = pageWasFull ? oldestListed : Date.distantPast
+        let tag: Int? = athlete
+        let inSpan = (try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
+            $0.source == "Strava" && $0.stravaAthleteId == tag && $0.startDate > after
+        }))) ?? []
+        let missing = inSpan.filter { !listedIDs.contains($0.id) }.map(\.id)
+        let overlap = inSpan.count - missing.count
+        if !inSpan.isEmpty && overlap == 0 { return StravaDeletionCheck(ids: [], refused: true) }
+        if missing.count > maxStravaDeletionCandidates { return StravaDeletionCheck(ids: [], refused: true) }
+        return StravaDeletionCheck(ids: missing, refused: false)
+    }
+
+    /// Deletes these Strava rides (never a HealthKit row with the same id) and their intent labels.
+    static func removeStravaRides(ids: [String], in context: ModelContext) {
+        let wanted = Set(ids)
+        guard !wanted.isEmpty else { return }
+        let rides = ((try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.source == "Strava" }))) ?? [])
+            .filter { wanted.contains($0.id) }
+        guard !rides.isEmpty else { return }
+        let removed = Set(rides.map(\.id))
+        rides.forEach { context.delete($0) }
+        let labels = (try? context.fetch(FetchDescriptor<StoredIntentLabel>())) ?? []
+        labels.filter { removed.contains($0.workoutId) }.forEach { context.delete($0) }
+        try? context.save()
+    }
+
+    func stravaDeletionCandidates(athlete: Int, listedIDs: Set<String>, oldestListed: Date?, pageWasFull: Bool) -> StravaDeletionCheck {
+        Self.stravaDeletionCandidates(athlete: athlete, listedIDs: listedIDs, oldestListed: oldestListed,
+                                      pageWasFull: pageWasFull, in: modelContext)
+    }
+
+    /// Tags the stored Strava rides with these ids as `athlete`'s: they came back on that
+    /// athlete's own activity list, which never holds anyone else's activities.
+    static func tagStravaRides(ids: Set<String>, athlete: Int, in context: ModelContext) {
+        guard !ids.isEmpty else { return }
+        let rides = ((try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.source == "Strava" }))) ?? [])
+            .filter { ids.contains($0.id) && $0.stravaAthleteId != athlete }
+        guard !rides.isEmpty else { return }
+        rides.forEach { $0.stravaAthleteId = athlete }
+        try? context.save()
+    }
+
+    func tagStravaRides(ids: Set<String>, athlete: Int) {
+        Self.tagStravaRides(ids: ids, athlete: athlete, in: modelContext)
+    }
+
+    func removeStravaRides(ids: [String]) {
+        Self.removeStravaRides(ids: ids, in: modelContext)
+    }
     
     // MARK: - Metric Name Migration
     

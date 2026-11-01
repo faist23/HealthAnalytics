@@ -15,6 +15,62 @@ class StravaManager: ObservableObject {
     
     @Published var isAuthenticated = false
     @Published var athlete: StravaAthlete?
+
+    /// The scope Strava actually granted at the last connect (the athlete can untick boxes on the
+    /// consent screen); nil when unknown, e.g. connected before this was recorded.
+    var grantedScope: String? {
+        get { UserDefaults.standard.string(forKey: "strava_granted_scope") }
+        set { UserDefaults.standard.set(newValue, forKey: "strava_granted_scope") }
+    }
+
+    nonisolated static func grantsReadAll(_ scope: String?) -> Bool {
+        scope?.split(separator: ",").contains("activity:read_all") ?? false
+    }
+
+    enum ActivityStatus: Equatable, Sendable { case exists, gone, rateLimited, unknown }
+
+    /// `.gone` only for Strava's own answer that the record doesn't exist (a 404 whose JSON
+    /// message is "Record Not Found"); a 404 from anything else (a proxy, an outage page) says
+    /// nothing about the ride.
+    nonisolated static func activityStatus(forHTTPStatus status: Int, body: Data) -> ActivityStatus {
+        switch status {
+        case 200: return .exists
+        case 429: return .rateLimited
+        case 404:
+            struct Fault: Decodable { let message: String }
+            return (try? JSONDecoder().decode(Fault.self, from: body))?.message == "Record Not Found" ? .gone : .unknown
+        default: return .unknown
+        }
+    }
+
+    /// Whether Strava still has this activity, for this login: one GET of its summary. Any
+    /// failure is `.unknown`, never `.gone`.
+    func activityStatus(activityId: Int) async -> ActivityStatus {
+        guard (try? await refreshTokenIfNeeded()) != nil, let token = accessToken,
+              let url = URL(string: "\(StravaConfig.apiBaseURL)/activities/\(activityId)") else { return .unknown }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (body, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else { return .unknown }
+        return Self.activityStatus(forHTTPStatus: http.statusCode, body: body)
+    }
+
+    /// Bumped on every token exchange and sign-out. Work that started under one connection
+    /// (a sync's list fetch, a profile fetch) writes nothing athlete-related once it has moved.
+    private(set) var connectionGeneration = 0
+
+    /// Whether a request's result may be applied: no connect or sign-out happened while it was
+    /// in flight. A token refresh or profile fetch from an older connection is discarded.
+    nonisolated static func isStillCurrentConnection(generationAtRequest: Int, generationNow: Int) -> Bool {
+        generationAtRequest == generationNow
+    }
+
+    /// The athlete these tokens belong to, kept across launches (`athlete` is not). Set at
+    /// connect and whenever the profile is fetched; cleared on sign-out.
+    var connectedAthleteId: Int? {
+        get { UserDefaults.standard.object(forKey: "strava_athlete_id") as? Int }
+        set { UserDefaults.standard.set(newValue, forKey: "strava_athlete_id") }
+    }
     @Published var activities: [StravaActivity] = []
     
     private var accessToken: String?
@@ -46,6 +102,12 @@ class StravaManager: ObservableObject {
         }
         
         try await exchangeCodeForToken(code: code)
+        grantedScope = Self.grantedScope(fromCallback: url)
+    }
+
+    /// The scope Strava says the athlete granted, from the OAuth callback URL.
+    nonisolated static func grantedScope(fromCallback url: URL) -> String? {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "scope" })?.value
     }
     
     private func exchangeCodeForToken(code: String) async throws {
@@ -99,6 +161,9 @@ class StravaManager: ObservableObject {
             self.refreshToken = tokenResponse.refreshToken
             self.tokenExpiresAt = Date(timeIntervalSince1970: TimeInterval(tokenResponse.expiresAt))
             self.athlete = tokenResponse.athlete
+            // nil when the response names no athlete: never keep the previous login's id.
+            self.connectedAthleteId = tokenResponse.athlete?.id
+            self.connectionGeneration += 1
             self.isAuthenticated = true
             #if DEBUG
             print("✅ Successfully authenticated as \(tokenResponse.athlete?.fullName ?? "Unknown")")
@@ -152,6 +217,7 @@ class StravaManager: ObservableObject {
     /// The caller is responsible for persisting an FTPSnapshot if the value changed.
     @discardableResult
     func fetchAthleteProfile() async throws -> Int? {
+        let generationAtRequest = await MainActor.run { connectionGeneration }
         try await refreshTokenIfNeeded()
         guard let token = accessToken else { throw StravaError.notAuthenticated }
         var request = URLRequest(url: URL(string: "\(StravaConfig.apiBaseURL)/athlete")!)
@@ -169,10 +235,17 @@ class StravaManager: ObservableObject {
         #if DEBUG
         print("🏃 Decoded athlete: \(fetched.fullName), ftp=\(fetched.ftp.map(String.init) ?? "nil")")
         #endif
+        // A reconnect while this was in flight: these are the old login's details, FTP included.
+        let current = await MainActor.run { () -> Bool in
+            guard Self.isStillCurrentConnection(generationAtRequest: generationAtRequest, generationNow: self.connectionGeneration) else { return false }
+            self.athlete = fetched
+            self.connectedAthleteId = fetched.id
+            return true
+        }
+        guard current else { return nil }
         if let ftp = fetched.ftp, ftp > 0 {
             UserDefaults.standard.set(ftp, forKey: "strava_ftp")
         }
-        await MainActor.run { self.athlete = fetched }
         return fetched.ftp.flatMap { $0 > 0 ? $0 : nil }
     }
 
@@ -183,6 +256,9 @@ class StravaManager: ObservableObject {
         refreshToken = nil
         tokenExpiresAt = nil
         athlete = nil
+        connectedAthleteId = nil
+        grantedScope = nil
+        connectionGeneration += 1
         isAuthenticated = false
         activities = []
         clearTokensFromKeychain()
@@ -222,6 +298,9 @@ class StravaManager: ObservableObject {
     
     /// Checks if token needs refresh and refreshes it automatically
     private func refreshTokenIfNeeded() async throws {
+        // Captured before the tokens are read: a sign-out or reconnect while this refresh is in
+        // flight makes its result the old login's, which must not replace (or clear) the current one.
+        let generationAtRequest = await MainActor.run { connectionGeneration }
         guard let _ = accessToken,
               let refreshToken = refreshToken,
               let expiresAt = tokenExpiresAt else {
@@ -242,7 +321,7 @@ class StravaManager: ObservableObject {
         guard let tokenURL = URL(string: StravaConfig.tokenURL) else {
             throw StravaError.invalidURL
         }
-        
+
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -267,21 +346,24 @@ class StravaManager: ObservableObject {
         #endif
         
         guard httpResponse.statusCode == 200 else {
-            // If refresh fails, clear tokens and force re-auth
-            await MainActor.run {
+            // If refresh fails, clear tokens and force re-auth (unless a newer login replaced them)
+            let current = await MainActor.run { () -> Bool in
+                guard Self.isStillCurrentConnection(generationAtRequest: generationAtRequest, generationNow: self.connectionGeneration) else { return false }
                 self.accessToken = nil
                 self.refreshToken = nil
                 self.tokenExpiresAt = nil
                 self.athlete = nil
                 self.isAuthenticated = false
+                return true
             }
-            saveTokensToKeychain() // This will delete them since they're nil
+            if current { saveTokensToKeychain() } // This will delete them since they're nil
             throw StravaError.authenticationFailed
         }
         
         let tokenResponse = try JSONDecoder().decode(StravaTokenResponse.self, from: data)
         
-        await MainActor.run {
+        let current = await MainActor.run { () -> Bool in
+            guard Self.isStillCurrentConnection(generationAtRequest: generationAtRequest, generationNow: self.connectionGeneration) else { return false }
             self.accessToken = tokenResponse.accessToken
             self.refreshToken = tokenResponse.refreshToken
             self.tokenExpiresAt = Date(timeIntervalSince1970: TimeInterval(tokenResponse.expiresAt))
@@ -289,9 +371,10 @@ class StravaManager: ObservableObject {
             #if DEBUG
             print("✅ Token refreshed successfully. Expires at: \(self.tokenExpiresAt?.formatted() ?? "unknown")")
             #endif
+            return true
         }
-        
-        saveTokensToKeychain()
+
+        if current { saveTokensToKeychain() }
     }
     
     /// A streams request's failure: 404 means this login can't find the activity (deleted on

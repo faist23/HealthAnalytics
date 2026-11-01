@@ -26,6 +26,10 @@ final class StoredWorkout {
     var totalEnergyBurned: Double?
     var source: String
     var averageHeartRate: Double?
+    /// The Strava athlete whose own activity list returned this ride (a list only holds the
+    /// connected athlete's activities); nil until a list has. Only rides tagged with the
+    /// connected athlete can be removed as deleted on Strava.
+    var stravaAthleteId: Int?
 
     init(id: String, title: String? = nil, type: HKWorkoutActivityType, startDate: Date, duration: TimeInterval, distance: Double?, power: Double?, normalizedPower: Double? = nil, energy: Double?, hr: Double?, source: String) {
         self.id = id
@@ -41,6 +45,7 @@ final class StoredWorkout {
         self.totalEnergyBurned = energy
         self.source = source
         self.averageHeartRate = hr
+        self.stravaAthleteId = nil
     }
 
     /// Decoded zone seconds [z1, z2, z3, z4, z5, z6, z7]. nil if the stream is not yet
