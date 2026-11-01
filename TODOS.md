@@ -155,17 +155,6 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15min)
 
-### A ride deleted on Strava keeps counting toward your training load
-**Priority:** P2 — found while fixing the deleted-rides zone stall (v0.1.18.0); pre-existing
-
-**What:** Sync only inserts and updates. `DataPersistenceActor.upsertRecentData` upserts each fetched Strava activity, and nothing removes a stored Strava ride that Strava no longer lists, so a ride deleted on Strava stays in `StoredWorkout` and keeps adding its load (ACWR, daily load, pattern checks). It can also double-count: when a Watch ride was matched to its Strava copy, the HealthKit row was deleted; once the Strava copy is deleted and the next foreground sync still covers that day, the Watch workout no longer matches anything in the fetched list and is stored again under its HealthKit UUID beside the stale Strava row. (Read from the code, not reproduced. The background refresh avoids the double because it matches against stored Strava rows.)
-
-**Why:** Deleting a duplicate or accidental upload on Strava is the usual reason to delete there, and it inflates load until a full reset: wrong ACWR, and the sick-day proxy and taper checks read a heavier day than the rider had.
-
-**How to apply:** In the foreground sync, for the window it fetched from Strava, delete stored `source == "Strava"` rows whose id isn't in the fetched list (only when the Strava fetch for that window succeeded completely; a failed or partial page must delete nothing). A streams 404 from the zone backfill is a second signal the ride is gone, but a 404 can also mean another athlete's login, so don't delete on that alone. Test with an in-memory store like `ZoneBackfillStoreTests`.
-
-**Effort:** M (human: ~4h / CC+gstack: ~30min)
-
 ## Coach
 
 ### A hung analysis blocks every later pattern-analysis request
@@ -272,6 +261,7 @@
 
 ## Completed
 
+- **P2 — A ride deleted on Strava keeps counting toward your training load** — **Completed:** unreleased (2026-10-31). Each foreground sync compares stored Strava rides with the newest page of Strava activities it already loads and removes the ones Strava no longer lists (and their intent labels): a full page vouches only for rides after its oldest activity, a partial page is the whole history, an empty or failed page removes nothing, HealthKit rows are never touched (`DataPersistenceActor.removeRidesDeletedOnStrava`). Only while the connected athlete is the one whose rides the store holds (`StravaManager.connectedAthleteId`, `SyncManager.mayRemoveRidesDeletedOnStrava`; re-bound by Reset all data). `StravaDeletedRidesTests`.
 - **P2 — Rides deleted on Strava can stop power zones from updating for your other rides** — **Completed:** v0.1.18.0 (2026-10-31). `StravaManager.fetchPowerZoneSeconds` throws `StravaError.activityNotFound` for a 404 (`streamsError(forStatus:)`), and the zone backfill writes `SyncManager.noPowerStreamCSV` for that ride without counting it toward the 3-error stop (`zoneCSVAfterFetchError`); rate limits and network errors still stop the pass. `ZoneBackfillDeletedActivityTests`.
 - **P2 — Design the background pattern run properly** — **Completed:** v0.1.16.0 (2026-10-31). HealthKit background delivery (HRV + workouts) and app refresh both run one `BackgroundPatternPass` (HealthKit-only workout refresh, gated detection, abandon after 2 min; no score-row step in the background, missing rows are still filled only by the foreground refresh); store-based pattern checks read complete days ending yesterday; counters in Settings → Background Pass.
 - **P2 — Background pattern-analysis task likely never runs** — **Completed:** v0.1.15.0 (2026-10-27). Request is now `BGAppRefreshTaskRequest` (matching the SwiftUI `.appRefresh` handler), Info.plist declares `UIBackgroundModes` `fetch` (missing entirely before, so `submit` always threw), and the handler routes through `runPatternAnalysis(container:trigger: .background)`. Verified firing on device by Craig.

@@ -15,6 +15,13 @@ class StravaManager: ObservableObject {
     
     @Published var isAuthenticated = false
     @Published var athlete: StravaAthlete?
+
+    /// The athlete these tokens belong to, kept across launches (`athlete` is not). Set at
+    /// connect and whenever the profile is fetched; cleared on sign-out.
+    var connectedAthleteId: Int? {
+        get { UserDefaults.standard.object(forKey: "strava_athlete_id") as? Int }
+        set { UserDefaults.standard.set(newValue, forKey: "strava_athlete_id") }
+    }
     @Published var activities: [StravaActivity] = []
     
     private var accessToken: String?
@@ -99,6 +106,7 @@ class StravaManager: ObservableObject {
             self.refreshToken = tokenResponse.refreshToken
             self.tokenExpiresAt = Date(timeIntervalSince1970: TimeInterval(tokenResponse.expiresAt))
             self.athlete = tokenResponse.athlete
+            if let id = tokenResponse.athlete?.id { self.connectedAthleteId = id }
             self.isAuthenticated = true
             #if DEBUG
             print("✅ Successfully authenticated as \(tokenResponse.athlete?.fullName ?? "Unknown")")
@@ -172,7 +180,10 @@ class StravaManager: ObservableObject {
         if let ftp = fetched.ftp, ftp > 0 {
             UserDefaults.standard.set(ftp, forKey: "strava_ftp")
         }
-        await MainActor.run { self.athlete = fetched }
+        await MainActor.run {
+            self.athlete = fetched
+            self.connectedAthleteId = fetched.id
+        }
         return fetched.ftp.flatMap { $0 > 0 ? $0 : nil }
     }
 
@@ -183,6 +194,7 @@ class StravaManager: ObservableObject {
         refreshToken = nil
         tokenExpiresAt = nil
         athlete = nil
+        connectedAthleteId = nil
         isAuthenticated = false
         activities = []
         clearTokensFromKeychain()

@@ -508,9 +508,11 @@ class SyncManager: ObservableObject {
                 var page = 1
                 var keepFetching = true
                 let startDateTimestamp = Int(startDate.timeIntervalSince1970)
-                
+                var firstPage: [StravaActivity]?
+
                 while keepFetching {
-                    if let batch = try? await stravaManager.fetchActivities(page: page, perPage: 200) {
+                    if let batch = try? await stravaManager.fetchActivities(page: page, perPage: Self.stravaActivitiesPageSize) {
+                        if page == 1 { firstPage = batch }
                         if batch.isEmpty {
                             keepFetching = false
                         } else {
@@ -544,6 +546,22 @@ class SyncManager: ObservableObject {
                 }
                 
                 stravaActivities = allActivities.compactMap { mapStravaActivity($0) }
+
+                // Rides deleted on Strava: compare with the newest page, which every sync loads
+                // anyway. Only a page that loaded, only for the store's own athlete.
+                if rideStoreAthleteId == nil { rideStoreAthleteId = stravaManager.connectedAthleteId }
+                if let firstPage,
+                   Self.mayRemoveRidesDeletedOnStrava(connected: stravaManager.connectedAthleteId, baseline: rideStoreAthleteId) {
+                    let listed = firstPage.compactMap { a in
+                        a.startDateFormatted.map { DataPersistenceActor.StravaListing(id: String(a.id), startDate: $0) }
+                    }
+                    let removed = await dataHandler.removeRidesDeletedOnStrava(
+                        listed: listed, pageWasFull: firstPage.count == Self.stravaActivitiesPageSize
+                    )
+                    #if DEBUG
+                    if !removed.isEmpty { print("   🗑️ Removed \(removed.count) ride(s) deleted on Strava") }
+                    #endif
+                }
                 #if DEBUG
                 print("   ✅ Total Strava activities fetched: \(stravaActivities.count)")
                 #endif
@@ -748,9 +766,27 @@ class SyncManager: ObservableObject {
         } while zoneBackfillRerunRequested
     }
 
+    /// The Strava athlete whose rides the store holds. Bound at the first connect (or the first
+    /// sync once the athlete is known) and re-bound by `resetAllData`; never moved by a switch.
+    private var rideStoreAthleteId: Int? {
+        get { UserDefaults.standard.object(forKey: "strava_ride_store_athlete_id") as? Int }
+        set { UserDefaults.standard.set(newValue, forKey: "strava_ride_store_athlete_id") }
+    }
+
+    /// Rides deleted on Strava are removed only while the connected athlete is the one whose
+    /// rides the store holds: another account's list would make every stored ride look deleted.
+    nonisolated static func mayRemoveRidesDeletedOnStrava(connected: Int?, baseline: Int?) -> Bool {
+        guard let connected, let baseline else { return false }
+        return connected == baseline
+    }
+
+    /// Strava activities per list page; a page shorter than this is the whole history.
+    nonisolated static let stravaActivitiesPageSize = 200
+
     /// Strava just connected (first time, re-granted, or another athlete): give every ride
     /// marked "no power data" another look on the next backfill.
     func stravaDidConnect() {
+        if rideStoreAthleteId == nil { rideStoreAthleteId = StravaManager.shared.connectedAthleteId }
         let cleared = Self.clearNoPowerMarkers(in: HealthDataContainer.shared.mainContext)
         #if DEBUG
         if cleared > 0 { print("⚡️ Strava connected: \(cleared) no-power-data rides will be re-checked") }
@@ -882,7 +918,9 @@ class SyncManager: ObservableObject {
         lastSyncDate = nil
         
         await dataHandler.deleteAll()
-        
+        // The store is rebuilt from the connected account, so its rides are now that athlete's.
+        rideStoreAthleteId = StravaManager.shared.connectedAthleteId
+
         // Fetch ALL historical data (10 years back)
         await syncAllHistoricalData(dataHandler: dataHandler)
         
@@ -937,6 +975,40 @@ class SyncManager: ObservableObject {
 
 @ModelActor
 actor DataPersistenceActor {
+
+    /// One activity from Strava's list: enough to tell which stored rides it still has.
+    struct StravaListing: Sendable {
+        let id: String
+        let startDate: Date
+    }
+
+    /// Removes stored Strava rides that Strava no longer lists (deleted there), with their
+    /// intent labels, and returns their ids. `listed` is Strava's newest page, newest first.
+    /// A full page vouches only for rides dated after its oldest activity (a ride at exactly
+    /// that date is kept); a partial page is the whole history. An empty list removes nothing.
+    /// HealthKit rides are never touched. The caller checks the athlete
+    /// (`SyncManager.mayRemoveRidesDeletedOnStrava`) and only passes a page that loaded.
+    @discardableResult
+    static func removeRidesDeletedOnStrava(listed: [StravaListing], pageWasFull: Bool, in context: ModelContext) -> Set<String> {
+        guard let oldest = listed.map(\.startDate).min() else { return [] }
+        let listedIDs = Set(listed.map(\.id))
+        let after = pageWasFull ? oldest : Date.distantPast
+        let candidates = (try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
+            $0.source == "Strava" && $0.startDate > after
+        }))) ?? []
+        let gone = candidates.filter { !listedIDs.contains($0.id) }
+        let goneIDs = Set(gone.map(\.id))
+        guard !goneIDs.isEmpty else { return [] }
+        gone.forEach { context.delete($0) }
+        let labels = (try? context.fetch(FetchDescriptor<StoredIntentLabel>())) ?? []
+        labels.filter { goneIDs.contains($0.workoutId) }.forEach { context.delete($0) }
+        try? context.save()
+        return goneIDs
+    }
+
+    func removeRidesDeletedOnStrava(listed: [StravaListing], pageWasFull: Bool) -> Set<String> {
+        Self.removeRidesDeletedOnStrava(listed: listed, pageWasFull: pageWasFull, in: modelContext)
+    }
     
     // MARK: - Metric Name Migration
     
