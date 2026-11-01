@@ -155,16 +155,16 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15min)
 
-### Rides deleted on Strava can stop power zones from updating for your other rides
-**Priority:** P2 — surfaced by the v0.1.17.0 review; pre-existing
+### A ride deleted on Strava keeps counting toward your training load
+**Priority:** P2 — found while fixing the deleted-rides zone stall (v0.1.18.0); pre-existing
 
-**What:** `SyncManager.backfillPowerZones` walks up to 50 rides newest-first and stops the pass after 3 consecutive fetch errors (`consecutiveErrors >= 3`). `StravaManager.fetchPowerZoneSeconds` throws `fetchFailed` for every non-200, including a 404 for an activity deleted on Strava, and a throwing row keeps its `nil` (or `retry:` marker) so it is picked again next pass. Three such rides next to each other in date order stop every pass at the same spot.
+**What:** Sync only inserts and updates. `DataPersistenceActor.upsertRecentData` upserts each fetched Strava activity, and nothing removes a stored Strava ride that Strava no longer lists, so a ride deleted on Strava stays in `StoredWorkout` and keeps adding its load (ACWR, daily load, pattern checks). It can also double-count: when a Watch ride was matched to its Strava copy, the HealthKit row was deleted; once the Strava copy is deleted and the next foreground sync still covers that day, the Watch workout no longer matches anything in the fetched list and is stored again under its HealthKit UUID beside the stale Strava row. (Read from the code, not reproduced. The background refresh avoids the double because it matches against stored Strava rows.)
 
-**Why:** It never recovers on its own. Every ride older than the stuck ones (including a late upload, or rides an FTP edit cleared for re-zoning) never gets zones, so its load stays on the less accurate average-power path and it is classified by heart rate instead of power. "Zone update paused" shows after every sync, and each pass holds the store-rewrite flag, so background pattern checks that land during it skip (`skippedSyncing`).
+**Why:** Deleting a duplicate or accidental upload on Strava is the usual reason to delete there, and it inflates load until a full reset: wrong ACWR, and the sick-day proxy and taper checks read a heavier day than the rider had.
 
-**How to apply:** Make `fetchPowerZoneSeconds` report a 404 distinctly (its own `StravaError` case), and have the backfill write `SyncManager.noPowerStreamCSV` for that ride without counting it toward the error limit. Keep 429 and network errors as they are (stop and retry later). Also consider skipping a row that failed on its last pass instead of stopping, so one unrelated bad row can't block the rest.
+**How to apply:** In the foreground sync, for the window it fetched from Strava, delete stored `source == "Strava"` rows whose id isn't in the fetched list (only when the Strava fetch for that window succeeded completely; a failed or partial page must delete nothing). A streams 404 from the zone backfill is a second signal the ride is gone, but a 404 can also mean another athlete's login, so don't delete on that alone. Test with an in-memory store like `ZoneBackfillStoreTests`.
 
-**Effort:** S (human: ~2h / CC+gstack: ~15min)
+**Effort:** M (human: ~4h / CC+gstack: ~30min)
 
 ## Coach
 
@@ -272,6 +272,7 @@
 
 ## Completed
 
+- **P2 — Rides deleted on Strava can stop power zones from updating for your other rides** — **Completed:** v0.1.18.0 (2026-10-31). `StravaManager.fetchPowerZoneSeconds` throws `StravaError.activityNotFound` for a 404 (`streamsError(forStatus:)`), and the zone backfill writes `SyncManager.noPowerStreamCSV` for that ride without counting it toward the 3-error stop (`zoneCSVAfterFetchError`); rate limits and network errors still stop the pass. `ZoneBackfillDeletedActivityTests`.
 - **P2 — Design the background pattern run properly** — **Completed:** v0.1.16.0 (2026-10-31). HealthKit background delivery (HRV + workouts) and app refresh both run one `BackgroundPatternPass` (HealthKit-only workout refresh, gated detection, abandon after 2 min; no score-row step in the background, missing rows are still filled only by the foreground refresh); store-based pattern checks read complete days ending yesterday; counters in Settings → Background Pass.
 - **P2 — Background pattern-analysis task likely never runs** — **Completed:** v0.1.15.0 (2026-10-27). Request is now `BGAppRefreshTaskRequest` (matching the SwiftUI `.appRefresh` handler), Info.plist declares `UIBackgroundModes` `fetch` (missing entirely before, so `submit` always threw), and the handler routes through `runPatternAnalysis(container:trigger: .background)`. Verified firing on device by Craig.
 - **P2 — Repository should own the pattern-analysis → Coach hand-off** — **Completed:** v0.1.15.0 (2026-10-27). `SingleFlight` owns pattern analysis (joins overlap, ignores caller cancellation, 5-min forced-run throttle) and shields `performFullAnalysis` from caller cancellation, so a tab swipe can no longer cache the heuristic Coach paragraph; `resetForTesting()` clears the cache state. `SingleFlightTests`, `ReadinessRepositoryPatternThrottleTests`.

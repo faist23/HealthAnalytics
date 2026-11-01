@@ -69,6 +69,143 @@ class SyncManager: ObservableObject {
         return now.timeIntervalSince(missedAt) >= noPowerStreamRetryAge
     }
 
+    /// What the backfill writes for a ride whose stream fetch threw: for a 404 (deleted on
+    /// Strava, or not visible to this login after switching athletes) the same marker as a
+    /// missing stream, a retry on the first miss and permanent on the retry's, and it never
+    /// counts toward the pass's error limit; nil for anything that may pass (rate limit,
+    /// network, auth), which keeps the row as it was.
+    nonisolated static func zoneCSVAfterFetchError(_ error: Error, current: String?, now: Date) -> String? {
+        (error as? StravaError) == .activityNotFound ? zoneCSVForNoPowerStream(current: current, now: now) : nil
+    }
+
+    /// One ride the zone backfill will fetch: its current `powerZoneSecondsCSV` and the FTP
+    /// in effect on its date.
+    struct ZoneBackfillRow: Sendable {
+        let id: String
+        let startDate: Date
+        let csv: String?
+        let ftp: Double
+    }
+
+    /// The rides the zone backfill fetches: Strava rides with power and no zone data yet, plus
+    /// retries a day past their miss, newest first (a failing old retry must not sit ahead of
+    /// new rides, or three of them stop every pass at the error limit), capped at `limit`,
+    /// each with the FTP in effect on its date (`defaultFTP` when there are no snapshots).
+    static func zoneBackfillRows(
+        context: ModelContext, now: Date, limit: Int = 50, defaultFTP: () -> Double
+    ) -> [ZoneBackfillRow] {
+        var unfetched = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate<StoredWorkout> {
+                $0.source == "Strava" &&
+                $0.averagePower != nil &&
+                $0.powerZoneSecondsCSV == nil
+            },
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        unfetched.fetchLimit = limit
+        // Few rows carry the retry marker, so the due check runs here, not in the predicate.
+        let retryPrefix = noPowerStreamRetryPrefix
+        let retries = FetchDescriptor<StoredWorkout>(
+            predicate: #Predicate<StoredWorkout> {
+                $0.powerZoneSecondsCSV?.starts(with: retryPrefix) == true
+            }
+        )
+        let due = ((try? context.fetch(retries)) ?? []).filter { isNoPowerStreamRetryDue($0.powerZoneSecondsCSV, now: now) }
+        let picked = (due + ((try? context.fetch(unfetched)) ?? []))
+            .filter { Int($0.id) != nil }
+            .sorted { $0.startDate > $1.startDate }
+            .prefix(limit)
+        let ftpValues = ((try? context.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []).map { (date: $0.date, watts: $0.watts) }
+        return picked.map { w in
+            let ftp = ftpValues.isEmpty ? defaultFTP() : StoredFTPSnapshot.resolved(for: w.startDate, ftpValues: ftpValues)
+            return ZoneBackfillRow(id: w.id, startDate: w.startDate, csv: w.powerZoneSecondsCSV, ftp: ftp)
+        }
+    }
+
+    /// Stores a backfill result on its ride, with the FTP it was computed at (an FTP edit
+    /// re-zones rides whose `zoneComputedAtFTP` no longer matches). Compare-and-set: writes
+    /// nothing, and returns false, when the ride changed since the pass picked it (an FTP edit's
+    /// invalidation, a reconnect's marker clear) or the FTP in effect on its date is no longer
+    /// the one the zones were computed at. The ride then waits for the next pass.
+    @discardableResult
+    static func writeZoneCSV(_ csv: String, for row: ZoneBackfillRow, in context: ModelContext,
+                             defaultFTP: () -> Double) -> Bool {
+        let workoutID = row.id
+        var desc = FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.id == workoutID })
+        desc.fetchLimit = 1
+        guard let w = try? context.fetch(desc).first, w.powerZoneSecondsCSV == row.csv else { return false }
+        let snapshots = (try? context.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+        let ftpNow = snapshots.isEmpty ? defaultFTP() : StoredFTPSnapshot.resolved(for: w.startDate, snapshots: snapshots)
+        guard ftpNow == row.ftp else { return false }
+        w.powerZoneSecondsCSV = csv
+        w.zoneComputedAtFTP = row.ftp
+        return true
+    }
+
+    /// Resets every "no power data" marker (`noPowerStreamCSV` and retry markers) to unfetched,
+    /// so the next backfill asks Strava again. Called when Strava connects: a 404 or a missing
+    /// stream under one login says nothing about the next (another athlete, re-granted access).
+    /// Returns how many rides were reset.
+    @discardableResult
+    static func clearNoPowerMarkers(in context: ModelContext) -> Int {
+        let permanent: String? = noPowerStreamCSV
+        let retryPrefix = noPowerStreamRetryPrefix
+        let marked = ((try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
+            $0.powerZoneSecondsCSV == permanent
+        }))) ?? []) + ((try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
+            $0.powerZoneSecondsCSV?.starts(with: retryPrefix) == true
+        }))) ?? [])
+        for w in marked {
+            w.powerZoneSecondsCSV = nil
+            w.zoneComputedAtFTP = nil
+        }
+        if !marked.isEmpty { try? context.save() }
+        return marked.count
+    }
+
+    /// The zone backfill's loop, given the Strava fetch, the store write and the pause between
+    /// requests (`backfillPowerZones` passes the real ones). Writes zones, or a no-stream marker
+    /// for a missing stream or a 404 (retry on a first miss, permanent on the retry's). Stops
+    /// after three consecutive errors that may pass (rate limit, network); a 404 neither counts
+    /// nor resets that run, and a success resets it. `pause` returning false ends the pass.
+    static func runZoneBackfill(
+        _ rows: [ZoneBackfillRow],
+        fetch: (ZoneBackfillRow) async throws -> [Double]?,
+        write: (ZoneBackfillRow, String) async -> Bool,
+        pause: () async -> Bool,
+        now: () -> Date = { Date() },
+        onProgress: (Int) -> Void = { _ in }
+    ) async -> (fetched: Int, stoppedOnErrors: Bool) {
+        var fetched = 0
+        var consecutiveErrors = 0
+        for row in rows {
+            var csv: String?
+            do {
+                // nil only when Strava has no watts stream; failures throw.
+                let zoneSecs = try await fetch(row)
+                csv = zoneSecs.map { $0.map { String(Int($0)) }.joined(separator: ",") }
+                    ?? zoneCSVForNoPowerStream(current: row.csv, now: now())
+                consecutiveErrors = 0
+            } catch let error where zoneCSVAfterFetchError(error, current: row.csv, now: now()) != nil {
+                // Not found on Strava: marked like a missing stream, never an error that stops
+                // the pass. Counting it let three deleted rides stop every pass before older rides.
+                csv = zoneCSVAfterFetchError(error, current: row.csv, now: now())
+            } catch {
+                consecutiveErrors += 1
+                #if DEBUG
+                print("   ⚠️ Zone fetch failed for \(row.id): \(error.localizedDescription)")
+                #endif
+                if consecutiveErrors >= 3 { return (fetched, true) }
+            }
+            if let csv, await write(row, csv) {
+                fetched += 1
+                onProgress(fetched)
+            }
+            guard await pause() else { break }
+        }
+        return (fetched, false)
+    }
+
     /// The marker the backfill writes when Strava has no watts stream: a retry on the first
     /// miss, permanent on the retry's miss.
     nonisolated static func zoneCSVForNoPowerStream(current: String?, now: Date) -> String {
@@ -595,100 +732,66 @@ class SyncManager: ObservableObject {
         // Re-entrancy guard: set synchronously on MainActor before the first `await`.
         // Prevents concurrent FTP edits from spawning multiple parallel backfill passes
         // that would double Strava API calls and produce torn writes to powerZoneSecondsCSV.
-        guard !isBackfillingZones else { return }
+        guard !isBackfillingZones else {
+            // An FTP edit or reconnect mid-pass: the running pass skips rides it changed
+            // (writeZoneCSV), so run again once it ends to zone them at the new FTP.
+            zoneBackfillRerunRequested = true
+            return
+        }
         isBackfillingZones = true
         storeRewriteGeneration += 1
         defer { isBackfillingZones = false }
 
+        repeat {
+            zoneBackfillRerunRequested = false
+            await runZoneBackfillPass()
+        } while zoneBackfillRerunRequested
+    }
+
+    /// Strava just connected (first time, re-granted, or another athlete): give every ride
+    /// marked "no power data" another look on the next backfill.
+    func stravaDidConnect() {
+        let cleared = Self.clearNoPowerMarkers(in: HealthDataContainer.shared.mainContext)
+        #if DEBUG
+        if cleared > 0 { print("⚡️ Strava connected: \(cleared) no-power-data rides will be re-checked") }
+        #endif
+    }
+
+    /// Set when a backfill is requested while one runs; that pass then runs once more.
+    private var zoneBackfillRerunRequested = false
+
+    private func runZoneBackfillPass() async {
+        zoneBackfillError = nil
         guard StravaManager.shared.isAuthenticated else { return }
 
         let context = HealthDataContainer.shared.mainContext
-        let now = Date()
-        var unfetched = FetchDescriptor<StoredWorkout>(
-            predicate: #Predicate<StoredWorkout> {
-                $0.source == "Strava" &&
-                $0.averagePower != nil &&
-                $0.powerZoneSecondsCSV == nil
-            },
-            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
-        )
-        unfetched.fetchLimit = 50
-        // Rides whose first no-watts answer is a day old: one more try. Few rows carry the
-        // marker, so the due check runs here rather than in the predicate.
-        let retryPrefix = Self.noPowerStreamRetryPrefix
-        let retries = FetchDescriptor<StoredWorkout>(
-            predicate: #Predicate<StoredWorkout> {
-                ($0.powerZoneSecondsCSV ?? "").starts(with: retryPrefix)
-            }
-        )
-
-        // Capture value-type tuples before leaving MainActor — @Model objects are not Sendable.
-        // Newest first, retries included: a retry whose fetch keeps failing (a deleted
-        // activity) must not sit ahead of new rides, or three of them stop every pass at
-        // the error limit before a new ride is reached.
-        let workoutTuples: [(id: String, startDate: Date, csv: String?)] = await MainActor.run {
-            let due = ((try? context.fetch(retries)) ?? []).filter { Self.isNoPowerStreamRetryDue($0.powerZoneSecondsCSV, now: now) }
-            let rows = (due + ((try? context.fetch(unfetched)) ?? [])).sorted { $0.startDate > $1.startDate }
-            return rows.prefix(50).map { ($0.id, $0.startDate, $0.powerZoneSecondsCSV) }
-        }
-        guard !workoutTuples.isEmpty else { return }
+        let rows = Self.zoneBackfillRows(context: context, now: Date(), defaultFTP: { PredictiveReadinessService.resolvedFTP() })
+        guard !rows.isEmpty else { return }
 
         #if DEBUG
-        print("⚡️ Power zone backfill: \(workoutTuples.count) cycling workouts need stream data")
+        print("⚡️ Power zone backfill: \(rows.count) cycling workouts need stream data")
         #endif
 
-        // FTP snapshots for time-aware zone boundaries.
-        // Extracted as value tuples on MainActor — @Model objects are not Sendable.
-        let ftpValues: [(date: Date, watts: Int)] = await MainActor.run {
-            let snaps = (try? context.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
-            return snaps.map { ($0.date, $0.watts) }
-        }
-
-        let total = workoutTuples.count
-        var fetched = 0
-        var consecutiveErrors = 0
-        zoneBackfillError = nil
-        for (workoutID, startDate, currentCSV) in workoutTuples {
-            guard let activityId = Int(workoutID) else { continue }
-
-            let ftp = ftpValues.isEmpty
-                ? PredictiveReadinessService.resolvedFTP()
-                : StoredFTPSnapshot.resolved(for: startDate, ftpValues: ftpValues)
-
-            do {
-                // nil only when Strava has no watts stream; failures throw.
-                let zoneSecs = try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: ftp)
-                let csv = zoneSecs.map { $0.map { String(Int($0)) }.joined(separator: ",") }
-                    ?? Self.zoneCSVForNoPowerStream(current: currentCSV, now: Date())
-                await MainActor.run {
-                    var desc = FetchDescriptor<StoredWorkout>(
-                        predicate: #Predicate { $0.id == workoutID }
-                    )
-                    desc.fetchLimit = 1
-                    if let w = try? context.fetch(desc).first {
-                        w.powerZoneSecondsCSV = csv
-                        w.zoneComputedAtFTP = ftp
-                    }
-                }
-                fetched += 1
-                consecutiveErrors = 0
-                self.zoneBackfillProgress = (current: fetched, total: total)
-            } catch {
-                consecutiveErrors += 1
-                #if DEBUG
-                print("   ⚠️ Zone fetch failed for \(activityId): \(error.localizedDescription)")
-                #endif
-                // Surface repeated failures (likely rate-limit) so FTPHistoryView can show feedback.
-                // Three consecutive errors suggests a 429 or connectivity issue — stop and tell the user.
-                if consecutiveErrors >= 3 {
-                    self.zoneBackfillError = "Zone update paused — Strava rate limit or network issue. Try again later."
-                    break
-                }
-            }
-
-            // Rate limit: 1 req/sec → well under 100/15 min
-            // Propagate cancellation so app-backgrounding can interrupt the loop cleanly.
-            do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { break }
+        let total = rows.count
+        let result = await Self.runZoneBackfill(
+            rows,
+            fetch: { row in
+                // zoneBackfillRows drops non-numeric ids; a row without one is treated as not found.
+                guard let activityId = Int(row.id) else { throw StravaError.activityNotFound }
+                return try await StravaManager.shared.fetchPowerZoneSeconds(activityId: activityId, ftp: row.ftp)
+            },
+            write: { row, csv in
+                Self.writeZoneCSV(csv, for: row, in: context, defaultFTP: { PredictiveReadinessService.resolvedFTP() })
+            },
+            // Rate limit: 1 req/sec → well under 100/15 min. Cancellation (app backgrounding)
+            // ends the pass.
+            pause: { (try? await Task.sleep(nanoseconds: 1_000_000_000)) != nil },
+            onProgress: { self.zoneBackfillProgress = (current: $0, total: total) }
+        )
+        let fetched = result.fetched
+        if result.stoppedOnErrors {
+            // Three consecutive errors suggests a 429 or connectivity issue; FTPHistoryView shows it.
+            zoneBackfillError = "Zone update paused — Strava rate limit or network issue. Try again later."
         }
 
         if fetched > 0 {

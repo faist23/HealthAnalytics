@@ -146,6 +146,9 @@ struct HealthAnalyticsApp: App {
                     #if DEBUG
                     print("✅ Successfully handled Strava callback")
                     #endif
+                    // Before the sync, so its zone backfill re-checks rides marked "no power
+                    // data" under the previous login.
+                    SyncManager.shared.stravaDidConnect()
 
                     // After successful Strava auth, sync to get Strava activities
                     await SyncManager.shared.performSmartSync()

@@ -3,6 +3,15 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.18.0] - 2026-10-31
+
+### Fixed
+
+- **The app no longer crashes while it updates your power zones.** In 0.1.17.0, the step that fills in power-zone detail for your Strava rides crashed the app every time it ran, after a sync or an FTP change. It runs normally again.
+- **A ride you deleted on Strava no longer stops power zones from updating for your other rides.** Strava answers "not found" for a deleted ride. Three of those in a row used to stop every update at the same spot, so older rides never got their zones. A deleted ride is now set aside, and the rest are filled in.
+- **Reconnecting Strava gives rides marked "no power data" another look.** If you sign in again, or switch to another Strava account, rides the app couldn't get power detail for under the old login are checked again.
+- **Changing your FTP while zones are updating no longer leaves rides on the old FTP.** Rides the update hadn't reached yet are now zoned at your new FTP instead of the old one.
+
 ## [0.1.17.0] - 2026-10-31
 
 ### Fixed
