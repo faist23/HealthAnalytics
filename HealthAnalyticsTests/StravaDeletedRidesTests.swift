@@ -236,11 +236,12 @@ final class StravaDeletedRidesTests: XCTestCase {
         XCTAssertEqual(gone, [], "nothing judged across a connection change is deleted")
     }
 
-    // Value: protects=a profile fetch that started under an older connection doesn't overwrite
-    //   the connected athlete; fails_when=the generation check is dropped; why_new=fix-check
-    //   finding (stale profile); seam=none; no_claim=the bump sites
+    // Value: protects=a token refresh or profile fetch that started under an older connection
+    //   doesn't overwrite the current login's tokens, athlete or FTP; fails_when=the generation
+    //   check is dropped; why_new=fix-check findings (stale profile, refresh race); seam=none;
+    //   no_claim=the call sites in refreshTokenIfNeeded / fetchAthleteProfile (network singleton)
     func test_staleProfileFetch_doesNotRecordItsAthlete() {
-        XCTAssertTrue(StravaManager.mayRecordFetchedAthlete(generationAtRequest: 2, generationNow: 2))
-        XCTAssertFalse(StravaManager.mayRecordFetchedAthlete(generationAtRequest: 2, generationNow: 3))
+        XCTAssertTrue(StravaManager.isStillCurrentConnection(generationAtRequest: 2, generationNow: 2))
+        XCTAssertFalse(StravaManager.isStillCurrentConnection(generationAtRequest: 2, generationNow: 3))
     }
 }
