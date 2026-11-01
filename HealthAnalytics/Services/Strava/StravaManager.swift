@@ -16,6 +16,39 @@ class StravaManager: ObservableObject {
     @Published var isAuthenticated = false
     @Published var athlete: StravaAthlete?
 
+    /// The scope Strava actually granted at the last connect (the athlete can untick boxes on the
+    /// consent screen); nil when unknown, e.g. connected before this was recorded.
+    var grantedScope: String? {
+        get { UserDefaults.standard.string(forKey: "strava_granted_scope") }
+        set { UserDefaults.standard.set(newValue, forKey: "strava_granted_scope") }
+    }
+
+    nonisolated static func grantsReadAll(_ scope: String?) -> Bool {
+        scope?.split(separator: ",").contains("activity:read_all") ?? false
+    }
+
+    enum ActivityStatus: Equatable, Sendable { case exists, gone, unknown }
+
+    nonisolated static func activityStatus(forHTTPStatus status: Int) -> ActivityStatus {
+        switch status {
+        case 200: return .exists
+        case 404: return .gone
+        default: return .unknown
+        }
+    }
+
+    /// Whether Strava still has this activity, for this login: one GET of its summary. Any
+    /// failure is `.unknown`, never `.gone`.
+    func activityStatus(activityId: Int) async -> ActivityStatus {
+        guard (try? await refreshTokenIfNeeded()) != nil, let token = accessToken,
+              let url = URL(string: "\(StravaConfig.apiBaseURL)/activities/\(activityId)") else { return .unknown }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else { return .unknown }
+        return Self.activityStatus(forHTTPStatus: http.statusCode)
+    }
+
     /// The athlete these tokens belong to, kept across launches (`athlete` is not). Set at
     /// connect and whenever the profile is fetched; cleared on sign-out.
     var connectedAthleteId: Int? {
@@ -53,6 +86,7 @@ class StravaManager: ObservableObject {
         }
         
         try await exchangeCodeForToken(code: code)
+        grantedScope = components.queryItems?.first(where: { $0.name == "scope" })?.value
     }
     
     private func exchangeCodeForToken(code: String) async throws {
@@ -195,6 +229,7 @@ class StravaManager: ObservableObject {
         tokenExpiresAt = nil
         athlete = nil
         connectedAthleteId = nil
+        grantedScope = nil
         isAuthenticated = false
         activities = []
         clearTokensFromKeychain()
