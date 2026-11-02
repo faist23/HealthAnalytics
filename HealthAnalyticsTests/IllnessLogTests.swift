@@ -196,11 +196,11 @@ final class CoachIllnessTests: XCTestCase {
         XCTAssertTrue(reuse(.sick(since: today), .sick(since: today)))
     }
 
-    // Value: protects=adding, resolving or expiring an Injury/Stress/Travel note re-runs the
-    //   Coach paragraph even when a tap's refresh is replayed through refreshIfNecessary;
+    // Value: protects=adding, resolving or expiring an Injury/Stress/Travel note makes the
+    //   Coach cache key differ, which is what lets a replayed refresh re-run the paragraph;
     //   fails_when=the active note set is left out of the cache key (the pre-existing lost-tap
     //   bug); why_new=v0.1.21.0 adversarial follow-ups; seam=none (pure static); no_claim=the
-    //   repository's fetch of the notes
+    //   repository's fetch of the notes and the replay path itself (singleton wiring)
     @MainActor
     func test_coachNoteChange_invalidatesTheCoachCache() {
         let fingerprint = PredictionCache.fingerprint(workoutCount: 1, sleepCount: 1, hrvCount: 1, rhrCount: 1)

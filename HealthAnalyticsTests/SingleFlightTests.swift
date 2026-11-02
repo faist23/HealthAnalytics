@@ -244,8 +244,8 @@ final class SingleFlightTests: XCTestCase {
     //   starts its own, a later caller joins the replacement, and the stale run finishing late
     //   doesn't clear the replacement (which would start a duplicate); fails_when=a hung run
     //   blocks "Try again" forever, or the generation check is dropped; why_new=P3 TODO "A hung
-    //   analysis blocks every later pattern-analysis request"; seam=injected clock (`now`);
-    //   no_claim=the repository's 10-minute limit
+    //   analysis blocks every later pattern-analysis request"; seam=none (real clock, a tiny
+    //   limit); no_claim=the repository's 10-minute limit
     func test_run_replacesAHungRun_andTheStaleRunLeavesItsSuccessorAlone() async {
         let flight = SingleFlight()
         var stale = 0, fresh = 0
@@ -253,7 +253,7 @@ final class SingleFlightTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(20))
         let replacement = Task {
             await flight.run({ fresh += 1; try? await Task.sleep(for: .milliseconds(400)); return true },
-                             replacingRunsOlderThan: 60, now: { Date().addingTimeInterval(120) })
+                             replacingRunsOlderThan: 0.005)
         }
         try? await Task.sleep(for: .milliseconds(250))   // the stale run has finished by now
         await flight.run({ fresh += 1; return true })      // must join the replacement
@@ -262,6 +262,9 @@ final class SingleFlightTests: XCTestCase {
         XCTAssertEqual(fresh, 1, "a caller after the stale run ended joins the replacement")
     }
 
+    // Value: protects=a request inside the limit joins the running work instead of replacing
+    //   it; fails_when=the age check inverts and every foreground request starts a duplicate
+    //   analysis; why_new=P3 hung-run fix; seam=none; no_claim=none
     func test_run_withinTheLimit_joins() async {
         let flight = SingleFlight()
         var runs = 0

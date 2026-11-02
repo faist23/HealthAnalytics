@@ -655,8 +655,8 @@ final class PredictiveIntelligenceTests: XCTestCase {
     }
 
     // Value: protects=a few nights without watch data no longer silence taper detection (24 of
-    //   28 days, at least 5 of the last 7), the means skip missing days, and the recent week is
-    //   split by date so a missing day doesn't pull a baseline day into it; fails_when=the guard
+    //   28 days, at least 5 of the last 7), and the recent week is split by date so a missing day
+    //   doesn't pull a baseline day into it (the verdict, not the mean values, is asserted); fails_when=the guard
     //   goes back to all 28 days, or the windows go back to row positions; why_new=P3 TODO "Taper
     //   detection requires all 28 of the last 28 days"; seam=none; no_claim=the 30% threshold
     func testTaperUnderway_toleratesAFewMissingDays() async throws {

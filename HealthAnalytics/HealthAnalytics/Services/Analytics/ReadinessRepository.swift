@@ -34,6 +34,9 @@ class ReadinessRepository: ObservableObject {
     /// (the first launch: Recovery's run starts before the backfill saves) doesn't stamp the
     /// throttle, so the next trigger re-runs on the full history.
     private var scoreBackfillGeneration = 0
+    /// Bumped by every pattern run that starts. A run replaced as hung (see
+    /// `hungPatternRunLimit`) may still end later; only the newest run reports an error.
+    private var patternRunGeneration = 0
     
     // MARK: - Dependencies
 
@@ -282,6 +285,8 @@ class ReadinessRepository: ObservableObject {
         guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return true }
         patternAnalysisError = nil
         let backfillGenerationAtStart = scoreBackfillGeneration
+        patternRunGeneration += 1
+        let runGeneration = patternRunGeneration
 
         // The throttle is stamped AFTER a run that actually reached upsertPatterns —
         // never before. `analyze()` refreshes every pattern's `detectedAt`, which is
@@ -345,7 +350,11 @@ class ReadinessRepository: ObservableObject {
                 print("⚠️ Pattern analysis failed silently: \(error)")
                 #endif
             } else {
-                await MainActor.run { self.patternAnalysisError = "Pattern analysis failed: \(error.localizedDescription)" }
+                await MainActor.run {
+                    if self.patternRunGeneration == runGeneration {
+                        self.patternAnalysisError = "Pattern analysis failed: \(error.localizedDescription)"
+                    }
+                }
             }
         }
         return true
@@ -890,6 +899,9 @@ class ReadinessRepository: ObservableObject {
             let illnessState = fetchIllnessState(context: modelContext)
             
             let allMemories = (try? modelContext.fetch(FetchDescriptor<CoachMemoryNote>())) ?? []
+            // Taken once, before synthesis: a note expiring mid-run must not leave the cache
+            // key without a note the paragraph still mentions.
+            let activeMemoryIDs = Set(allMemories.filter(\.isCurrentlyActive).map(\.id))
             
             let coachState = MasterCoachEngine.StateVector(
                 morningScore: baseReadiness.score,
@@ -980,7 +992,7 @@ class ReadinessRepository: ObservableObject {
             self.lastAnalysisDate = now
             self.lastActivePatternTypes = activePatternTypes
             self.lastIllnessState = illnessState
-            self.lastActiveMemoryIDs = Set(allMemories.filter(\.isCurrentlyActive).map(\.id))
+            self.lastActiveMemoryIDs = activeMemoryIDs
 
             // Persist today's readiness score for 90-day back-to-back crash pattern detection.
             let todayWorkoutsForLoad = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }

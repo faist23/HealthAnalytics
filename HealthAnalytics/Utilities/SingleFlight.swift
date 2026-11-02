@@ -40,10 +40,9 @@ final class SingleFlight {
     func run(
         _ work: @escaping @MainActor () async -> Bool,
         shouldStart: @escaping @MainActor () -> Bool = { true },
-        replacingRunsOlderThan limit: TimeInterval? = nil,
-        now: @MainActor () -> Date = { Date() }
+        replacingRunsOlderThan limit: TimeInterval? = nil
     ) async {
-        if let limit, let startedAt = currentStartedAt, now().timeIntervalSince(startedAt) > limit {
+        if let limit, let startedAt = currentStartedAt, Date().timeIntervalSince(startedAt) > limit {
             current = nil
             currentStartedAt = nil
         }
