@@ -3,6 +3,15 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.20.0] - 2026-11-02
+
+### Fixed
+
+- **A ride synced after its day was scored now counts toward that day's load.** A day's training load was fixed the first time the app scored it, often in the morning. An evening ride synced the next day, or a ride Garmin, Zwift or Wahoo uploaded days later, never counted, so the day could look like a rest day. After each sync the app now recalculates the last 7 full days from your stored rides.
+- **A ride you delete on Strava now drops out of that day's load too.** Since 0.1.19.0 the ride itself was removed, but the day it was on kept its old total.
+- **A sync that fails no longer skips the rides it missed.** The app used to mark a failed sync as done, so the next sync started after the gap. It now retries the same window, which also reaches back at least 7 days for late uploads.
+- **A ride recorded on your Watch and on Strava is no longer stored twice when Strava can't be reached.** The Watch copy is matched to the Strava ride already saved, and an extra copy saved earlier is removed.
+
 ## [0.1.19.0] - 2026-11-01
 
 ### Fixed
