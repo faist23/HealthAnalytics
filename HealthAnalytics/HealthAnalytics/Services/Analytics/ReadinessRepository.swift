@@ -892,7 +892,7 @@ class ReadinessRepository: ObservableObject {
             )
 
             // 9. Generate Master Coach Message
-            let computedForecast = compute7DayForecast(modelContext: modelContext, overrideACWR: readinessAssessmentResult.acwr)
+            let computedForecast = compute7DayForecast(modelContext: modelContext, acwr: readinessAssessmentResult.acwr)
             let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? Date()
             let nextDayCoaching = computedForecast?.first(where: { calendar.isDate($0.date, inSameDayAs: nextDay) })?.coaching
             let activePatternTypes = fetchActivePatternTypes(context: modelContext)
@@ -1015,7 +1015,7 @@ class ReadinessRepository: ObservableObject {
                 self.forecast = f
             } else {
                 await backfillHistoricalScores(modelContext: modelContext, force: true)
-                self.forecast = compute7DayForecast(modelContext: modelContext, overrideACWR: readinessAssessmentResult.acwr)
+                self.forecast = compute7DayForecast(modelContext: modelContext, acwr: readinessAssessmentResult.acwr)
             }
 
             #if DEBUG
@@ -1307,9 +1307,9 @@ class ReadinessRepository: ObservableObject {
     /// Computes a 7-day readiness forecast from the last 14 StoredDailyScore entries.
     /// Returns nil when fewer than 14 stored scores exist (insufficient trend window).
     /// Published as `self.forecast` at the end of performFullAnalysis().
-    /// `overrideACWR` is exposed for unit testing only — pass nil in production.
-    /// In production the ACWR is read from `currentReadiness?.readinessAssessment?.acwr`.
-    func compute7DayForecast(modelContext: ModelContext, overrideACWR: Double? = nil) -> [ReadinessForecastDay]? {
+    /// `acwr` is the assessment's ACWR; nil means no load signal (the load ceiling is skipped).
+    /// Passed in, never read from `currentReadiness`, so a test can't inherit the app's state.
+    func compute7DayForecast(modelContext: ModelContext, acwr: Double?) -> [ReadinessForecastDay]? {
         let calendar = Calendar.current
         let cutoff = calendar.date(byAdding: .day, value: -14, to: Date()) ?? Date()
         let predicate = #Predicate<StoredDailyScore> { $0.date >= cutoff }
@@ -1336,7 +1336,6 @@ class ReadinessRepository: ObservableObject {
         let baselineSigma = (variance > 0 ? sqrt(variance) : 5.0) / 2.0
 
         // ACWR modifier from current published readiness (or test override)
-        let acwr = overrideACWR ?? currentReadiness?.readinessAssessment?.acwr
 
         // Workouts for the per-day load ceiling below. The chronic window for the
         // last forecast day reaches back to today-21, so 30 days covers every day.

@@ -20,6 +20,9 @@ struct TrainingLoadVisualizationService {
     /// here once made this screen report ACWR 1.80 while the Load tab said 1.33.
     private let readinessService = PredictiveReadinessService()
 
+    /// `nonisolated` so the pattern actor can build one for `estimateIntensity`.
+    nonisolated init() {}
+
     // MARK: - Data Models
     
     struct LoadVisualizationData {
@@ -526,7 +529,7 @@ struct TrainingLoadVisualizationService {
     /// against a window of 5.0 placeholders manufactures a difference out of missing
     /// data — the same fabrication this file's `estimateIntensity` exists to avoid.
     /// Must stay in lockstep with the fallback chain below.
-    func hasIntensitySignal(_ workout: WorkoutData) -> Bool {
+    nonisolated func hasIntensitySignal(_ workout: WorkoutData) -> Bool {
         if let zones = workout.powerZoneSeconds, zones.count == 7, zones.reduce(0, +) > 0 { return true }
         if let power = workout.normalizedPower ?? workout.averagePower, power > 0 { return true }
         if let hr = workout.averageHeartRate, hr > 0 { return true }
@@ -537,7 +540,7 @@ struct TrainingLoadVisualizationService {
     /// that a volume drop was deliberate. Do not reimplement intensity anywhere else —
     /// duplicated load math is how this project ended up with two disagreeing ACWR
     /// engines (see CLAUDE.md, "One ACWR engine").
-    func estimateIntensity(_ workout: WorkoutData, ftpSnapshots: [StoredFTPSnapshot]) -> Double {
+    nonisolated func estimateIntensity(_ workout: WorkoutData, ftpSnapshots: [StoredFTPSnapshot]) -> Double {
         // 1. Power zones (cycling with stream data) — the ground truth for effort structure.
         if let zones = workout.powerZoneSeconds, zones.count == 7 {
             let total = zones.reduce(0, +)
@@ -568,14 +571,14 @@ struct TrainingLoadVisualizationService {
 
     /// Map an intensity factor (fraction of FTP) to 1–10.
     /// Anchors: IF 0.40 (recovery) → 1, IF 1.20 (deep VO2max) → 10.
-    private func intensityFromIntensityFactor(_ intensityFactor: Double) -> Double {
+    nonisolated private func intensityFromIntensityFactor(_ intensityFactor: Double) -> Double {
         let scaled = 1 + (intensityFactor - 0.40) / 0.80 * 9
         return min(10, max(1, scaled))
     }
 
     /// Map a heart-rate fraction of max to 1–10.
     /// Anchors: 50% max → 1, 100% max → 10.
-    private func intensityFromHRFraction(_ fraction: Double) -> Double {
+    nonisolated private func intensityFromHRFraction(_ fraction: Double) -> Double {
         let scaled = 1 + (fraction - 0.50) / 0.50 * 9
         return min(10, max(1, scaled))
     }

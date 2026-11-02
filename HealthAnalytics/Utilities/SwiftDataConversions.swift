@@ -11,7 +11,7 @@ import CryptoKit
 
 // MARK: - WorkoutData Conversion
 
-extension WorkoutData {
+nonisolated extension WorkoutData {
     init(from stored: StoredWorkout) {
         self.init(
             id: WorkoutData.stableID(from: stored.id),

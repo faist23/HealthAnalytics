@@ -332,6 +332,54 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         XCTAssertFalse(fired, "A 0.0 twin must not turn a ride day into a rest day")
     }
 
+    // Value: protects=the "day's load is its highest row" rule holds whichever duplicate row
+    //   the store returns first; fails_when=the max is replaced by first/last-row-wins (the
+    //   forward-order test above would still pass if the zero row happened to come first);
+    //   why_new=P3 TODO "Test gaps: zero-twin insertion order"; seam=insertDailyScores;
+    //   no_claim=fetch order guarantees
+    func testHRVPrecursor_zeroTwinBesideARideRowIsNotRest_reverseInsertionOrder() async throws {
+        let fired = try await hrvPrecursorFiresWithThirdWindow { offsets in
+            offsets.flatMap { [
+                StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 1, dailyLoad: 3.0),
+                StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0)
+            ] }
+        }
+        XCTAssertFalse(fired, "A 0.0 twin inserted after the ride row must not turn a ride day into rest")
+    }
+
+    // Value: protects=an existing pattern's detectedAt (what keeps it active) is renewed only
+    //   when the commit gate accepts; a declined run (spanned a suspension) leaves it untouched
+    //   and throws commitDeclined; fails_when=upsertPatterns or any write moves before the gate,
+    //   so a refused background pass keeps a stale pattern alive; why_new=P3 TODO "Test gaps:
+    //   detectedAt renewal on commit"; seam=analyze(commitGate:), setDataProvider; no_claim=none
+    func testCommitGate_renewsAnExistingPatternOnlyWhenItAccepts() async throws {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeHRVPrecursorHRV(baselineHRV: 60.0, precursorHRV: 45.0)
+        mock.stepsData = makeHRVPrecursorSteps(windowCount: 3)
+        mock.workoutDays = []
+        await analyzer.setDataProvider(mock)
+        try await analyzer.insertDailyScores(makeRestDayRows(sickOffsets: [-80, -50, -20]))
+        let old = day(-6)
+        let context = ModelContext(container)
+        context.insert(makePattern(.hrvPrecursor, detectedAt: old))
+        try context.save()
+
+        do {
+            _ = try await analyzer.analyze(commitGate: { false })
+            XCTFail("a declined gate must throw commitDeclined")
+        } catch PatternAnalysisError.commitDeclined {}
+        let afterDecline = try await analyzer.fetchAllPatterns().filter { $0.patternType == .hrvPrecursor }
+        XCTAssertEqual(afterDecline.map(\.detectedAt), [old], "a declined run must not renew the pattern")
+
+        _ = try await analyzer.analyze(commitGate: { true })
+        let afterAccept = try await analyzer.fetchAllPatterns().filter { $0.patternType == .hrvPrecursor }
+        XCTAssertEqual(afterAccept.count, 1)
+        XCTAssertGreaterThan(afterAccept.first?.detectedAt ?? old, old, "an accepted run renews detectedAt")
+    }
+
     /// A row written mid-morning keeps a ride later that day at load 0 forever. A stored
     /// workout with real load that day means it is not a rest day, whatever the row says.
     func testHRVPrecursor_storedRideOnAZeroLoadRowDayIsNotRest() async throws {

@@ -9,7 +9,7 @@
 import Foundation
 import HealthKit
 
-struct HeuristicIntentClassifier {
+nonisolated struct HeuristicIntentClassifier {
     
     // MARK: - Classification
     

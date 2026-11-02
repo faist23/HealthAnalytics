@@ -59,7 +59,7 @@ extension StoredFTPSnapshot {
 
     /// FTP that was in effect on `workoutDate`.
     /// Returns the most recent snapshot whose date ≤ workoutDate, or 200W if none exists.
-    static func resolved(for workoutDate: Date, snapshots: [StoredFTPSnapshot]) -> Double {
+    nonisolated static func resolved(for workoutDate: Date, snapshots: [StoredFTPSnapshot]) -> Double {
         snapshots
             .filter { $0.date <= workoutDate }
             .max(by: { $0.date < $1.date })
@@ -68,7 +68,7 @@ extension StoredFTPSnapshot {
 
     /// Sendable-safe overload for use across async boundaries.
     /// Accepts value-type tuples instead of @Model objects — avoids Sendable violations in nonisolated async contexts.
-    static func resolved(for workoutDate: Date, ftpValues: [(date: Date, watts: Int)]) -> Double {
+    nonisolated static func resolved(for workoutDate: Date, ftpValues: [(date: Date, watts: Int)]) -> Double {
         ftpValues
             .filter { $0.date <= workoutDate }
             .max(by: { $0.date < $1.date })

@@ -8,7 +8,7 @@
 
 import Foundation
 
-struct StatisticalValidator {
+nonisolated struct StatisticalValidator {
     
     // MARK: - Confidence Intervals
     

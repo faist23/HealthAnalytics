@@ -18,9 +18,10 @@ class SyncManager: ObservableObject {
     
     @AppStorage("lastSyncDate") private var lastSyncTimestamp: Double = 0
     @AppStorage("hasCompletedHistoricalBackfill") private var hasCompletedHistoricalBackfill: Bool = false
-    /// Set when a reset deleted the store and its 10-year refetch failed; every sync retries
-    /// that refetch until it succeeds (`performHistoricalBackfill` is a stub that fetches
-    /// nothing, so without this the older history never came back).
+    /// Set by a reset before it deletes the store, cleared when its 10-year HealthKit refetch
+    /// succeeds; while set, every sync retries that refetch (`performHistoricalBackfill` is a
+    /// stub that fetches nothing, so without this a failed or interrupted reset lost the older
+    /// history for good).
     @AppStorage("needsFullHistoryFetch") private var needsFullHistoryFetch: Bool = false
     @AppStorage("hasMigratedMetricNames") private var hasMigratedMetricNames: Bool = false
     @AppStorage("hasDeduplicatedWorkoutsV4") private var hasDeduplicatedWorkouts: Bool = false
