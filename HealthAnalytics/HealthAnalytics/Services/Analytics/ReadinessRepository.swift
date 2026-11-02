@@ -1070,7 +1070,8 @@ class ReadinessRepository: ObservableObject {
         return changed
     }
 
-    /// After a foreground sync (or a zone backfill or reset finishing): the stored workouts may
+    /// After a foreground sync or zone backfill, when `SyncManager.mayRecomputeDailyLoads` (never
+    /// on a reset's post or after a sync whose HealthKit fetch failed): the stored workouts may
     /// have gained, lost or re-zoned rides for recent days.
     func recomputeRecentDailyLoads(modelContext: ModelContext) {
         let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []

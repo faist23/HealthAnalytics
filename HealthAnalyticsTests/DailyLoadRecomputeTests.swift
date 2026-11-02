@@ -85,8 +85,8 @@ final class DailyLoadRecomputeTests: XCTestCase {
     }
 
     // Value: protects=only load and count change; recovery score and ACWR stay as written;
-    //   fails_when=the recompute rewrites readinessScore or dailyStrain (constraint 3);
-    //   why_new=TODO constraint; seam=recomputeRecentDailyLoads (non-test callers: 1); no_claim=none
+    //   fails_when=the recompute rewrites readinessScore or dailyStrain (the P2 rule: load and count only);
+    //   why_new=P2 TODO; seam=recomputeRecentDailyLoads (non-test callers: 1); no_claim=none
     func test_recoveryAndACWR_areNeverRewritten() throws {
         let row = score(1, load: 0, count: 0, readiness: 64, strain: 1.37)
         ride("r", daysAgo: 1)
@@ -97,8 +97,8 @@ final class DailyLoadRecomputeTests: XCTestCase {
 
     // Value: protects=today, days outside the 7-day window and days with no row are left alone
     //   (no row is created), and day 7 is still in; fails_when=the window grows or shrinks, or the
-    //   today/no-insert guard drifts
-    //   (constraints 7, today rewritten by analysis); why_new=new; seam=recomputeRecentDailyLoads
+    //   today/no-insert guard drifts (missing rows are never filled; analysis rewrites today);
+    //   why_new=new; seam=recomputeRecentDailyLoads
     //   (non-test callers: 1); no_claim=none beyond protects
     func test_todayOldDaysAndMissingRows_areUntouched() throws {
         let today = score(0, load: 0); let old = score(8, load: 0); let edge = score(7, load: 0)
@@ -110,9 +110,10 @@ final class DailyLoadRecomputeTests: XCTestCase {
     }
 
     // Value: protects=an unchanged day isn't rewritten (within 0.01), and a row is found by its
-    //   dateString even when its date's time would put startOfDay on another day (constraint 5);
-    //   fails_when=rows are matched by startOfDay(date) or written every time; why_new=TODO
-    //   constraints 5–6; seam=recomputeRecentDailyLoads (non-test callers: 1); no_claim=real travel
+    //   dateString even when its date's time would put startOfDay on another day (a stored date drifts
+    //   across midnight when travelling);
+    //   fails_when=rows are matched by startOfDay(date) or written every time; why_new=P2 TODO
+    //   (key by dateString, write only on change); seam=recomputeRecentDailyLoads (non-test callers: 1); no_claim=real travel
     func test_unchangedDaysAreNotWritten_andRowsAreKeyedByDateString() throws {
         let same = score(2, load: 1.005, count: 1)
         ride("s", daysAgo: 2)
@@ -144,7 +145,7 @@ final class DailyLoadRecomputeTests: XCTestCase {
 
     // Value: protects=the recent fetch always reaches at least 7 days back (backdated uploads
     //   arrive) and still reaches past a longer gap; fails_when=the window goes back to "since
-    //   last sync minus a day"; why_new=TODO constraint 2; seam=none; no_claim=HealthKit's real
+    //   last sync minus a day"; why_new=P2 TODO (backdated uploads); seam=none; no_claim=HealthKit's real
     //   late writers
     func test_recentSyncWindow_coversAtLeastSevenDays() {
         // The start of day 7, the oldest day the recompute rewrites, not now minus 7 days.
@@ -157,7 +158,7 @@ final class DailyLoadRecomputeTests: XCTestCase {
 
     // Value: protects=a HealthKit ride paired with a STORED Strava ride isn't stored again when
     //   Strava's list didn't come back this sync; fails_when=the foreground upsert dedupes only
-    //   against the fetched list again (TODO constraint 1); why_new=TODO; seam=none (real actor,
+    //   against the fetched list again; why_new=P2 TODO (no double-counted twins); seam=none (real actor,
     //   in-memory store); no_claim=WorkoutMatcher's pairing rules (tested elsewhere)
     func test_foregroundUpsert_skipsAHealthKitRidePairedWithAStoredStravaRide() async throws {
         let stored = StoredWorkout(id: "strava-1", type: .cycling, startDate: dayStart(1).addingTimeInterval(18 * 3600),
@@ -213,5 +214,17 @@ final class DailyLoadRecomputeTests: XCTestCase {
                                      weight: [], nutrition: [], vo2max: [])
         let ids = Set(try ModelContext(container).fetch(FetchDescriptor<StoredWorkout>()).map(\.id))
         XCTAssertEqual(ids, ["strava-1", hk.id.uuidString])
+    }
+
+    // Value: protects=a day whose ride count changed but whose load didn't (a 0-load ride added)
+    //   is still rewritten; fails_when=the write check looks at load only; why_new=coverage
+    //   audit; seam=recomputeRecentDailyLoads (non-test callers: 1); no_claim=none
+    func test_aCountOnlyChange_isWritten() throws {
+        let row = score(2, load: 1, count: 1)
+        ride("a", daysAgo: 2); ride("b", daysAgo: 2, hour: 20)
+        try context.save()
+        let changed = ReadinessRepository.recomputeRecentDailyLoads(context: context, now: now) { $0.id == "a" ? 1.0 : 0.0 }
+        XCTAssertEqual(changed, 1)
+        XCTAssertEqual(row.dailyLoad, 1); XCTAssertEqual(row.workoutCount, 2)
     }
 }
