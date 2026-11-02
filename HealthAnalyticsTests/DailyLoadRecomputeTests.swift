@@ -233,38 +233,4 @@ final class DailyLoadRecomputeTests: XCTestCase {
         XCTAssertEqual(changed, 1)
         XCTAssertEqual(row.dailyLoad, 1); XCTAssertEqual(row.workoutCount, 2)
     }
-
-    // Value: protects=an intent label the user set by hand on a Watch ride moves to its Strava
-    //   ride when the Strava copy replaces it, while an automatic label is deleted (re-derived);
-    //   fails_when=manual labels are deleted with the HealthKit copy, or automatic ones are
-    //   carried over; why_new=v0.1.22.0 adversarial follow-up (P3 TODO); seam=none (real actor,
-    //   in-memory store, both predicates translated); no_claim=the classifier relabelling
-    func test_foregroundUpsert_movesAManualLabelToTheStravaRide() async throws {
-        let start = dayStart(1).addingTimeInterval(18 * 3600)
-        let hk = healthKitRide(at: start.addingTimeInterval(60))
-        context.insert(StoredWorkout(id: hk.id.uuidString, type: .cycling, startDate: hk.startDate, duration: 3600,
-                                     distance: nil, power: nil, energy: nil, hr: 140, source: "Apple Watch"))
-        context.insert(StoredIntentLabel(workoutId: hk.id.uuidString, intent: .race, confidence: 1, source: .manual))
-        let otherHK = healthKitRide(at: dayStart(2).addingTimeInterval(18 * 3600))
-        context.insert(StoredWorkout(id: otherHK.id.uuidString, type: .cycling, startDate: otherHK.startDate, duration: 3600,
-                                     distance: nil, power: nil, energy: nil, hr: 140, source: "Apple Watch"))
-        context.insert(StoredIntentLabel(workoutId: otherHK.id.uuidString, intent: .easy, confidence: 0.6, source: .heuristic))
-        try context.save()
-        let strava = [
-            StravaImportData(id: "strava-7", title: "Ride", workoutType: .cycling, startDate: start, duration: 3600,
-                             distance: nil, power: 200, normalizedPower: nil, energy: nil, averageHeartRate: 140),
-            StravaImportData(id: "strava-8", title: "Ride", workoutType: .cycling, startDate: otherHK.startDate,
-                             duration: 3600, distance: nil, power: 180, normalizedPower: nil, energy: nil, averageHeartRate: 140)
-        ]
-        let actor = DataPersistenceActor(modelContainer: container)
-        await actor.upsertRecentData(workouts: [hk, otherHK], strava: strava, sleep: [], hrv: [], rhr: [], steps: [],
-                                     weight: [], nutrition: [], vo2max: [])
-        let labels = try ModelContext(container).fetch(FetchDescriptor<StoredIntentLabel>())
-        let byID = Dictionary(labels.map { ($0.workoutId, $0) }, uniquingKeysWith: { a, _ in a })
-        XCTAssertEqual(byID["strava-7"]?.source, .manual, "the user's label moved to the Strava ride")
-        XCTAssertEqual(byID["strava-7"]?.intentRawValue, ActivityIntent.race.rawValue)
-        XCTAssertNil(byID[hk.id.uuidString]); XCTAssertNil(byID[otherHK.id.uuidString])
-        XCTAssertNotEqual(byID["strava-8"]?.source, .manual, "an automatic label is re-derived, not carried over")
-    }
 }
-

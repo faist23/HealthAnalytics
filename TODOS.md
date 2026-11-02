@@ -102,7 +102,7 @@
 
 ## Completed
 
-- **P3 — Re-key a manual intent label instead of deleting it with its HealthKit copy** — **Completed:** unreleased (2026-11-02). A `.manual` label moves to the matched Strava ride when that ride has none; automatic labels are deleted and re-derived.
+- **P3 — Re-key a manual intent label instead of deleting it with its HealthKit copy** — **Closed:** unreleased (2026-11-02). Moot: nothing in the app writes a `.manual` intent label (`LabelSource.manual` has no writer), so every label is automatic and is re-derived for the Strava ride.
 - **P3 — Forecast testability: inject ACWR instead of reading the shared singleton** — **Completed:** unreleased (2026-11-02). `compute7DayForecast(modelContext:acwr:)` takes it as an argument.
 - **P3 — Mark the load engine's pure functions `nonisolated`** — **Completed:** unreleased (2026-11-02). `PredictiveReadinessService`, `StatisticalValidator`, `HeuristicIntentClassifier`, `WorkoutData` and the intensity/FTP helpers are nonisolated; zero actor-isolation warnings (about 20 before).
 - **P3 — Test gaps: zero-twin insertion order and `detectedAt` renewal on commit** — **Completed:** unreleased (2026-11-02). Reverse-order zero-twin test (the pair catches first- and last-row-wins); accept/decline commit-gate test.
