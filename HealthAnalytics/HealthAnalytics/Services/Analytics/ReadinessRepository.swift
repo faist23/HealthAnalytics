@@ -1477,11 +1477,14 @@ class ReadinessRepository: ObservableObject {
     }
 
     /// What the illness log says about today (ongoing, just ended, or nothing). The log is a
-    /// handful of rows, so it is read whole (no predicate to translate). A failed read is
-    /// treated as no illness, which only keeps the paragraph as it was before the log.
+    /// handful of rows, so it is read whole (no predicate to translate). A failed read keeps
+    /// the last state this repository saw, never "no illness": that would advise training
+    /// while the log says sick.
     private func fetchIllnessState(context: ModelContext, now: Date = Date()) -> MasterCoachEngine.IllnessState {
-        let spells = ((try? context.fetch(FetchDescriptor<IllnessEvent>())) ?? []).map { (start: $0.startDate, end: $0.endDate) }
-        return MasterCoachEngine.IllnessState.from(spells, now: now)
+        guard let events = try? context.fetch(FetchDescriptor<IllnessEvent>()) else {
+            return lastIllnessState ?? .none
+        }
+        return MasterCoachEngine.IllnessState.from(events.map { (start: $0.startDate, end: $0.endDate) }, now: now)
     }
 
     private func fetchActivePatternTypes(context: ModelContext) -> Set<PatternType> {

@@ -35,9 +35,14 @@ final class IllnessEvent {
 
 enum IllnessLog {
     /// After the log changes: the illness state is part of the Coach cache key, so this
-    /// re-runs the paragraph now instead of at the next sync.
+    /// re-runs the paragraph now instead of at the next sync, then asks for a pattern run
+    /// (5-minute throttle, as when the Recovery tab appears) so a logged illness reaches the
+    /// HRV precursor without waiting for the 7-day staleness check.
     @MainActor static func refreshCoach(_ modelContext: ModelContext) {
-        Task { await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext) }
+        Task {
+            await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext)
+            await ReadinessRepository.shared.runPatternAnalysis(container: modelContext.container, trigger: .appear)
+        }
     }
 
     /// The Coach tab's Sick chip: ends the open illness(es); otherwise reopens one whose last

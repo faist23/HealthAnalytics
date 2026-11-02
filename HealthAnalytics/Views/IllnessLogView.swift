@@ -13,8 +13,25 @@ struct IllnessLogView: View {
     @Query(sort: \IllnessEvent.startDate, order: .reverse) private var events: [IllnessEvent]
     @Environment(\.modelContext) private var modelContext
 
-    @State private var editTarget: IllnessEvent? = nil
-    @State private var showingEntrySheet = false
+    /// One optional drives the sheet, so the sheet always opens with the row that was tapped.
+    /// (`sheet(isPresented:)` plus a separate target can open as a blank "Log Illness" form and
+    /// then save over the tapped illness.)
+    @State private var sheet: EntrySheet?
+
+    private enum EntrySheet: Identifiable {
+        case new
+        case edit(IllnessEvent)
+        var id: String {
+            switch self {
+            case .new: return "new"
+            case .edit(let event): return event.id.uuidString
+            }
+        }
+        var event: IllnessEvent? {
+            if case .edit(let event) = self { return event }
+            return nil
+        }
+    }
 
     var body: some View {
         List {
@@ -34,8 +51,7 @@ struct IllnessLogView: View {
                 Section {
                     ForEach(events) { event in
                         Button {
-                            editTarget = event
-                            showingEntrySheet = true
+                            sheet = .edit(event)
                         } label: {
                             IllnessRow(event: event)
                         }
@@ -53,17 +69,16 @@ struct IllnessLogView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    editTarget = nil
-                    showingEntrySheet = true
+                    sheet = .new
                 } label: {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add illness")
             }
         }
-        .sheet(isPresented: $showingEntrySheet) {
-            IllnessEntrySheet(event: editTarget) { start, end in
-                if let target = editTarget {
+        .sheet(item: $sheet) { entry in
+            IllnessEntrySheet(event: entry.event) { start, end in
+                if let target = entry.event {
                     target.startDate = Calendar.current.startOfDay(for: start)
                     target.endDate = end.map { Calendar.current.startOfDay(for: $0) }
                 } else {
