@@ -56,7 +56,7 @@ When signals conflict, the following hierarchy applies:
 ## 6. Development Workflow
 
 ### Performance Profiling
-*   Use `PerformanceProfiler` to wrap all major analysis blocks. This ensures we can identify bottlenecks in HealthKit fetching or ML processing.
+*   Use `PerformanceProfiler` to wrap all major analysis blocks. This ensures we can identify bottlenecks in HealthKit fetching or analysis.
 
 ## 7. Upcoming Feature Roadmap: Coach Memory Evolution
 
@@ -70,8 +70,8 @@ We are currently building toward a true "Physiological OS." Version 1.0 (Phase 1
 *   **Anatomical Tagging:** "Injury" must evolve from a generic string into a structured physiological map (e.g., Lower Body: Knee vs. Upper Body: Shoulder).
 *   **Smart Routing:** The engine must dynamically filter workout recommendations based on the specific injury (e.g., zero out "Running" readiness for a knee injury, but keep "Upper Body Strength" at 100%).
 
-### ~~Phase 5: Generative AI Integration (The Endgame)~~ ✅ DONE
-*   **Dynamic Synthesis:** Replace the hardcoded `if/else` heuristic strings in `MasterCoachEngine.swift`.
+### Phase 5: Generative AI Integration (The Endgame) — scaffolded, not live
+*   **Dynamic Synthesis:** `MasterCoachEngine.synthesizeWithLLM` builds the `StateVector` prompt but no model is wired in: it waits 1.5 s and returns `generateHeuristicMessage`, which holds the only copy of every coaching sentence. Replacing those heuristic strings is the remaining work.
 *   **LLM Handoff:** Pass the entire `StateVector` (Readiness, Load, explicit Memories, and implicit Training Patterns) to an on-device LLM or cloud API to generate a unique, human-like coaching paragraph.
 
 ---

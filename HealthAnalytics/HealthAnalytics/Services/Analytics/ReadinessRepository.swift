@@ -1165,7 +1165,8 @@ class ReadinessRepository: ObservableObject {
     /// Computes a 7-day readiness forecast from the last 14 StoredDailyScore entries.
     /// Returns nil when fewer than 14 stored scores exist (insufficient trend window).
     /// Published as `self.forecast` at the end of performFullAnalysis().
-    /// `acwr` is the assessment's ACWR; nil means no load signal (the load ceiling is skipped).
+    /// `acwr` is the assessment's ACWR and only bends the regression (>1.3 decays, <0.8 lifts;
+    /// nil or in between drifts toward 75). The per-day load ceiling is computed separately.
     /// Passed in, never read from `currentReadiness`, so a test can't inherit the app's state.
     func compute7DayForecast(modelContext: ModelContext, acwr: Double?) -> [ReadinessForecastDay]? {
         let calendar = Calendar.current
@@ -1193,7 +1194,7 @@ class ReadinessRepository: ObservableObject {
         let variance = yVals.map { ($0 - meanY) * ($0 - meanY) }.reduce(0, +) / Double(yVals.count)
         let baselineSigma = (variance > 0 ? sqrt(variance) : 5.0) / 2.0
 
-        // ACWR modifier from current published readiness (or test override)
+        // ACWR modifier from the assessment's ACWR (passed in)
 
         // Workouts for the per-day load ceiling below. The chronic window for the
         // last forecast day reaches back to today-21, so 30 days covers every day.
