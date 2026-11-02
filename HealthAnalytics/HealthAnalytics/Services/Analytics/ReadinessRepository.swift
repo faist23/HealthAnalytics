@@ -1030,12 +1030,6 @@ class ReadinessRepository: ObservableObject {
     /// How many complete days before today get their load recomputed after a sync.
     nonisolated static let dailyLoadRecomputeDays = 7
 
-    /// The first recompute after upgrading reaches back over the taper detector's whole 28-day
-    /// span: removing a stored Watch twin only from the last 7 days would halve them against a
-    /// still-doubled baseline and read as a load drop.
-    nonisolated static let dailyLoadUpgradeRecomputeDays = 28
-    nonisolated static let dailyLoadUpgradeRecomputeKey = "dailyLoadUpgradeRecomputeDone"
-
     /// A day's `dailyLoad` and `workoutCount` were fixed at its last write (often mid-day), so a
     /// ride synced later (an evening ride synced next morning, a backdated upload) never counted,
     /// and a ride removed from the store kept its load. Recomputes both for the EXISTING rows of
@@ -1080,12 +1074,9 @@ class ReadinessRepository: ObservableObject {
     /// have gained, lost or re-zoned rides for recent days.
     func recomputeRecentDailyLoads(modelContext: ModelContext) {
         let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
-        let upgraded = UserDefaults.standard.bool(forKey: Self.dailyLoadUpgradeRecomputeKey)
-        let days = upgraded ? Self.dailyLoadRecomputeDays : Self.dailyLoadUpgradeRecomputeDays
-        let changed = Self.recomputeRecentDailyLoads(context: modelContext, now: Date(), days: days) { [predictiveReadinessService] in
+        let changed = Self.recomputeRecentDailyLoads(context: modelContext, now: Date()) { [predictiveReadinessService] in
             predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: $0), ftpSnapshots: ftpSnapshots)
         }
-        UserDefaults.standard.set(true, forKey: Self.dailyLoadUpgradeRecomputeKey)
         #if DEBUG
         if changed > 0 { print("📈 Recomputed load for \(changed) recent day(s)") }
         #endif
