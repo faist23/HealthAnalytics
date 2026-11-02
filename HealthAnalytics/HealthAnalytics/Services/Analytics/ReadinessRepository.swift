@@ -158,9 +158,9 @@ class ReadinessRepository: ObservableObject {
                 guard let self else { return }
                 // Only the foreground posts DataSyncCompleted (sync, zone backfill, reset), never
                 // the background pass, so recent rows aren't refilled from Health-only data.
-                // This Task runs after the poster clears isSyncing, so a sync's or reset's own
-                // post recomputes, even with the sync's zone backfill already running; a zone
-                // backfill posting mid-reset, or a sync whose HealthKit fetch failed, does not.
+                // This Task runs after the poster clears isSyncing, so a sync's own post
+                // recomputes, even with its zone backfill already running; a reset's post, a zone
+                // backfill posting mid-reset, or a sync whose HealthKit fetch failed does not.
                 if SyncManager.shared.mayRecomputeDailyLoads {
                     self.recomputeRecentDailyLoads(modelContext: HealthDataContainer.shared.mainContext)
                 }
@@ -1030,6 +1030,12 @@ class ReadinessRepository: ObservableObject {
     /// How many complete days before today get their load recomputed after a sync.
     nonisolated static let dailyLoadRecomputeDays = 7
 
+    /// The first recompute after upgrading reaches back over the taper detector's whole 28-day
+    /// span: removing a stored Watch twin only from the last 7 days would halve them against a
+    /// still-doubled baseline and read as a load drop.
+    nonisolated static let dailyLoadUpgradeRecomputeDays = 28
+    nonisolated static let dailyLoadUpgradeRecomputeKey = "dailyLoadUpgradeRecomputeDone"
+
     /// A day's `dailyLoad` and `workoutCount` were fixed at its last write (often mid-day), so a
     /// ride synced later (an evening ride synced next morning, a backdated upload) never counted,
     /// and a ride removed from the store kept its load. Recomputes both for the EXISTING rows of
@@ -1074,9 +1080,12 @@ class ReadinessRepository: ObservableObject {
     /// have gained, lost or re-zoned rides for recent days.
     func recomputeRecentDailyLoads(modelContext: ModelContext) {
         let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
-        let changed = Self.recomputeRecentDailyLoads(context: modelContext, now: Date()) { [predictiveReadinessService] in
+        let upgraded = UserDefaults.standard.bool(forKey: Self.dailyLoadUpgradeRecomputeKey)
+        let days = upgraded ? Self.dailyLoadRecomputeDays : Self.dailyLoadUpgradeRecomputeDays
+        let changed = Self.recomputeRecentDailyLoads(context: modelContext, now: Date(), days: days) { [predictiveReadinessService] in
             predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: $0), ftpSnapshots: ftpSnapshots)
         }
+        UserDefaults.standard.set(true, forKey: Self.dailyLoadUpgradeRecomputeKey)
         #if DEBUG
         if changed > 0 { print("📈 Recomputed load for \(changed) recent day(s)") }
         #endif

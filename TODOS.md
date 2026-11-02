@@ -139,6 +139,17 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15min)
 
+### A reset whose HealthKit fetch fails loses older history for good
+**Priority:** P3 — surfaced by the v0.1.20.0 review (pre-existing)
+
+**What:** `resetAllData` deletes every stored workout and metric, then `syncAllHistoricalData` refetches 10 years. If that fetch throws, the next sync fetches only 30 days (`recentSyncWindowStart(lastSync: nil)`), and `performHistoricalBackfill` is a stub that fetches nothing before `hasCompletedHistoricalBackfill` is set. Older history never comes back without another reset.
+
+**Why:** The 118-day load chart and the 90/180-day pattern reads lose their data. Before v0.1.20.0 a failed reset also stamped `lastSyncDate`, so even the 30 days were skipped.
+
+**How to apply:** Persist a "full history needed" flag when the reset's fetch fails, have `performSmartSync` call `syncAllHistoricalData` while it is set, and clear it only on success. Or make `performHistoricalBackfill` real and gate its flag on its result.
+
+**Effort:** S (human: ~2h / CC+gstack: ~15min)
+
 ## Coach
 
 ### A hung analysis blocks every later pattern-analysis request

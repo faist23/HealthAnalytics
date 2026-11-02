@@ -36,15 +36,16 @@ class SyncManager: ObservableObject {
     /// commits while this is true.
     var isRewritingStore: Bool { isSyncing || isMigrating || isBackfillingZones }
 
-    /// The last sync's HealthKit fetch succeeded (recent sync or reset). False after a failed
-    /// fetch until the next good one: the store may be missing that window's rides. Persisted,
-    /// so a relaunch doesn't reopen the recompute before a good fetch.
+    /// The last recent sync's HealthKit fetch succeeded. A recent sync only adds rides (and
+    /// removes ones Strava confirms deleted), so after a good one the store holds at least what
+    /// the rows were scored from. A reset sets it false: it deletes the store and refetches,
+    /// and any half of that refetch can fail quietly (Strava's list is `try?`), so recent rows
+    /// wait for the next good recent sync. Persisted, so a relaunch doesn't reopen it.
     @AppStorage("lastRecentSyncSucceeded") private(set) var lastRecentSyncSucceeded = true
 
-    /// Recent days' loads may be recomputed from the store only when it is complete: no sync,
-    /// reset or dedup running (a zone backfill can post mid-reset, after the workouts were
-    /// deleted) and the last recent fetch came back. A running zone backfill doesn't block it:
-    /// the sync that starts one must still recompute, and the backfill re-zones rides in place.
+    /// Recent days' loads may be recomputed from the store only after a good recent sync and
+    /// while no sync, reset or dedup runs. A running zone backfill doesn't block it: the sync
+    /// that starts one must still recompute, and the backfill re-zones rides in place.
     var mayRecomputeDailyLoads: Bool { !isSyncing && !isMigrating && lastRecentSyncSucceeded }
 
     /// Bumped whenever one of those rewrites starts, so the background pass can tell a
@@ -979,10 +980,11 @@ class SyncManager: ObservableObject {
         await dataHandler.deleteAll()
 
         // Fetch ALL historical data (10 years back)
-        // A failed fetch leaves the workouts deleted: keep the recompute off (it would zero the
-        // recent days' rows) and leave the next sync to fetch from scratch.
+        // The recompute waits for the next good recent sync (see lastRecentSyncSucceeded). A
+        // failed fetch leaves lastSyncDate unset, so that sync isn't throttled and refetches the
+        // last 30 days; older history is not refetched (performHistoricalBackfill is a stub).
+        lastRecentSyncSucceeded = false
         let fetched = await syncAllHistoricalData(dataHandler: dataHandler)
-        lastRecentSyncSucceeded = fetched
         if fetched {
             lastSyncDate = Date()
             hasCompletedHistoricalBackfill = true
@@ -1378,10 +1380,10 @@ actor DataPersistenceActor {
     }
 
     /// HealthKit-only workout upsert for the background pattern pass. Rides the
-    /// foreground already stored as their Strava copy are skipped: `upsertRecentData`
-    /// matches HealthKit workouts only against the Strava list it is handed, and the
-    /// background hands it none, so without this filter a stored Strava ride would gain
-    /// a second HealthKit-UUID row (double load). A ride not yet on Strava is stored
+    /// foreground already stored as their Strava copy are skipped, so a stored Strava ride
+    /// doesn't gain a second HealthKit-UUID row (double load). `upsertRecentData` checks
+    /// stored Strava rides too and also deletes such a twin; this filter only skips, and an
+    /// existing twin waits for the next foreground sync. A ride not yet on Strava is stored
     /// under its HealthKit UUID; the next foreground sync's match replaces it.
     func upsertHealthKitWorkoutsOnly(_ workouts: [WorkoutData], since: Date) {
         let windowStart = since.addingTimeInterval(-86400)
