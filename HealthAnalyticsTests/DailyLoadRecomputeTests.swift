@@ -96,16 +96,17 @@ final class DailyLoadRecomputeTests: XCTestCase {
     }
 
     // Value: protects=today, days outside the 7-day window and days with no row are left alone
-    //   (no row is created); fails_when=the window or the today/no-insert guard drifts
+    //   (no row is created), and day 7 is still in; fails_when=the window grows or shrinks, or the
+//   today/no-insert guard drifts
     //   (constraints 7, today rewritten by analysis); why_new=new; seam=recomputeRecentDailyLoads
     //   (non-test callers: 1); no_claim=none beyond protects
     func test_todayOldDaysAndMissingRows_areUntouched() throws {
-        let today = score(0, load: 0); let old = score(8, load: 0)
-        ride("t", daysAgo: 0); ride("o", daysAgo: 8); ride("norow", daysAgo: 4)
+        let today = score(0, load: 0); let old = score(8, load: 0); let edge = score(7, load: 0)
+        ride("t", daysAgo: 0); ride("o", daysAgo: 8); ride("norow", daysAgo: 4); ride("e", daysAgo: 7)
         try context.save()
-        XCTAssertEqual(recompute(), 0)
-        XCTAssertEqual(today.dailyLoad, 0); XCTAssertEqual(old.dailyLoad, 0)
-        XCTAssertEqual(try context.fetch(FetchDescriptor<StoredDailyScore>()).count, 2, "no row created")
+        XCTAssertEqual(recompute(), 1, "only day 7")
+        XCTAssertEqual(today.dailyLoad, 0); XCTAssertEqual(old.dailyLoad, 0); XCTAssertEqual(edge.dailyLoad, 1)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<StoredDailyScore>()).count, 3, "no row created")
     }
 
     // Value: protects=an unchanged day isn't rewritten (within 0.01), and a row is found by its
@@ -125,6 +126,18 @@ final class DailyLoadRecomputeTests: XCTestCase {
         XCTAssertEqual(recompute(), 1, "only the drifted row moved")
         XCTAssertEqual(same.dailyLoad, 1.005)
         XCTAssertEqual(drifted.dailyLoad, 1)
+    }
+
+    // Value: protects=every row for a day is recomputed, so a duplicate row can't keep a removed
+    //   ride's load (detectors read the day's highest row); fails_when=only the first row per
+    //   dateString is written; why_new=red-team review; seam=recomputeRecentDailyLoads (non-test
+    //   callers: 1); no_claim=why duplicate rows exist
+    func test_duplicateRowsForADay_areAllRecomputed() throws {
+        let a = score(2, load: 2, count: 2); let b = score(2, load: 2, count: 2)
+        ride("kept", daysAgo: 2)
+        try context.save()
+        XCTAssertEqual(recompute(), 2)
+        XCTAssertEqual(a.dailyLoad, 1); XCTAssertEqual(b.dailyLoad, 1)
     }
 
     // MARK: Store trust
@@ -159,5 +172,45 @@ final class DailyLoadRecomputeTests: XCTestCase {
                                      weight: [], nutrition: [], vo2max: [])
         let ids = try ModelContext(container).fetch(FetchDescriptor<StoredWorkout>()).map(\.id)
         XCTAssertEqual(ids, ["strava-1"])
+    }
+
+    private func healthKitRide(at start: Date) -> WorkoutData {
+        WorkoutData(workoutType: .cycling, startDate: start, endDate: start.addingTimeInterval(3600), duration: 3600,
+                    totalEnergyBurned: nil, totalDistance: nil, averagePower: nil,
+                    averageHeartRate: 140, source: .appleWatch)
+    }
+
+    // Value: protects=a HealthKit copy an earlier sync stored beside a stored Strava ride is
+    //   deleted, so the recompute doesn't count the ride twice; fails_when=the stored-Strava
+    //   branch only skips; why_new=testing + red-team review; seam=none (real actor, in-memory
+    //   store); no_claim=how the twin got stored
+    func test_foregroundUpsert_deletesAStoredHealthKitTwinOfAStoredStravaRide() async throws {
+        let start = dayStart(1).addingTimeInterval(18 * 3600)
+        context.insert(StoredWorkout(id: "strava-1", type: .cycling, startDate: start, duration: 3600, distance: nil,
+                                     power: 200, energy: nil, hr: 140, source: "Strava"))
+        let hk = healthKitRide(at: start.addingTimeInterval(60))
+        context.insert(StoredWorkout(id: hk.id.uuidString, type: .cycling, startDate: hk.startDate, duration: 3600,
+                                     distance: nil, power: nil, energy: nil, hr: 140, source: "Apple Watch"))
+        try context.save()
+        let actor = DataPersistenceActor(modelContainer: container)
+        await actor.upsertRecentData(workouts: [hk], strava: [], sleep: [], hrv: [], rhr: [], steps: [],
+                                     weight: [], nutrition: [], vo2max: [])
+        XCTAssertEqual(try ModelContext(container).fetch(FetchDescriptor<StoredWorkout>()).map(\.id), ["strava-1"])
+    }
+
+    // Value: protects=a HealthKit ride that pairs with no stored Strava ride is still stored
+    //   when stored Strava rides exist (the dedupe doesn't over-skip); fails_when=any stored
+    //   Strava ride suppresses every HealthKit ride; why_new=coverage audit; seam=none;
+    //   no_claim=WorkoutMatcher's thresholds
+    func test_foregroundUpsert_storesAnUnpairedHealthKitRide() async throws {
+        context.insert(StoredWorkout(id: "strava-1", type: .cycling, startDate: dayStart(1).addingTimeInterval(7 * 3600),
+                                     duration: 3600, distance: nil, power: 200, energy: nil, hr: 140, source: "Strava"))
+        try context.save()
+        let hk = healthKitRide(at: dayStart(1).addingTimeInterval(18 * 3600))
+        let actor = DataPersistenceActor(modelContainer: container)
+        await actor.upsertRecentData(workouts: [hk], strava: [], sleep: [], hrv: [], rhr: [], steps: [],
+                                     weight: [], nutrition: [], vo2max: [])
+        let ids = Set(try ModelContext(container).fetch(FetchDescriptor<StoredWorkout>()).map(\.id))
+        XCTAssertEqual(ids, ["strava-1", hk.id.uuidString])
     }
 }

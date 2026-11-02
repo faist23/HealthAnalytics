@@ -36,6 +36,15 @@ class SyncManager: ObservableObject {
     /// commits while this is true.
     var isRewritingStore: Bool { isSyncing || isMigrating || isBackfillingZones }
 
+    /// The last recent sync's HealthKit fetch succeeded (a reset counts as one). False after a
+    /// failed fetch until the next good one: the store may be missing that window's rides.
+    private(set) var lastRecentSyncSucceeded = true
+
+    /// Recent days' loads may be recomputed from the store only when it is complete: no
+    /// rewrite running (a zone backfill can post mid-reset, with the workouts deleted) and the
+    /// last recent fetch came back.
+    var mayRecomputeDailyLoads: Bool { !isRewritingStore && lastRecentSyncSucceeded }
+
     /// Bumped whenever one of those rewrites starts, so the background pass can tell a
     /// rewrite that started and finished while it was detecting.
     private(set) var storeRewriteGeneration = 0
@@ -317,6 +326,7 @@ class SyncManager: ObservableObject {
             
             // A failed fetch must not move the window past the data it missed.
             if recentSynced { lastSyncDate = Date() }
+            lastRecentSyncSucceeded = recentSynced
             #if DEBUG
             print("✅ Smart Sync Complete")
             #endif
@@ -968,6 +978,7 @@ class SyncManager: ObservableObject {
         await syncAllHistoricalData(dataHandler: dataHandler)
         
         lastSyncDate = Date()
+        lastRecentSyncSucceeded = true
         hasCompletedHistoricalBackfill = true
         
         #if DEBUG
@@ -1290,6 +1301,14 @@ actor DataPersistenceActor {
                 )
                 matchedStravaIds.insert(match.id)
             } else if WorkoutMatcher.findMatch(for: hkWorkout, in: storedStrava) != nil {
+                // Same ride as a stored Strava row: drop any copy an earlier sync stored under
+                // the HealthKit UUID, or the day's recomputed load counts it twice.
+                let hkDescriptor = FetchDescriptor<StoredWorkout>(
+                    predicate: #Predicate { $0.id == workoutID }
+                )
+                for staleHK in (try? modelContext.fetch(hkDescriptor)) ?? [] {
+                    modelContext.delete(staleHK)
+                }
                 continue
             } else {
                 upsertWorkout(

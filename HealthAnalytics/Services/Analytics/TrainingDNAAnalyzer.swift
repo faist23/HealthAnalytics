@@ -438,7 +438,8 @@ actor TrainingDNAAnalyzer {
         // isn't written yet would read as a sick day (a cyclist logs few steps).
         // A day's load is its highest row: a 0.0 twin written before the ride synced must not
         // make a ride day look like rest. A stored workout with real load vetoes rest too: a row
-        // written mid-morning keeps a later ride at 0 forever (TODOS: "A day's load is frozen").
+        // written mid-morning keeps a later ride at 0 until the foreground recompute reaches it,
+        // and for good on days older than ReadinessRepository.dailyLoadRecomputeDays.
         // The workout store can double-count or miss rides; either only makes rest less likely.
         let cutoff = completeDayStart(daysBack: 180)
         let end = completeDaysEnd

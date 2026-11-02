@@ -158,7 +158,12 @@ class ReadinessRepository: ObservableObject {
                 guard let self else { return }
                 // Only the foreground posts DataSyncCompleted (sync, zone backfill, reset), never
                 // the background pass, so recent rows aren't refilled from Health-only data.
-                self.recomputeRecentDailyLoads(modelContext: HealthDataContainer.shared.mainContext)
+                // This Task runs after the poster clears isSyncing, so a sync's or reset's own
+                // post recomputes; a zone backfill posting mid-reset, or a sync whose HealthKit
+                // fetch failed, does not.
+                if SyncManager.shared.mayRecomputeDailyLoads {
+                    self.recomputeRecentDailyLoads(modelContext: HealthDataContainer.shared.mainContext)
+                }
                 await self.refreshIfNecessary(
                     modelContext: HealthDataContainer.shared.mainContext
                 )
@@ -1030,9 +1035,10 @@ class ReadinessRepository: ObservableObject {
     /// and a ride removed from the store kept its load. Recomputes both for the EXISTING rows of
     /// the last `days` complete days from the stored workouts. Rows are found by `dateString`
     /// (a stored `date` can drift across midnight when travelling); a row is written only when
-    /// its load moves by more than 0.01 or its count changes. Never touches `readinessScore` or
-    /// `dailyStrain`, never creates a row, never touches today (analysis rewrites it). Returns
-    /// how many rows changed.
+    /// its load moves by more than 0.01 or its count changes; every row for the day is written,
+    /// duplicates included. Never touches `readinessScore` or
+    /// `dailyStrain`, never creates a row, never touches today (analysis rewrites it). The caller
+    /// runs it only when `SyncManager.mayRecomputeDailyLoads`. Returns how many rows changed.
     @discardableResult
     static func recomputeRecentDailyLoads(context: ModelContext, now: Date, days: Int = dailyLoadRecomputeDays,
                                           calendar: Calendar = .current,
@@ -1043,18 +1049,22 @@ class ReadinessRepository: ObservableObject {
             guard let dayStart = calendar.date(byAdding: .day, value: -back, to: today),
                   let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { continue }
             let dateStr = dailyScoreDateFormatter.string(from: dayStart)
-            guard let row = (try? context.fetch(FetchDescriptor<StoredDailyScore>(
+            // Every row for the day: detectors read a day's highest row, so a twin left at the
+            // old load would hide a removed ride.
+            let rows = (try? context.fetch(FetchDescriptor<StoredDailyScore>(
                 predicate: #Predicate { $0.dateString == dateStr }
-            )))?.first else { continue }
+            ))) ?? []
+            guard !rows.isEmpty else { continue }
             let workouts = (try? context.fetch(FetchDescriptor<StoredWorkout>(
                 predicate: #Predicate { $0.startDate >= dayStart && $0.startDate < dayEnd },
                 sortBy: [SortDescriptor(\.startDate)]
             ))) ?? []
             let dayLoad = workouts.reduce(0.0) { $0 + load($1) }
-            guard abs(row.dailyLoad - dayLoad) > 0.01 || row.workoutCount != workouts.count else { continue }
-            row.dailyLoad = dayLoad
-            row.workoutCount = workouts.count
-            changed += 1
+            for row in rows where abs(row.dailyLoad - dayLoad) > 0.01 || row.workoutCount != workouts.count {
+                row.dailyLoad = dayLoad
+                row.workoutCount = workouts.count
+                changed += 1
+            }
         }
         if changed > 0 { try? context.save() }
         return changed
