@@ -36,6 +36,19 @@ class SyncManager: ObservableObject {
     /// commits while this is true.
     var isRewritingStore: Bool { isSyncing || isMigrating || isBackfillingZones }
 
+    /// The last recent sync's HealthKit fetch succeeded. A recent sync only adds rides (and
+    /// removes ones Strava confirms deleted), so after a good one the store holds at least what
+    /// the rows were scored from. A reset sets it false: it deletes the store and refetches,
+    /// and any half of that refetch can fail quietly (Strava's list is `try?`), so recent rows
+    /// wait for the next good recent sync. Persisted, so a relaunch doesn't reopen it; false
+    /// until the first good recent sync after install or upgrade.
+    @AppStorage("lastRecentSyncSucceeded") private(set) var lastRecentSyncSucceeded = false
+
+    /// Recent days' loads may be recomputed from the store only after a good recent sync and
+    /// while no sync, reset or dedup runs. A running zone backfill doesn't block it: the sync
+    /// that starts one must still recompute, and the backfill re-zones rides in place.
+    var mayRecomputeDailyLoads: Bool { !isSyncing && !isMigrating && lastRecentSyncSucceeded }
+
     /// Bumped whenever one of those rewrites starts, so the background pass can tell a
     /// rewrite that started and finished while it was detecting.
     private(set) var storeRewriteGeneration = 0
@@ -307,7 +320,7 @@ class SyncManager: ObservableObject {
             #endif
             
             // STEP 2: Sync recent data (always - this is fast)
-            await syncRecentData(dataHandler: dataHandler)
+            let recentSynced = await syncRecentData(dataHandler: dataHandler)
             
             // STEP 3: Historical backfill (only if needed)
             if syncPlan.needsHistoricalBackfill && !hasCompletedHistoricalBackfill {
@@ -315,7 +328,9 @@ class SyncManager: ObservableObject {
                 hasCompletedHistoricalBackfill = true
             }
             
-            lastSyncDate = Date()
+            // A failed fetch must not move the window past the data it missed.
+            if recentSynced { lastSyncDate = Date() }
+            lastRecentSyncSucceeded = recentSynced
             #if DEBUG
             print("✅ Smart Sync Complete")
             #endif
@@ -452,15 +467,27 @@ class SyncManager: ObservableObject {
     
     // MARK: - Recent Data Sync
     
-    private func syncRecentData(dataHandler: DataPersistenceActor) async {
+    /// Where a recent sync starts reading: a day before the last successful sync, but never
+    /// later than the start of the day 7 days ago (the oldest day the load recompute rewrites),
+    /// because late writers (Garmin, Zwift, Wahoo) backdate rides into HealthKit and Strava;
+    /// 30 days back on a first sync.
+    nonisolated static func recentSyncWindowStart(lastSync: Date?, now: Date, calendar: Calendar = .current) -> Date {
+        guard let lastSync else { return calendar.date(byAdding: .day, value: -30, to: now) ?? now }
+        let dayBeforeLast = calendar.date(byAdding: .day, value: -1, to: lastSync) ?? lastSync
+        let weekBack = calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: now)) ?? now
+        return min(dayBeforeLast, weekBack)
+    }
+
+    /// Returns whether the HealthKit fetch and upsert succeeded; `lastSyncDate` advances only then.
+    @discardableResult
+    private func syncRecentData(dataHandler: DataPersistenceActor) async -> Bool {
         let calendar = Calendar.current
         let endDate = Date()
 
-        // INCREMENTAL SYNC: Only fetch data since last successful sync
+        // INCREMENTAL SYNC: since the last successful sync, and always at least a week back
         let startDate: Date
         if let lastSync = lastSyncDate {
-            // Add 1 day buffer to avoid missing data at boundaries
-            startDate = calendar.date(byAdding: .day, value: -1, to: lastSync) ?? lastSync
+            startDate = Self.recentSyncWindowStart(lastSync: lastSync, now: endDate, calendar: calendar)
             let daysSinceLastSync = calendar.dateComponents([.day], from: lastSync, to: endDate).day ?? 0
             
             // Better time display for recent syncs
@@ -485,7 +512,7 @@ class SyncManager: ObservableObject {
             syncProgress = "Updating last \(timeDescription)..."
         } else {
             // First sync ever - get last 30 days as initial data
-            startDate = calendar.date(byAdding: .day, value: -30, to: endDate) ?? endDate
+            startDate = Self.recentSyncWindowStart(lastSync: nil, now: endDate, calendar: calendar)
             #if DEBUG
             print("🔄 Initial sync: fetching last 30 days...")
             #endif
@@ -609,11 +636,12 @@ class SyncManager: ObservableObject {
             #if DEBUG
             print("   ✅ Recent data synced")
             #endif
-
+            return true
         } catch {
             #if DEBUG
             print("   ❌ Recent sync failed: \(error)")
             #endif
+            return false
         }
     }
     
@@ -653,7 +681,8 @@ class SyncManager: ObservableObject {
     
     // MARK: - Sync All Historical Data
     
-    private func syncAllHistoricalData(dataHandler: DataPersistenceActor) async {
+    /// Returns whether the HealthKit fetch succeeded and was saved.
+    private func syncAllHistoricalData(dataHandler: DataPersistenceActor) async -> Bool {
         #if DEBUG
         print("📚 Fetching ALL historical data (10 years)...")
         #endif
@@ -748,11 +777,12 @@ class SyncManager: ObservableObject {
             #if DEBUG
             print("   ✅ All historical data saved")
             #endif
-
+            return true
         } catch {
             #if DEBUG
             print("   ❌ Failed to fetch historical data: \(error.localizedDescription)")
             #endif
+            return false
         }
     }
     
@@ -952,10 +982,15 @@ class SyncManager: ObservableObject {
         await dataHandler.deleteAll()
 
         // Fetch ALL historical data (10 years back)
-        await syncAllHistoricalData(dataHandler: dataHandler)
-        
-        lastSyncDate = Date()
-        hasCompletedHistoricalBackfill = true
+        // The recompute waits for the next good recent sync (see lastRecentSyncSucceeded). A
+        // failed fetch leaves lastSyncDate unset, so that sync isn't throttled and refetches the
+        // last 30 days; older history is not refetched (performHistoricalBackfill is a stub).
+        lastRecentSyncSucceeded = false
+        let fetched = await syncAllHistoricalData(dataHandler: dataHandler)
+        if fetched {
+            lastSyncDate = Date()
+            hasCompletedHistoricalBackfill = true
+        }
         
         #if DEBUG
         print("✅ Reset Complete - All historical data restored")
@@ -1239,7 +1274,16 @@ actor DataPersistenceActor {
         vo2max: [HealthDataPoint]
     ) {
         var matchedStravaIds = Set<String>()
-        
+        // Stored Strava rides the fetched list may not hold (its fetch failed, or the ride is
+        // older than the list's window): a HealthKit ride paired with one is that ride, not a new one.
+        let storedStrava: [StravaImportData] = {
+            guard let earliest = workouts.map(\.startDate).min() else { return [] }
+            let windowStart = earliest.addingTimeInterval(-86400)
+            return ((try? modelContext.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
+                $0.startDate >= windowStart && $0.source == "Strava"
+            }))) ?? []).map(Self.stravaImport(from:))
+        }()
+
         for hkWorkout in workouts {
             let workoutID = hkWorkout.id.uuidString
             
@@ -1250,7 +1294,7 @@ actor DataPersistenceActor {
                 let hkDescriptor = FetchDescriptor<StoredWorkout>(
                     predicate: #Predicate { $0.id == workoutID }
                 )
-                if let staleHK = try? modelContext.fetch(hkDescriptor).first {
+                for staleHK in (try? modelContext.fetch(hkDescriptor)) ?? [] {
                     modelContext.delete(staleHK)
                 }
                 upsertWorkout(
@@ -1267,6 +1311,16 @@ actor DataPersistenceActor {
                     source: "Strava"
                 )
                 matchedStravaIds.insert(match.id)
+            } else if WorkoutMatcher.findMatch(for: hkWorkout, in: storedStrava) != nil {
+                // Same ride as a stored Strava row: drop any copy an earlier sync stored under
+                // the HealthKit UUID, or the day's recomputed load counts it twice.
+                let hkDescriptor = FetchDescriptor<StoredWorkout>(
+                    predicate: #Predicate { $0.id == workoutID }
+                )
+                for staleHK in (try? modelContext.fetch(hkDescriptor)) ?? [] {
+                    modelContext.delete(staleHK)
+                }
+                continue
             } else {
                 upsertWorkout(
                     id: workoutID,
@@ -1328,10 +1382,10 @@ actor DataPersistenceActor {
     }
 
     /// HealthKit-only workout upsert for the background pattern pass. Rides the
-    /// foreground already stored as their Strava copy are skipped: `upsertRecentData`
-    /// matches HealthKit workouts only against the Strava list it is handed, and the
-    /// background hands it none, so without this filter a stored Strava ride would gain
-    /// a second HealthKit-UUID row (double load). A ride not yet on Strava is stored
+    /// foreground already stored as their Strava copy are skipped, so a stored Strava ride
+    /// doesn't gain a second HealthKit-UUID row (double load). `upsertRecentData` checks
+    /// stored Strava rides too and also deletes such a twin; this filter only skips, and an
+    /// existing twin waits for the next foreground sync. A ride not yet on Strava is stored
     /// under its HealthKit UUID; the next foreground sync's match replaces it.
     func upsertHealthKitWorkoutsOnly(_ workouts: [WorkoutData], since: Date) {
         let windowStart = since.addingTimeInterval(-86400)

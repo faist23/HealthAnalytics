@@ -156,6 +156,14 @@ class ReadinessRepository: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                // Only the foreground posts DataSyncCompleted (sync, zone backfill, reset), never
+                // the background pass, so recent rows aren't refilled from Health-only data.
+                // This Task runs after the poster clears isSyncing, so a sync's own post
+                // recomputes, even with its zone backfill already running; a reset's post, a zone
+                // backfill posting mid-reset, or a sync whose HealthKit fetch failed does not.
+                if SyncManager.shared.mayRecomputeDailyLoads {
+                    self.recomputeRecentDailyLoads(modelContext: HealthDataContainer.shared.mainContext)
+                }
                 await self.refreshIfNecessary(
                     modelContext: HealthDataContainer.shared.mainContext
                 )
@@ -1015,6 +1023,66 @@ class ReadinessRepository: ObservableObject {
             modelContext.insert(record)
         }
         try? modelContext.save()
+    }
+
+    // MARK: - Recent Daily Load Recompute
+
+    /// How many complete days before today get their load recomputed after a sync.
+    nonisolated static let dailyLoadRecomputeDays = 7
+
+    /// A day's `dailyLoad` and `workoutCount` were fixed at its last write (often mid-day), so a
+    /// ride synced later (an evening ride synced next morning, a backdated upload) never counted,
+    /// and a ride removed from the store kept its load. Recomputes both for the EXISTING rows of
+    /// the last `days` complete days from the stored workouts. Rows are found by `dateString`
+    /// (a stored `date` can drift across midnight when travelling); a row is written only when
+    /// its load moves by more than 0.01 or its count changes; every row for the day is written,
+    /// duplicates included. Never touches `readinessScore` or
+    /// `dailyStrain`, never creates a row, never touches today (analysis rewrites it). The caller
+    /// runs it only when `SyncManager.mayRecomputeDailyLoads`. Returns how many rows changed.
+    @discardableResult
+    static func recomputeRecentDailyLoads(context: ModelContext, now: Date, days: Int = dailyLoadRecomputeDays,
+                                          calendar: Calendar = .current,
+                                          load: (StoredWorkout) -> Double) -> Int {
+        let today = calendar.startOfDay(for: now)
+        var changed = 0
+        for back in 1...max(1, days) {
+            guard let dayStart = calendar.date(byAdding: .day, value: -back, to: today),
+                  let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { continue }
+            let dateStr = dailyScoreDateFormatter.string(from: dayStart)
+            // Every row for the day: detectors read a day's highest row, so a twin left at the
+            // old load would hide a removed ride.
+            // A failed fetch skips the day: read as "no rides" it would save zero load.
+            guard let rows = try? context.fetch(FetchDescriptor<StoredDailyScore>(
+                predicate: #Predicate { $0.dateString == dateStr }
+            )), !rows.isEmpty,
+                  let workouts = try? context.fetch(FetchDescriptor<StoredWorkout>(
+                predicate: #Predicate { $0.startDate >= dayStart && $0.startDate < dayEnd },
+                sortBy: [SortDescriptor(\.startDate)]
+            )) else { continue }
+            let dayLoad = workouts.reduce(0.0) { $0 + load($1) }
+            for row in rows where abs(row.dailyLoad - dayLoad) > 0.01 || row.workoutCount != workouts.count {
+                row.dailyLoad = dayLoad
+                row.workoutCount = workouts.count
+                changed += 1
+            }
+        }
+        if changed > 0 { try? context.save() }
+        return changed
+    }
+
+    /// After a foreground sync or zone backfill, when `SyncManager.mayRecomputeDailyLoads` (never
+    /// on a reset's post or after a sync whose HealthKit fetch failed): the stored workouts may
+    /// have gained, lost or re-zoned rides for recent days.
+    func recomputeRecentDailyLoads(modelContext: ModelContext) {
+        // A failed read must not become "no FTP history": rides without zones would be re-scored
+        // at today's FTP. Skip; the next good sync recomputes.
+        guard let ftpSnapshots = try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>()) else { return }
+        let changed = Self.recomputeRecentDailyLoads(context: modelContext, now: Date()) { [predictiveReadinessService] in
+            predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: $0), ftpSnapshots: ftpSnapshots)
+        }
+        #if DEBUG
+        if changed > 0 { print("📈 Recomputed load for \(changed) recent day(s)") }
+        #endif
     }
 
     // MARK: - Historical Score Backfill
