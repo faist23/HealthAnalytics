@@ -97,7 +97,7 @@ final class DailyLoadRecomputeTests: XCTestCase {
 
     // Value: protects=today, days outside the 7-day window and days with no row are left alone
     //   (no row is created), and day 7 is still in; fails_when=the window grows or shrinks, or the
-//   today/no-insert guard drifts
+    //   today/no-insert guard drifts
     //   (constraints 7, today rewritten by analysis); why_new=new; seam=recomputeRecentDailyLoads
     //   (non-test callers: 1); no_claim=none beyond protects
     func test_todayOldDaysAndMissingRows_areUntouched() throws {

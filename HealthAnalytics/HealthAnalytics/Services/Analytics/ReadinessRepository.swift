@@ -159,8 +159,8 @@ class ReadinessRepository: ObservableObject {
                 // Only the foreground posts DataSyncCompleted (sync, zone backfill, reset), never
                 // the background pass, so recent rows aren't refilled from Health-only data.
                 // This Task runs after the poster clears isSyncing, so a sync's or reset's own
-                // post recomputes; a zone backfill posting mid-reset, or a sync whose HealthKit
-                // fetch failed, does not.
+                // post recomputes, even with the sync's zone backfill already running; a zone
+                // backfill posting mid-reset, or a sync whose HealthKit fetch failed, does not.
                 if SyncManager.shared.mayRecomputeDailyLoads {
                     self.recomputeRecentDailyLoads(modelContext: HealthDataContainer.shared.mainContext)
                 }

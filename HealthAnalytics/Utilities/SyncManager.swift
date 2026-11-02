@@ -40,10 +40,11 @@ class SyncManager: ObservableObject {
     /// failed fetch until the next good one: the store may be missing that window's rides.
     private(set) var lastRecentSyncSucceeded = true
 
-    /// Recent days' loads may be recomputed from the store only when it is complete: no
-    /// rewrite running (a zone backfill can post mid-reset, with the workouts deleted) and the
-    /// last recent fetch came back.
-    var mayRecomputeDailyLoads: Bool { !isRewritingStore && lastRecentSyncSucceeded }
+    /// Recent days' loads may be recomputed from the store only when it is complete: no sync,
+    /// reset or dedup running (a zone backfill can post mid-reset, after the workouts were
+    /// deleted) and the last recent fetch came back. A running zone backfill doesn't block it:
+    /// the sync that starts one must still recompute, and the backfill re-zones rides in place.
+    var mayRecomputeDailyLoads: Bool { !isSyncing && !isMigrating && lastRecentSyncSucceeded }
 
     /// Bumped whenever one of those rewrites starts, so the background pass can tell a
     /// rewrite that started and finished while it was detecting.
