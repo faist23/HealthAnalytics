@@ -32,7 +32,7 @@ enum WorkoutSource: String {
     }
 }
 
-struct WorkoutData: Identifiable {
+nonisolated struct WorkoutData: Identifiable {
     let id: UUID
     let originalId: String?             // Strava Activity ID or original HKUUID
     let title: String?

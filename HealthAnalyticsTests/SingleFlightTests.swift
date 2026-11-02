@@ -249,13 +249,14 @@ final class SingleFlightTests: XCTestCase {
     func test_run_replacesAHungRun_andTheStaleRunLeavesItsSuccessorAlone() async {
         let flight = SingleFlight()
         var stale = 0, fresh = 0
-        let first = Task { await flight.run({ stale += 1; try? await Task.sleep(for: .milliseconds(150)); return true }) }
+        let first = Task { await flight.run({ stale += 1; try? await Task.sleep(for: .milliseconds(100)); return true }) }
         try? await Task.sleep(for: .milliseconds(20))
         let replacement = Task {
-            await flight.run({ fresh += 1; try? await Task.sleep(for: .milliseconds(400)); return true },
+            await flight.run({ fresh += 1; try? await Task.sleep(for: .milliseconds(1000)); return true },
                              replacingRunsOlderThan: 0.005)
         }
-        try? await Task.sleep(for: .milliseconds(250))   // the stale run has finished by now
+        // The stale run ends at ~100ms and the replacement at ~1020ms: 200ms+ of slack each side.
+        try? await Task.sleep(for: .milliseconds(300))
         await flight.run({ fresh += 1; return true })      // must join the replacement
         await first.value; await replacement.value
         XCTAssertEqual(stale, 1)

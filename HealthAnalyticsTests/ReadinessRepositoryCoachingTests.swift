@@ -16,11 +16,10 @@ final class ReadinessRepositoryCoachingTests: XCTestCase {
 
     private let service = CoachingService()
 
-    // MARK: - CoachingService output wired from Repository
+    // MARK: - CoachingService output
 
-    /// Repository calls generateDailyInstruction() with optimal ACWR data.
-    /// Verifies the service produces a non-empty headline for
-    /// `UnifiedReadiness.dailyInstruction`.
+    /// generateDailyInstruction() with optimal ACWR data produces a non-empty headline.
+    /// (The repository no longer calls `CoachingService`; these tests pin the service itself.)
     func test_optimalACWR_producesNonEmptyHeadline() {
         let assessment = PredictiveReadinessService.ReadinessAssessment(
             acwr: 1.1,

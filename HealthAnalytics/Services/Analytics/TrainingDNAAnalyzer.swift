@@ -292,10 +292,16 @@ actor TrainingDNAAnalyzer {
 
     // MARK: - Main Entry Point
 
-    /// Returns the total HealthKit history days so callers can persist it for section-visibility gating.
-    /// `commitGate` runs after detection and before any write. The background pass uses
-    /// it to discard a run that spanned a suspension (stale and fresh reads mixed); the
-    /// default commits, so foreground callers behave exactly as before.
+    /// Runs every detector, then commits: upserts the patterns (renewing `detectedAt`, which keeps
+    /// them active), marks and saves `notificationSent`, and only then sends alerts, so a kill
+    /// between save and send costs at most one missed alert, never a duplicate. Returns the total
+    /// HealthKit history days for section-visibility gating; throws `insufficientData` under 60.
+    ///
+    /// `commitGate` runs after detection and before any write, with no await between it and the
+    /// save. Both callers pass the same budget gate (`BackgroundPatternPass.isWithinBudget`): a
+    /// run that spanned a suspension mixed stale and fresh reads, so it throws `commitDeclined`
+    /// and writes nothing; `SingleFlight` then lets anyone who joined it run once more. The
+    /// default (always commit) is for tests. A cancelled run returns early without writing.
     func analyze(
         sourcePreference: HRVSourcePreference = .auto,
         commitGate: @Sendable () async -> Bool = { true }

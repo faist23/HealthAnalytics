@@ -9,13 +9,15 @@ import Foundation
 
 /// Runs one piece of work at a time and lets every caller await it.
 ///
-/// Analysis is requested from view `.task` / `.refreshable` blocks, and SwiftUI cancels
-/// those when the user swipes away. Work started here runs in its own unstructured task,
-/// so a caller's cancellation ends only that caller's wait — never the work. A run
-/// requested while one is in flight joins it instead of starting a second.
+/// Analysis is requested from view `.task` / `.refreshable` blocks (which SwiftUI cancels
+/// when the user swipes away), button taps (the illness log), app-refresh tasks and
+/// HealthKit delivery wakes (whose budget can expire). Work started here runs in its own
+/// unstructured task, so a caller's cancellation ends only that caller's wait — never the
+/// work. A run requested while one is in flight joins it instead of starting a second.
 ///
-/// `work` returns whether it completed. False means it ended abandoned (a background
-/// pass that resumed past its budget and stored nothing): a caller that JOINED such a
+/// `work` returns whether it completed. False means it ended abandoned (a run, foreground or
+/// background, whose commit gate refused because it resumed past its budget, so it stored
+/// nothing): a caller that JOINED such a
 /// run got nothing from it, so once it ends that caller runs its own `work` — or joins
 /// a fresh run another joiner already started — exactly once, whatever that returns.
 /// The caller that started the abandoned run never retries, and a cancelled joiner

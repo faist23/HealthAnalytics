@@ -18,9 +18,10 @@ class SyncManager: ObservableObject {
     
     @AppStorage("lastSyncDate") private var lastSyncTimestamp: Double = 0
     @AppStorage("hasCompletedHistoricalBackfill") private var hasCompletedHistoricalBackfill: Bool = false
-    /// Set when a reset deleted the store and its 10-year refetch failed; every sync retries
-    /// that refetch until it succeeds (`performHistoricalBackfill` is a stub that fetches
-    /// nothing, so without this the older history never came back).
+    /// Set by a reset before it deletes the store, cleared when its 10-year HealthKit refetch
+    /// succeeds; while set, every sync retries that refetch (`performHistoricalBackfill` is a
+    /// stub that fetches nothing, so without this a failed or interrupted reset lost the older
+    /// history for good).
     @AppStorage("needsFullHistoryFetch") private var needsFullHistoryFetch: Bool = false
     @AppStorage("hasMigratedMetricNames") private var hasMigratedMetricNames: Bool = false
     @AppStorage("hasDeduplicatedWorkoutsV4") private var hasDeduplicatedWorkouts: Bool = false
@@ -1401,7 +1402,8 @@ actor DataPersistenceActor {
 
     /// A HealthKit copy deleted in favour of its Strava ride takes its intent label with it
     /// (the background refresh labels HealthKit-UUID rows), or the label is left pointing at
-    /// a workout that no longer exists.
+    /// a workout that no longer exists. Labels are all automatic (nothing in the app sets one
+    /// by hand), so the Strava ride's own label is re-derived by the classifier.
     private func deleteIntentLabel(workoutID: String) {
         let labels = (try? modelContext.fetch(FetchDescriptor<StoredIntentLabel>(
             predicate: #Predicate { $0.workoutId == workoutID }

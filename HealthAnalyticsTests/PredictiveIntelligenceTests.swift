@@ -276,8 +276,8 @@ final class PredictiveIntelligenceTests: XCTestCase {
 
     // MARK: - Part 3: compute7DayForecast
     //
-    // Calls ReadinessRepository.shared.compute7DayForecast(modelContext:) directly.
-    // currentReadiness is nil in test context → ACWR modifier is neutral (skipped).
+    // Calls ReadinessRepository.shared.compute7DayForecast(modelContext:acwr:) directly.
+    // acwr: nil → no load signal, so the ACWR ceiling is skipped (never read from the app's state).
 
     /// Fewer than 14 StoredDailyScore records → must return nil.
     func testForecast_insufficientData_returnsNil() throws {
@@ -289,7 +289,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)
         XCTAssertNil(result, "Fewer than 14 entries must return nil")
     }
 
@@ -303,7 +303,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)
         XCTAssertNotNil(result)
         XCTAssertEqual(result!.count, 7, "Forecast must return exactly 7 days")
     }
@@ -319,7 +319,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)!
         let band1 = result[0].confidenceHigh - result[0].confidenceLow
         let band7 = result[6].confidenceHigh - result[6].confidenceLow
         XCTAssertGreaterThan(band7, band1, "Confidence band must widen across 7 days (σ × √d)")
@@ -335,7 +335,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)!
         for day in result {
             XCTAssertEqual(Double(day.predictedReadiness), 75.0, accuracy: 5.0,
                            "Flat trend must project near baseline 75")
@@ -352,7 +352,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)!
         XCTAssertEqual(result[0].coaching, "Hard effort OK",
                       "Score ≥ 80 must produce 'Hard effort OK' on day 1")
     }
@@ -367,7 +367,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)!
         XCTAssertEqual(result[0].coaching, "Moderate training",
                       "Score in [70,79] must produce 'Moderate training' on day 1")
     }
@@ -382,7 +382,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)!
         XCTAssertEqual(result[0].coaching, "Easy only",
                       "Score in [60,69] must produce 'Easy only' on day 1")
     }
@@ -397,7 +397,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)!
         XCTAssertEqual(result[0].coaching, "Rest recommended",
                       "Score < 60 must produce 'Rest recommended' on day 1")
     }
@@ -1212,7 +1212,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, overrideACWR: 1.5)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: 1.5)!
         XCTAssertLessThan(
             result[6].predictedReadiness, result[0].predictedReadiness,
             "ACWR=1.5 (overload) → 3%%/day decay → day 7 must be lower than day 1"
@@ -1228,7 +1228,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, overrideACWR: 0.6)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: 0.6)!
         XCTAssertGreaterThan(
             result[6].predictedReadiness, result[0].predictedReadiness,
             "ACWR=0.6 (underload) → 2%%/day improvement → day 7 must be higher than day 1"
@@ -1245,7 +1245,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, overrideACWR: 2.0)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: 2.0)!
         for forecastDay in result {
             XCTAssertGreaterThanOrEqual(forecastDay.predictedReadiness, 20,
                 "Predicted readiness must never fall below the 20-point floor")
@@ -1262,7 +1262,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, overrideACWR: 0.6)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: 0.6)!
         for forecastDay in result {
             XCTAssertLessThanOrEqual(forecastDay.predictedReadiness, 100,
                 "Predicted readiness must never exceed the 100-point ceiling")
@@ -1281,7 +1281,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         }
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, overrideACWR: 1.0)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: 1.0)!
         XCTAssertLessThan(result[6].predictedReadiness, result[0].predictedReadiness,
             "Sweet-spot ACWR must pull an above-baseline forecast back toward 75")
         XCTAssertGreaterThanOrEqual(result[6].predictedReadiness, 75,
@@ -1424,7 +1424,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         insertRampWorkouts(ctx, acuteHours: 3.0)
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)!
         XCTAssertGreaterThanOrEqual(result[0].predictedReadiness, 80,
             "Fixture must keep recovery in the 'hard effort' band, or the test proves nothing")
         XCTAssertEqual(result[0].coaching, "Easy only",
@@ -1443,7 +1443,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         insertRampWorkouts(ctx, acuteHours: 3.0)
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)!
         let restrictiveness = ["Hard effort OK": 0, "Moderate training": 1, "Easy only": 2, "Rest recommended": 3]
 
         XCTAssertLessThan(restrictiveness[result[6].coaching]!, restrictiveness[result[0].coaching]!,
@@ -1462,7 +1462,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         insertRampWorkouts(ctx, acuteHours: 3.0)
         try ctx.save()
 
-        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx)!
+        let result = ReadinessRepository.shared.compute7DayForecast(modelContext: ctx, acwr: nil)!
         XCTAssertEqual(result[0].coaching, "Rest recommended",
             "A 'rest' recovery verdict must survive a load ceiling of 'easy only'")
     }

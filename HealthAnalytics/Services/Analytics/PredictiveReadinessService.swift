@@ -8,7 +8,9 @@
 import Foundation
 import HealthKit
 
-class PredictiveReadinessService {
+/// Pure load and readiness math, `nonisolated` so the pattern actor (`TrainingDNAAnalyzer`)
+/// and the background pass call it without hopping to the main actor.
+nonisolated class PredictiveReadinessService {
     
     struct ReadinessAssessment {
         let acwr: Double              // Acute:Chronic Workload Ratio

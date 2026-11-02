@@ -74,7 +74,7 @@ enum IllnessLog {
 
     /// How many days before a logged first sick day a low-step window still counts as that
     /// illness: people often log the day they felt sick after a day or two of low activity.
-    static let proxyLeadDays = 2
+    nonisolated static let proxyLeadDays = 2
 
     /// Onsets the HRV precursor looks back from: every logged illness that started inside
     /// `[from, to)`, plus each step-proxy window that isn't the same illness. Logged spells that
@@ -83,7 +83,7 @@ enum IllnessLog {
     /// illness through its end (the last sick day, or `to` while ongoing). Spells that started
     /// before `from` but reach into it still absorb proxy windows; only their onsets are left
     /// out. Sorted, one per illness.
-    static func sickWindowStarts(proxy: [Date], logged: [(start: Date, end: Date?)],
+    nonisolated static func sickWindowStarts(proxy: [Date], logged: [(start: Date, end: Date?)],
                                  from: Date, to: Date, calendar: Calendar = .current) -> [Date] {
         var spells: [(start: Date, end: Date)] = []
         for spell in logged

@@ -18,48 +18,6 @@
 
 **Depends on / blocked by:** Phase 2a must ship. Then 3 months of production data. The Background Pass counters (Settings → Background Pass) now measure the run rate.
 
-### Forecast testability: inject ACWR instead of reading the shared singleton
-**Priority:** P3 — improves test isolation; fix in the next Repository-touching PR
-
-**What:** `ReadinessRepository.compute7DayForecast` reads `currentReadiness?.readinessAssessment?.acwr` from the shared singleton when no `overrideACWR` is passed. In the test host, whatever state the app's own bootstrap left in `ReadinessRepository.shared` leaks into any test that doesn't pass an override.
-
-**Why:** Surfaced during the v0.1.10.0 ship (2026-07-08): tests currently pass only because `currentReadiness` happens to be nil in the fresh-simulator test host. If the host app ever completes a real analysis mid-test-run, the no-override forecast tests become order/state-dependent. The repository→StateVector wiring in `performFullAnalysis` also has no test harness.
-
-**How to apply:** Pass the ACWR (or the assessment) as an explicit parameter from `performFullAnalysis`, or make the repository injectable for tests. Follow the `dataProvider` injection pattern from `TrainingDNAAnalyzer`.
-
-**Effort:** S (human: ~2h / CC+gstack: ~15 min)
-
-### Mark the load engine's pure functions `nonisolated`
-**Priority:** P3 — deferred from the v0.1.16.0 review (user decision)
-
-**What:** `PredictiveReadinessService.calculateWorkoutLoad`, `WorkoutData(from:)` and `TrainingLoadVisualizationService.estimateIntensity` are pure but inherit main-actor isolation, so `TrainingDNAAnalyzer` (a `@ModelActor`) calls them across actors and the compiler warns.
-
-**Why:** The warnings become errors under Swift 6 strict concurrency, and the hop is needless work inside every background pass.
-
-**How to apply:** Mark the pure functions `nonisolated`; check `resolvedFTP()` (reads UserDefaults) stays safe off the main actor.
-
-**Effort:** S (human: ~1h / CC+gstack: ~10min)
-
-### Test gaps: zero-twin insertion order and `detectedAt` renewal on commit
-**Priority:** P3 — deferred from the v0.1.16.0 review (user decision)
-
-**What:** No test pins that the HRV-precursor zero-twin rule holds whichever duplicate row is inserted first, or that an existing pattern's `detectedAt` is renewed only when the commit gate accepts.
-
-**Why:** Both are rules a refactor of `detectHRVPrecursor` or `upsertPatterns` could break silently; the second keeps a declined background pass from keeping a stale pattern alive.
-
-**How to apply:** Add the reverse-order row to `testHRVPrecursor_zeroTwinBesideARideRowIsNotRest`, and an accept/decline pair over an existing `TrainingPattern` in `TrainingDNAAnalyzerTests`.
-
-**Effort:** S (human: ~1h / CC+gstack: ~10min)
-
-### Stale comments: `TrainingDNAAnalyzer.analyze` docstring and the `SingleFlight` header
-**Priority:** P3 — deferred from the v0.1.16.0 review (user decision)
-
-**What:** Re-read both against the shipped behavior (mark-and-save before send, the commit gate, the abandoned-run retry, `shouldStart`) and correct what drifted.
-
-**Why:** These are the first comments anyone changing the background pass reads.
-
-**Effort:** S (human: ~30min / CC+gstack: ~5min)
-
 ### Background pass throttle on battery
 **Priority:** P3 — surfaced by the v0.1.16.0 adversarial review (user deferred)
 
@@ -80,38 +38,18 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~20min)
 
-### Re-key a manual intent label instead of deleting it with its HealthKit copy
-**Priority:** P3 — surfaced by the v0.1.22.0 adversarial review
+### Leftovers after the v0.1.23.0 dead-code removal
+**Priority:** P4 — surfaced by the v0.1.23.0 adversarial review; none affects behavior
 
-**What:** `upsertRecentData`'s `deleteIntentLabel` removes a deleted HealthKit copy's label whatever its source, so a label the user set by hand (`.manual`) on a Watch ride is lost once the ride's Strava copy arrives; the Strava row then gets a fresh heuristic label. Before v0.1.22.0 the label was orphaned instead, so this is no worse.
+**What:**
+- `ReadinessRepository` still reads `vo2maxData` from the stored metrics every analysis; its only consumer (`FitnessTrendAnalyzer`) was deleted.
+- `PerformancePredictor` and `CoachingService` have no production callers left; only `PredictionCache` (whose `store(models:)` is never called) and `ReadinessRepositoryCoachingTests` keep them alive.
+- `TrainingDNAAnalyzer`'s taper corroboration reads FTP snapshots with `try? … ?? []`, so a failed read scores rides at the 200 W default (pre-existing; the daily-load recompute skips instead).
+- The intent-label doc comment and CLAUDE.md say nothing writes `.manual` labels; a one-day February dev build (`ActivityIntentLabelerView`, deleted in 4be4b01) could, so say "no current writer".
 
-**How to apply:** In the fetched-Strava branch, move a `.manual` label to `match.id` when the Strava row has none; delete only automatic labels.
-
-**Effort:** S (human: ~1h / CC+gstack: ~10min)
+**Effort:** XS (human: ~1h / CC+gstack: ~10min)
 
 ## Coach
-
-### MasterCoachEngine copy duplicated across LLM and heuristic paths
-**Priority:** P3 — deferred from /ship review 2026-07-08
-
-**What:** Every coaching sentence exists in two parallel copies — the mocked LLM path `synthesizeWithLLM` and the fallback `generateHeuristicMessage`. The v0.1.10.0 Recovery rename had to apply the identical copy rewrite twice.
-
-**Why:** Any future copy edit must be made in lockstep in both functions or the two paths drift apart silently. Both paths now have direct test coverage (v0.1.10.0), which catches drift in the covered branches but not in new copy.
-
-**How to apply:** Extract the shared sentences into private static helpers (e.g. `injuryRiskSentence(_:)`, `baselineSentence(score:patterns:)`) consumed by both paths.
-
-**Effort:** S (human: ~2h / CC+gstack: ~15 min)
-
-### Dead analysis pipeline left behind by the ReadinessView deletion
-**Priority:** P3 — deferred from the v0.1.14.0 review (user decision)
-
-**What:** With `ReadinessView` gone, these have no readers (grep-verified 2026-10-26): `UnifiedReadiness.dailyInstruction`, `.recommendation`, `.injuryRisk`; `ReadinessViewModel.formIndicator` (+ `generateFormIndicator`), `mlPrediction`, `mlFeatureWeights`, `mlError`, `intentAwareAssessment`, `temporalAnalysis`, `zoneAnalysis`, `fitnessAnalysis`. `performFullAnalysis` still computes the intent-aware, temporal, zone and fitness analyses and the `CoachingService.DailyInstruction` on every run for them; `TrainingZoneCard` / `FitnessTrendCard` are never instantiated; `EnhancedIntentAwareReadinessService` then has no consumer.
-
-**Why:** ~540 lines of work done on every refresh for nothing. Deferred because removing whole analysis passes from the main pipeline is more than a cleanup release should carry.
-
-**How to apply:** Remove the view-model properties first, then each computation + its `UnifiedReadiness` field, rebuilding and running the lane between steps; check `PredictionCache.store(instruction:)` and the `ReadinessRepositoryCoachingTests` that only pin `dailyInstruction`. Watch for side effects in the analyses (e.g. writes) before deleting one.
-
-**Effort:** M (human: ~4h / CC+gstack: ~30min)
 
 ## Science
 
@@ -175,6 +113,13 @@
 
 ## Completed
 
+- **P3 — Re-key a manual intent label instead of deleting it with its HealthKit copy** — **Closed:** v0.1.23.0 (2026-11-02). Moot: nothing in the app writes a `.manual` intent label (`LabelSource.manual` has no writer), so every label is automatic and is re-derived for the Strava ride.
+- **P3 — Forecast testability: inject ACWR instead of reading the shared singleton** — **Completed:** v0.1.23.0 (2026-11-02). `compute7DayForecast(modelContext:acwr:)` takes it as an argument.
+- **P3 — Mark the load engine's pure functions `nonisolated`** — **Completed:** v0.1.23.0 (2026-11-02). `PredictiveReadinessService`, `StatisticalValidator`, `HeuristicIntentClassifier`, `WorkoutData` and the intensity/FTP helpers are nonisolated; zero actor-isolation warnings (about 20 before).
+- **P3 — Test gaps: zero-twin insertion order and `detectedAt` renewal on commit** — **Completed:** v0.1.23.0 (2026-11-02). Reverse-order zero-twin test (the pair catches first- and last-row-wins); accept/decline commit-gate test.
+- **P3 — Stale comments: `TrainingDNAAnalyzer.analyze` docstring and the `SingleFlight` header** — **Completed:** v0.1.23.0 (2026-11-02). Also the `needsFullHistoryFetch` comment and GEMINI.md's cache-key list.
+- **P3 — MasterCoachEngine copy duplicated across LLM and heuristic paths** — **Completed:** v0.1.23.0 (2026-11-02). The simulated LLM path returns the heuristic paragraph; one copy of every sentence.
+- **P3 — Dead analysis pipeline left behind by the ReadinessView deletion** — **Completed:** v0.1.23.0 (2026-11-02). Removed the per-refresh ML training and prediction, the intent-aware, zone, fitness and temporal analyses, the unread daily instruction, their fields, and seven orphaned files (about 4,100 lines).
 - **P2 — Stored `.tapering` rows carry a numerator computed under the old ACWR metric** — **Closed:** v0.1.22.0 (2026-11-02). Self-healed: v0.1.13.0 shipped 2026-08-11, so any such row aged out of the 10-day active window in August; no migration needed.
 - **P3 — Illness log follow-ups from the v0.1.21.0 review** — **Completed:** v0.1.22.0 (2026-11-02). Proxy lead widened to 2 days (`IllnessLog.proxyLeadDays`); old spells reaching into the window still absorb proxy windows; "Still sick" off defaults to `lastSickDay`; active Coach notes are in the Coach cache key (`lastActiveMemoryIDs`); FTP History's edit sheet uses `.sheet(item:)`.
 - **P3 — A reset whose HealthKit fetch fails loses older history for good** — **Completed:** v0.1.22.0 (2026-11-02). `needsFullHistoryFetch` makes every sync retry the 10-year fetch until it succeeds.

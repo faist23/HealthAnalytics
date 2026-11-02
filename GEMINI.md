@@ -13,7 +13,7 @@ This document serves as the "Source of Truth" for the HealthAnalytics project. A
 
 ### The Data Fingerprint
 *   To prevent "Score Drift" (e.g., a score changing from 81 to 78 simply by switching tabs), the app uses a `DataFingerprint` (see `PredictionCache.DataFingerprint`).
-*   **Caching Rule:** If the fingerprint (counts of workouts, sleep, HRV, RHR) has not changed, it is the same calendar day, the set of active training patterns is unchanged, the logged illness state (sick, recovering or none) is unchanged, and the set of active Coach notes (Injury, Stress, Travel, custom) is unchanged, the app should use the cached `UnifiedReadiness` object rather than recalculating (see `ReadinessRepository.canReuseCachedAnalysis`).
+*   **Caching Rule:** If the fingerprint (counts of workouts, sleep, HRV, RHR) has not changed, it is the same calendar day, the set of active training patterns is unchanged, the logged illness state (sick, recovering or none) is unchanged, and the set of active Coach notes (every category: the Injury, Stress and Travel chips, custom notes, and notes added in Coach Memory) is unchanged, the app should use the cached `UnifiedReadiness` object rather than recalculating (see `ReadinessRepository.canReuseCachedAnalysis`).
 
 ### Calendar-Based Math
 *   **Anchor Points:** Always use `Calendar.current.startOfDay(for: Date())` for analysis windows.
@@ -56,7 +56,7 @@ When signals conflict, the following hierarchy applies:
 ## 6. Development Workflow
 
 ### Performance Profiling
-*   Use `PerformanceProfiler` to wrap all major analysis blocks. This ensures we can identify bottlenecks in HealthKit fetching or ML processing.
+*   Use `PerformanceProfiler` to wrap all major analysis blocks. This ensures we can identify bottlenecks in HealthKit fetching or analysis.
 
 ## 7. Upcoming Feature Roadmap: Coach Memory Evolution
 
@@ -70,8 +70,8 @@ We are currently building toward a true "Physiological OS." Version 1.0 (Phase 1
 *   **Anatomical Tagging:** "Injury" must evolve from a generic string into a structured physiological map (e.g., Lower Body: Knee vs. Upper Body: Shoulder).
 *   **Smart Routing:** The engine must dynamically filter workout recommendations based on the specific injury (e.g., zero out "Running" readiness for a knee injury, but keep "Upper Body Strength" at 100%).
 
-### ~~Phase 5: Generative AI Integration (The Endgame)~~ ✅ DONE
-*   **Dynamic Synthesis:** Replace the hardcoded `if/else` heuristic strings in `MasterCoachEngine.swift`.
+### Phase 5: Generative AI Integration (The Endgame) — scaffolded, not live
+*   **Dynamic Synthesis:** `MasterCoachEngine.synthesizeWithLLM` builds the `StateVector` prompt but no model is wired in: it waits 1.5 s and returns `generateHeuristicMessage`, which holds the only copy of every coaching sentence. Replacing those heuristic strings is the remaining work.
 *   **LLM Handoff:** Pass the entire `StateVector` (Readiness, Load, explicit Memories, and implicit Training Patterns) to an on-device LLM or cloud API to generate a unique, human-like coaching paragraph.
 
 ---
