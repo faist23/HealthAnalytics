@@ -3,6 +3,13 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.23.0] - 2026-11-02
+
+### Changed
+
+- **Analysis does less work on every refresh.** The app trained and ran a machine-learning model and four other analyses each time it refreshed, and nothing on screen used their results. They're gone, so a refresh finishes sooner.
+- **Coach's wording comes from one place.** The coaching paragraph had two hand-kept copies that had started to drift apart. There's one now, so Coach says the same thing whichever way the paragraph is produced.
+
 ## [0.1.22.0] - 2026-11-02
 
 ### Fixed
