@@ -147,7 +147,8 @@ final class DailyLoadRecomputeTests: XCTestCase {
     //   last sync minus a day"; why_new=TODO constraint 2; seam=none; no_claim=HealthKit's real
     //   late writers
     func test_recentSyncWindow_coversAtLeastSevenDays() {
-        let sevenBack = cal.date(byAdding: .day, value: -7, to: now)!
+        // The start of day 7, the oldest day the recompute rewrites, not now minus 7 days.
+        let sevenBack = cal.date(byAdding: .day, value: -7, to: cal.startOfDay(for: now))!
         XCTAssertEqual(SyncManager.recentSyncWindowStart(lastSync: now.addingTimeInterval(-3600), now: now), sevenBack)
         let longAgo = cal.date(byAdding: .day, value: -20, to: now)!
         XCTAssertEqual(SyncManager.recentSyncWindowStart(lastSync: longAgo, now: now), cal.date(byAdding: .day, value: -1, to: longAgo)!)

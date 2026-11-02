@@ -40,8 +40,9 @@ class SyncManager: ObservableObject {
     /// removes ones Strava confirms deleted), so after a good one the store holds at least what
     /// the rows were scored from. A reset sets it false: it deletes the store and refetches,
     /// and any half of that refetch can fail quietly (Strava's list is `try?`), so recent rows
-    /// wait for the next good recent sync. Persisted, so a relaunch doesn't reopen it.
-    @AppStorage("lastRecentSyncSucceeded") private(set) var lastRecentSyncSucceeded = true
+    /// wait for the next good recent sync. Persisted, so a relaunch doesn't reopen it; false
+    /// until the first good recent sync after install or upgrade.
+    @AppStorage("lastRecentSyncSucceeded") private(set) var lastRecentSyncSucceeded = false
 
     /// Recent days' loads may be recomputed from the store only after a good recent sync and
     /// while no sync, reset or dedup runs. A running zone backfill doesn't block it: the sync
@@ -467,12 +468,13 @@ class SyncManager: ObservableObject {
     // MARK: - Recent Data Sync
     
     /// Where a recent sync starts reading: a day before the last successful sync, but never
-    /// later than 7 days ago, because late writers (Garmin, Zwift, Wahoo) backdate rides into
-    /// HealthKit and Strava; 30 days back on a first sync.
+    /// later than the start of the day 7 days ago (the oldest day the load recompute rewrites),
+    /// because late writers (Garmin, Zwift, Wahoo) backdate rides into HealthKit and Strava;
+    /// 30 days back on a first sync.
     nonisolated static func recentSyncWindowStart(lastSync: Date?, now: Date, calendar: Calendar = .current) -> Date {
         guard let lastSync else { return calendar.date(byAdding: .day, value: -30, to: now) ?? now }
         let dayBeforeLast = calendar.date(byAdding: .day, value: -1, to: lastSync) ?? lastSync
-        let weekBack = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+        let weekBack = calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: now)) ?? now
         return min(dayBeforeLast, weekBack)
     }
 
@@ -1292,7 +1294,7 @@ actor DataPersistenceActor {
                 let hkDescriptor = FetchDescriptor<StoredWorkout>(
                     predicate: #Predicate { $0.id == workoutID }
                 )
-                if let staleHK = try? modelContext.fetch(hkDescriptor).first {
+                for staleHK in (try? modelContext.fetch(hkDescriptor)) ?? [] {
                     modelContext.delete(staleHK)
                 }
                 upsertWorkout(

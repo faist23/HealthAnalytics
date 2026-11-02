@@ -1051,14 +1051,14 @@ class ReadinessRepository: ObservableObject {
             let dateStr = dailyScoreDateFormatter.string(from: dayStart)
             // Every row for the day: detectors read a day's highest row, so a twin left at the
             // old load would hide a removed ride.
-            let rows = (try? context.fetch(FetchDescriptor<StoredDailyScore>(
+            // A failed fetch skips the day: read as "no rides" it would save zero load.
+            guard let rows = try? context.fetch(FetchDescriptor<StoredDailyScore>(
                 predicate: #Predicate { $0.dateString == dateStr }
-            ))) ?? []
-            guard !rows.isEmpty else { continue }
-            let workouts = (try? context.fetch(FetchDescriptor<StoredWorkout>(
+            )), !rows.isEmpty,
+                  let workouts = try? context.fetch(FetchDescriptor<StoredWorkout>(
                 predicate: #Predicate { $0.startDate >= dayStart && $0.startDate < dayEnd },
                 sortBy: [SortDescriptor(\.startDate)]
-            ))) ?? []
+            )) else { continue }
             let dayLoad = workouts.reduce(0.0) { $0 + load($1) }
             for row in rows where abs(row.dailyLoad - dayLoad) > 0.01 || row.workoutCount != workouts.count {
                 row.dailyLoad = dayLoad
