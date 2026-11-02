@@ -22,8 +22,24 @@ struct FTPHistoryView: View {
     @State private var pendingChangeCount = 0
 
     // Sheet / dialog state
-    @State private var editTarget: StoredFTPSnapshot? = nil
-    @State private var showingEntrySheet = false
+    /// One optional drives the sheet, so it always opens with the row that was tapped
+    /// (`sheet(isPresented:)` plus a separate target can open blank and save over the row).
+    @State private var entrySheet: EntrySheet?
+
+    private enum EntrySheet: Identifiable {
+        case new
+        case edit(StoredFTPSnapshot)
+        var id: AnyHashable {
+            switch self {
+            case .new: return "new"
+            case .edit(let snapshot): return snapshot.persistentModelID
+            }
+        }
+        var snapshot: StoredFTPSnapshot? {
+            if case .edit(let snapshot) = self { return snapshot }
+            return nil
+        }
+    }
     @State private var deleteTarget: StoredFTPSnapshot? = nil
     @State private var showingDeleteConfirmation = false
 
@@ -128,8 +144,7 @@ struct FTPHistoryView: View {
 
                         ForEach(group.entries) { snapshot in
                             Button {
-                                editTarget = snapshot
-                                showingEntrySheet = true
+                                entrySheet = .edit(snapshot)
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
@@ -169,17 +184,16 @@ struct FTPHistoryView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    editTarget = nil
-                    showingEntrySheet = true
+                    entrySheet = .new
                 } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .sheet(isPresented: $showingEntrySheet) {
-            FTPEntrySheet(existing: editTarget) { date, watts in
+        .sheet(item: $entrySheet) { entry in
+            FTPEntrySheet(existing: entry.snapshot) { date, watts in
                 let start = Calendar.current.startOfDay(for: date)
-                if let existing = editTarget {
+                if let existing = entry.snapshot {
                     // Edit — mutate in place
                     let oldDate = existing.date
                     existing.date = start

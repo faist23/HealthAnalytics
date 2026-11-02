@@ -3,6 +3,20 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.22.0] - 2026-11-02
+
+### Fixed
+
+- **Tapping Injury, High Stress or Travel always updates Coach now.** A tap made while the app was still analyzing could be ignored, leaving the paragraph as it was until the next sync.
+- **Editing an FTP entry can no longer save over the one you tapped.** The edit screen could open blank and write today's values onto the entry you meant to change.
+- **A reset that can't download your history keeps trying.** If the 10-year download failed or the app was closed partway through, older history used to be gone for good. Each sync now retries until it comes back.
+- **Taper detection works when you skip the watch some nights.** It needed a score for every one of the last 28 days, so a single night without the watch silenced it. A few missing days are fine now.
+- **"Try again" on the Training DNA card works after a stuck analysis.** An analysis that never finished used to block every later one until the app was closed.
+- **The Training DNA card shows only its own errors.** A recovery problem used to show there as a pattern failure, and a later recovery update could hide a real pattern error.
+- **Patterns pick up your full history on the first launch.** The first pattern check could run before your history finished loading and then wait days to run again.
+- **Logged illnesses are matched more reliably.** A low-step day or two just before an illness you logged counts as that illness, not a second one, and ending an illness in Settings now defaults to yesterday as the last sick day.
+- **The score breakdown bars stay inside their track.**
+
 ## [0.1.21.0] - 2026-11-02
 
 ### Added

@@ -18,6 +18,10 @@ class SyncManager: ObservableObject {
     
     @AppStorage("lastSyncDate") private var lastSyncTimestamp: Double = 0
     @AppStorage("hasCompletedHistoricalBackfill") private var hasCompletedHistoricalBackfill: Bool = false
+    /// Set when a reset deleted the store and its 10-year refetch failed; every sync retries
+    /// that refetch until it succeeds (`performHistoricalBackfill` is a stub that fetches
+    /// nothing, so without this the older history never came back).
+    @AppStorage("needsFullHistoryFetch") private var needsFullHistoryFetch: Bool = false
     @AppStorage("hasMigratedMetricNames") private var hasMigratedMetricNames: Bool = false
     @AppStorage("hasDeduplicatedWorkoutsV4") private var hasDeduplicatedWorkouts: Bool = false
     
@@ -322,8 +326,14 @@ class SyncManager: ObservableObject {
             // STEP 2: Sync recent data (always - this is fast)
             let recentSynced = await syncRecentData(dataHandler: dataHandler)
             
-            // STEP 3: Historical backfill (only if needed)
-            if syncPlan.needsHistoricalBackfill && !hasCompletedHistoricalBackfill {
+            // STEP 3: Historical backfill (only if needed). A reset whose refetch failed is
+            // retried first, until it succeeds.
+            if needsFullHistoryFetch {
+                if await syncAllHistoricalData(dataHandler: dataHandler) {
+                    needsFullHistoryFetch = false
+                    hasCompletedHistoricalBackfill = true
+                }
+            } else if syncPlan.needsHistoricalBackfill && !hasCompletedHistoricalBackfill {
                 await performHistoricalBackfill(years: syncPlan.yearsToBackfill, dataHandler: dataHandler)
                 hasCompletedHistoricalBackfill = true
             }
@@ -681,7 +691,9 @@ class SyncManager: ObservableObject {
     
     // MARK: - Sync All Historical Data
     
-    /// Returns whether the HealthKit fetch succeeded and was saved.
+    /// Returns whether the HealthKit fetch succeeded and was saved. A Strava page that fails
+    /// ends paging without failing the call: counting it would make a persistent Strava error
+    /// (a revoked app, an undecodable activity, rate limits) re-run the 10-year fetch every sync.
     private func syncAllHistoricalData(dataHandler: DataPersistenceActor) async -> Bool {
         #if DEBUG
         print("📚 Fetching ALL historical data (10 years)...")
@@ -978,15 +990,19 @@ class SyncManager: ObservableObject {
         hasCompletedHistoricalBackfill = false
         hasMigratedMetricNames = false
         lastSyncDate = nil
+        // Set before deleting, so a reset killed mid-fetch still retries; cleared when the
+        // HealthKit history came back.
+        needsFullHistoryFetch = true
         
         await dataHandler.deleteAll()
 
         // Fetch ALL historical data (10 years back)
         // The recompute waits for the next good recent sync (see lastRecentSyncSucceeded). A
-        // failed fetch leaves lastSyncDate unset, so that sync isn't throttled and refetches the
-        // last 30 days; older history is not refetched (performHistoricalBackfill is a stub).
+        // failed fetch leaves lastSyncDate unset, so that sync isn't throttled, and sets
+        // needsFullHistoryFetch, so every sync retries the 10-year refetch until it succeeds.
         lastRecentSyncSucceeded = false
         let fetched = await syncAllHistoricalData(dataHandler: dataHandler)
+        needsFullHistoryFetch = !fetched
         if fetched {
             lastSyncDate = Date()
             hasCompletedHistoricalBackfill = true
@@ -1297,6 +1313,7 @@ actor DataPersistenceActor {
                 for staleHK in (try? modelContext.fetch(hkDescriptor)) ?? [] {
                     modelContext.delete(staleHK)
                 }
+                deleteIntentLabel(workoutID: workoutID)
                 upsertWorkout(
                     id: match.id,
                     title: match.title,
@@ -1320,6 +1337,7 @@ actor DataPersistenceActor {
                 for staleHK in (try? modelContext.fetch(hkDescriptor)) ?? [] {
                     modelContext.delete(staleHK)
                 }
+                deleteIntentLabel(workoutID: workoutID)
                 continue
             } else {
                 upsertWorkout(
@@ -1379,6 +1397,16 @@ actor DataPersistenceActor {
         #if DEBUG
         print("💾 Recent data upserted")
         #endif
+    }
+
+    /// A HealthKit copy deleted in favour of its Strava ride takes its intent label with it
+    /// (the background refresh labels HealthKit-UUID rows), or the label is left pointing at
+    /// a workout that no longer exists.
+    private func deleteIntentLabel(workoutID: String) {
+        let labels = (try? modelContext.fetch(FetchDescriptor<StoredIntentLabel>(
+            predicate: #Predicate { $0.workoutId == workoutID }
+        ))) ?? []
+        labels.forEach { modelContext.delete($0) }
     }
 
     /// HealthKit-only workout upsert for the background pattern pass. Rides the

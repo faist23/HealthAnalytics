@@ -123,7 +123,10 @@ private struct IllnessEntrySheet: View {
         self.onSave = onSave
         let today = Calendar.current.startOfDay(for: Date())
         _start = State(initialValue: event?.startDate ?? today)
-        _end = State(initialValue: event?.endDate ?? event?.startDate ?? today)
+        // Ending an open illness here defaults to the same last day the I'm better chip uses.
+        _end = State(initialValue: event?.endDate
+            ?? event.map { IllnessLog.lastSickDay(start: $0.startDate, betterOn: Date()) }
+            ?? today)
         _stillSick = State(initialValue: event?.isOngoing ?? false)
     }
 

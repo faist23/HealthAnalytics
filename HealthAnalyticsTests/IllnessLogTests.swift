@@ -51,6 +51,20 @@ final class IllnessLogTests: XCTestCase {
         XCTAssertEqual(separate, [day(-30), day(-26)])
     }
 
+    // Value: protects=a low-step stretch up to 2 days before a logged first sick day is that
+    //   illness (people log the day they felt sick after low-activity days), and a spell that
+    //   started before the 180-day window still absorbs proxy windows inside it without adding
+    //   an onset; fails_when=the lead goes back to 1 day, or old spells are dropped before the
+    //   dedupe; why_new=v0.1.21.0 adversarial follow-ups; seam=none (pure); no_claim=none
+    func test_proxyLeadAndOldSpells() {
+        let lead = IllnessLog.sickWindowStarts(proxy: [day(-42), day(-43)], logged: [(day(-40), day(-38))],
+                                               from: from, to: Date())
+        XCTAssertEqual(lead, [day(-43), day(-40)], "2 days before onset is the same illness; 3 days is not")
+        let old = IllnessLog.sickWindowStarts(proxy: [day(-178), day(-150)], logged: [(day(-190), day(-175))],
+                                              from: from, to: Date())
+        XCTAssertEqual(old, [day(-150)], "the old spell's onset is out of the window, but it still covers day -178")
+    }
+
     // Value: protects=an ongoing illness covers every day up to now, and a logged onset
     //   outside the window is ignored; fails_when=an open spell is treated as one day, or old
     //   illnesses leak in; why_new=Phase 2b; seam=none (pure); no_claim=none
@@ -85,11 +99,11 @@ final class IllnessLogTests: XCTestCase {
         XCTAssertEqual(IllnessLog.lastSickDay(start: day(-3), betterOn: noon), day(-1))
     }
 
-    // Value: protects=both IllnessEvent predicates (ongoing, onset after a cutoff) translate to
+    // Value: protects=the IllnessEvent.ongoing predicate translates to
     //   SQL; fails_when=a predicate that only works in memory ships (the v0.1.17.0 crash);
     //   why_new=new model; seam=none (in-memory store); no_claim=none
     @MainActor
-    func test_predicates_runThroughAStore() throws {
+    func test_ongoingPredicate_runsThroughAStore() throws {
         let container = try ModelContainer(for: Schema([IllnessEvent.self]),
                                            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = container.mainContext
@@ -99,10 +113,6 @@ final class IllnessLogTests: XCTestCase {
         try context.save()
         let ongoing = try context.fetch(FetchDescriptor<IllnessEvent>(predicate: IllnessEvent.ongoing))
         XCTAssertEqual(ongoing.map(\.startDate), [day(-3)])
-        let cutoff = day(-180)
-        let recent = try context.fetch(FetchDescriptor<IllnessEvent>(
-            predicate: #Predicate<IllnessEvent> { $0.startDate >= cutoff }, sortBy: [SortDescriptor(\.startDate)]))
-        XCTAssertEqual(recent.map(\.startDate), [day(-30), day(-3)])
     }
 }
 
@@ -185,5 +195,24 @@ final class CoachIllnessTests: XCTestCase {
         XCTAssertFalse(reuse(.recovering, .sick(since: today)))
         XCTAssertTrue(reuse(.sick(since: today), .sick(since: today)))
     }
-}
 
+    // Value: protects=adding, resolving or expiring an Injury/Stress/Travel note makes the
+    //   Coach cache key differ, which is what lets a replayed refresh re-run the paragraph;
+    //   fails_when=the active note set is left out of the cache key (the pre-existing lost-tap
+    //   bug); why_new=v0.1.21.0 adversarial follow-ups; seam=none (pure static); no_claim=the
+    //   repository's fetch of the notes and the replay path itself (singleton wiring)
+    @MainActor
+    func test_coachNoteChange_invalidatesTheCoachCache() {
+        let fingerprint = PredictionCache.fingerprint(workoutCount: 1, sleepCount: 1, hrvCount: 1, rhrCount: 1)
+        let injury = UUID()
+        func reuse(_ now: Set<UUID>, _ last: Set<UUID>?) -> Bool {
+            ReadinessRepository.canReuseCachedAnalysis(lastAnalysisDate: Date(), fingerprint: fingerprint,
+                                                       lastFingerprint: fingerprint, activePatternTypes: [],
+                                                       lastActivePatternTypes: [], activeMemoryIDs: now,
+                                                       lastActiveMemoryIDs: last)
+        }
+        XCTAssertFalse(reuse([injury], []), "a new note re-runs Coach")
+        XCTAssertFalse(reuse([], [injury]), "an expired or resolved note re-runs Coach")
+        XCTAssertTrue(reuse([injury], [injury]))
+    }
+}

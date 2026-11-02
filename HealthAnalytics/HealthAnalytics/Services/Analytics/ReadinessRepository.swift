@@ -26,6 +26,17 @@ class ReadinessRepository: ObservableObject {
     /// Non-nil when analysis fails; nil on success. Views branch on this to show
     /// "add workouts" vs "something went wrong" vs normal content.
     @Published private(set) var analysisError: String?
+    /// Pattern analysis's own failure, shown by the Training DNA card. Kept apart from
+    /// `analysisError` so a recovery failure isn't shown as a pattern failure and a later
+    /// recovery run can't clear a real pattern error.
+    @Published private(set) var patternAnalysisError: String?
+    /// Bumped whenever the score backfill inserts rows. A pattern run that overlapped one
+    /// (the first launch: Recovery's run starts before the backfill saves) doesn't stamp the
+    /// throttle, so the next trigger re-runs on the full history.
+    private var scoreBackfillGeneration = 0
+    /// Bumped by every pattern run that starts. A run replaced as hung (see
+    /// `hungPatternRunLimit`) may still end later; only the newest run reports an error.
+    private var patternRunGeneration = 0
     
     // MARK: - Dependencies
 
@@ -79,6 +90,11 @@ class ReadinessRepository: ObservableObject {
     /// The illness state baked into the published `coachAdvice`. Logging a sick day
     /// changes no data count, so without it the paragraph would keep advising training.
     private var lastIllnessState: MasterCoachEngine.IllnessState?
+    /// The active Coach notes (Injury, Stress, Travel, custom) baked into `coachAdvice`. A
+    /// chip tap during a running analysis is replayed through `refreshIfNecessary`, so without
+    /// this the replay reused the cache and dropped the note; a note expiring (its TTL) changes
+    /// the paragraph too.
+    private var lastActiveMemoryIDs: Set<UUID>?
 
     /// Set when a refresh arrives while `performFullAnalysis` is mid-flight, so the
     /// run can re-check the store on the way out instead of the request being lost.
@@ -184,7 +200,9 @@ class ReadinessRepository: ObservableObject {
         lastAnalysisDate = nil
         lastActivePatternTypes = nil
         lastIllnessState = nil
+        lastActiveMemoryIDs = nil
         analysisError = nil
+        patternAnalysisError = nil
         isAppInForeground = Self.applicationIsInForeground
     }
     #endif
@@ -197,10 +215,15 @@ class ReadinessRepository: ObservableObject {
     /// The one exception is a joined run that stored nothing because it spanned a
     /// suspension (a background pass that ended `abandoned`, or a foreground run whose
     /// commit gate declined): `SingleFlight` then runs this request once on its own.
+    /// A foreground request gives up on a pattern run this old: it can't commit anything
+    /// (`BackgroundPatternPass.maxDuration` is 2 minutes), so it is hung, and joining it
+    /// would block "Try again" until the process dies.
+    nonisolated static let hungPatternRunLimit: TimeInterval = 10 * 60
+
     func runPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async {
-        await patternAnalysisFlight.run { [self] in
+        await patternAnalysisFlight.run({ [self] in
             await performPatternAnalysis(container: container, trigger: trigger)
-        }
+        }, replacingRunsOlderThan: Self.hungPatternRunLimit)
     }
 
     /// The background pattern pass (HealthKit delivery, app refresh). Shares
@@ -260,6 +283,10 @@ class ReadinessRepository: ObservableObject {
     private func performPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async -> Bool {
         let lastRun = UserDefaults.standard.object(forKey: Self.lastPatternAnalysisKey) as? Date
         guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return true }
+        patternAnalysisError = nil
+        let backfillGenerationAtStart = scoreBackfillGeneration
+        patternRunGeneration += 1
+        let runGeneration = patternRunGeneration
 
         // The throttle is stamped AFTER a run that actually reached upsertPatterns —
         // never before. `analyze()` refreshes every pattern's `detectedAt`, which is
@@ -290,7 +317,11 @@ class ReadinessRepository: ObservableObject {
             // so a clean return is NOT proof the patterns were refreshed. Callers can no
             // longer cancel this task (it belongs to the flight), but check anyway.
             if !Task.isCancelled {
-                UserDefaults.standard.set(Date(), forKey: Self.lastPatternAnalysisKey)
+                // A backfill that added rows mid-run changed what the detectors should have
+                // seen: leave the throttle unstamped so the next trigger runs again.
+                if scoreBackfillGeneration == backfillGenerationAtStart {
+                    UserDefaults.standard.set(Date(), forKey: Self.lastPatternAnalysisKey)
+                }
                 // The Coach paragraph bakes in the active pattern set. A run that
                 // detected or expired a pattern must re-check the cache now, or a
                 // launch-time analysis that finished after the coach read leaves
@@ -319,7 +350,11 @@ class ReadinessRepository: ObservableObject {
                 print("⚠️ Pattern analysis failed silently: \(error)")
                 #endif
             } else {
-                await MainActor.run { self.analysisError = "Pattern analysis failed: \(error.localizedDescription)" }
+                await MainActor.run {
+                    if self.patternRunGeneration == runGeneration {
+                        self.patternAnalysisError = "Pattern analysis failed: \(error.localizedDescription)"
+                    }
+                }
             }
         }
         return true
@@ -453,7 +488,9 @@ class ReadinessRepository: ObservableObject {
                activePatternTypes: fetchActivePatternTypes(context: modelContext),
                lastActivePatternTypes: lastActivePatternTypes,
                illnessState: fetchIllnessState(context: modelContext),
-               lastIllnessState: lastIllnessState
+               lastIllnessState: lastIllnessState,
+               activeMemoryIDs: fetchActiveMemoryIDs(context: modelContext),
+               lastActiveMemoryIDs: lastActiveMemoryIDs
            ) {
             #if DEBUG
             print("✅ ReadinessRepository: Using cached unified analysis")
@@ -862,6 +899,9 @@ class ReadinessRepository: ObservableObject {
             let illnessState = fetchIllnessState(context: modelContext)
             
             let allMemories = (try? modelContext.fetch(FetchDescriptor<CoachMemoryNote>())) ?? []
+            // Taken once, before synthesis: a note expiring mid-run must not leave the cache
+            // key without a note the paragraph still mentions.
+            let activeMemoryIDs = Set(allMemories.filter(\.isCurrentlyActive).map(\.id))
             
             let coachState = MasterCoachEngine.StateVector(
                 morningScore: baseReadiness.score,
@@ -952,6 +992,7 @@ class ReadinessRepository: ObservableObject {
             self.lastAnalysisDate = now
             self.lastActivePatternTypes = activePatternTypes
             self.lastIllnessState = illnessState
+            self.lastActiveMemoryIDs = activeMemoryIDs
 
             // Persist today's readiness score for 90-day back-to-back crash pattern detection.
             let todayWorkoutsForLoad = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
@@ -1221,6 +1262,7 @@ class ReadinessRepository: ObservableObject {
         if inserted > 0 {
             try? modelContext.save()
             UserDefaults.standard.removeObject(forKey: Self.lastPatternAnalysisKey)
+            scoreBackfillGeneration += 1
         }
         UserDefaults.standard.set(true, forKey: udKey)
 
@@ -1467,13 +1509,20 @@ class ReadinessRepository: ObservableObject {
         lastActivePatternTypes: Set<PatternType>?,
         illnessState: MasterCoachEngine.IllnessState = .none,
         lastIllnessState: MasterCoachEngine.IllnessState? = MasterCoachEngine.IllnessState.none,
+        activeMemoryIDs: Set<UUID> = [],
+        lastActiveMemoryIDs: Set<UUID>? = [],
         now: Date = Date()
     ) -> Bool {
         guard let lastAnalysisDate,
               Calendar.current.isDate(lastAnalysisDate, inSameDayAs: now)
         else { return false }
         return fingerprint == lastFingerprint && activePatternTypes == lastActivePatternTypes
-            && illnessState == lastIllnessState
+            && illnessState == lastIllnessState && activeMemoryIDs == lastActiveMemoryIDs
+    }
+
+    /// The Coach notes active now (not resolved, not expired). Read whole: a few rows.
+    private func fetchActiveMemoryIDs(context: ModelContext) -> Set<UUID> {
+        Set(((try? context.fetch(FetchDescriptor<CoachMemoryNote>())) ?? []).filter(\.isCurrentlyActive).map(\.id))
     }
 
     /// What the illness log says about today (ongoing, just ended, or nothing). The log is a
