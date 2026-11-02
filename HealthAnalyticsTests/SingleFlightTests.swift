@@ -239,4 +239,37 @@ final class SingleFlightTests: XCTestCase {
         XCTAssertEqual(first.runs, 1)
         XCTAssertEqual(asked, 0)
     }
+
+    // Value: protects=a foreground request gives up on a run older than its limit (hung) and
+    //   starts its own, a later caller joins the replacement, and the stale run finishing late
+    //   doesn't clear the replacement (which would start a duplicate); fails_when=a hung run
+    //   blocks "Try again" forever, or the generation check is dropped; why_new=P3 TODO "A hung
+    //   analysis blocks every later pattern-analysis request"; seam=injected clock (`now`);
+    //   no_claim=the repository's 10-minute limit
+    func test_run_replacesAHungRun_andTheStaleRunLeavesItsSuccessorAlone() async {
+        let flight = SingleFlight()
+        var stale = 0, fresh = 0
+        let first = Task { await flight.run({ stale += 1; try? await Task.sleep(for: .milliseconds(150)); return true }) }
+        try? await Task.sleep(for: .milliseconds(20))
+        let replacement = Task {
+            await flight.run({ fresh += 1; try? await Task.sleep(for: .milliseconds(400)); return true },
+                             replacingRunsOlderThan: 60, now: { Date().addingTimeInterval(120) })
+        }
+        try? await Task.sleep(for: .milliseconds(250))   // the stale run has finished by now
+        await flight.run({ fresh += 1; return true })      // must join the replacement
+        await first.value; await replacement.value
+        XCTAssertEqual(stale, 1)
+        XCTAssertEqual(fresh, 1, "a caller after the stale run ended joins the replacement")
+    }
+
+    func test_run_withinTheLimit_joins() async {
+        let flight = SingleFlight()
+        var runs = 0
+        let first = Task { await flight.run({ runs += 1; try? await Task.sleep(for: .milliseconds(100)); return true }) }
+        try? await Task.sleep(for: .milliseconds(20))
+        await flight.run({ runs += 1; return true }, replacingRunsOlderThan: 60)
+        await first.value
+        XCTAssertEqual(runs, 1)
+    }
 }
+

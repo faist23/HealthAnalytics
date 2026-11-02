@@ -13,7 +13,6 @@ struct InsightsView: View {
     @StateObject private var viewModel = InsightsViewModel()
     @State private var isFirstLoad = true
     @State private var isPatternAnalyzing = false
-    @State private var patternAnalysisError: String?
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
 
@@ -141,11 +140,8 @@ struct InsightsView: View {
 
                 if isPatternAnalyzing && detectedPatterns.isEmpty {
                     patternLoadingSkeleton
-                // repo.analysisError is where runPatternAnalysis actually reports
-                // failures — the local @State is only ever cleared, never set, so on
-                // its own this branch was unreachable and a failed run fell through
-                // to the "nothing stands out" copy below.
-                } else if let err = patternAnalysisError ?? repo.analysisError {
+                // Pattern analysis reports its own failures here (never a recovery error).
+                } else if let err = repo.patternAnalysisError {
                     patternErrorRow(message: err)
                 } else if detectedPatterns.isEmpty {
                     // Distinguish "never found anything" from "found patterns before,
@@ -253,7 +249,6 @@ struct InsightsView: View {
     @MainActor
     private func triggerPatternAnalysis(_ trigger: ReadinessRepository.PatternAnalysisTrigger) async {
         isPatternAnalyzing = true
-        patternAnalysisError = nil
         await ReadinessRepository.shared.runPatternAnalysis(
             container: modelContext.container,
             trigger: trigger

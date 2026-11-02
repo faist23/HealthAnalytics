@@ -29,46 +29,6 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15 min)
 
-### Stored `.tapering` rows carry a numerator computed under the old ACWR metric
-**Priority:** P2 — affects upgraders only, self-heals within 10 days
-
-**What:** `confidenceNumerator` on a `.tapering` row written before v0.1.13.0 holds an ACWR-ratio percentage, but `confidenceCountText` now renders it as "load down N%" — a claim about training volume that was never measured. `upsertPatterns` only overwrites it when the detector re-fires.
-
-**Why:** An upgrader mid-taper can see the exact false claim this release was opened to remove. Self-limiting: the row ages out of `activeWindowDays` (10) and the next successful analysis rewrites it.
-
-**How to apply:** One-time migration on first launch of ≥ 0.1.13.0 that deletes stored `.tapering` rows (gated by a UserDefaults key, matching the existing migration pattern). Weigh against letting it self-heal.
-
-**Effort:** S (human: ~2h / CC+gstack: ~10min)
-
-### Pattern and recovery errors share `ReadinessRepository.analysisError`
-**Priority:** P3 — surfaced by the v0.1.14.0 red-team review; pre-existing
-
-**What:** `runPatternAnalysis`'s catch and `performFullAnalysis` both write `analysisError`, and `InsightsView` renders it as the Training DNA error row (whose "Try again" re-runs pattern analysis). A recovery failure can show as a pattern failure; a later `performFullAnalysis` clears a real pattern error; a successful retry that hits the cache clears nothing.
-
-**How to apply:** Add a separate published `patternAnalysisError` on the repository, cleared at the start of `runPatternAnalysis`; have `InsightsView` read it. Remove the never-set local `patternAnalysisError` in `InsightsView.triggerPatternAnalysis`.
-
-**Effort:** S (human: ~1h / CC+gstack: ~10min)
-
-### First-launch pattern analysis can run on pre-backfill scores
-**Priority:** P3 — surfaced by the v0.1.14.0 red-team review; pre-existing
-
-**What:** `backfillHistoricalScores` clears `lastPatternAnalysisDate` as a "re-run patterns" signal, but on first launch `RecoveryTabView`'s forced analysis can start before the backfill saves and stamp afterwards, so the first session's patterns (and the Coach paragraph built from them) can miss history-dependent detections. Self-heals on the next Recovery-tab appear.
-
-**How to apply:** After a backfill that inserted rows, re-run pattern analysis directly — or have `runPatternAnalysis` await `backfillHistoricalScores` before `analyze` — instead of relying on clearing the throttle key.
-
-**Effort:** S (human: ~1h / CC+gstack: ~10min)
-
-### Taper detection requires all 28 of the last 28 days to have a stored score
-**Priority:** P3 — pre-existing, but now load-bearing
-
-**What:** `detectTaperUnderway` guards on 28 distinct days of `StoredDailyScore`, and `backfillHistoricalScores` skips any day lacking sleep data (its `!sleepDay.isEmpty` guard). One night without the watch inside the window silences taper detection until that day rolls off. The window is now the 28 complete days ending yesterday (not including today).
-
-**Why:** v0.1.13.0's headline claim is that the detector now catches a genuine 50% volume cut. For intermittent watch-wearers that improvement may be unreachable.
-
-**How to apply:** Consider relaxing to a distinct-day count (e.g. ≥ 24 of 28) with the means computed over available days.
-
-**Effort:** S (human: ~2h / CC+gstack: ~10min)
-
 ### Mark the load engine's pure functions `nonisolated`
 **Priority:** P3 — deferred from the v0.1.16.0 review (user decision)
 
@@ -100,17 +60,6 @@
 
 **Effort:** S (human: ~30min / CC+gstack: ~5min)
 
-### Intent labels can be orphaned by the background workout refresh
-**Priority:** P3 — surfaced by the v0.1.16.0 adversarial review (user deferred)
-
-**What:** `autoClassifyWorkoutIntents()` runs after the background HealthKit-only upsert, so a Watch ride stored under its HealthKit UUID gets a `StoredIntentLabel`. The next foreground sync matches the ride to Strava and deletes the HealthKit row, leaving the label pointing at a workout that no longer exists.
-
-**Why:** Orphan labels accumulate and any future join that counts labels rather than workouts will miscount.
-
-**How to apply:** Delete or re-key the label when `upsertRecentData` deletes a stale HealthKit row.
-
-**Effort:** S (human: ~2h / CC+gstack: ~15min)
-
 ### Background pass throttle on battery
 **Priority:** P3 — surfaced by the v0.1.16.0 adversarial review (user deferred)
 
@@ -122,41 +71,7 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15min)
 
-### A reset whose HealthKit fetch fails loses older history for good
-**Priority:** P3 — surfaced by the v0.1.20.0 review (pre-existing)
-
-**What:** `resetAllData` deletes every stored workout and metric, then `syncAllHistoricalData` refetches 10 years. If that fetch throws, the next sync fetches only 30 days (`recentSyncWindowStart(lastSync: nil)`), and `performHistoricalBackfill` is a stub that fetches nothing before `hasCompletedHistoricalBackfill` is set. Older history never comes back without another reset.
-
-**Why:** The 118-day load chart and the 90/180-day pattern reads lose their data. Before v0.1.20.0 a failed reset also stamped `lastSyncDate`, so even the 30 days were skipped.
-
-**How to apply:** Persist a "full history needed" flag when the reset's fetch fails, have `performSmartSync` call `syncAllHistoricalData` while it is set, and clear it only on success. Or make `performHistoricalBackfill` real and gate its flag on its result.
-
-**Effort:** S (human: ~2h / CC+gstack: ~15min)
-
-### Illness log follow-ups from the v0.1.21.0 review
-**Priority:** P3 — surfaced by the v0.1.21.0 adversarial review; none is a release blocker
-
-**What:**
-- The step-proxy dedupe accepts a low-step window only up to 1 day before a logged first sick day (`IllnessLog.sickWindowStarts`). Someone who logs the day they felt sick after a day or two of low activity gets a proxy window 2+ days earlier counted as a second illness, and the same HRV dip can count twice toward the precursor's 3-match gate. Widen the lead to 2–3 days, with a test.
-- Settings → Illness Log: switching "Still sick" off defaults "Last sick day" to the first day (`IllnessEntrySheet` init), so an immediate Save shrinks the illness to one day. Default it to `IllnessLog.lastSickDay`.
-- `detectHRVPrecursor` fetches illnesses with `startDate >= cutoff`, so a spell that started before the 180-day window but ended inside it doesn't dedupe the proxy windows it covers.
-- Injury, Stress and Travel chip taps can be lost while an analysis runs (pre-existing): the queued replay is `refreshIfNecessary`, whose cache key has no `CoachMemoryNote`. The Sick chip is safe because the illness state is in the key.
-- FTP History uses the same `sheet(isPresented:)` + separate target pattern that let an Illness Log edit open as a blank form (fixed there with `.sheet(item:)`).
-
-**Effort:** S (human: ~2h / CC+gstack: ~20min)
-
 ## Coach
-
-### A hung analysis blocks every later pattern-analysis request
-**Priority:** P3 — surfaced by the v0.1.15.0 red-team review (user deferred)
-
-**What:** `SingleFlight.run` has no escape. If one pattern analysis never finishes (a HealthKit callback that never fires), `current` is never cleared and every later `runPatternAnalysis` (including "Try again") joins the stuck run until the process dies. Joiners also inherit the first run's priority, so a background-started run stays at background priority while foreground callers wait.
-
-**Why:** Not observed; a background run suspended mid-flight resumes when the app wakes. Filed so a future hang has an obvious suspect.
-
-**How to apply:** Record when the flight started and let a non-background request start a fresh run when the current one is older than a limit, or create the flight task with `.userInitiated` priority.
-
-**Effort:** S (human: ~1h / CC+gstack: ~10min)
 
 ### MasterCoachEngine copy duplicated across LLM and heuristic paths
 **Priority:** P3 — deferred from /ship review 2026-07-08
@@ -203,15 +118,6 @@
 
 ## Design
 
-### `BreakdownRow` bar width is unclamped
-**Priority:** P4 — surfaced by the v0.1.14.0 adversarial review; pre-existing (moved unchanged from ReadinessView)
-
-**What:** `Views/Recovery/ScoreBreakdownCard.swift` sizes the bar as `width * score / maxScore` with no clamp; a score above `maxScore` overflows the track and a negative one yields an invalid frame width.
-
-**How to apply:** Clamp the ratio to `0...1`.
-
-**Effort:** XS
-
 ### Light Mode Token Sweep: TrainingSignatureCard
 **Priority:** P4 — blocked on light mode phase (not scoped)
 
@@ -251,6 +157,15 @@
 
 ## Completed
 
+- **P2 — Stored `.tapering` rows carry a numerator computed under the old ACWR metric** — **Closed:** unreleased (2026-11-02). Self-healed: v0.1.13.0 shipped 2026-08-11, so any such row aged out of the 10-day active window in August; no migration needed.
+- **P3 — Illness log follow-ups from the v0.1.21.0 review** — **Completed:** unreleased (2026-11-02). Proxy lead widened to 2 days (`IllnessLog.proxyLeadDays`); old spells reaching into the window still absorb proxy windows; "Still sick" off defaults to `lastSickDay`; active Coach notes are in the Coach cache key (`lastActiveMemoryIDs`); FTP History's edit sheet uses `.sheet(item:)`.
+- **P3 — A reset whose HealthKit fetch fails loses older history for good** — **Completed:** unreleased (2026-11-02). `needsFullHistoryFetch` makes every sync retry the 10-year fetch until it succeeds.
+- **P3 — Intent labels can be orphaned by the background workout refresh** — **Completed:** unreleased (2026-11-02). The foreground upsert deletes a HealthKit copy's label with it.
+- **P3 — Pattern and recovery errors share `ReadinessRepository.analysisError`** — **Completed:** unreleased (2026-11-02). `patternAnalysisError`, read by the Training DNA card.
+- **P3 — First-launch pattern analysis can run on pre-backfill scores** — **Completed:** unreleased (2026-11-02). A run overlapping a backfill that inserted rows leaves the throttle unstamped (`scoreBackfillGeneration`); awaiting the backfill inside the run was rejected because it could fill rows before the Strava sync.
+- **P3 — A hung analysis blocks every later pattern-analysis request** — **Completed:** unreleased (2026-11-02). Foreground requests replace a run older than 10 minutes (`SingleFlight` `replacingRunsOlderThan`, generation-guarded).
+- **P3 — Taper detection requires all 28 of the last 28 days to have a stored score** — **Completed:** unreleased (2026-11-02). 24 of 28 days and 5 of the last 7, windows split by date.
+- **P4 — `BreakdownRow` bar width is unclamped** — **Completed:** unreleased (2026-11-02). `BreakdownRow.fillFraction`.
 - **P2 — Phase 2b: Manual Illness Log** — **Completed:** v0.1.21.0 (2026-11-02). Built ahead of its 3-month data gate at the owner's call. `IllnessEvent` model, a Sick / I'm better chip in the Coach tab's "Anything I should know today?" bar, Settings → Illness Log; while sick or just recovered the Coach paragraph says rest / keep it easy (illness state in the Coach cache key); logged onsets join the HRV precursor's step-proxy sick windows (`IllnessLog.sickWindowStarts`). Sleep fragmentation never used sick days, so it is unaffected. `IllnessLogTests`, `CoachIllnessTests`.
 - **P2 — A day's load is frozen at the first write** — **Completed:** v0.1.20.0 (2026-11-02). After a foreground sync's or zone backfill's `DataSyncCompleted`, when `SyncManager.mayRecomputeDailyLoads` (after a good recent sync; never on a reset's post), `ReadinessRepository.recomputeRecentDailyLoads` recomputes `dailyLoad` and `workoutCount` for existing rows of the last 7 complete days (keyed by `dateString`, sorted fetch, 0.01 tolerance, never creates rows, never touches today, recovery score or ACWR, never runs in the background pass). Store-trust prerequisites: `recentSyncWindowStart` (back to the start of the day 7 days ago), `lastSyncDate` advances only on a successful fetch, and the foreground upsert skips HealthKit rides paired with stored Strava rides and deletes their HealthKit-UUID copies. `DailyLoadRecomputeTests`.
 - **P2 — A ride deleted on Strava keeps counting toward your training load** — **Completed:** v0.1.19.0 (2026-11-01). Each foreground sync tags stored Strava rides its newest page lists with the connected athlete (`StoredWorkout.stravaAthleteId`), then deletes a tagged ride the page no longer lists (with its intent label) only after Strava answers its own 404 "Record Not Found" for it (a 429 stops the checks); refused on an empty page, zero overlap or more than 10 missing; only with `activity:read_all` granted. Other accounts' and untagged rides are never candidates. `StravaDeletedRidesTests`.

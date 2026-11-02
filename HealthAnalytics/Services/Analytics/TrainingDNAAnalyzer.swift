@@ -482,9 +482,10 @@ actor TrainingDNAAnalyzer {
         // window inside a logged illness is that illness, not another one. The window runs to
         // now, not completeDaysEnd: today's step count is partial, but a logged onset is a fact,
         // and the HRV it checks (36-72h earlier) is already complete.
-        let logged = ((try? modelContext.fetch(FetchDescriptor<IllnessEvent>(
-            predicate: #Predicate<IllnessEvent> { $0.startDate >= cutoff }
-        ))) ?? []).map { (start: $0.startDate, end: $0.endDate) }
+        // The whole log (a handful of rows, no predicate): a spell that started before the
+        // window but reaches into it still absorbs the proxy windows it covers.
+        let logged = ((try? modelContext.fetch(FetchDescriptor<IllnessEvent>())) ?? [])
+            .map { (start: $0.startDate, end: $0.endDate) }
         sickDayWindows = IllnessLog.sickWindowStarts(proxy: sickDayWindows, logged: logged,
                                                      from: cutoff, to: Date())
 
@@ -854,6 +855,11 @@ actor TrainingDNAAnalyzer {
     /// resumed training or stepped up a block and then held it flat — while the Load tab
     /// correctly showed ACWR ~1.0 — and it simultaneously MISSED a genuine 50% volume
     /// cut (only a 24% ACWR move). Do not reconnect this to `dailyStrain`.
+    /// Days of the 28 that need a score row (a missed night of watch data leaves a day
+    /// without one), and of the last 7.
+    static let taperMinimumDays = 24
+    static let taperMinimumRecentDays = 5
+
     private func detectTaperUnderway(sourcePreference: HRVSourcePreference) async throws -> TrainingPattern? {
         // The 28 complete days ending yesterday.
         let cutoff28 = completeDayStart(daysBack: 28)
@@ -879,12 +885,14 @@ actor TrainingDNAAnalyzer {
         let daily = byDay.keys.sorted().compactMap { key in
             byDay[key]?.max { $0.dailyLoad < $1.dailyLoad }
         }
-        guard daily.count >= 28 else { return nil }
-
-        // Load drop: mean daily load last 7 days vs mean daily load days 8–28
-        let last7  = daily.suffix(7).map(\.dailyLoad)
-        let prev21 = daily.prefix(daily.count - 7).map(\.dailyLoad)
-        guard !last7.isEmpty, !prev21.isEmpty else { return nil }
+        // A missing day (no score row: a night without the watch) is unknown, not rest, so
+        // the means are over the days that exist. Split by date, not by row position: with a
+        // day missing, the last 7 rows would reach back into the baseline.
+        guard daily.count >= Self.taperMinimumDays else { return nil }
+        let recentStart = completeDayStart(daysBack: 7)
+        let last7  = daily.filter { $0.date >= recentStart }.map(\.dailyLoad)
+        let prev21 = daily.filter { $0.date < recentStart }.map(\.dailyLoad)
+        guard last7.count >= Self.taperMinimumRecentDays, !prev21.isEmpty else { return nil }
 
         let loadLast7  = last7.reduce(0, +)  / Double(last7.count)
         let loadPrev21 = prev21.reduce(0, +) / Double(prev21.count)

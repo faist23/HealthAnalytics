@@ -183,8 +183,8 @@ final class DailyLoadRecomputeTests: XCTestCase {
     }
 
     // Value: protects=a HealthKit copy an earlier sync stored beside a stored Strava ride is
-    //   deleted, so the recompute doesn't count the ride twice; fails_when=the stored-Strava
-    //   branch only skips; why_new=testing + red-team review; seam=none (real actor, in-memory
+    //   deleted with its intent label, so the recompute doesn't count the ride twice and no
+    //   label is orphaned; fails_when=the stored-Strava branch only skips, or leaves the label; why_new=testing + red-team review; seam=none (real actor, in-memory
     //   store); no_claim=how the twin got stored
     func test_foregroundUpsert_deletesAStoredHealthKitTwinOfAStoredStravaRide() async throws {
         let start = dayStart(1).addingTimeInterval(18 * 3600)
@@ -193,11 +193,17 @@ final class DailyLoadRecomputeTests: XCTestCase {
         let hk = healthKitRide(at: start.addingTimeInterval(60))
         context.insert(StoredWorkout(id: hk.id.uuidString, type: .cycling, startDate: hk.startDate, duration: 3600,
                                      distance: nil, power: nil, energy: nil, hr: 140, source: "Apple Watch"))
+        // The background refresh labels HealthKit-UUID rows; the label must leave with the row.
+        context.insert(StoredIntentLabel(workoutId: hk.id.uuidString, intent: .easy, confidence: 0.8, source: .heuristic))
+        context.insert(StoredIntentLabel(workoutId: "strava-1", intent: .easy, confidence: 0.8, source: .heuristic))
         try context.save()
         let actor = DataPersistenceActor(modelContainer: container)
         await actor.upsertRecentData(workouts: [hk], strava: [], sleep: [], hrv: [], rhr: [], steps: [],
                                      weight: [], nutrition: [], vo2max: [])
-        XCTAssertEqual(try ModelContext(container).fetch(FetchDescriptor<StoredWorkout>()).map(\.id), ["strava-1"])
+        let after = ModelContext(container)
+        XCTAssertEqual(try after.fetch(FetchDescriptor<StoredWorkout>()).map(\.id), ["strava-1"])
+        XCTAssertEqual(try after.fetch(FetchDescriptor<StoredIntentLabel>()).map(\.workoutId), ["strava-1"],
+                       "the deleted copy's label goes with it; the Strava ride's stays")
     }
 
     // Value: protects=a HealthKit ride that pairs with no stored Strava ride is still stored

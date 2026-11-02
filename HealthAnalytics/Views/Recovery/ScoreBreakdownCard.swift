@@ -46,6 +46,13 @@ struct ScoreBreakdownCard: View {
 }
 
 struct BreakdownRow: View {
+    /// The bar's filled share, clamped to 0...1: a score above `maxScore` overflowed the
+    /// track and a negative one produced an invalid frame width.
+    static func fillFraction(score: Int, maxScore: Int) -> CGFloat {
+        guard maxScore > 0 else { return 0 }
+        return min(max(CGFloat(score) / CGFloat(maxScore), 0), 1)
+    }
+
     let label: String
     let score: Int
     let maxScore: Int
@@ -76,7 +83,7 @@ struct BreakdownRow: View {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(color)
                         .frame(
-                            width: geometry.size.width * CGFloat(score) / CGFloat(maxScore),
+                            width: geometry.size.width * Self.fillFraction(score: score, maxScore: maxScore),
                             height: 8
                         )
                 }

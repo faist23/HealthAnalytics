@@ -407,8 +407,8 @@ final class PredictiveIntelligenceTests: XCTestCase {
     // Fixture geometry:
     //   makeTaperScores(last7Load:prev21Load:totalDays:):
     //     90 days of scores. Last 7 days at last7Load, all earlier days at prev21Load.
-    //     The detector reads scores28 (last 28 days from modelContext) and splits:
-    //       last7 = suffix(7), prev21 = prefix(21).
+    //     The detector reads scores28 (last 28 days from modelContext) and splits by date:
+    //       last7 = days 1–7, prev21 = days 8–28 (needs 24 of 28 days, 5 of the last 7).
     //     Drop formula: (prev21Mean - last7Mean) / prev21Mean. Gate: >= 0.30.
     //     Bands on dailyLoad (actual TSS/day), NOT dailyStrain (the ACWR ratio) —
     //     the fixture pins dailyStrain to a constant so a regression to it goes red.
@@ -478,7 +478,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         )
     }
 
-    /// Fewer than 28 StoredDailyScore records within the last 28 days → guard fails → no pattern.
+    /// Far fewer than 24 StoredDailyScore days within the last 28 → guard fails → no pattern.
     func testTaperUnderway_insufficientScoreCount_returnsNil() async throws {
         let container = try makeFullContainer()
         let analyzer = TrainingDNAAnalyzer(modelContainer: container)
@@ -498,7 +498,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         let patterns = try await analyzer.fetchAllPatterns()
         XCTAssertFalse(
             patterns.contains { $0.patternType == .tapering },
-            "Fewer than 28 scores must prevent taper detection"
+            "20 scored days (fewer than 24) must prevent taper detection"
         )
     }
 
@@ -633,6 +633,41 @@ final class PredictiveIntelligenceTests: XCTestCase {
             patterns.contains { $0.patternType == .tapering },
             "Halving training volume is a real taper and must be detected"
         )
+    }
+
+    /// Runs the taper detector over the standard 35% drop with `missing` days (days ago) left
+    /// without a score row, as a night without the watch leaves them.
+    private func taperFires(missing: Set<Int>) async throws -> Bool {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeTaperHRVData(positive: true)
+        await analyzer.setDataProvider(mock)
+        let scores = makeTaperScores(last7Load: 0.65, prev21Load: 1.0).filter { score in
+            let daysAgo = Calendar.current.dateComponents([.day], from: score.date, to: day(0)).day ?? 0
+            return !missing.contains(daysAgo)
+        }
+        try await analyzer.insertDailyScores(scores)
+        try await seedIntensityHeldWorkouts(analyzer)
+        _ = try await analyzer.analyze()
+        return try await analyzer.fetchAllPatterns().contains { $0.patternType == .tapering }
+    }
+
+    // Value: protects=a few nights without watch data no longer silence taper detection (24 of
+    //   28 days, at least 5 of the last 7), the means skip missing days, and the recent week is
+    //   split by date so a missing day doesn't pull a baseline day into it; fails_when=the guard
+    //   goes back to all 28 days, or the windows go back to row positions; why_new=P3 TODO "Taper
+    //   detection requires all 28 of the last 28 days"; seam=none; no_claim=the 30% threshold
+    func testTaperUnderway_toleratesAFewMissingDays() async throws {
+        let baselineGaps = try await taperFires(missing: [10, 15, 20, 25])
+        XCTAssertTrue(baselineGaps, "24 of 28 days, all 7 recent: still a taper")
+        let recentGaps = try await taperFires(missing: [2, 5])
+        XCTAssertTrue(recentGaps, "5 of the last 7 days is enough")
+        let tooFewRecent = try await taperFires(missing: [2, 4, 6])
+        XCTAssertFalse(tooFewRecent, "4 of the last 7 days is too few to call a drop")
+        let tooFewTotal = try await taperFires(missing: [10, 12, 15, 20, 25])
+        XCTAssertFalse(tooFewTotal, "23 of 28 days is too few")
     }
 
     /// Seeds 28 days of workouts at a constant HR, so the corroboration gate sees

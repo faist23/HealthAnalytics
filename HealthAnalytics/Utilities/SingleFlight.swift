@@ -25,14 +25,28 @@ import Foundation
 /// joins one). False starts nothing, so no other caller can join a run that does no
 /// work: a background wake retrying after the user opened the app declines, and a
 /// foreground caller that resumed beside it starts its own analysis.
+///
+/// `replacingRunsOlderThan` lets a caller give up on a run that never finishes (a
+/// HealthKit callback that never fires) instead of joining it forever: a run started that
+/// long ago is left to finish on its own and this caller starts a fresh one. The stale run
+/// can no longer clear the flight when it ends; only the run it holds can.
 @MainActor
 final class SingleFlight {
     private var current: Task<Bool, Never>?
+    private var currentStartedAt: Date?
+    /// Identifies `current`, so a replaced run finishing late doesn't clear its successor.
+    private var generation = 0
 
     func run(
         _ work: @escaping @MainActor () async -> Bool,
-        shouldStart: @escaping @MainActor () -> Bool = { true }
+        shouldStart: @escaping @MainActor () -> Bool = { true },
+        replacingRunsOlderThan limit: TimeInterval? = nil,
+        now: @MainActor () -> Date = { Date() }
     ) async {
+        if let limit, let startedAt = currentStartedAt, now().timeIntervalSince(startedAt) > limit {
+            current = nil
+            currentStartedAt = nil
+        }
         if let current {
             let completed = await Self.wait(for: current)
             // nil: this caller was cancelled while waiting. true: nothing to redo.
@@ -53,14 +67,21 @@ final class SingleFlight {
         // No await between this check and setting `current`, so no caller can start or
         // join in between.
         guard shouldStart() else { return }
+        generation += 1
+        let myGeneration = generation
         let task = Task { [weak self] in
             let completed = await work()
             // Cleared from inside the task so it happens at completion, before any
             // joiner resumes — a request arriving just after can't join a finished run.
-            self?.current = nil
+            // A replaced run leaves its successor alone.
+            if self?.generation == myGeneration {
+                self?.current = nil
+                self?.currentStartedAt = nil
+            }
             return completed
         }
         current = task
+        currentStartedAt = Date()
         await Self.wait(for: task)
     }
 

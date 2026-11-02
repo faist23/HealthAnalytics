@@ -72,17 +72,23 @@ enum IllnessLog {
         return max(calendar.startOfDay(for: start), yesterday)
     }
 
+    /// How many days before a logged first sick day a low-step window still counts as that
+    /// illness: people often log the day they felt sick after a day or two of low activity.
+    static let proxyLeadDays = 2
+
     /// Onsets the HRV precursor looks back from: every logged illness that started inside
     /// `[from, to)`, plus each step-proxy window that isn't the same illness. Logged spells that
     /// overlap or touch (the next starts by the day after the last ends) are one illness. A
-    /// proxy window is the same illness when it starts within a day before a logged illness and
-    /// its end (the last sick day, or `to` while ongoing). Sorted, one per illness.
+    /// proxy window is the same illness when it starts up to `proxyLeadDays` before a logged
+    /// illness through its end (the last sick day, or `to` while ongoing). Spells that started
+    /// before `from` but reach into it still absorb proxy windows; only their onsets are left
+    /// out. Sorted, one per illness.
     static func sickWindowStarts(proxy: [Date], logged: [(start: Date, end: Date?)],
                                  from: Date, to: Date, calendar: Calendar = .current) -> [Date] {
         var spells: [(start: Date, end: Date)] = []
         for spell in logged
             .map({ (start: calendar.startOfDay(for: $0.start), end: $0.end.map { calendar.startOfDay(for: $0) } ?? to) })
-            .filter({ $0.start >= from && $0.start < to })
+            .filter({ $0.start < to && $0.end >= from })
             .sorted(by: { $0.start < $1.start }) {
             if let last = spells.last,
                spell.start <= (calendar.date(byAdding: .day, value: 1, to: last.end) ?? last.end) {
@@ -93,10 +99,10 @@ enum IllnessLog {
         }
         let unlogged = proxy.filter { day in
             !spells.contains { spell in
-                let lead = calendar.date(byAdding: .day, value: -1, to: spell.start) ?? spell.start
+                let lead = calendar.date(byAdding: .day, value: -proxyLeadDays, to: spell.start) ?? spell.start
                 return day >= lead && day <= spell.end
             }
         }
-        return (spells.map(\.start) + unlogged).sorted()
+        return (spells.map(\.start).filter { $0 >= from } + unlogged).sorted()
     }
 }
