@@ -156,6 +156,9 @@ class ReadinessRepository: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                // Only the foreground posts DataSyncCompleted (sync, zone backfill, reset), never
+                // the background pass, so recent rows aren't refilled from Health-only data.
+                self.recomputeRecentDailyLoads(modelContext: HealthDataContainer.shared.mainContext)
                 await self.refreshIfNecessary(
                     modelContext: HealthDataContainer.shared.mainContext
                 )
@@ -1015,6 +1018,58 @@ class ReadinessRepository: ObservableObject {
             modelContext.insert(record)
         }
         try? modelContext.save()
+    }
+
+    // MARK: - Recent Daily Load Recompute
+
+    /// How many complete days before today get their load recomputed after a sync.
+    nonisolated static let dailyLoadRecomputeDays = 7
+
+    /// A day's `dailyLoad` and `workoutCount` were fixed at its last write (often mid-day), so a
+    /// ride synced later (an evening ride synced next morning, a backdated upload) never counted,
+    /// and a ride removed from the store kept its load. Recomputes both for the EXISTING rows of
+    /// the last `days` complete days from the stored workouts. Rows are found by `dateString`
+    /// (a stored `date` can drift across midnight when travelling); a row is written only when
+    /// its load moves by more than 0.01 or its count changes. Never touches `readinessScore` or
+    /// `dailyStrain`, never creates a row, never touches today (analysis rewrites it). Returns
+    /// how many rows changed.
+    @discardableResult
+    static func recomputeRecentDailyLoads(context: ModelContext, now: Date, days: Int = dailyLoadRecomputeDays,
+                                          calendar: Calendar = .current,
+                                          load: (StoredWorkout) -> Double) -> Int {
+        let today = calendar.startOfDay(for: now)
+        var changed = 0
+        for back in 1...max(1, days) {
+            guard let dayStart = calendar.date(byAdding: .day, value: -back, to: today),
+                  let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { continue }
+            let dateStr = dailyScoreDateFormatter.string(from: dayStart)
+            guard let row = (try? context.fetch(FetchDescriptor<StoredDailyScore>(
+                predicate: #Predicate { $0.dateString == dateStr }
+            )))?.first else { continue }
+            let workouts = (try? context.fetch(FetchDescriptor<StoredWorkout>(
+                predicate: #Predicate { $0.startDate >= dayStart && $0.startDate < dayEnd },
+                sortBy: [SortDescriptor(\.startDate)]
+            ))) ?? []
+            let dayLoad = workouts.reduce(0.0) { $0 + load($1) }
+            guard abs(row.dailyLoad - dayLoad) > 0.01 || row.workoutCount != workouts.count else { continue }
+            row.dailyLoad = dayLoad
+            row.workoutCount = workouts.count
+            changed += 1
+        }
+        if changed > 0 { try? context.save() }
+        return changed
+    }
+
+    /// After a foreground sync (or a zone backfill or reset finishing): the stored workouts may
+    /// have gained, lost or re-zoned rides for recent days.
+    func recomputeRecentDailyLoads(modelContext: ModelContext) {
+        let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+        let changed = Self.recomputeRecentDailyLoads(context: modelContext, now: Date()) { [predictiveReadinessService] in
+            predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: $0), ftpSnapshots: ftpSnapshots)
+        }
+        #if DEBUG
+        if changed > 0 { print("📈 Recomputed load for \(changed) recent day(s)") }
+        #endif
     }
 
     // MARK: - Historical Score Backfill

@@ -307,7 +307,7 @@ class SyncManager: ObservableObject {
             #endif
             
             // STEP 2: Sync recent data (always - this is fast)
-            await syncRecentData(dataHandler: dataHandler)
+            let recentSynced = await syncRecentData(dataHandler: dataHandler)
             
             // STEP 3: Historical backfill (only if needed)
             if syncPlan.needsHistoricalBackfill && !hasCompletedHistoricalBackfill {
@@ -315,7 +315,8 @@ class SyncManager: ObservableObject {
                 hasCompletedHistoricalBackfill = true
             }
             
-            lastSyncDate = Date()
+            // A failed fetch must not move the window past the data it missed.
+            if recentSynced { lastSyncDate = Date() }
             #if DEBUG
             print("✅ Smart Sync Complete")
             #endif
@@ -452,15 +453,26 @@ class SyncManager: ObservableObject {
     
     // MARK: - Recent Data Sync
     
-    private func syncRecentData(dataHandler: DataPersistenceActor) async {
+    /// Where a recent sync starts reading: a day before the last successful sync, but never
+    /// later than 7 days ago, because late writers (Garmin, Zwift, Wahoo) backdate rides into
+    /// HealthKit and Strava; 30 days back on a first sync.
+    nonisolated static func recentSyncWindowStart(lastSync: Date?, now: Date, calendar: Calendar = .current) -> Date {
+        guard let lastSync else { return calendar.date(byAdding: .day, value: -30, to: now) ?? now }
+        let dayBeforeLast = calendar.date(byAdding: .day, value: -1, to: lastSync) ?? lastSync
+        let weekBack = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+        return min(dayBeforeLast, weekBack)
+    }
+
+    /// Returns whether the HealthKit fetch and upsert succeeded; `lastSyncDate` advances only then.
+    @discardableResult
+    private func syncRecentData(dataHandler: DataPersistenceActor) async -> Bool {
         let calendar = Calendar.current
         let endDate = Date()
 
-        // INCREMENTAL SYNC: Only fetch data since last successful sync
+        // INCREMENTAL SYNC: since the last successful sync, and always at least a week back
         let startDate: Date
         if let lastSync = lastSyncDate {
-            // Add 1 day buffer to avoid missing data at boundaries
-            startDate = calendar.date(byAdding: .day, value: -1, to: lastSync) ?? lastSync
+            startDate = Self.recentSyncWindowStart(lastSync: lastSync, now: endDate, calendar: calendar)
             let daysSinceLastSync = calendar.dateComponents([.day], from: lastSync, to: endDate).day ?? 0
             
             // Better time display for recent syncs
@@ -485,7 +497,7 @@ class SyncManager: ObservableObject {
             syncProgress = "Updating last \(timeDescription)..."
         } else {
             // First sync ever - get last 30 days as initial data
-            startDate = calendar.date(byAdding: .day, value: -30, to: endDate) ?? endDate
+            startDate = Self.recentSyncWindowStart(lastSync: nil, now: endDate, calendar: calendar)
             #if DEBUG
             print("🔄 Initial sync: fetching last 30 days...")
             #endif
@@ -609,11 +621,12 @@ class SyncManager: ObservableObject {
             #if DEBUG
             print("   ✅ Recent data synced")
             #endif
-
+            return true
         } catch {
             #if DEBUG
             print("   ❌ Recent sync failed: \(error)")
             #endif
+            return false
         }
     }
     
@@ -1239,7 +1252,16 @@ actor DataPersistenceActor {
         vo2max: [HealthDataPoint]
     ) {
         var matchedStravaIds = Set<String>()
-        
+        // Stored Strava rides the fetched list may not hold (its fetch failed, or the ride is
+        // older than the list's window): a HealthKit ride paired with one is that ride, not a new one.
+        let storedStrava: [StravaImportData] = {
+            guard let earliest = workouts.map(\.startDate).min() else { return [] }
+            let windowStart = earliest.addingTimeInterval(-86400)
+            return ((try? modelContext.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
+                $0.startDate >= windowStart && $0.source == "Strava"
+            }))) ?? []).map(Self.stravaImport(from:))
+        }()
+
         for hkWorkout in workouts {
             let workoutID = hkWorkout.id.uuidString
             
@@ -1267,6 +1289,8 @@ actor DataPersistenceActor {
                     source: "Strava"
                 )
                 matchedStravaIds.insert(match.id)
+            } else if WorkoutMatcher.findMatch(for: hkWorkout, in: storedStrava) != nil {
+                continue
             } else {
                 upsertWorkout(
                     id: workoutID,

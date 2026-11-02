@@ -75,22 +75,6 @@
 
 **Effort:** S (human: ~1h / CC+gstack: ~10min)
 
-### A day's load is frozen at the first write, and recomputing it needs a trustworthy workout store
-**Priority:** P2
-
-**What:** A day's `StoredDailyScore.dailyLoad` is fixed when the row is written (often mid-day), so later rides never count. Three designs on feat/background-pattern-pass (finalized-through marker; foreground-only marker; trailing 7-day recompute) were backed out because `StoredWorkout` isn't trustworthy.
-
-**Design constraints (from the reviews):**
-1. The foreground sync must dedupe HealthKit rides against STORED Strava rows, not only the Strava list fetched in that call (a failed or absent Strava fetch currently stores HK-UUID duplicates).
-2. HealthKit workouts must be fetched over a fixed trailing window (late writers like Garmin/Zwift/Wahoo backdate rides), and `lastSyncDate` must not advance when `syncRecentData`'s fetch fails.
-3. Never rewrite readinessScore/dailyStrain: load and count only.
-4. Don't run during resetAllData (StoredWorkout is emptied first).
-5. Key days by `dateString`, not `startOfDay(row.date)` (westward time-zone travel shifts rows a day).
-6. Compare loads with a tolerance and fetch workouts sorted.
-7. Missing rows must not be filled before the Strava sync: a background fill freezes Health-only loads.
-
-**Effort:** M
-
 ### Taper detection requires all 28 of the last 28 days to have a stored score
 **Priority:** P3 — pre-existing, but now load-bearing
 
@@ -261,6 +245,7 @@
 
 ## Completed
 
+- **P2 — A day's load is frozen at the first write** — **Completed:** unreleased (2026-11-01). After every foreground `DataSyncCompleted`, `ReadinessRepository.recomputeRecentDailyLoads` recomputes `dailyLoad` and `workoutCount` for existing rows of the last 7 complete days (keyed by `dateString`, sorted fetch, 0.01 tolerance, never creates rows, never touches today, recovery score or ACWR, never runs in the background pass). Store-trust prerequisites: `recentSyncWindowStart` (at least 7 days back), `lastSyncDate` advances only on a successful fetch, and the foreground upsert skips HealthKit rides paired with stored Strava rides. `DailyLoadRecomputeTests`.
 - **P2 — A ride deleted on Strava keeps counting toward your training load** — **Completed:** v0.1.19.0 (2026-11-01). Each foreground sync tags stored Strava rides its newest page lists with the connected athlete (`StoredWorkout.stravaAthleteId`), then deletes a tagged ride the page no longer lists (with its intent label) only after Strava answers its own 404 "Record Not Found" for it (a 429 stops the checks); refused on an empty page, zero overlap or more than 10 missing; only with `activity:read_all` granted. Other accounts' and untagged rides are never candidates. `StravaDeletedRidesTests`.
 - **P2 — Rides deleted on Strava can stop power zones from updating for your other rides** — **Completed:** v0.1.18.0 (2026-10-31). `StravaManager.fetchPowerZoneSeconds` throws `StravaError.activityNotFound` for a 404 (`streamsError(forStatus:)`), and the zone backfill writes `SyncManager.noPowerStreamCSV` for that ride without counting it toward the 3-error stop (`zoneCSVAfterFetchError`); rate limits and network errors still stop the pass. `ZoneBackfillDeletedActivityTests`.
 - **P2 — Design the background pattern run properly** — **Completed:** v0.1.16.0 (2026-10-31). HealthKit background delivery (HRV + workouts) and app refresh both run one `BackgroundPatternPass` (HealthKit-only workout refresh, gated detection, abandon after 2 min; no score-row step in the background, missing rows are still filled only by the foreground refresh); store-based pattern checks read complete days ending yesterday; counters in Settings → Background Pass.
