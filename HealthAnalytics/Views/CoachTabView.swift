@@ -150,7 +150,7 @@ struct CoachCheckInView: View {
                     // Sick writes the illness log (Coach paragraph + HRV pattern), not a memory note.
                     ContextChip(icon: "🤒", title: ongoingIllnesses.isEmpty ? "Sick" : "I'm better", isSelected: false,
                                 action: {
-                                    IllnessLog.toggleToday(ongoing: ongoingIllnesses, in: modelContext)
+                                    IllnessLog.toggleToday(in: modelContext)
                                     IllnessLog.refreshCoach(modelContext)
                                 })
                     ContextChip(icon: "🤕", title: "Injury", isSelected: isCategoryActive("Injury"), action: { showingInjurySheet = true })

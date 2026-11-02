@@ -74,7 +74,11 @@ struct MasterCoachEngine {
         case .none:
             return nil
         case .sick(let since):
-            let day = Calendar.current.isDateInToday(since) ? "today" : "since \(since.formatted(.dateTime.weekday(.wide)))"
+            let daysAgo = Calendar.current.dateComponents([.day], from: since, to: Calendar.current.startOfDay(for: Date())).day ?? 0
+            // A weekday name past 6 days would point at the wrong week.
+            let day = daysAgo == 0 ? "today"
+                : daysAgo <= 6 ? "since \(since.formatted(.dateTime.weekday(.wide)))"
+                : "since \(since.formatted(.dateTime.month(.wide).day()))"
             return "You logged that you're sick (\(day)). Skip training: rest, fluids and sleep will do more for you than any workout. Once you've had a full day without symptoms, come back with short, easy sessions.\(memoryNote)"
         case .recovering:
             return "You're just back from being sick. Keep the next couple of days easy, even if your recovery score looks good: going hard too soon is how illness comes back.\(memoryNote)"

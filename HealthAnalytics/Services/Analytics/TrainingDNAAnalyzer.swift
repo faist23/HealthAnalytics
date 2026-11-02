@@ -479,7 +479,9 @@ actor TrainingDNAAnalyzer {
         }
 
         // Logged illnesses (Phase 2b) are ground truth: each onset is a window, and a proxy
-        // window inside a logged illness is that illness, not another one.
+        // window inside a logged illness is that illness, not another one. The window runs to
+        // now, not completeDaysEnd: today's step count is partial, but a logged onset is a fact,
+        // and the HRV it checks (36-72h earlier) is already complete.
         let logged = ((try? modelContext.fetch(FetchDescriptor<IllnessEvent>(
             predicate: #Predicate<IllnessEvent> { $0.startDate >= cutoff }
         ))) ?? []).map { (start: $0.startDate, end: $0.endDate) }

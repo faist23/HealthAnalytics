@@ -37,6 +37,20 @@ final class IllnessLogTests: XCTestCase {
         XCTAssertEqual(starts, [day(-40), day(-35), day(-20)])
     }
 
+    // Value: protects=logged spells that overlap or touch are one illness (one HRV window, not
+    //   two), while a spell starting two days after another ends is separate; fails_when=
+    //   duplicate or adjacent spells each count toward the 3-window gate; why_new=red-team
+    //   review; seam=none (pure); no_claim=none
+    func test_overlappingLoggedSpells_areOneIllness() {
+        let starts = IllnessLog.sickWindowStarts(
+            proxy: [], logged: [(day(-30), day(-28)), (day(-29), nil), (day(-27), day(-26)), (day(-24), day(-24))],
+            from: from, to: Date())
+        XCTAssertEqual(starts, [day(-30)], "the open spell from day -29 runs to now, so day -24 is inside it too")
+        let separate = IllnessLog.sickWindowStarts(proxy: [], logged: [(day(-30), day(-28)), (day(-26), day(-25))],
+                                                   from: from, to: Date())
+        XCTAssertEqual(separate, [day(-30), day(-26)])
+    }
+
     // Value: protects=an ongoing illness covers every day up to now, and a logged onset
     //   outside the window is ignored; fails_when=an open spell is treated as one day, or old
     //   illnesses leak in; why_new=Phase 2b; seam=none (pure); no_claim=none
@@ -46,23 +60,28 @@ final class IllnessLogTests: XCTestCase {
         XCTAssertEqual(starts, [day(-5)])
     }
 
-    // Value: protects=the Coach tab's Sick chip starts an illness today on one tap and ends it
-    //   on the next, with yesterday as the last sick day (today if it only started today);
-    //   fails_when=a second tap opens a second illness, or "I'm better" marks today sick;
-    //   why_new=Sick chip; seam=none (in-memory store); no_claim=the chip view itself
+    // Value: protects=the Coach tab's Sick chip starts an illness today on one tap, ends it on
+    //   the next (yesterday as the last sick day, today if it only started today), and a third
+    //   tap reopens that illness instead of logging a second one; fails_when=a tap opens a
+    //   second illness, or "I'm better" marks today sick; why_new=Sick chip, red-team review;
+    //   seam=none (in-memory store); no_claim=the chip view itself
     @MainActor
     func test_sickChip_startsThenEndsAnIllness() throws {
         let container = try ModelContainer(for: Schema([IllnessEvent.self]),
                                            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = container.mainContext
         let noon = today.addingTimeInterval(12 * 3600)
-        IllnessLog.toggleToday(ongoing: [], in: context, now: noon)
+        IllnessLog.toggleToday(in: context, now: noon)
         let open = try context.fetch(FetchDescriptor<IllnessEvent>(predicate: IllnessEvent.ongoing))
         XCTAssertEqual(open.map(\.startDate), [today])
-        IllnessLog.toggleToday(ongoing: open, in: context, now: noon)
-        let all = try context.fetch(FetchDescriptor<IllnessEvent>())
+        IllnessLog.toggleToday(in: context, now: noon)
+        var all = try context.fetch(FetchDescriptor<IllnessEvent>())
         XCTAssertEqual(all.count, 1)
         XCTAssertEqual(all.first?.endDate, today, "started today, better today: today was the only sick day")
+        IllnessLog.toggleToday(in: context, now: noon)
+        all = try context.fetch(FetchDescriptor<IllnessEvent>())
+        XCTAssertEqual(all.count, 1, "a mis-tapped I'm better is undone, not a second illness")
+        XCTAssertNil(all.first?.endDate)
         XCTAssertEqual(IllnessLog.lastSickDay(start: day(-3), betterOn: noon), day(-1))
     }
 
@@ -132,6 +151,16 @@ final class CoachIllnessTests: XCTestCase {
     //   intensity"; with no illness the normal paragraph is unchanged; fails_when=recovering
     //   falls through to the score branches, or .none changes existing advice;
     //   why_new=Coach illness state; seam=none; no_claim=wording beyond these phrases
+    // Value: protects=the sick paragraph names a weekday only within the last 6 days, then a
+    //   date; fails_when="since Tuesday" is shown for an illness that began weeks ago;
+    //   why_new=red-team review; seam=none; no_claim=locale formatting
+    func test_sickSinceLabel_usesADateBeyondAWeek() {
+        let recent = MasterCoachEngine.illnessMessage(.sick(since: day(-2)), memoryNote: "") ?? ""
+        XCTAssertTrue(recent.contains("since \(day(-2).formatted(.dateTime.weekday(.wide)))"), recent)
+        let old = MasterCoachEngine.illnessMessage(.sick(since: day(-10)), memoryNote: "") ?? ""
+        XCTAssertTrue(old.contains("since \(day(-10).formatted(.dateTime.month(.wide).day()))"), old)
+    }
+
     func test_recovering_keepsItEasy_andNoIllnessIsUnchanged() {
         let recovering = MasterCoachEngine.generateHeuristicMessage(state: state(.recovering))
         XCTAssertTrue(recovering.hasPrefix("You're just back from being sick"), recovering)
