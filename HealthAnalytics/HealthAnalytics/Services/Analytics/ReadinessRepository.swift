@@ -1074,7 +1074,9 @@ class ReadinessRepository: ObservableObject {
     /// on a reset's post or after a sync whose HealthKit fetch failed): the stored workouts may
     /// have gained, lost or re-zoned rides for recent days.
     func recomputeRecentDailyLoads(modelContext: ModelContext) {
-        let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
+        // A failed read must not become "no FTP history": rides without zones would be re-scored
+        // at today's FTP. Skip; the next good sync recomputes.
+        guard let ftpSnapshots = try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>()) else { return }
         let changed = Self.recomputeRecentDailyLoads(context: modelContext, now: Date()) { [predictiveReadinessService] in
             predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: $0), ftpSnapshots: ftpSnapshots)
         }
