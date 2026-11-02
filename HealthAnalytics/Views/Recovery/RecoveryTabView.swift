@@ -118,9 +118,6 @@ struct RecoveryTabView: View {
                                     // 14-Day Signature — back-to-back crash pattern
                                     TrainingSignatureCard()
 
-                                    // Phase 2b — one-tap illness log
-                                    IllnessQuickLogRow()
-
                                 } else {
                                     ReadinessEmptyState()
                                         .cardStyle(for: .info)

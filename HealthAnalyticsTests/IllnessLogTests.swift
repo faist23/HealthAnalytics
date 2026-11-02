@@ -46,6 +46,26 @@ final class IllnessLogTests: XCTestCase {
         XCTAssertEqual(starts, [day(-5)])
     }
 
+    // Value: protects=the Coach tab's Sick chip starts an illness today on one tap and ends it
+    //   on the next, with yesterday as the last sick day (today if it only started today);
+    //   fails_when=a second tap opens a second illness, or "I'm better" marks today sick;
+    //   why_new=Sick chip; seam=none (in-memory store); no_claim=the chip view itself
+    @MainActor
+    func test_sickChip_startsThenEndsAnIllness() throws {
+        let container = try ModelContainer(for: Schema([IllnessEvent.self]),
+                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = container.mainContext
+        let noon = today.addingTimeInterval(12 * 3600)
+        IllnessLog.toggleToday(ongoing: [], in: context, now: noon)
+        let open = try context.fetch(FetchDescriptor<IllnessEvent>(predicate: IllnessEvent.ongoing))
+        XCTAssertEqual(open.map(\.startDate), [today])
+        IllnessLog.toggleToday(ongoing: open, in: context, now: noon)
+        let all = try context.fetch(FetchDescriptor<IllnessEvent>())
+        XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(all.first?.endDate, today, "started today, better today: today was the only sick day")
+        XCTAssertEqual(IllnessLog.lastSickDay(start: day(-3), betterOn: noon), day(-1))
+    }
+
     // Value: protects=both IllnessEvent predicates (ongoing, onset after a cutoff) translate to
     //   SQL; fails_when=a predicate that only works in memory ships (the v0.1.17.0 crash);
     //   why_new=new model; seam=none (in-memory store); no_claim=none
@@ -66,3 +86,75 @@ final class IllnessLogTests: XCTestCase {
         XCTAssertEqual(recent.map(\.startDate), [day(-30), day(-3)])
     }
 }
+
+/// Logging an illness changes the Coach paragraph: sick means rest, whatever else the data says.
+final class CoachIllnessTests: XCTestCase {
+    private let cal = Calendar.current
+    private let today = Calendar.current.startOfDay(for: Date())
+    private func day(_ offset: Int) -> Date { cal.date(byAdding: .day, value: offset, to: today)! }
+    private let noon = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date())!
+
+    // Value: protects=an open illness is "sick" from its first day; an ended one is
+    //   "recovering" through 2 days after its last sick day (including ended today), then
+    //   over; fails_when=the windows drift or an ended illness still reads sick;
+    //   why_new=Coach illness state; seam=none (pure); no_claim=none
+    func test_illnessState_fromTheLog() {
+        typealias S = MasterCoachEngine.IllnessState
+        XCTAssertEqual(S.from([(day(-3), nil), (day(-1), nil)], now: noon), .sick(since: day(-3)))
+        XCTAssertEqual(S.from([(today, today)], now: noon), .recovering, "\"I'm better\" on day one")
+        XCTAssertEqual(S.from([(day(-6), day(-2))], now: noon), .recovering)
+        XCTAssertEqual(S.from([(day(-6), day(-3))], now: noon), MasterCoachEngine.IllnessState.none)
+        XCTAssertEqual(S.from([(day(2), nil)], now: noon), MasterCoachEngine.IllnessState.none, "a future onset isn't today")
+        XCTAssertEqual(S.from([], now: noon), MasterCoachEngine.IllnessState.none)
+    }
+
+    private func state(_ illness: MasterCoachEngine.IllnessState) -> MasterCoachEngine.StateVector {
+        MasterCoachEngine.StateVector(morningScore: 92, currentScore: 92, nextDayForecast: "Hard effort OK", acwr: 1.0,
+                                      injuryRisk: .low, activePatterns: ["hrvPrecursor", "performancePeak"], illness: illness)
+    }
+
+    // Value: protects=while sick, Coach says rest and nothing else: no intensity, no race
+    //   window, no "hard effort tomorrow", even at 92% with peak form active; fails_when=the
+    //   illness branch is dropped or ordered after another branch, in either message path;
+    //   why_new=Coach illness state; seam=none; no_claim=wording beyond these phrases
+    func test_sick_overridesEverySignal_inBothPaths() async {
+        let heuristic = MasterCoachEngine.generateHeuristicMessage(state: state(.sick(since: day(-1))))
+        let llm = await MasterCoachEngine.generateMessage(state: state(.sick(since: day(-1))))
+        for message in [heuristic, llm] {
+            XCTAssertTrue(message.hasPrefix("You logged that you're sick"), message)
+            for banned in ["intensity", "peak form", "hard effort", "race"] {
+                XCTAssertFalse(message.lowercased().contains(banned), "\(banned) in: \(message)")
+            }
+        }
+    }
+
+    // Value: protects=just after an illness, Coach says keep it easy instead of "ready for
+    //   intensity"; with no illness the normal paragraph is unchanged; fails_when=recovering
+    //   falls through to the score branches, or .none changes existing advice;
+    //   why_new=Coach illness state; seam=none; no_claim=wording beyond these phrases
+    func test_recovering_keepsItEasy_andNoIllnessIsUnchanged() {
+        let recovering = MasterCoachEngine.generateHeuristicMessage(state: state(.recovering))
+        XCTAssertTrue(recovering.hasPrefix("You're just back from being sick"), recovering)
+        XCTAssertFalse(recovering.lowercased().contains("hard effort"))
+        let healthy = MasterCoachEngine.generateHeuristicMessage(state: state(.none))
+        XCTAssertFalse(healthy.contains("sick"), healthy)
+    }
+
+    // Value: protects=logging or ending an illness re-runs the Coach paragraph the same day;
+    //   fails_when=the illness state is left out of the cache key (the paragraph would keep
+    //   advising training until the next sync); why_new=Coach illness state; seam=none (pure
+    //   static); no_claim=refreshIfNecessary wiring from the views
+    @MainActor
+    func test_illnessChange_invalidatesTheCoachCache() {
+        let fingerprint = PredictionCache.fingerprint(workoutCount: 1, sleepCount: 1, hrvCount: 1, rhrCount: 1)
+        func reuse(_ now: MasterCoachEngine.IllnessState, _ last: MasterCoachEngine.IllnessState?) -> Bool {
+            ReadinessRepository.canReuseCachedAnalysis(lastAnalysisDate: Date(), fingerprint: fingerprint,
+                                                       lastFingerprint: fingerprint, activePatternTypes: [],
+                                                       lastActivePatternTypes: [], illnessState: now, lastIllnessState: last)
+        }
+        XCTAssertFalse(reuse(.sick(since: today), MasterCoachEngine.IllnessState.none))
+        XCTAssertFalse(reuse(.recovering, .sick(since: today)))
+        XCTAssertTrue(reuse(.sick(since: today), .sick(since: today)))
+    }
+}
+

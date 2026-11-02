@@ -44,6 +44,7 @@ struct IllnessLogView: View {
                     .onDelete { offsets in
                         for index in offsets { modelContext.delete(events[index]) }
                         try? modelContext.save()
+                        IllnessLog.refreshCoach(modelContext)
                     }
                 }
             }
@@ -69,6 +70,7 @@ struct IllnessLogView: View {
                     modelContext.insert(IllnessEvent(startDate: start, endDate: end))
                 }
                 try? modelContext.save()
+                IllnessLog.refreshCoach(modelContext)
             }
         }
     }

@@ -9,6 +9,32 @@ import Foundation
 
 struct MasterCoachEngine {
 
+    /// What the illness log says about today. Logged by the user, so it outranks every
+    /// signal the app infers: being sick means rest, whatever the recovery score says.
+    enum IllnessState: Equatable {
+        case none
+        /// An open illness; `since` is its first sick day.
+        case sick(since: Date)
+        /// The illness has ended and its last sick day was at most `recoveringDays` days ago.
+        case recovering
+
+        /// How many complete days after the last sick day still count as recovering.
+        static let recoveringDays = 2
+
+        static func from(_ spells: [(start: Date, end: Date?)], now: Date = Date(),
+                         calendar: Calendar = .current) -> IllnessState {
+            let today = calendar.startOfDay(for: now)
+            if let since = spells.filter({ $0.end == nil && $0.start <= now }).map(\.start).min() {
+                return .sick(since: calendar.startOfDay(for: since))
+            }
+            let lastSickDay = spells.compactMap(\.end).map { calendar.startOfDay(for: $0) }.filter { $0 <= today }.max()
+            guard let lastSickDay else { return .none }
+            // An ended illness is over, even when its last day is today ("I'm better" on day one).
+            let daysSince = calendar.dateComponents([.day], from: lastSickDay, to: today).day ?? .max
+            return daysSince <= recoveringDays ? .recovering : .none
+        }
+    }
+
     struct StateVector {
         let morningScore: Int
         let currentScore: Int
@@ -17,6 +43,7 @@ struct MasterCoachEngine {
         let injuryRisk: InjuryRiskCalculator.RiskLevel
         let activePatterns: [String]
         let memories: [CoachMemoryNote]
+        let illness: IllnessState
 
         init(
             morningScore: Int,
@@ -25,7 +52,8 @@ struct MasterCoachEngine {
             acwr: Double,
             injuryRisk: InjuryRiskCalculator.RiskLevel,
             activePatterns: [String] = [],
-            memories: [CoachMemoryNote] = []
+            memories: [CoachMemoryNote] = [],
+            illness: IllnessState = .none
         ) {
             self.morningScore = morningScore
             self.currentScore = currentScore
@@ -34,6 +62,22 @@ struct MasterCoachEngine {
             self.injuryRisk = injuryRisk
             self.activePatterns = activePatterns
             self.memories = memories
+            self.illness = illness
+        }
+    }
+
+    /// The paragraph while the illness log says the athlete is sick or just recovered, or nil.
+    /// Both message paths open with it, ahead of every inferred signal, and drop the training
+    /// forecast: tomorrow's "hard effort" is wrong advice for someone who is sick.
+    static func illnessMessage(_ illness: IllnessState, memoryNote: String) -> String? {
+        switch illness {
+        case .none:
+            return nil
+        case .sick(let since):
+            let day = Calendar.current.isDateInToday(since) ? "today" : "since \(since.formatted(.dateTime.weekday(.wide)))"
+            return "You logged that you're sick (\(day)). Skip training: rest, fluids and sleep will do more for you than any workout. Once you've had a full day without symptoms, come back with short, easy sessions.\(memoryNote)"
+        case .recovering:
+            return "You're just back from being sick. Keep the next couple of days easy, even if your recovery score looks good: going hard too soon is how illness comes back.\(memoryNote)"
         }
     }
 
@@ -64,6 +108,7 @@ struct MasterCoachEngine {
         - Active Patterns: \(state.activePatterns.isEmpty ? "None" : state.activePatterns.joined(separator: ", "))
         - Athlete Notes: \(memoriesContext.isEmpty ? "None" : memoriesContext)
         - Forecast: \(state.nextDayForecast ?? "Unknown")
+        - Illness: \(state.illness)
         """
         
         // Simulate network delay for LLM processing (1.5 seconds)
@@ -72,6 +117,10 @@ struct MasterCoachEngine {
         // Ensure prompt is used (silencing unused warning for the mockup)
         _ = prompt
         
+        if let illness = illnessMessage(state.illness, memoryNote: memoriesContext.isEmpty ? "" : " Keeping in mind: \(memoriesContext).") {
+            return illness
+        }
+
         // Return a mocked "generated" response that incorporates the vector seamlessly
         var response = ""
         
@@ -164,6 +213,11 @@ struct MasterCoachEngine {
         if !activeMemories.isEmpty {
             let contextStrings = activeMemories.map { $0.context }.joined(separator: ", ")
             memoryNote = " Keeping in mind: \(contextStrings)."
+        }
+
+        // 0. Logged illness — the athlete told us; overrides every inferred signal
+        if let illness = illnessMessage(state.illness, memoryNote: memoryNote) {
+            return illness
         }
 
         // 1. Health alarm — overrides all other signals

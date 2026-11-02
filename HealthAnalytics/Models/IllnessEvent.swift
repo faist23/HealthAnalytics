@@ -34,6 +34,31 @@ final class IllnessEvent {
 }
 
 enum IllnessLog {
+    /// After the log changes: the illness state is part of the Coach cache key, so this
+    /// re-runs the paragraph now instead of at the next sync.
+    @MainActor static func refreshCoach(_ modelContext: ModelContext) {
+        Task { await ReadinessRepository.shared.refreshIfNecessary(modelContext: modelContext) }
+    }
+
+    /// The Coach tab's Sick chip: starts an illness today, or ends the open one(s). The caller
+    /// refreshes Coach afterwards (`refreshCoach`).
+    @MainActor static func toggleToday(ongoing: [IllnessEvent], in modelContext: ModelContext, now: Date = Date()) {
+        if ongoing.isEmpty {
+            modelContext.insert(IllnessEvent(startDate: now))
+        } else {
+            for event in ongoing { event.endDate = lastSickDay(start: event.startDate, betterOn: now) }
+        }
+        try? modelContext.save()
+    }
+
+    /// Feeling better today means yesterday was the last sick day, unless the illness only
+    /// started today.
+    static func lastSickDay(start: Date, betterOn now: Date, calendar: Calendar = .current) -> Date {
+        let today = calendar.startOfDay(for: now)
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+        return max(calendar.startOfDay(for: start), yesterday)
+    }
+
     /// Onsets the HRV precursor looks back from: every logged illness that started inside
     /// `[from, to)`, plus each step-proxy window that isn't the same illness. A proxy window
     /// is the same illness when it starts within a day before a logged illness and its end
