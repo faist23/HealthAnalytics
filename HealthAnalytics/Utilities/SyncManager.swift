@@ -691,7 +691,8 @@ class SyncManager: ObservableObject {
     
     // MARK: - Sync All Historical Data
     
-    /// Returns whether the HealthKit fetch succeeded and was saved.
+    /// Returns whether the whole history came back and was saved: the HealthKit fetch, and
+    /// every Strava page when connected. What did come back is saved either way.
     private func syncAllHistoricalData(dataHandler: DataPersistenceActor) async -> Bool {
         #if DEBUG
         print("📚 Fetching ALL historical data (10 years)...")
@@ -717,8 +718,10 @@ class SyncManager: ObservableObject {
             async let nutrition = healthKitManager.fetchNutrition(startDate: startDate, endDate: endDate)
             async let vo2max = healthKitManager.fetchVO2Max(startDate: startDate, endDate: endDate)
             
-            // Fetch all Strava activities
+            // Fetch all Strava activities. A page that fails ends paging but marks the history
+            // incomplete, so a reset's retry (needsFullHistoryFetch) isn't cleared by a partial pull.
             var stravaActivities: [StravaImportData] = []
+            var stravaComplete = true
             if stravaManager.isAuthenticated {
                 #if DEBUG
                 print("   🚴 Fetching all Strava activities...")
@@ -748,6 +751,7 @@ class SyncManager: ObservableObject {
                         }
                     } else {
                         keepFetching = false
+                        stravaComplete = false
                     }
                 }
                 
@@ -785,9 +789,9 @@ class SyncManager: ObservableObject {
             )
 
             #if DEBUG
-            print("   ✅ All historical data saved")
+            print("   ✅ All historical data saved\(stravaComplete ? "" : " (Strava incomplete)")")
             #endif
-            return true
+            return stravaComplete
         } catch {
             #if DEBUG
             print("   ❌ Failed to fetch historical data: \(error.localizedDescription)")
@@ -988,6 +992,9 @@ class SyncManager: ObservableObject {
         hasCompletedHistoricalBackfill = false
         hasMigratedMetricNames = false
         lastSyncDate = nil
+        // Set before deleting, so a reset killed mid-fetch still retries; cleared only when the
+        // whole history came back.
+        needsFullHistoryFetch = true
         
         await dataHandler.deleteAll()
 
