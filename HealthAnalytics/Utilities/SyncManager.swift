@@ -36,9 +36,10 @@ class SyncManager: ObservableObject {
     /// commits while this is true.
     var isRewritingStore: Bool { isSyncing || isMigrating || isBackfillingZones }
 
-    /// The last recent sync's HealthKit fetch succeeded (a reset counts as one). False after a
-    /// failed fetch until the next good one: the store may be missing that window's rides.
-    private(set) var lastRecentSyncSucceeded = true
+    /// The last sync's HealthKit fetch succeeded (recent sync or reset). False after a failed
+    /// fetch until the next good one: the store may be missing that window's rides. Persisted,
+    /// so a relaunch doesn't reopen the recompute before a good fetch.
+    @AppStorage("lastRecentSyncSucceeded") private(set) var lastRecentSyncSucceeded = true
 
     /// Recent days' loads may be recomputed from the store only when it is complete: no sync,
     /// reset or dedup running (a zone backfill can post mid-reset, after the workouts were
@@ -677,7 +678,8 @@ class SyncManager: ObservableObject {
     
     // MARK: - Sync All Historical Data
     
-    private func syncAllHistoricalData(dataHandler: DataPersistenceActor) async {
+    /// Returns whether the HealthKit fetch succeeded and was saved.
+    private func syncAllHistoricalData(dataHandler: DataPersistenceActor) async -> Bool {
         #if DEBUG
         print("📚 Fetching ALL historical data (10 years)...")
         #endif
@@ -772,11 +774,12 @@ class SyncManager: ObservableObject {
             #if DEBUG
             print("   ✅ All historical data saved")
             #endif
-
+            return true
         } catch {
             #if DEBUG
             print("   ❌ Failed to fetch historical data: \(error.localizedDescription)")
             #endif
+            return false
         }
     }
     
@@ -976,11 +979,14 @@ class SyncManager: ObservableObject {
         await dataHandler.deleteAll()
 
         // Fetch ALL historical data (10 years back)
-        await syncAllHistoricalData(dataHandler: dataHandler)
-        
-        lastSyncDate = Date()
-        lastRecentSyncSucceeded = true
-        hasCompletedHistoricalBackfill = true
+        // A failed fetch leaves the workouts deleted: keep the recompute off (it would zero the
+        // recent days' rows) and leave the next sync to fetch from scratch.
+        let fetched = await syncAllHistoricalData(dataHandler: dataHandler)
+        lastRecentSyncSucceeded = fetched
+        if fetched {
+            lastSyncDate = Date()
+            hasCompletedHistoricalBackfill = true
+        }
         
         #if DEBUG
         print("✅ Reset Complete - All historical data restored")
