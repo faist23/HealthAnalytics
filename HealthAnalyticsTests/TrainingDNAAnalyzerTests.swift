@@ -63,7 +63,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
     /// Required for detectBackToBackReadinessCrash tests since the detector reads
     /// StoredDailyScore directly from the actor's modelContext.
     private func makeFullContainer() throws -> ModelContainer {
-        let schema = Schema([TrainingPattern.self, StoredDailyScore.self, StoredWorkout.self, StoredFTPSnapshot.self])
+        let schema = Schema([TrainingPattern.self, StoredDailyScore.self, StoredWorkout.self, StoredFTPSnapshot.self, IllnessEvent.self])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: schema, configurations: config)
     }
@@ -200,6 +200,39 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
             patterns.contains { $0.patternType == .hrvPrecursor },
             "Three sick windows with HRV drop from 60 → 45 ms should produce an hrvPrecursor pattern"
         )
+    }
+
+    /// Phase 2b: three logged illnesses, no low-step days at all. Logged onsets are sick
+    /// windows on their own, so the HRV drop before each one fires the pattern.
+    func testHRVPrecursor_loggedIllnessesAloneFire() async throws {
+        let fired = try await hrvPrecursorFires(proxyWindows: 0, loggedOffsets: [-80, -50, -20])
+        XCTAssertTrue(fired, "Three logged illnesses with an HRV drop before each should fire")
+    }
+
+    /// Phase 2b: two step-proxy windows plus an illness logged over one of them is still two
+    /// illnesses, so the 3-window gate holds. The control logs the third illness elsewhere.
+    func testHRVPrecursor_loggedIllnessOverAProxyWindowCountsOnce() async throws {
+        let overlapping = try await hrvPrecursorFires(proxyWindows: 2, loggedOffsets: [-50])
+        XCTAssertFalse(overlapping, "A logged illness over a proxy window is the same illness")
+        let separate = try await hrvPrecursorFires(proxyWindows: 2, loggedOffsets: [-20])
+        XCTAssertTrue(separate, "A logged illness on its own day is a third window")
+    }
+
+    private func hrvPrecursorFires(proxyWindows: Int, loggedOffsets: [Int]) async throws -> Bool {
+        let container = try makeFullContainer()
+        let analyzer = TrainingDNAAnalyzer(modelContainer: container)
+        var mock = MockPatternDataProvider()
+        mock.historyDays = 180
+        mock.hrvData = makeHRVPrecursorHRV(baselineHRV: 60.0, precursorHRV: 45.0)
+        mock.stepsData = makeHRVPrecursorSteps(windowCount: proxyWindows)
+        mock.workoutDays = []
+        await analyzer.setDataProvider(mock)
+        try await analyzer.insertDailyScores(makeRestDayRows(sickOffsets: Array([-80, -50, -20].prefix(proxyWindows))))
+        let context = ModelContext(container)
+        for offset in loggedOffsets { context.insert(IllnessEvent(startDate: day(offset), endDate: day(offset + 1))) }
+        try context.save()
+        _ = try await analyzer.analyze()
+        return try await analyzer.fetchAllPatterns().contains { $0.patternType == .hrvPrecursor }
     }
 
     /// Only 2 sick windows → sickDayWindows.count < 3 gate → no pattern.

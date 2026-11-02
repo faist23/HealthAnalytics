@@ -104,6 +104,12 @@ struct SettingsView: View {
                             Label("Coach Memory", systemImage: "brain.head.profile")
                         }
 
+                        NavigationLink {
+                            IllnessLogView()
+                        } label: {
+                            Label("Illness Log", systemImage: "cross.case")
+                        }
+
                         Divider()
 
                         // MARK: HRV Source Preference

@@ -76,6 +76,9 @@ class ReadinessRepository: ObservableObject {
     /// expiring changes no data count, so the fingerprint alone would keep serving
     /// a Coach paragraph that cites a card the Patterns tab has already dropped.
     private var lastActivePatternTypes: Set<PatternType>?
+    /// The illness state baked into the published `coachAdvice`. Logging a sick day
+    /// changes no data count, so without it the paragraph would keep advising training.
+    private var lastIllnessState: MasterCoachEngine.IllnessState?
 
     /// Set when a refresh arrives while `performFullAnalysis` is mid-flight, so the
     /// run can re-check the store on the way out instead of the request being lost.
@@ -180,6 +183,7 @@ class ReadinessRepository: ObservableObject {
         lastFingerprint = nil
         lastAnalysisDate = nil
         lastActivePatternTypes = nil
+        lastIllnessState = nil
         analysisError = nil
         isAppInForeground = Self.applicationIsInForeground
     }
@@ -447,7 +451,9 @@ class ReadinessRepository: ObservableObject {
                fingerprint: fingerprint,
                lastFingerprint: lastFingerprint,
                activePatternTypes: fetchActivePatternTypes(context: modelContext),
-               lastActivePatternTypes: lastActivePatternTypes
+               lastActivePatternTypes: lastActivePatternTypes,
+               illnessState: fetchIllnessState(context: modelContext),
+               lastIllnessState: lastIllnessState
            ) {
             #if DEBUG
             print("✅ ReadinessRepository: Using cached unified analysis")
@@ -853,6 +859,7 @@ class ReadinessRepository: ObservableObject {
             let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? Date()
             let nextDayCoaching = computedForecast?.first(where: { calendar.isDate($0.date, inSameDayAs: nextDay) })?.coaching
             let activePatternTypes = fetchActivePatternTypes(context: modelContext)
+            let illnessState = fetchIllnessState(context: modelContext)
             
             let allMemories = (try? modelContext.fetch(FetchDescriptor<CoachMemoryNote>())) ?? []
             
@@ -863,7 +870,8 @@ class ReadinessRepository: ObservableObject {
                 acwr: readinessAssessmentResult.acwr,
                 injuryRisk: riskAssessment.riskLevel,
                 activePatterns: activePatternTypes.map(\.rawValue).sorted(),
-                memories: allMemories
+                memories: allMemories,
+                illness: illnessState
             )
             let masterCoachMessage = await MasterCoachEngine.generateMessage(state: coachState)
             
@@ -943,6 +951,7 @@ class ReadinessRepository: ObservableObject {
             self.lastFingerprint = fingerprint
             self.lastAnalysisDate = now
             self.lastActivePatternTypes = activePatternTypes
+            self.lastIllnessState = illnessState
 
             // Persist today's readiness score for 90-day back-to-back crash pattern detection.
             let todayWorkoutsForLoad = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
@@ -1456,12 +1465,26 @@ class ReadinessRepository: ObservableObject {
         lastFingerprint: PredictionCache.DataFingerprint?,
         activePatternTypes: Set<PatternType>,
         lastActivePatternTypes: Set<PatternType>?,
+        illnessState: MasterCoachEngine.IllnessState = .none,
+        lastIllnessState: MasterCoachEngine.IllnessState? = MasterCoachEngine.IllnessState.none,
         now: Date = Date()
     ) -> Bool {
         guard let lastAnalysisDate,
               Calendar.current.isDate(lastAnalysisDate, inSameDayAs: now)
         else { return false }
         return fingerprint == lastFingerprint && activePatternTypes == lastActivePatternTypes
+            && illnessState == lastIllnessState
+    }
+
+    /// What the illness log says about today (ongoing, just ended, or nothing). The log is a
+    /// handful of rows, so it is read whole (no predicate to translate). A failed read keeps
+    /// the last state this repository saw, never "no illness": that would advise training
+    /// while the log says sick.
+    private func fetchIllnessState(context: ModelContext, now: Date = Date()) -> MasterCoachEngine.IllnessState {
+        guard let events = try? context.fetch(FetchDescriptor<IllnessEvent>()) else {
+            return lastIllnessState ?? .none
+        }
+        return MasterCoachEngine.IllnessState.from(events.map { (start: $0.startDate, end: $0.endDate) }, now: now)
     }
 
     private func fetchActivePatternTypes(context: ModelContext) -> Set<PatternType> {

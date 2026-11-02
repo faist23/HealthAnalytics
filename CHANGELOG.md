@@ -3,6 +3,13 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.21.0] - 2026-11-02
+
+### Added
+
+- **Tell Coach you're sick, and it tells you to rest.** The Coach tab's "Anything I should know today?" bar has a new 🤒 Sick button beside Injury, High Stress and Travel. Tap it and today's coaching changes at once: skip training, rest, and come back with easy sessions after a full day without symptoms. This overrides everything else, including a high recovery score and tomorrow's "hard effort" forecast. When you feel better, tap I'm better. For the next two days Coach tells you to keep it easy, even if your recovery score looks good.
+- **An illness log the app can learn from.** Every illness you log is kept, and the new Illness Log screen in Settings lets you add past illnesses and fix or delete them. The app looks at your HRV in the days before each illness to learn whether it drops ahead of getting sick, and warns you when it does. Before, it could only guess when you'd been sick from days with very few steps.
+
 ## [0.1.20.0] - 2026-11-02
 
 ### Fixed

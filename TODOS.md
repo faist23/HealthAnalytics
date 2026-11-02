@@ -18,23 +18,6 @@
 
 **Depends on / blocked by:** Phase 2a must ship. Then 3 months of production data. The Background Pass counters (Settings → Background Pass) now measure the run rate.
 
-### Phase 2b: Manual Illness Log
-**Priority:** P2 — dependent on Phase 2a validation
-
-**What:** Manual illness log UI + `IllnessEvent` SwiftData model.
-
-**Why:** `TrainingDNAAnalyzer` Phase 2a HRV precursor signature (Pattern Type 2) and sleep fragmentation correlation (Pattern Type 3) are gated on having HealthKit sick-day records for correlation. If HealthKit's passive sick-day detection (gaps in workout activity / sudden inactivity events) proves insufficient in practice, these two pattern types cannot surface reliably. The manual illness log is the fallback that guarantees the correlation data exists.
-
-**Pros:** Unlocks HRV precursor and sleep fragmentation patterns for all users regardless of HealthKit passive detection quality.
-
-**Cons:** Requires new log entry UI (one-tap or minimal interaction to log sick days) + `IllnessEvent` SwiftData model with date range. Adds some user friction, even if minimal.
-
-**Context:** Phase 2a ships first and tests HealthKit passive detection in practice. If after 3+ months the HRV precursor and sleep fragmentation patterns are not surfacing for most users, implement this. The `SubjectiveCheckIn` model (Phase 3) follows a similar one-tap log pattern — design them consistently.
-
-**Effort:** M (human) → S (CC+gstack)
-
-**Depends on / blocked by:** Phase 2a must ship and be validated first. Do not build until passive sick-day detection has been tested for 3+ months.
-
 ### Forecast testability: inject ACWR instead of reading the shared singleton
 **Priority:** P3 — improves test isolation; fix in the next Repository-touching PR
 
@@ -150,6 +133,18 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15min)
 
+### Illness log follow-ups from the v0.1.21.0 review
+**Priority:** P3 — surfaced by the v0.1.21.0 adversarial review; none is a release blocker
+
+**What:**
+- The step-proxy dedupe accepts a low-step window only up to 1 day before a logged first sick day (`IllnessLog.sickWindowStarts`). Someone who logs the day they felt sick after a day or two of low activity gets a proxy window 2+ days earlier counted as a second illness, and the same HRV dip can count twice toward the precursor's 3-match gate. Widen the lead to 2–3 days, with a test.
+- Settings → Illness Log: switching "Still sick" off defaults "Last sick day" to the first day (`IllnessEntrySheet` init), so an immediate Save shrinks the illness to one day. Default it to `IllnessLog.lastSickDay`.
+- `detectHRVPrecursor` fetches illnesses with `startDate >= cutoff`, so a spell that started before the 180-day window but ended inside it doesn't dedupe the proxy windows it covers.
+- Injury, Stress and Travel chip taps can be lost while an analysis runs (pre-existing): the queued replay is `refreshIfNecessary`, whose cache key has no `CoachMemoryNote`. The Sick chip is safe because the illness state is in the key.
+- FTP History uses the same `sheet(isPresented:)` + separate target pattern that let an Illness Log edit open as a blank form (fixed there with `.sheet(item:)`).
+
+**Effort:** S (human: ~2h / CC+gstack: ~20min)
+
 ## Coach
 
 ### A hung analysis blocks every later pattern-analysis request
@@ -256,6 +251,7 @@
 
 ## Completed
 
+- **P2 — Phase 2b: Manual Illness Log** — **Completed:** v0.1.21.0 (2026-11-02). Built ahead of its 3-month data gate at the owner's call. `IllnessEvent` model, a Sick / I'm better chip in the Coach tab's "Anything I should know today?" bar, Settings → Illness Log; while sick or just recovered the Coach paragraph says rest / keep it easy (illness state in the Coach cache key); logged onsets join the HRV precursor's step-proxy sick windows (`IllnessLog.sickWindowStarts`). Sleep fragmentation never used sick days, so it is unaffected. `IllnessLogTests`, `CoachIllnessTests`.
 - **P2 — A day's load is frozen at the first write** — **Completed:** v0.1.20.0 (2026-11-02). After a foreground sync's or zone backfill's `DataSyncCompleted`, when `SyncManager.mayRecomputeDailyLoads` (after a good recent sync; never on a reset's post), `ReadinessRepository.recomputeRecentDailyLoads` recomputes `dailyLoad` and `workoutCount` for existing rows of the last 7 complete days (keyed by `dateString`, sorted fetch, 0.01 tolerance, never creates rows, never touches today, recovery score or ACWR, never runs in the background pass). Store-trust prerequisites: `recentSyncWindowStart` (back to the start of the day 7 days ago), `lastSyncDate` advances only on a successful fetch, and the foreground upsert skips HealthKit rides paired with stored Strava rides and deletes their HealthKit-UUID copies. `DailyLoadRecomputeTests`.
 - **P2 — A ride deleted on Strava keeps counting toward your training load** — **Completed:** v0.1.19.0 (2026-11-01). Each foreground sync tags stored Strava rides its newest page lists with the connected athlete (`StoredWorkout.stravaAthleteId`), then deletes a tagged ride the page no longer lists (with its intent label) only after Strava answers its own 404 "Record Not Found" for it (a 429 stops the checks); refused on an empty page, zero overlap or more than 10 missing; only with `activity:read_all` granted. Other accounts' and untagged rides are never candidates. `StravaDeletedRidesTests`.
 - **P2 — Rides deleted on Strava can stop power zones from updating for your other rides** — **Completed:** v0.1.18.0 (2026-10-31). `StravaManager.fetchPowerZoneSeconds` throws `StravaError.activityNotFound` for a 404 (`streamsError(forStatus:)`), and the zone backfill writes `SyncManager.noPowerStreamCSV` for that ride without counting it toward the 3-error stop (`zoneCSVAfterFetchError`); rate limits and network errors still stop the pass. `ZoneBackfillDeletedActivityTests`.

@@ -112,6 +112,7 @@ struct CoachTabView: View {
 struct CoachCheckInView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var memories: [CoachMemoryNote]
+    @Query(filter: IllnessEvent.ongoing) private var ongoingIllnesses: [IllnessEvent]
     
     @State private var showingCustomNote = false
     @State private var customNoteText = ""
@@ -146,6 +147,12 @@ struct CoachCheckInView: View {
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
+                    // Sick writes the illness log (Coach paragraph + HRV pattern), not a memory note.
+                    ContextChip(icon: "🤒", title: ongoingIllnesses.isEmpty ? "Sick" : "I'm better", isSelected: false,
+                                action: {
+                                    IllnessLog.toggleToday(in: modelContext)
+                                    IllnessLog.refreshCoach(modelContext)
+                                })
                     ContextChip(icon: "🤕", title: "Injury", isSelected: isCategoryActive("Injury"), action: { showingInjurySheet = true })
                     ContextChip(icon: "😫", title: "High Stress", isSelected: isCategoryActive("Stress"), action: { addContext("High life stress", category: "Stress") })
                     ContextChip(icon: "✈️", title: "Travel", isSelected: isCategoryActive("Travel"), action: { addContext("Traveling today", category: "Travel") })
