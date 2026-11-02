@@ -71,6 +71,15 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~15min)
 
+### A reset's Strava pull cut short loses older Strava-only rides
+**Priority:** P3 — surfaced by the v0.1.22.0 review (pre-existing)
+
+**What:** `syncAllHistoricalData` ends Strava paging on the first failed page and still reports success, so a reset whose Strava pull is cut short (a 429, a dropped connection) never refetches the older Strava-only rides. Making a failed page fail the call was tried and reverted: a persistent Strava error (the app revoked on strava.com while the token is still valid, one undecodable activity, self-sustained 429s) then re-ran the whole 10-year fetch on every sync.
+
+**How to apply:** Track Strava's history separately: persist the oldest page reached, and resume paging from there on later syncs with a backoff and a retry cap, distinguishing transient errors (429, network) from permanent ones (401, decode).
+
+**Effort:** S (human: ~2h / CC+gstack: ~20min)
+
 ## Coach
 
 ### MasterCoachEngine copy duplicated across LLM and heuristic paths

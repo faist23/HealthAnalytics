@@ -691,8 +691,9 @@ class SyncManager: ObservableObject {
     
     // MARK: - Sync All Historical Data
     
-    /// Returns whether the whole history came back and was saved: the HealthKit fetch, and
-    /// every Strava page when connected. What did come back is saved either way.
+    /// Returns whether the HealthKit fetch succeeded and was saved. A Strava page that fails
+    /// ends paging without failing the call: counting it would make a persistent Strava error
+    /// (a revoked app, an undecodable activity, rate limits) re-run the 10-year fetch every sync.
     private func syncAllHistoricalData(dataHandler: DataPersistenceActor) async -> Bool {
         #if DEBUG
         print("📚 Fetching ALL historical data (10 years)...")
@@ -718,10 +719,8 @@ class SyncManager: ObservableObject {
             async let nutrition = healthKitManager.fetchNutrition(startDate: startDate, endDate: endDate)
             async let vo2max = healthKitManager.fetchVO2Max(startDate: startDate, endDate: endDate)
             
-            // Fetch all Strava activities. A page that fails ends paging but marks the history
-            // incomplete, so a reset's retry (needsFullHistoryFetch) isn't cleared by a partial pull.
+            // Fetch all Strava activities
             var stravaActivities: [StravaImportData] = []
-            var stravaComplete = true
             if stravaManager.isAuthenticated {
                 #if DEBUG
                 print("   🚴 Fetching all Strava activities...")
@@ -751,7 +750,6 @@ class SyncManager: ObservableObject {
                         }
                     } else {
                         keepFetching = false
-                        stravaComplete = false
                     }
                 }
                 
@@ -789,9 +787,9 @@ class SyncManager: ObservableObject {
             )
 
             #if DEBUG
-            print("   ✅ All historical data saved\(stravaComplete ? "" : " (Strava incomplete)")")
+            print("   ✅ All historical data saved")
             #endif
-            return stravaComplete
+            return true
         } catch {
             #if DEBUG
             print("   ❌ Failed to fetch historical data: \(error.localizedDescription)")
@@ -992,8 +990,8 @@ class SyncManager: ObservableObject {
         hasCompletedHistoricalBackfill = false
         hasMigratedMetricNames = false
         lastSyncDate = nil
-        // Set before deleting, so a reset killed mid-fetch still retries; cleared only when the
-        // whole history came back.
+        // Set before deleting, so a reset killed mid-fetch still retries; cleared when the
+        // HealthKit history came back.
         needsFullHistoryFetch = true
         
         await dataHandler.deleteAll()
