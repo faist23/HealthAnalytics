@@ -478,6 +478,14 @@ actor TrainingDNAAnalyzer {
             i += 1
         }
 
+        // Logged illnesses (Phase 2b) are ground truth: each onset is a window, and a proxy
+        // window inside a logged illness is that illness, not another one.
+        let logged = ((try? modelContext.fetch(FetchDescriptor<IllnessEvent>(
+            predicate: #Predicate<IllnessEvent> { $0.startDate >= cutoff }
+        ))) ?? []).map { (start: $0.startDate, end: $0.endDate) }
+        sickDayWindows = IllnessLog.sickWindowStarts(proxy: sickDayWindows, logged: logged,
+                                                     from: cutoff, to: Date())
+
         guard sickDayWindows.count >= 3 else { return nil }
 
         guard let baselineHRV = median(hrvHistory.map(\.hrv)), baselineHRV > 0 else { return nil }
