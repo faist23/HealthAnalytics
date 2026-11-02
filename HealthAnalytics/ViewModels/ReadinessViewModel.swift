@@ -15,16 +15,8 @@ class ReadinessViewModel: ObservableObject {
     // MARK: - Published Properties
     @Published var readinessScore: ReadinessAnalyzer.ReadinessScore?
     @Published var intraDayReadiness: RecoveryDecayService.IntraDayReadiness?
-    @Published var formIndicator: ReadinessAnalyzer.FormIndicator?
-    @Published var mlPrediction: PerformancePredictor.Prediction?
-    @Published var mlFeatureWeights: PerformancePredictor.FeatureWeights?
-    @Published var mlError: String?
     @Published var isLoading = false
     @Published var errorMessage: String?
-    @Published var intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
-    @Published var temporalAnalysis: TemporalModelingService.TemporalAnalysis?
-    @Published var zoneAnalysis: TrainingZoneAnalyzer.ZoneAnalysis?
-    @Published var fitnessAnalysis: FitnessTrendAnalyzer.FitnessAnalysis?
     
     private var repositoryCancellable: AnyCancellable?
     private var repositoryErrorCancellable: AnyCancellable?
@@ -75,18 +67,10 @@ class ReadinessViewModel: ObservableObject {
             breakdown: unified.breakdown
         )
         self.intraDayReadiness = unified.intraDay
-        self.formIndicator = generateFormIndicator(from: self.readinessScore!)
 
         // ML outputs — now owned by ReadinessRepository
-        self.mlPrediction = unified.mlPrediction
-        self.mlFeatureWeights = unified.mlFeatureWeights
-        self.mlError = unified.mlError
-        self.intentAwareAssessment = unified.intentAwareAssessment
 
         // Training load & zone outputs — now owned by ReadinessRepository (GEMINI.md mandate)
-        self.temporalAnalysis = unified.temporalAnalysis
-        self.zoneAnalysis = unified.zoneAnalysis
-        self.fitnessAnalysis = unified.fitnessAnalysis
         self.trainingLoadSummary = unified.trainingLoadSummary
         self.readinessAssessment = unified.readinessAssessment
         self.acwrTrend = unified.acwrTrend
@@ -120,41 +104,6 @@ class ReadinessViewModel: ObservableObject {
 
     // MARK: - Helper: Form Indicator
     
-    private func generateFormIndicator(from readiness: ReadinessAnalyzer.ReadinessScore) -> ReadinessAnalyzer.FormIndicator {
-        let status: ReadinessAnalyzer.FormIndicator.FormStatus
-        let actionWindow: String
-        let risk: ReadinessAnalyzer.FormIndicator.RiskLevel
-        
-        switch readiness.score {
-        case 80...100:
-            status = .primed
-            actionWindow = "Optimal window for breakthrough efforts"
-            risk = .low
-        case 70..<80:
-            status = .fresh
-            actionWindow = "Good for quality intervals or tempo work"
-            risk = .low
-        case 55..<70:
-            status = .functional
-            actionWindow = "Stick to moderate endurance work"
-            risk = .moderate
-        case 40..<55:
-            status = .fatigued
-            actionWindow = "Easy aerobic only, or rest"
-            risk = .high
-        default:
-            status = .depleted
-            actionWindow = "Complete rest advised"
-            risk = .veryHigh
-        }
-        
-        return ReadinessAnalyzer.FormIndicator(
-            status: status,
-            daysInStatus: 1,
-            optimalActionWindow: actionWindow,
-            riskLevel: risk
-        )
-    }
     
     // calculateTrainingZones / calculateFitnessTrends / calculateTrainingLoad / calculateImprovedACWRTrend
     // removed — logic moved to ReadinessRepository per GEMINI.md mandate

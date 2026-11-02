@@ -1314,7 +1314,7 @@ actor DataPersistenceActor {
                 for staleHK in (try? modelContext.fetch(hkDescriptor)) ?? [] {
                     modelContext.delete(staleHK)
                 }
-                deleteIntentLabel(workoutID: workoutID)
+                deleteIntentLabel(workoutID: workoutID, reKeyManualTo: match.id)
                 upsertWorkout(
                     id: match.id,
                     title: match.title,
@@ -1402,12 +1402,25 @@ actor DataPersistenceActor {
 
     /// A HealthKit copy deleted in favour of its Strava ride takes its intent label with it
     /// (the background refresh labels HealthKit-UUID rows), or the label is left pointing at
-    /// a workout that no longer exists.
-    private func deleteIntentLabel(workoutID: String) {
+    /// a workout that no longer exists. A label the user set by hand moves to `stravaID`
+    /// instead, when the Strava ride has none of its own; automatic labels are re-derived.
+    private func deleteIntentLabel(workoutID: String, reKeyManualTo stravaID: String? = nil) {
         let labels = (try? modelContext.fetch(FetchDescriptor<StoredIntentLabel>(
             predicate: #Predicate { $0.workoutId == workoutID }
         ))) ?? []
-        labels.forEach { modelContext.delete($0) }
+        for label in labels {
+            if label.source == .manual, let stravaID {
+                // A failed read keeps the label where it is rather than losing what the user set.
+                guard let existing = try? modelContext.fetchCount(FetchDescriptor<StoredIntentLabel>(
+                    predicate: #Predicate { $0.workoutId == stravaID }
+                )) else { continue }
+                if existing == 0 {
+                    label.workoutId = stravaID
+                    continue
+                }
+            }
+            modelContext.delete(label)
+        }
     }
 
     /// HealthKit-only workout upsert for the background pattern pass. Rides the

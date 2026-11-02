@@ -47,17 +47,12 @@ class ReadinessRepository: ObservableObject {
     private let recoveryService = RecoveryDecayService()
 
     // ML sub-services (moved from ReadinessViewModel per GEMINI.md mandate)
-    private let intentAwareService = EnhancedIntentAwareReadinessService()
     private let trendDetector = TrendDetector()
 
     // Training load & zone sub-services (moved from ReadinessViewModel per GEMINI.md mandate)
     private let predictiveReadinessService = PredictiveReadinessService()
-    private let coachingService            = CoachingService()
     private let correlationEngineRepo      = CorrelationEngine()
     private let loadVizService             = TrainingLoadVisualizationService()
-    private let zoneAnalyzer               = TrainingZoneAnalyzer()
-    private let fitnessTrendAnalyzer       = FitnessTrendAnalyzer()
-    private let temporalService            = TemporalModelingService()
 
     // Insights sub-services (moved from InsightsViewModel per GEMINI.md mandate)
     private let nutritionEngine            = NutritionCorrelationEngine()
@@ -78,8 +73,6 @@ class ReadinessRepository: ObservableObject {
     // Phase 2 — Pattern Engine sub-service
     private var trainingDNAAnalyzer: TrainingDNAAnalyzer?
 
-    private var trainedModels: [PerformancePredictor.TrainedModel] = []
-    private var lastMLTraining: Date?
 
     private var lastFingerprint: PredictionCache.DataFingerprint?
     private var lastAnalysisDate: Date?
@@ -417,25 +410,13 @@ class ReadinessRepository: ObservableObject {
         /// Capped at 20% of today's workout TSS. Passed to EnergyBankChart for consistent curve rendering.
         let todayStepExcessTSS: Double
 
-        // ML sub-service outputs (owned by Repository, not ViewModel)
-        let mlPrediction: PerformancePredictor.Prediction?
-        let mlFeatureWeights: PerformancePredictor.FeatureWeights?
-        let mlError: String?
-        let intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment?
-
         // Training load & zone outputs (moved from ReadinessViewModel per GEMINI.md mandate)
         let primaryActivity: String
         let trainingLoadSummary: TrainingLoadCalculator.TrainingLoadSummary?
         let readinessAssessment: PredictiveReadinessService.ReadinessAssessment?
         let acwrTrend: [ACWRDataPoint]
         let loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
-        let temporalAnalysis: TemporalModelingService.TemporalAnalysis?
-        let zoneAnalysis: TrainingZoneAnalyzer.ZoneAnalysis?
-        let fitnessAnalysis: FitnessTrendAnalyzer.FitnessAnalysis?
 
-        // Coaching output (moved from ReadinessViewModel per GEMINI.md mandate)
-        let dailyInstruction: CoachingService.DailyInstruction?
-        
         // Phase 4: Smart Routing Activity Readiness
         let activityReadiness: [String: Int]?
 
@@ -698,10 +679,8 @@ class ReadinessRepository: ObservableObject {
                 overnightRecoveryMultiplier: recoveryMultiplier
             )
 
-            // 5. ML Sub-services (moved from ReadinessViewModel per GEMINI.md)
-            //    5a. Train PerformancePredictor (cache models 7 days)
+            // 5. Load assessment
             let primaryActivity = determinePrimaryActivity(from: workouts)
-            var mlError: String? = nil
 
             let readinessAssessmentResult = predictiveReadinessService.calculateReadiness(
                 stravaActivities: [],
@@ -709,105 +688,7 @@ class ReadinessRepository: ObservableObject {
                 ftpSnapshots: ftpSnapshots
             )
 
-            let shouldRetrain = trainedModels.isEmpty
-                || lastMLTraining == nil
-                || Date().timeIntervalSince(lastMLTraining!) > 604_800 // 7 days
-
-            if shouldRetrain {
-                do {
-                    // Training is CPU-bound CreateML work — run off the main actor.
-                    // Prediction (< 1ms inference) stays on main actor.
-                    let capturedSleep = sleepData
-                    let capturedHRV = hrvData
-                    let capturedRHR = rhrData
-                    let capturedWorkouts = workouts
-                    let capturedNutrition = nutrition
-                    let capturedReadinessService = predictiveReadinessService
-                    trainedModels = try await Task.detached(priority: .utility) {
-                        try await PerformancePredictor.train(
-                            sleepData: capturedSleep,
-                            hrvData: capturedHRV,
-                            restingHRData: capturedRHR,
-                            healthKitWorkouts: capturedWorkouts,
-                            stravaActivities: [],
-                            nutritionData: capturedNutrition,
-                            readinessService: capturedReadinessService
-                        )
-                    }.value
-                    lastMLTraining = Date()
-                    #if DEBUG
-                    print("✅ ReadinessRepository: Trained \(trainedModels.count) ML model(s)")
-                    #endif
-                } catch {
-                    mlError = error.localizedDescription
-                    #if DEBUG
-                    print("❌ ReadinessRepository: ML training failed: \(error)")
-                    #endif
-                }
-            }
-
-            //    5b. Predict with uncertainty
-            var mlPrediction: PerformancePredictor.Prediction? = nil
-            var mlFeatureWeights: PerformancePredictor.FeatureWeights? = nil
-
-            if !trainedModels.isEmpty {
-                let acwr = readinessAssessmentResult.acwr
-                let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
-
-                if let sleep = sleepData.first(where: { calendar.isDate($0.date, inSameDayAs: yesterday) })?.value,
-                   let hrv = hrvData.first(where: { calendar.isDate($0.date, inSameDayAs: today) })?.value,
-                   let rhr = rhrData.first(where: { calendar.isDate($0.date, inSameDayAs: today) })?.value {
-                    let recentCarbs = nutrition.first(where: { calendar.isDate($0.date, inSameDayAs: yesterday) })?.totalCarbs ?? 250.0
-                    do {
-                        let result = try PerformancePredictor.predictWithUncertainty(
-                            models: trainedModels,
-                            activityType: primaryActivity,
-                            sleepHours: sleep,
-                            hrvMs: hrv,
-                            restingHR: rhr,
-                            acwr: acwr,
-                            carbs: recentCarbs
-                        )
-                        mlPrediction = result.prediction
-                        mlFeatureWeights = trainedModels.first(where: { $0.activityType == result.prediction.activityType })?.featureWeights
-                    } catch {
-                        mlError = mlError ?? error.localizedDescription
-                    }
-                } else {
-                    mlError = mlError ?? "Missing recent sleep, HRV, or resting HR data"
-                }
-            }
-
-            //    5c. Intent-Aware Readiness
-            let intentAwareAssessment: EnhancedIntentAwareReadinessService.EnhancedReadinessAssessment? = intentLabels.isEmpty ? nil :
-                intentAwareService.calculateEnhancedReadiness(
-                    workouts: storedWorkouts,
-                    labels: intentLabels,
-                    sleep: sleepData,
-                    hrv: hrvData
-                )
-
-            // 6. Training Zone, Fitness Trend, Temporal, Load Analysis
-            //    (moved from ReadinessViewModel per GEMINI.md mandate)
-            let zoneAnalysis = zoneAnalyzer.analyzeTrainingZones(workouts: workouts)
-
-            let healthKitManager = HealthKitManager.shared
-            let userAge = healthKitManager.getUserAge() ?? 35
-            let userGender = healthKitManager.getUserBiologicalSex()
-            let fitnessAnalysis = fitnessTrendAnalyzer.analyzeFitnessTrends(
-                vo2maxData: vo2maxData,
-                workouts: workouts,
-                hrvData: hrvData,
-                rhrData: rhrData,
-                userAge: userAge,
-                userGender: userGender
-            )
-
-            let temporalAnalysis = temporalService.analyzeTemporalPatterns(
-                workouts: workouts,
-                activityType: primaryActivity
-            )
-
+            // 6. Recovery, load and trend analysis
             let recoveryInsights = correlationEngineRepo.analyzeRecoveryStatus(
                 restingHRData: rhrData,
                 hrvData: hrvData
@@ -835,21 +716,6 @@ class ReadinessRepository: ObservableObject {
                 labels: intentLabels,
                 ftpSnapshots: ftpSnapshots,
                 daysBack: 90
-            )
-
-            // 7. Coaching Instruction (moved from ReadinessViewModel per GEMINI.md mandate)
-            let rawInstruction = coachingService.generateDailyInstruction(
-                readiness: readinessAssessmentResult,
-                insights: [],
-                recovery: recoveryInsights,
-                prediction: mlPrediction
-            )
-            let dailyInstruction = CoachingService.DailyInstruction(
-                status: rawInstruction.status,
-                headline: rawInstruction.headline,
-                subline: rawInstruction.subline,
-                primaryInsight: rawInstruction.primaryInsight,
-                targetAction: rawInstruction.targetAction?.replacingOccurrences(of: "workout", with: primaryActivity.lowercased())
             )
 
             // 8. Insights Sub-services (moved from InsightsViewModel per GEMINI.md mandate)
@@ -949,19 +815,11 @@ class ReadinessRepository: ObservableObject {
                 coachAdvice: masterCoachMessage,
                 overnightRecoveryMultiplier: recoveryMultiplier,
                 todayStepExcessTSS: todayStepExcessTSS,
-                mlPrediction: mlPrediction,
-                mlFeatureWeights: mlFeatureWeights,
-                mlError: mlError,
-                intentAwareAssessment: intentAwareAssessment,
                 primaryActivity: primaryActivity,
                 trainingLoadSummary: trainingLoadSummary,
                 readinessAssessment: readinessAssessmentResult,
                 acwrTrend: acwrTrend,
                 loadVisualization: loadVisualization,
-                temporalAnalysis: temporalAnalysis,
-                zoneAnalysis: zoneAnalysis,
-                fitnessAnalysis: fitnessAnalysis,
-                dailyInstruction: dailyInstruction,
                 activityReadiness: activityReadinessScores,
                 metricTrends: trends,
                 sleepPerformanceInsight: sleepPerformanceInsight,
