@@ -347,4 +347,53 @@ final class ForecastPlanStoreTests: XCTestCase {
         XCTAssertEqual(nights([8, 5]), 0, "A short night before a good one is over")
         XCTAssertEqual(ReadinessRepository.shortSleepNights(sleep: [], now: noon, calendar: calendar), 0)
     }
+
+    // MARK: - Final review fixes
+
+    func testStorePlan_noTrainingHistory_isNotLockedByItsOwnPlan() throws {
+        insertRows(1...30)
+        try ctx.save()
+        let days = try XCTUnwrap(plan(start: 81))
+        XCTAssertFalse(days.contains { $0.reason == "Load ramping fast" }, "\(days.map(\.reason))")
+        XCTAssertGreaterThan(days.filter { $0.effort == .hard }.count, 1, "\(days.map(\.effort))")
+    }
+
+    func testStorePlan_steadyThreeRidesAWeek_seesNoFalseRamp() throws {
+        for offset in 1...35 {
+            let load: Double? = offset % 7 == 1 || offset % 7 == 3 ? 2 : offset % 7 == 5 ? 4 : nil
+            if let load { insertRide("steady-\(offset)", daysAgo: offset, hours: load) }
+            if offset <= 30 { insertRows(offset...offset) }
+        }
+        try ctx.save()
+        let days = try XCTUnwrap(plan(start: 75))
+        XCTAssertFalse(days.contains { $0.reason == "Load ramping fast" }, "\(days.map(\.reason))")
+    }
+
+    /// The in-day score repays yesterday's fatigue as the hours pass. Stored rows never get that
+    /// repayment, so reading today's word from it would drift upward with no new data.
+    func testTodaysWordScore_noRideDoesNotClimbWithTheClock() {
+        for hour in [8, 14, 22] {
+            let now = calendar.date(byAdding: .hour, value: hour, to: today)!
+            XCTAssertEqual(ReadinessRepository.forecastTodayScore(startScore: 70, workouts: [], stepExcessTSS: 0, now: now), 70)
+        }
+    }
+
+    func testTodaysWordScore_aRideLowersItAndItRecoversThroughTheDay() {
+        let ride = WorkoutData(from: StoredWorkout(id: "morning", type: .cycling, startDate: today.addingTimeInterval(7 * 3600),
+                                                   duration: 3600, distance: nil, power: nil, energy: nil, hr: nil, source: "test"))
+        func score(hour: Int) -> Int {
+            ReadinessRepository.forecastTodayScore(startScore: 70, workouts: [ride], stepExcessTSS: 0,
+                                                   now: calendar.date(byAdding: .hour, value: hour, to: today)!)
+        }
+        XCTAssertEqual(score(hour: 6), 70, "Not ridden yet")
+        XCTAssertLessThan(score(hour: 9), 70)
+        XCTAssertGreaterThan(score(hour: 20), score(hour: 9))
+    }
+
+    /// A background refresh must not take the screen away from someone reading it.
+    func testRefreshOnlyBlocksTheScreenWhenThereIsNothingToShow() {
+        XCTAssertTrue(ReadinessRepository.blocksContent(isAnalyzing: true, hasSnapshot: false))
+        XCTAssertFalse(ReadinessRepository.blocksContent(isAnalyzing: true, hasSnapshot: true))
+        XCTAssertFalse(ReadinessRepository.blocksContent(isAnalyzing: false, hasSnapshot: false))
+    }
 }

@@ -790,7 +790,12 @@ class ReadinessRepository: ObservableObject {
                     try computeForecastPlan(
                         modelContext: modelContext,
                         startScore: forecastStartScore,
-                        currentScore: intraDay.currentScore,
+                        currentScore: Self.forecastTodayScore(
+                            startScore: forecastStartScore,
+                            workouts: workouts,
+                            stepExcessTSS: todayStepExcessTSS,
+                            now: now
+                        ),
                         illness: forecastIllness,
                         activePatterns: activePatternTypes,
                         memories: allMemories,
@@ -1269,8 +1274,8 @@ class ReadinessRepository: ObservableObject {
         (try? loadForecastHistory(context: context, now: now))?.signature
     }
 
-    /// Nil below 14 scored days. `startScore` ignores today's rides; `currentScore` is the in-day
-    /// score that decides today's word. Rebuilt from the store on every analysis.
+    /// Nil below 14 scored days. `startScore` ignores today's rides; `currentScore`
+    /// (`forecastTodayScore`) decides today's word. Rebuilt from the store on every analysis.
     func computeForecastPlan(modelContext: ModelContext, startScore: Int, currentScore: Int,
                              illness: ForecastIllness, activePatterns: Set<PatternType>,
                              memories: [CoachMemoryNote],
@@ -1300,6 +1305,25 @@ class ReadinessRepository: ObservableObject {
             }
         )
         return ForecastPlan(days: ForecastPlanner.plan(input, calendar: calendar), profile: profile)
+    }
+
+    /// The score that decides today's word: `startScore` less the fatigue from today's workouts
+    /// and steps, so a ride lowers it and it recovers through the day. Not `intraDay.currentScore`:
+    /// that repays yesterday's fatigue as the hours pass, which the stored rows behind the rider's
+    /// normal never get, so the word would climb to Hard with no new data.
+    static func forecastTodayScore(startScore: Int, workouts: [WorkoutData], stepExcessTSS: Double, now: Date = Date()) -> Int {
+        RecoveryDecayService().calculateIntraDayReadiness(
+            baselineScore: startScore,
+            todayWorkouts: workouts,
+            todayStepExcessTSS: stepExcessTSS,
+            now: now
+        ).currentScore
+    }
+
+    /// Only a first load takes the screen. A refresh with something to show runs quietly, since
+    /// analysis now re-runs on most returns to the app.
+    nonisolated static func blocksContent(isAnalyzing: Bool, hasSnapshot: Bool) -> Bool {
+        isAnalyzing && !hasSnapshot
     }
 
     /// The plan replayed against the last 60 days. Nil on a failed read.

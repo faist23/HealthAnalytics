@@ -370,7 +370,7 @@ final class MasterCoachEngineTests: XCTestCase {
         XCTAssertEqual(planState(morning: 90, current: 90, today: .moderate),
                        "You're 90% recovered — enough for moderate work, but listen to your body.")
         XCTAssertEqual(planState(morning: 85, current: 85, today: .easy),
-                       "You're 85% recovered, a bit below your usual. Keep today easy.")
+                       "You're 85% recovered. Keep today easy.")
         XCTAssertEqual(planState(morning: 70, current: 70, today: .rest),
                        "Your recovery is well below your usual (70%). Prioritize rest to bounce back.")
     }
@@ -424,5 +424,10 @@ final class MasterCoachEngineTests: XCTestCase {
         let message = planState(today: .hard, illness: .sick(since: Calendar.current.startOfDay(for: Date())))
         XCTAssertTrue(message.contains("Skip training"), message)
         XCTAssertFalse(message.contains("intensity"), message)
+    }
+
+    /// A load ceiling or an Injury note can make the word Easy with recovery high.
+    func testTodayEffort_easyFromACapDoesNotClaimLowRecovery() {
+        XCTAssertFalse(planState(morning: 85, current: 85, today: .easy).contains("below your usual"))
     }
 }

@@ -482,4 +482,36 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(result.recoveryDays, 2)
         XCTAssertEqual(result.episodeCount, 6)
     }
+
+    // MARK: - Final review fixes
+
+    func testRideDayFollowedByARise_isNotCalledBouncingBack() {
+        let days = plan(input(z: 1, currentZ: -2, rode: 1.0))
+        XCTAssertEqual(days[0].effort, .rest)
+        XCTAssertLessThan(days[1].effort, days[0].effort, "Fixture must move up, or the test proves nothing")
+        XCTAssertNotEqual(days[1].reason, "Bouncing back after rest", "They rode; they didn't rest")
+    }
+
+    func testHardRideToday_neverLeavesHardOnTheCard() {
+        let days = plan(input(z: 1, currentZ: 1, rode: 3))
+        XCTAssertEqual(days[0].effort, .moderate)
+        XCTAssertEqual(days[0].reason, "Rode hard today")
+    }
+
+    func testLearn_trainingDayShareCountsThe28DayWindow() throws {
+        var days = flat(40)
+        for index in stride(from: 12, to: 40, by: 4) { days[index].load = 2 }
+        XCTAssertEqual(try XCTUnwrap(learn(days)).trainingDayShare, 7.0 / 28.0, accuracy: 0.001)
+    }
+
+    func testPlannedLoad_scalesWithHowOftenTheRiderTrains() {
+        var p = profile()
+        p.trainingDayShare = 0.5
+        var planned: [Date: Double] = [:]
+        _ = plan(input(z: 0, profile: p, acwr: { _, loads in
+            planned = loads
+            return 1.0
+        }))
+        XCTAssertEqual(planned[day(0)] ?? -1, 1.5 * 0.5, accuracy: 0.001, "A Moderate day at half the rider's usual frequency")
+    }
 }

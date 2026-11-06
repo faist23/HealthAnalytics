@@ -68,7 +68,10 @@ class DashboardViewModel: ObservableObject {
         ReadinessRepository.shared.$isAnalyzing
             .receive(on: DispatchQueue.main)
             .sink { [weak self] analyzing in
-                self?.isLoading = analyzing
+                self?.isLoading = ReadinessRepository.blocksContent(
+                    isAnalyzing: analyzing,
+                    hasSnapshot: ReadinessRepository.shared.currentReadiness != nil
+                )
             }
             .store(in: &cancellables)
     }

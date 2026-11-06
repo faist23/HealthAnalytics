@@ -259,7 +259,7 @@ struct MasterCoachEngine {
             }
             return "You're \(state.currentScore)% recovered — enough for moderate work, but listen to your body.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         } else if state.todayEffort == .easy {
-            return "You're \(state.currentScore)% recovered, a bit below your usual. Keep today easy.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
+            return "You're \(state.currentScore)% recovered. Keep today easy.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         } else {
             let opening = state.todayEffort == .rest
                 ? "Your recovery is well below your usual (\(state.currentScore)%)."

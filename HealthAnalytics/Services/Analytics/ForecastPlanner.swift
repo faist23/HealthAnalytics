@@ -64,6 +64,9 @@ struct ForecastProfile: Equatable {
     /// How many days after a hard day stay below Hard. Never under 1 in this release.
     let recoveryDays: Int
     let episodeCount: Int
+    /// How often this rider actually trains (last 28 days). The plan's assumed days count at this
+    /// share toward projected ACWR, or a three-rides-a-week rider's own plan reads as a load ramp.
+    var trainingDayShare = 1.0
 
     /// `history` is ascending complete days, ending before `today`. Nil below the 14-score minimum.
     static func learn(history: [ForecastHistoryDay], today: Date, calendar: Calendar) -> ForecastProfile? {
@@ -96,8 +99,10 @@ struct ForecastProfile: Equatable {
             dip = min(max(medianDip, dipRange.lowerBound), dipRange.upperBound)
         }
 
+        let trainingDays = complete.filter { $0.date >= normalStart && $0.load >= trainingDayLoad }.count
         return ForecastProfile(normal: normal, spread: spread, hardLoad: hardLoad, moderateLoad: moderateLoad,
-                               easyLoad: easyLoad, dip: dip, recoveryDays: recoveryDays, episodeCount: found.count)
+                               easyLoad: easyLoad, dip: dip, recoveryDays: recoveryDays, episodeCount: found.count,
+                               trainingDayShare: Double(trainingDays) / Double(normalWindowDays))
     }
 
     /// A hard day with non-hard days on both sides, a score the next morning, and an outcome
@@ -208,7 +213,7 @@ struct ForecastPlanInput {
     let now: Date
     /// Ignores today's rides. Where the stepping into tomorrow starts, so a ride isn't counted twice.
     let startScore: Int
-    /// The in-day score. Decides today's word, which moves with today's rides and the clock.
+    /// On the stored rows' scale, less today's workout and step fatigue. Decides today's word.
     let currentScore: Int
     /// Load of the workouts stored so far today.
     let rodeLoadToday: Double
@@ -267,7 +272,7 @@ enum ForecastPlanner {
             if rode > 0 { impulse = min(impulse, profile.rideEffect(load: rode)) }
             z = profile.rho * z + impulse
 
-            planned[date] = max(0, profile.typicalLoad(effort) - rode)
+            planned[date] = max(0, profile.typicalLoad(effort) * profile.trainingDayShare - rode)
             if effort == .hard || profile.isHard(load: rode) { hardDates.append(date) }
             previous = effort
         }
@@ -278,6 +283,8 @@ enum ForecastPlanner {
     private static func caps(for input: ForecastPlanInput, offset: Int, date: Date, acwr: Double,
                              hardDates: [Date], calendar: Calendar) -> [(cap: Effort, reason: String)] {
         var caps: [(cap: Effort, reason: String)] = []
+
+        if offset == 0, input.profile.isHard(load: input.rodeLoadToday) { caps.append((.moderate, "Rode hard today")) }
 
         switch input.illness {
         case .none: break
@@ -336,7 +343,9 @@ enum ForecastPlanner {
             default: return "Two short nights"
             }
         }
-        if let previous, previous >= .easy, effort < previous { return "Bouncing back after rest" }
+        // After a ride the word was low from riding, so the next day isn't a bounce back from rest.
+        let rodeYesterday = offset == 1 && input.rodeLoadToday >= namedRideLoad
+        if let previous, previous >= .easy, effort < previous, !rodeYesterday { return "Bouncing back after rest" }
         return nil
     }
 }

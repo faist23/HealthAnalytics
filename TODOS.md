@@ -47,6 +47,15 @@
 
 **Blocked by:** logged illnesses only started in v0.1.21, so it starts on the step-count sick-day proxy. It needs its own design.
 
+### Backfilled score rows sit on a different scale, and the forecast's normal reads them
+**Priority:** P2. Found by the forecast plan's final review.
+
+**What:** `backfillHistoricalScores` scores each day from a two-day biometric window, so HRV and resting HR have no baseline to compare against. Fitness and fatigue also window from `Date()`, not from that row's day. Backfilled rows can therefore land well below what a live score would be, and they can't show a dip after a hard day.
+
+**Why:** the forecast's normal and learned recovery come from these rows. For up to 28 days after an install or reset, Today can read high whatever the rider's sleep. Rows are never rewritten, and no flag separates backfilled rows from live ones.
+
+**Fix direction:** correct the backfill's windows, or mark backfilled rows and leave them out of `ForecastProfile.learn`.
+
 ### Leftovers after the v0.1.23.0 dead-code removal
 **Priority:** P4 — surfaced by the v0.1.23.0 adversarial review; none affects behavior
 
