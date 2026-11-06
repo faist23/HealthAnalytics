@@ -79,7 +79,7 @@ There is no chart, no score and no confidence band.
 **Reasons** come from whatever actually decided that day's effort. Show at most one reason, the strongest, and none when the day is simply what recovery allows. The wording is mine; the builder may adjust it, but it must stay short, plain and descriptive:
 - "Two short nights", or "Short sleep" for one night: today's recovery is low and sleep is the main driver.
 - "Low recovery": today is low for another reason (HRV or resting HR).
-- "Rode hard today" / "Rode today": Today, once a workout is imported (my call: Today keeps the word for the effort the body could take today, and this line says what was done).
+- "Rode hard today" / "Rode today": Today, once a workout is imported. Today's word includes today's workouts (Craig, 2026-11-06), so it drops after a ride and recovers through the day, and this line says why.
 - "Bouncing back after rest": the day after a suggested rest or easy day, when it moves up a level.
 - "Still recovering from <weekday>": capped because of a hard day (planned or ridden) within the rider's recovery time.
 - "Load ramping fast": capped by the projected ACWR ceiling.
@@ -131,13 +131,13 @@ The builder owns the formulas and constants. These rules are fixed:
 
 ## Coach agreement
 
-- The Coach's sentence about today uses the plan's day-0 word, so the Coach paragraph and the forecast card can't disagree. Today the Coach has two bands: 60–79 gives "enough for moderate work". Its after-ride intra-day note ("prioritize rest" once today's fatigue is high) stays as an addition and must not contradict day 0. For example, after a hard ride day 0 still reads Hard with "Rode hard today", and the Coach can say the work is done.
+- The Coach's sentence about today uses the plan's day-0 word, so the Coach paragraph and the forecast card can't disagree. Today the Coach has two bands: 60–79 gives "enough for moderate work". Its after-ride intra-day note must not contradict day 0. For example, after a hard ride day 0 can read Rest with "Rode hard today", and the Coach says to rest for the remainder of the day.
 - The Coach's "tomorrow" line reads day 1. Keep the `ForecastEffort.label` strings that `MasterCoachEngine.StateVector.nextDayForecast` consumes, or update the Coach consistently.
 - Coach wording still lives once, in `generateHeuristicMessage`.
 
 ## Live recompute
 
-Nothing new is scheduled. The plan is computed inside `performFullAnalysis`, which already runs:
+Nothing new is scheduled, but a cached analysis older than 15 minutes is not reused, so today's word follows the in-day score (Craig: "a reason to check the app throughout the day"). The plan is computed inside `performFullAnalysis`, which already runs:
 - on launch;
 - on return to the foreground (`scenePhase` active);
 - after every sync's `DataSyncCompleted`;
@@ -163,7 +163,7 @@ Because the fingerprint cache already invalidates when workouts or the calendar 
 - **Slow recoverer:** history where scores take about 2 days to return after hard days. Expected: at least 2 non-hard days after each Hard.
 - **Fast recoverer:** history where scores return the next day. Expected: one non-hard day between Hards is enough. A rider with too few episodes gets the default.
 - **Low-normal rider:** median under 60. Expected: Moderate and Hard still appear.
-- **Rode hard this morning:** a hard workout stored today. Expected: Today shows "Rode hard today", tomorrow is capped by the recovery time, and the projected ACWR includes it.
+- **Rode hard this morning:** a hard workout stored today. Expected: Today's word drops and shows "Rode hard today", tomorrow is capped by the recovery time, and the projected ACWR includes it.
 - **Overloaded rider (ACWR > 1.5):** near-term days capped at Easy, with the cap relaxing later only as the plan's lighter days lower the projected ACWR.
 - **Active patterns:** HRV precursor caps today and tomorrow at Easy. Back-to-back crash forces at least the default recovery time.
 - **Sick:** all Rest with "Sick". After "I'm better": up to 2 days of at most Easy, then normal.

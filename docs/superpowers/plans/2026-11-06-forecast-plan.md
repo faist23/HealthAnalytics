@@ -26,8 +26,8 @@
 
 The spec leaves these to the builder or could not know them. Craig can veto any of them.
 
-1. **The day 0 word uses a score that ignores today's rides.** `baseReadiness.score` is called the morning score, but it reads today's workouts, so a ride can lower it through the ACR bracket. The spec needs Hard to stay Hard after a hard ride. The plan runs `analyzeReadiness` a second time with workouts before today. The published morning score is not changed.
-2. **`intraDay.currentScore` and steps are not plan inputs.** Today's ride already reaches the plan through its load, so using the in-day score too would count it twice. Steps are capped at 20% of a ride day's load and can't impair recovery alone. Leaving them out also stops step counts from re-running analysis on every open.
+1. **Craig's ruling, 2026-11-06: today's word includes today's workouts.** Day 0's word is the band of `intraDay.currentScore`, the in-day score the Coach shows, so a ride can lower it and it recovers as the day goes on. This replaces the spec's "Today keeps its word". The stepping into tomorrow starts from a score that ignores today's rides (`baseReadiness.score` reads today's workouts through the ACR bracket, so the plan runs `analyzeReadiness` again with workouts before today), and today's ride reaches tomorrow only through its load, so it isn't counted twice. The published morning score is not changed.
+2. **The word has to move with the clock, so a cached analysis gets a maximum age.** The in-day score changes with time and steps, and neither is in the fingerprint. `refreshIfNecessary` re-runs when the last analysis is over 15 minutes old. It still runs only on a trigger (open, return to the app, sync). Steps reach today's word through the in-day score but not later days, because they are capped at 20% of a ride day's load and can't impair recovery alone.
 3. **Nobody gets two Hard days in a row in this release.** Learned recovery time has a floor of 1 day. Goal 5 allows "until the history says otherwise", but the spec's fast-recoverer scenario stops at one non-hard day. The back-to-back crash rule ("at least the default") therefore holds by construction.
 4. **A hard day also needs a load of at least 1.25 × the median training day and at least 1.0.** With the 75th percentile alone, a rider whose rides are all the same counts every ride as hard and never gets a Hard day.
 5. **Elevated injury risk caps day 0 and day 1 only.** The risk is assessed for today and can't be projected. The load ceiling governs later days. A ride that pushes risk to high can lower today's word.
@@ -55,11 +55,12 @@ All values are named `static let`s on `ForecastProfile`. The builder may tune th
 
 Moderate gives a small lift because the rider's normal already includes the cost of their hard days, so any non-hard day repays some of it.
 
-**Stepping** (`z₀` comes from the score that ignores today's rides):
+**Stepping** (`z` starts from `startScore`, which ignores today's rides; day 0's word reads `currentScore`):
 
 ```text
+z = z(startScore)
 for offset in 0...6:
-  byRecovery = band(z)
+  byRecovery = offset == 0 ? band(z(currentScore)) : band(z)
   caps       = illness, notes, HRV, risk, load ceiling, recovery time, weekly cap
   effort     = max(byRecovery, caps)      // ForecastEffort: larger = more restrictive
   impulse    = lift(effort)
@@ -67,7 +68,7 @@ for offset in 0...6:
   z = rho * z + impulse
 ```
 
-**Load ceiling reference date:** day 0 closes at the start of today, so today's ride can't change today's word. Each later day closes at the end of that day and includes earlier planned days. Today's planned entry is `max(0, typicalLoad(day 0 effort) − rodeLoadToday)`, because the ride is already in the workouts.
+**Load ceiling reference date:** day 0 closes at `now`, so today's ride counts. Each later day closes at the end of that day and includes earlier planned days. Today's planned entry is `max(0, typicalLoad(day 0 effort) − rodeLoadToday)`, because the ride is already in the workouts.
 
 **Reason, at most one, first match wins:** illness → `Rode hard today` / `Rode today` on day 0 (ride load ≥ hard threshold / ≥ 0.5) → the binding cap, if it is stricter than `byRecovery` → on day 0 below Moderate, `Two short nights` / `Short sleep` / `Low recovery` → `Bouncing back after rest` when the previous day was Rest or Easy and this day is a higher level → nil.
 
@@ -160,7 +161,8 @@ struct ForecastNoteCap: Equatable { let cap: ReadinessRepository.ForecastEffort;
 
 struct ForecastPlanInput {
     let now: Date
-    let startScore: Int                 // ignores today's rides
+    let startScore: Int                 // ignores today's rides; starts the stepping
+    let currentScore: Int               // in-day score; decides day 0's word
     let rodeLoadToday: Double
     let recentLoads: [ForecastHistoryDay]
     let profile: ForecastProfile
@@ -180,19 +182,20 @@ enum ForecastPlanner {
 ```
 
 - [ ] **Step 1: Write the failing scenario tests.** Use a fixed `now` at noon, normal 75, spread 6 and `projectedACWR` returning 1.0 unless stated.
-  - `testCraigsWeek`: `startScore` 63 (z = −2), no ride. Today Rest, tomorrow Moderate, the day after Hard, and not all 7 Rest.
+  - `testCraigsWeek`: `startScore` and `currentScore` 63 (z = −2), no ride. Today Rest, tomorrow Moderate, the day after Hard, and not all 7 Rest.
   - `testNeverTwoHardDaysInARow_byDefault`: start at z = +1; no adjacent Hard days.
   - `testSlowRecoverer_twoNonHardDaysAfterEachHard`: `recoveryDays` 2, dip 1.5.
   - `testFastRecoverer_oneNonHardDayIsEnough`: `recoveryDays` 1, dip 0.5; at least one Hard, gap, Hard with a single gap day.
   - `testBackToBackRule_holdsForTheFastestLearnedRider`: `recoveryDays` 1, dip 0.5; no adjacent Hard days.
   - `testLowNormalRider_getsModerateAndHard`: normal 55.
-  - `testRodeHardToday`: `startScore` z = +1, `rodeLoadToday` at the hard threshold. Today Hard with `Rode hard today`; tomorrow not Hard.
+  - `testRodeHardToday`: `startScore` z = +1, `currentScore` z = −2, `rodeLoadToday` at the hard threshold. Today Rest with `Rode hard today`; tomorrow not Hard.
+  - `testTodaysWord_followsTheInDayScore`: same inputs with `currentScore` at z = −1, then z = 0, read Easy, then Moderate (the word recovers as the day goes on). Later days don't change.
   - `testBigRideToday_lowersTomorrowMoreThanASmallRide`.
   - `testRodeToday_smallRide`: load 0.6 reads `Rode today`; load 0.3 shows no ride reason.
   - `testYesterdaysHardRide_capsToday`: `recentLoads` hard yesterday, z = +1. Today Moderate, `Still recovering from <yesterday's weekday>`.
   - `testLoadCeiling_capsAndRelaxes`: closure returns 1.6 for days 0-2, 1.4 for day 3, then 1.0. Days 0-2 at most Easy, day 3 at most Moderate, a later day may be Hard, reason `Load ramping fast`.
   - `testLoadCeiling_isACeilingNeverAFloor`: z = −2, ACWR 1.6; today stays Rest.
-  - `testLoadCeiling_day0ClosesBeforeTodaysRide_laterDaysCarryThePlan`: record the closure's arguments. Day 0 closes at start of today. Day 2's planned loads include day 0 and day 1. Today's planned entry is `max(0, typicalLoad − ride)`.
+  - `testLoadCeiling_day0ClosesNow_laterDaysCarryThePlan`: record the closure's arguments. Day 0 closes at `now`. Day 2's planned loads include day 0 and day 1. Today's planned entry is `max(0, typicalLoad − ride)`.
   - `testHRVPrecursor_capsTodayAndTomorrow`: at most Easy, `HRV dipping`; day 2 is free.
   - `testInjuryRisk_capsTodayAndTomorrow`: at most Moderate; day 2 is free.
   - `testSick_isAllRest`: all 7 Rest, `Sick`.
@@ -239,14 +242,14 @@ func loadForecastHistory(context: ModelContext, now: Date) throws -> [ForecastHi
 /// Hash of the complete-day rows and each stored workout's id and load (rounded to 2 places).
 /// Today's row is left out because analysis itself rewrites it. Nil on a failed read.
 func forecastInputSignature(context: ModelContext, now: Date) -> Int?
-func computeForecastPlan(modelContext: ModelContext, startScore: Int,
+func computeForecastPlan(modelContext: ModelContext, startScore: Int, currentScore: Int,
                          illness: ForecastIllness, activePatterns: Set<PatternType>,
                          memories: [CoachMemoryNote],
                          injuryRisk: InjuryRiskCalculator.RiskLevel,
                          sleep: [HealthDataPoint], now: Date) throws -> [ReadinessForecastDay]?
 ```
 
-`canReuseCachedAnalysis` gains `forecastSignature: Int? = nil, lastForecastSignature: Int? = nil`. A nil current signature (failed read) doesn't force a re-run.
+`canReuseCachedAnalysis` gains `forecastSignature: Int? = nil, lastForecastSignature: Int? = nil, maxAge: TimeInterval? = nil`. A nil current signature (failed read) doesn't force a re-run. `refreshIfNecessary` passes `forecastLiveRefreshInterval` (900 s) as `maxAge`.
 
 - [ ] **Step 1: Write the failing tests.** They use an in-memory store with `StoredDailyScore`, `StoredWorkout`, `StoredFTPSnapshot` and a fixed `now` at noon.
   - `testACWR_plannedLoadsCountInsideTheWindowOnly`: a planned load in the acute window raises ACWR; one after `referenceDate` doesn't; an empty dictionary equals today's result.
@@ -254,13 +257,14 @@ func computeForecastPlan(modelContext: ModelContext, startScore: Int,
   - `testStorePlan_todaysRowIsNotHistory`: a low score row for today doesn't move normal.
   - `testHistory_duplicateAndMissingRows`.
   - `testHistory_rideOnAZeroLoadRowCounts`.
-  - `testStorePlan_rodeHardThisMorning`: a hard stored workout today gives Today `Rode hard today`, tomorrow not Hard, and a higher projected ACWR than with no ride.
+  - `testStorePlan_rodeHardThisMorning`: a hard stored workout today, with a lowered `currentScore`, gives Today below its pre-ride word with `Rode hard today`, tomorrow not Hard, and a higher projected ACWR than with no ride.
   - `testStorePlan_overloadedRider_capsThenRelaxes`: rows at 88, 21 days of 1h then 7 days of 3h. Near-term at most Easy, and the last day is less restricted than the first.
   - `testStorePlan_poorRecoveryOnWellLoadedRider_staysRest`: normal 80, `startScore` 40.
   - `testStorePlan_activeNotesAndPatterns`: an active Injury note and an active `hrvPrecursor` reach the plan. A `Preference` note and an expired note don't.
   - `testCache_workoutStoredAfterAnalysisChangesThePlan`: the plan and the signature both change.
   - `testCache_zoneBackfillChangingLoadChangesTheSignature`: same workout count and dates, new load.
   - `testCache_todaysRowRewriteDoesNotChangeTheSignature`.
+  - `testCanReuse_falseWhenOlderThanMaxAge`: with `maxAge` 900, an analysis 16 minutes old isn't reused and one 14 minutes old is; `maxAge` nil keeps today's behaviour.
   - `testCanReuse_falseWhenForecastSignatureMoved` and `testCanReuse_nilSignatureDoesNotForceARerun`.
   - `testRecoveringDaysLeft`: last sick day yesterday gives 2; two days ago gives 1; three days ago gives 0.
   - `testFailedRead_keepsTheLastPlan`: a repository test through a seam that makes the plan read throw. `forecast` keeps a same-day plan and is nil only when that plan is from another day.
@@ -296,13 +300,14 @@ The peak and taper sentences appear only on Hard (the current ≥ 80 copy) and M
 
 Injury-risk branch: `You're N% recovered, but injury risk is elevated from load spikes.` followed by `Keep today moderate, with no hard sessions.` / `Keep today easy.` / `Take today off.` for the plan's word.
 
-Intraday branch: "primed" means the word is Hard or Moderate, not `morningScore >= 70`, so a low-normal rider isn't told they started fatigued on a Hard day.
+Intraday branch: `StateVector.startedLow: Bool?` (default nil, which keeps `morningScore < 70`) picks "primed" or "fatigued", so a low-normal rider isn't told they started fatigued. The repository sets it from `band(z(startScore))` being Easy or Rest. When `todayEffort` is set, the branch's closing sentence uses the word: Hard `You still have room for hard work today.`, Moderate `You still have room for moderate work today.`, Easy `Keep the rest of today easy.`, Rest `Rest for the remainder of the day.`
 
 - [ ] **Step 1: Write the failing tests.**
   - `testTodayEffort_eachWordUsesItsSentence`: all four, with a score that would have chosen a different band.
   - `testTodayEffort_nilKeepsScoreBands`.
   - `testTodayEffort_injuryRiskNeverSaysEasierThanThePlan`: Moderate gets the Moderate sentence and not `easy aerobic`.
-  - `testTodayEffort_lowNormalHardDayIsNotCalledFatigued`: morning 62, current 50, Hard.
+  - `testTodayEffort_lowNormalRiderIsNotCalledFatigued`: morning 62, current 50, `startedLow` false, Easy.
+  - `testTodayEffort_afterARideTheClosingSentenceMatchesTheWord`: morning 85, current 70, all four words, and none says `active recovery`.
   - `testTodayEffort_peakWindowNeverShownOnARestDay`.
   - `testSickStillOverridesThePlan`.
   - `testCoachAgreement_todayAndTomorrowMatchThePlan` in `ForecastPlanStoreTests`: build a plan from the store, then assert that a `StateVector` built by the new repository helper `coachState(plan:...)` has `todayEffort == plan[0].effort` and `nextDayForecast == plan[1].coaching`.
