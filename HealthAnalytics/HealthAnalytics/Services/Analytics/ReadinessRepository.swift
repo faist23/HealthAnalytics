@@ -355,14 +355,15 @@ class ReadinessRepository: ObservableObject {
     
     // MARK: - Models
 
-    /// One day in the 7-day readiness forecast.
+    /// One day in the 7-day plan: the hardest effort the rider can absorb, and why when it isn't obvious.
     struct ReadinessForecastDay: Identifiable {
         let id = UUID()
         let date: Date
-        let predictedReadiness: Int   // 0–100, clamped
-        let confidenceLow: Int        // predictedReadiness - σ(day)
-        let confidenceHigh: Int       // predictedReadiness + σ(day)
-        let coaching: String          // "Hard effort OK" / "Moderate training" / "Easy only" / "Rest recommended"
+        let effort: ForecastEffort
+        let reason: String?
+
+        /// The label `MasterCoachEngine.StateVector.nextDayForecast` reads.
+        var coaching: String { effort.label }
     }
 
     /// Forecast effort tiers, ordered least → most restrictive so two independent
@@ -376,8 +377,7 @@ class ReadinessRepository: ObservableObject {
 
         static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 
-        /// Kept as strings on `ReadinessForecastDay` because `ReadinessForecastChart`
-        /// and `MasterCoachEngine` both consume the label text.
+        /// `MasterCoachEngine` reads the label text.
         var label: String {
             switch self {
             case .hard:     return "Hard effort OK"
@@ -1189,11 +1189,6 @@ class ReadinessRepository: ObservableObject {
         let yVals = last14.map { Double($0.readinessScore) }
         guard let reg = StatisticalValidator.linearRegression(x: xVals, y: yVals) else { return nil }
 
-        // Baseline standard deviation for confidence bands
-        let meanY = yVals.reduce(0, +) / Double(yVals.count)
-        let variance = yVals.map { ($0 - meanY) * ($0 - meanY) }.reduce(0, +) / Double(yVals.count)
-        let baselineSigma = (variance > 0 ? sqrt(variance) : 5.0) / 2.0
-
         // ACWR modifier from the assessment's ACWR (passed in)
 
         // Workouts for the per-day load ceiling below. The chronic window for the
@@ -1227,10 +1222,6 @@ class ReadinessRepository: ObservableObject {
             }
 
             let clamped = max(20.0, min(100.0, predicted))
-            let sigma = min(15.0, baselineSigma * sqrt(Double(d)))
-            let lo = max(0,   Int((clamped - sigma).rounded()))
-            let hi = min(100, Int((clamped + sigma).rounded()))
-
             let score = Int(clamped.rounded())
             let date = calendar.date(byAdding: .day, value: d, to: calendar.startOfDay(for: Date())) ?? Date()
 
@@ -1266,10 +1257,8 @@ class ReadinessRepository: ObservableObject {
 
             days.append(ReadinessForecastDay(
                 date: date,
-                predictedReadiness: score,
-                confidenceLow: lo,
-                confidenceHigh: hi,
-                coaching: max(byRecovery, byLoad).label
+                effort: max(byRecovery, byLoad),
+                reason: nil
             ))
         }
         return days

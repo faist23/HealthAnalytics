@@ -8,7 +8,6 @@
 //
 
 import SwiftUI
-import Charts
 
 struct ReadinessForecastChart: View {
     @ObservedObject private var repo = ReadinessRepository.shared
@@ -23,7 +22,6 @@ struct ReadinessForecastChart: View {
             if days.isEmpty {
                 emptyState
             } else {
-                chartBody
                 coachingRow
             }
         }
@@ -56,54 +54,6 @@ struct ReadinessForecastChart: View {
             .font(.coachGuidance)
             .foregroundStyle(Color.textSecondary)
             .padding(.vertical, .spacingSm)
-    }
-
-    // MARK: - Chart
-
-    private var chartBody: some View {
-        Chart(days) { day in
-            // Confidence band
-            AreaMark(
-                x: .value("Day", day.date, unit: .day),
-                yStart: .value("Low", day.confidenceLow),
-                yEnd: .value("High", day.confidenceHigh)
-            )
-            .foregroundStyle(Color.statusOptimal.opacity(0.15))
-
-            // Predicted line
-            LineMark(
-                x: .value("Day", day.date, unit: .day),
-                y: .value("Recovery", day.predictedReadiness)
-            )
-            .foregroundStyle(Color.accent)
-            .lineStyle(StrokeStyle(lineWidth: 2))
-
-            // Point marks
-            PointMark(
-                x: .value("Day", day.date, unit: .day),
-                y: .value("Recovery", day.predictedReadiness)
-            )
-            .foregroundStyle(Color.accent)
-            .symbolSize(30)
-        }
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .day)) { value in
-                AxisValueLabel(format: .dateTime.weekday(.abbreviated))
-                    .foregroundStyle(Color.textTertiary)
-                    .font(.dataAxis)
-            }
-        }
-        .chartYAxis {
-            AxisMarks(values: [60, 80, 100]) { value in
-                AxisGridLine()
-                    .foregroundStyle(Color.surfaceRaised.opacity(0.5))
-                AxisValueLabel()
-                    .foregroundStyle(Color.textTertiary)
-                    .font(.dataAxis)
-            }
-        }
-        .chartYScale(domain: 0...100)
-        .frame(height: 120)
     }
 
     // MARK: - Coaching Labels
@@ -156,18 +106,7 @@ struct ReadinessForecastChart: View {
 
 #if DEBUG
 #Preview {
-    let days: [ReadinessRepository.ReadinessForecastDay] = (1...7).map { d in
-        let date = Calendar.current.date(byAdding: .day, value: d, to: Calendar.current.startOfDay(for: Date()))!
-        let score = Int(65 + Double(d) * 3)
-        return ReadinessRepository.ReadinessForecastDay(
-            date: date,
-            predictedReadiness: min(score, 100),
-            confidenceLow: max(0, score - 8),
-            confidenceHigh: min(100, score + 8),
-            coaching: score >= 80 ? "Hard effort OK" : score >= 70 ? "Moderate training" : "Easy only"
-        )
-    }
-    return ScrollView {
+    ScrollView {
         ReadinessForecastChart()
             .padding()
     }

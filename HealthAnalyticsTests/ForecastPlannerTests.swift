@@ -148,4 +148,249 @@ final class ForecastPlannerTests: XCTestCase {
         days[5].score = nil
         XCTAssertEqual(try XCTUnwrap(learn(days)).episodeCount, 0)
     }
+
+    // MARK: - ForecastPlanner.plan
+    //
+    // A rider with normal 75 and spread 6, so a score of 75 + 6z sits at z. Hard load 3.0.
+
+    private typealias Effort = ReadinessRepository.ForecastEffort
+
+    private var noon: Date { calendar.date(byAdding: .hour, value: 12, to: today)! }
+
+    private func profile(normal: Double = 75, recoveryDays: Int = 1, dip: Double = 1.0) -> ForecastProfile {
+        ForecastProfile(normal: normal, spread: 6, hardLoad: 3, moderateLoad: 1.5, easyLoad: 0.75,
+                        dip: dip, recoveryDays: recoveryDays, episodeCount: 0)
+    }
+
+    private func score(z: Double, normal: Double = 75) -> Int { Int((normal + 6 * z).rounded()) }
+
+    private func input(z: Double, currentZ: Double? = nil, rode: Double = 0, profile p: ForecastProfile? = nil,
+                       acwr: @escaping (Date, [Date: Double]) -> Double = { _, _ in 1.0 }) -> ForecastPlanInput {
+        let p = p ?? profile()
+        return ForecastPlanInput(now: noon, startScore: score(z: z, normal: p.normal),
+                                 currentScore: score(z: currentZ ?? z, normal: p.normal),
+                                 rodeLoadToday: rode, recentLoads: [], profile: p, projectedACWR: acwr)
+    }
+
+    private func plan(_ input: ForecastPlanInput) -> [ReadinessRepository.ReadinessForecastDay] {
+        ForecastPlanner.plan(input, calendar: calendar)
+    }
+
+    private func assertNoAdjacentHard(_ days: [ReadinessRepository.ReadinessForecastDay], line: UInt = #line) {
+        for (a, b) in zip(days, days.dropFirst()) {
+            XCTAssertFalse(a.effort == .hard && b.effort == .hard, "Two Hard days in a row: \(days.map(\.effort))", line: line)
+        }
+    }
+
+    func testPlan_isSevenDaysStartingToday() {
+        let days = plan(input(z: 0))
+        XCTAssertEqual(days.map(\.date), (0...6).map(day))
+    }
+
+    func testCraigsWeek() {
+        let days = plan(input(z: -2))
+        XCTAssertEqual(days[0].effort, .rest)
+        XCTAssertEqual(days[1].effort, .moderate)
+        XCTAssertEqual(days[2].effort, .hard)
+    }
+
+    func testNeverTwoHardDaysInARow_byDefault() {
+        let days = plan(input(z: 1))
+        XCTAssertEqual(days[0].effort, .hard)
+        assertNoAdjacentHard(days)
+    }
+
+    func testSlowRecoverer_twoNonHardDaysAfterEachHard() {
+        let days = plan(input(z: 0, profile: profile(recoveryDays: 2, dip: 1.5)))
+        let hard = days.indices.filter { days[$0].effort == .hard }
+        XCTAssertFalse(hard.isEmpty)
+        for (a, b) in zip(hard, hard.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(b - a, 3, "\(days.map(\.effort))")
+        }
+    }
+
+    func testFastRecoverer_oneNonHardDayIsEnough() {
+        let days = plan(input(z: 0, profile: profile(recoveryDays: 1, dip: 0.5)))
+        let hard = days.indices.filter { days[$0].effort == .hard }
+        XCTAssertTrue(zip(hard, hard.dropFirst()).contains { $1 - $0 == 2 }, "\(days.map(\.effort))")
+    }
+
+    func testBackToBackRule_holdsForTheFastestLearnedRider() {
+        assertNoAdjacentHard(plan(input(z: 2, profile: profile(recoveryDays: 1, dip: 0.5))))
+    }
+
+    func testLowNormalRider_getsModerateAndHard() {
+        let efforts = plan(input(z: 0, profile: profile(normal: 55))).map(\.effort)
+        XCTAssertTrue(efforts.contains(.moderate))
+        XCTAssertTrue(efforts.contains(.hard))
+    }
+
+    func testRodeHardToday() {
+        let days = plan(input(z: 1, currentZ: -2, rode: 3))
+        XCTAssertEqual(days[0].effort, .rest)
+        XCTAssertEqual(days[0].reason, "Rode hard today")
+        XCTAssertNotEqual(days[1].effort, .hard)
+    }
+
+    func testTodaysWord_followsTheInDayScore() {
+        let lower = plan(input(z: 1, currentZ: -1, rode: 3))
+        let later = plan(input(z: 1, currentZ: 0, rode: 3))
+        XCTAssertEqual(lower[0].effort, .easy)
+        XCTAssertEqual(later[0].effort, .moderate, "The word recovers as the day goes on")
+        XCTAssertEqual(lower.dropFirst().map(\.effort), later.dropFirst().map(\.effort))
+    }
+
+    func testBigRideToday_lowersTomorrowMoreThanASmallRide() {
+        let small = plan(input(z: 1, rode: 1))
+        let big = plan(input(z: 1, rode: 9))
+        XCTAssertGreaterThan(big[1].effort, small[1].effort)
+    }
+
+    func testRodeToday_smallRide() {
+        XCTAssertEqual(plan(input(z: 0, rode: 0.6))[0].reason, "Rode today")
+        XCTAssertNil(plan(input(z: 0, rode: 0.3))[0].reason, "A warmup isn't a ride worth naming")
+    }
+
+    func testYesterdaysHardRide_capsToday() {
+        let base = input(z: 1)
+        let yesterday = day(-1)
+        let days = plan(ForecastPlanInput(now: base.now, startScore: base.startScore, currentScore: base.currentScore,
+                                          rodeLoadToday: 0,
+                                          recentLoads: [ForecastHistoryDay(date: yesterday, score: 70, load: 5)],
+                                          profile: base.profile, projectedACWR: base.projectedACWR))
+        XCTAssertEqual(days[0].effort, .moderate)
+        XCTAssertEqual(days[0].reason, "Still recovering from \(yesterday.formatted(.dateTime.weekday(.wide)))")
+    }
+
+    func testLoadCeiling_capsAndRelaxes() {
+        let day3End = day(4)
+        let days = plan(input(z: 1, acwr: { [self] close, _ in
+            close <= day(3) ? 1.6 : close == day3End ? 1.4 : 1.0
+        }))
+        for offset in 0...2 {
+            XCTAssertGreaterThanOrEqual(days[offset].effort, .easy)
+            XCTAssertEqual(days[offset].reason, "Load ramping fast")
+        }
+        XCTAssertEqual(days[3].effort, .moderate)
+        XCTAssertTrue(days[4...].contains { $0.effort == .hard }, "\(days.map(\.effort))")
+    }
+
+    func testLoadCeiling_isACeilingNeverAFloor() {
+        XCTAssertEqual(plan(input(z: -2, acwr: { _, _ in 1.6 }))[0].effort, .rest)
+    }
+
+    func testLoadCeiling_day0ClosesNow_laterDaysCarryThePlan() {
+        var calls: [(close: Date, planned: [Date: Double])] = []
+        let days = plan(input(z: 0, rode: 1.0, acwr: { close, planned in
+            calls.append((close, planned))
+            return 1.0
+        }))
+        XCTAssertEqual(calls[0].close, noon)
+        XCTAssertTrue(calls[0].planned.isEmpty)
+        XCTAssertEqual(calls[1].close, day(2))
+        XCTAssertEqual(calls[1].planned[day(0)] ?? -1, max(0, 1.5 - 1.0), accuracy: 0.001,
+                       "Today's ride is in the workouts already; only the rest of the suggested load is planned")
+        XCTAssertEqual(calls[2].planned.count, 2)
+        XCTAssertEqual(days[0].effort, .moderate)
+    }
+
+    func testHRVPrecursor_capsTodayAndTomorrow() {
+        var i = input(z: 1)
+        i.hrvPrecursorActive = true
+        let days = plan(i)
+        XCTAssertEqual(days[0].effort, .easy)
+        XCTAssertEqual(days[1].effort, .easy)
+        XCTAssertEqual(days[0].reason, "HRV dipping")
+        XCTAssertEqual(days[2].effort, .hard)
+    }
+
+    func testInjuryRisk_capsTodayAndTomorrow() {
+        var i = input(z: 1)
+        i.injuryRiskElevated = true
+        let days = plan(i)
+        XCTAssertEqual(days[0].effort, .moderate)
+        XCTAssertEqual(days[1].effort, .moderate)
+        XCTAssertEqual(days[0].reason, "Load ramping fast")
+        XCTAssertEqual(days[2].effort, .hard)
+    }
+
+    func testSick_isAllRest() {
+        var i = input(z: 2)
+        i.illness = .sick
+        let days = plan(i)
+        XCTAssertEqual(days.map(\.effort), Array(repeating: Effort.rest, count: 7))
+        XCTAssertEqual(days.map(\.reason), Array(repeating: "Sick", count: 7))
+    }
+
+    func testRecovering_daysLeftCapThenFree() {
+        var i = input(z: 1)
+        i.illness = .recovering(daysLeft: 2)
+        let days = plan(i)
+        XCTAssertEqual(days[0].effort, .easy)
+        XCTAssertEqual(days[1].effort, .easy)
+        XCTAssertEqual(days[0].reason, "Easing back after illness")
+        XCTAssertEqual(days[1].reason, "Easing back after illness")
+        XCTAssertEqual(days[2].effort, .hard)
+        XCTAssertNotEqual(days[2].reason, "Easing back after illness")
+    }
+
+    func testNoteCaps_openEndedCapsTheWholeWeek() {
+        var i = input(z: 1)
+        i.noteCaps = [ForecastNoteCap(cap: .easy, reason: "Injury", until: nil)]
+        let days = plan(i)
+        XCTAssertTrue(days.allSatisfy { $0.effort >= .easy }, "\(days.map(\.effort))")
+        XCTAssertTrue(days.allSatisfy { $0.effort == .rest || $0.reason == "Injury" }, "\(days.map(\.reason))")
+    }
+
+    func testNoteCaps_endWithTheNote() {
+        var i = input(z: 1)
+        let tomorrowNoon = calendar.date(byAdding: .hour, value: 12, to: day(1))!
+        i.noteCaps = [ForecastNoteCap(cap: .moderate, reason: "Travel", until: tomorrowNoon)]
+        let days = plan(i)
+        XCTAssertEqual(days[0].effort, .moderate)
+        XCTAssertEqual(days[0].reason, "Travel")
+        XCTAssertEqual(days[1].effort, .moderate)
+        XCTAssertEqual(days[2].effort, .hard)
+    }
+
+    func testMostRestrictiveCapWins_reasonNamesIt() {
+        var i = input(z: 1, acwr: { _, _ in 1.4 })
+        i.noteCaps = [ForecastNoteCap(cap: .easy, reason: "Injury", until: nil)]
+        let days = plan(i)
+        XCTAssertEqual(days[0].effort, .easy)
+        XCTAssertEqual(days[0].reason, "Injury")
+    }
+
+    func testReason_lowRecoveryToday() {
+        var i = input(z: -2)
+        i.shortSleepNights = 2
+        XCTAssertEqual(plan(i)[0].reason, "Two short nights")
+        i.shortSleepNights = 1
+        XCTAssertEqual(plan(i)[0].reason, "Short sleep")
+        i.shortSleepNights = 0
+        XCTAssertEqual(plan(i)[0].reason, "Low recovery")
+    }
+
+    func testReason_bouncingBack() {
+        XCTAssertEqual(plan(input(z: -2))[1].reason, "Bouncing back after rest")
+    }
+
+    func testReason_nilWhenTheDayIsObvious() {
+        XCTAssertNil(plan(input(z: 0))[0].reason)
+    }
+
+    func testNeverSevenRestDays_withoutIllness() {
+        var i = input(z: 0, profile: profile(recoveryDays: 3, dip: 2.0))
+        i = ForecastPlanInput(now: i.now, startScore: 0, currentScore: 0, rodeLoadToday: 0, recentLoads: [],
+                              profile: i.profile, projectedACWR: i.projectedACWR)
+        let days = plan(i)
+        XCTAssertTrue(days[...4].contains { $0.effort != .rest }, "\(days.map(\.effort))")
+    }
+
+    func testHardDaysPerWeekCap_nilMeansNoCap_oneCapsTheWeek() {
+        var i = input(z: 1)
+        XCTAssertGreaterThan(plan(i).filter { $0.effort == .hard }.count, 1)
+        i.hardDaysPerWeekCap = 1
+        XCTAssertEqual(plan(i).filter { $0.effort == .hard }.count, 1)
+    }
 }

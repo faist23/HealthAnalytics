@@ -183,3 +183,154 @@ struct ForecastProfile: Equatable {
         return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - Double(lower))
     }
 }
+
+enum ForecastIllness: Equatable {
+    case none
+    case sick
+    /// `daysLeft` counts today.
+    case recovering(daysLeft: Int)
+}
+
+/// An active Coach note's limit on the plan. A nil `until` caps every day until it is cleared.
+struct ForecastNoteCap: Equatable {
+    let cap: ReadinessRepository.ForecastEffort
+    let reason: String
+    let until: Date?
+}
+
+struct ForecastPlanInput {
+    let now: Date
+    /// Ignores today's rides. Where the stepping into tomorrow starts, so a ride isn't counted twice.
+    let startScore: Int
+    /// The in-day score. Decides today's word, which moves with today's rides and the clock.
+    let currentScore: Int
+    /// Load of the workouts stored so far today.
+    let rodeLoadToday: Double
+    /// Complete days ending yesterday.
+    let recentLoads: [ForecastHistoryDay]
+    let profile: ForecastProfile
+    var illness: ForecastIllness = .none
+    var hrvPrecursorActive = false
+    var injuryRiskElevated = false
+    var noteCaps: [ForecastNoteCap] = []
+    var shortSleepNights = 0
+    /// Release 2 fills this from the learned illness and crash history. Nil means no cap.
+    var hardDaysPerWeekCap: Int? = nil
+    /// (window close, planned load by start of day) → ACWR, from the one ACWR engine.
+    let projectedACWR: (Date, [Date: Double]) -> Double
+}
+
+enum ForecastPlanner {
+    typealias Effort = ReadinessRepository.ForecastEffort
+    typealias Day = ReadinessRepository.ReadinessForecastDay
+
+    static let horizonDays = 7
+    /// Hard-day and HRV warnings describe now, so they hold for today and tomorrow only.
+    static let nearTermDays = 2
+    /// Under this a workout is a warmup, the same line the sick-day proxy uses.
+    static let namedRideLoad = 0.5
+
+    /// Each day builds on the one before: the day's effort moves the next morning.
+    static func plan(_ input: ForecastPlanInput, calendar: Calendar) -> [Day] {
+        let profile = input.profile
+        let today = calendar.startOfDay(for: input.now)
+        var hardDates = input.recentLoads.filter { profile.isHard(load: $0.load) }
+            .map { calendar.startOfDay(for: $0.date) }
+        var planned: [Date: Double] = [:]
+        var z = profile.z(Double(input.startScore))
+        var previous: Effort?
+        var days: [Day] = []
+
+        for offset in 0..<horizonDays {
+            guard let date = calendar.date(byAdding: .day, value: offset, to: today),
+                  let dayEnd = calendar.date(byAdding: .day, value: 1, to: date)
+            else { break }
+
+            let byRecovery = profile.band(z: offset == 0 ? profile.z(Double(input.currentScore)) : z)
+            let acwr = input.projectedACWR(offset == 0 ? input.now : dayEnd, planned)
+            let caps = caps(for: input, offset: offset, date: date, acwr: acwr, hardDates: hardDates, calendar: calendar)
+            let binding = caps.max { $0.cap < $1.cap }
+            let effort = max(byRecovery, binding?.cap ?? .hard)
+
+            days.append(Day(date: date, effort: effort, reason: reason(
+                input: input, offset: offset, effort: effort, byRecovery: byRecovery,
+                binding: binding, previous: previous)))
+
+            let rode = offset == 0 ? input.rodeLoadToday : 0
+            var impulse = profile.lift(effort)
+            if rode > 0 { impulse = min(impulse, profile.rideEffect(load: rode)) }
+            z = profile.rho * z + impulse
+
+            planned[date] = max(0, profile.typicalLoad(effort) - rode)
+            if effort == .hard || profile.isHard(load: rode) { hardDates.append(date) }
+            previous = effort
+        }
+        return days
+    }
+
+    /// Every limit on this day, in the order a tie names its reason.
+    private static func caps(for input: ForecastPlanInput, offset: Int, date: Date, acwr: Double,
+                             hardDates: [Date], calendar: Calendar) -> [(cap: Effort, reason: String)] {
+        var caps: [(cap: Effort, reason: String)] = []
+
+        switch input.illness {
+        case .none: break
+        case .sick: caps.append((.rest, illnessSick))
+        case .recovering(let daysLeft):
+            if offset < daysLeft { caps.append((.easy, illnessRecovering)) }
+        }
+
+        for note in input.noteCaps where note.until.map({ date < $0 }) ?? true {
+            caps.append((note.cap, note.reason))
+        }
+
+        if offset < nearTermDays, input.hrvPrecursorActive { caps.append((.easy, "HRV dipping")) }
+
+        if acwr > 1.5 {
+            caps.append((.easy, loadRamping))
+        } else if acwr > 1.3 {
+            caps.append((.moderate, loadRamping))
+        }
+        if offset < nearTermDays, input.injuryRiskElevated { caps.append((.moderate, loadRamping)) }
+
+        let lastHard = hardDates.filter { date > $0 }.max()
+        if let lastHard,
+           let gap = calendar.dateComponents([.day], from: lastHard, to: date).day,
+           gap <= input.profile.recoveryDays {
+            caps.append((.moderate, "Still recovering from \(lastHard.formatted(.dateTime.weekday(.wide)))"))
+        }
+
+        if let weeklyCap = input.hardDaysPerWeekCap,
+           let weekStart = calendar.date(byAdding: .day, value: -6, to: date),
+           hardDates.filter({ $0 >= weekStart && $0 < date }).count >= weeklyCap {
+            caps.append((.moderate, "Enough hard days this week"))
+        }
+        return caps
+    }
+
+    private static let illnessSick = "Sick"
+    private static let illnessRecovering = "Easing back after illness"
+    private static let loadRamping = "Load ramping fast"
+
+    /// The one fact that best explains the day. Nil when the day is simply what recovery allows.
+    private static func reason(input: ForecastPlanInput, offset: Int, effort: Effort, byRecovery: Effort,
+                               binding: (cap: Effort, reason: String)?, previous: Effort?) -> String? {
+        if let binding, binding.reason == illnessSick || binding.reason == illnessRecovering {
+            return binding.reason
+        }
+        if offset == 0 {
+            if input.profile.isHard(load: input.rodeLoadToday) { return "Rode hard today" }
+            if input.rodeLoadToday >= namedRideLoad { return "Rode today" }
+        }
+        if let binding, binding.cap > byRecovery { return binding.reason }
+        if offset == 0, effort > .moderate {
+            switch input.shortSleepNights {
+            case 0: return "Low recovery"
+            case 1: return "Short sleep"
+            default: return "Two short nights"
+            }
+        }
+        if let previous, previous >= .easy, effort < previous { return "Bouncing back after rest" }
+        return nil
+    }
+}
