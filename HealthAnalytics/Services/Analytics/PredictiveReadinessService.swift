@@ -38,7 +38,8 @@ nonisolated class PredictiveReadinessService {
         stravaActivities: [StravaActivity],
         healthKitWorkouts: [WorkoutData],
         ftpSnapshots: [StoredFTPSnapshot] = [],
-        referenceDate: Date = Date()
+        referenceDate: Date = Date(),
+        plannedDailyLoads: [Date: Double] = [:]
     ) -> ReadinessAssessment {
 
         // Combine all workouts
@@ -48,8 +49,8 @@ nonisolated class PredictiveReadinessService {
         let sorted = allWorkouts.sorted { $0.startDate > $1.startDate }
 
         // Calculate training loads
-        let chronicLoad = calculateChronicLoad(workouts: sorted, ftpSnapshots: ftpSnapshots, referenceDate: referenceDate)
-        let acuteLoad = calculateAcuteLoad(workouts: sorted, ftpSnapshots: ftpSnapshots, referenceDate: referenceDate)
+        let chronicLoad = calculateChronicLoad(workouts: sorted, ftpSnapshots: ftpSnapshots, referenceDate: referenceDate, plannedDailyLoads: plannedDailyLoads)
+        let acuteLoad = calculateAcuteLoad(workouts: sorted, ftpSnapshots: ftpSnapshots, referenceDate: referenceDate, plannedDailyLoads: plannedDailyLoads)
         
         // Calculate ratio
         let acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1.0
@@ -129,20 +130,16 @@ nonisolated class PredictiveReadinessService {
     /// Calculate chronic load (28-day rolling average) as of `referenceDate`.
     /// Window is `[referenceDate - 28 days, referenceDate]` and the daily average
     /// divides by 28 regardless of how many workouts actually fall in the window.
-    private func calculateChronicLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot], referenceDate: Date) -> Double {
+    private func calculateChronicLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot], referenceDate: Date,
+                                      plannedDailyLoads: [Date: Double] = [:]) -> Double {
         let calendar = Calendar.current
 
         guard let twentyEightDaysAgo = calendar.date(byAdding: .day, value: -28, to: referenceDate) else {
             return 0
         }
 
-        let recentWorkouts = workouts.filter { $0.startDate >= twentyEightDaysAgo && $0.startDate <= referenceDate }
-
-        guard !recentWorkouts.isEmpty else { return 0 }
-
-        let totalLoad = recentWorkouts.reduce(0.0) { sum, workout in
-            sum + calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
-        }
+        let totalLoad = windowLoad(workouts: workouts, ftpSnapshots: ftpSnapshots, from: twentyEightDaysAgo,
+                                   through: referenceDate, plannedDailyLoads: plannedDailyLoads)
 
         // Daily average over 28 days
         return totalLoad / 28.0
@@ -151,23 +148,29 @@ nonisolated class PredictiveReadinessService {
     /// Calculate acute load (7-day rolling average) as of `referenceDate`.
     /// Window is `[referenceDate - 7 days, referenceDate]` and the daily average
     /// divides by 7 regardless of how many workouts actually fall in the window.
-    private func calculateAcuteLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot], referenceDate: Date) -> Double {
+    private func calculateAcuteLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot], referenceDate: Date,
+                                    plannedDailyLoads: [Date: Double] = [:]) -> Double {
         let calendar = Calendar.current
 
         guard let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: referenceDate) else {
             return 0
         }
 
-        let recentWorkouts = workouts.filter { $0.startDate >= sevenDaysAgo && $0.startDate <= referenceDate }
-
-        guard !recentWorkouts.isEmpty else { return 0 }
-
-        let totalLoad = recentWorkouts.reduce(0.0) { sum, workout in
-            sum + calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
-        }
+        let totalLoad = windowLoad(workouts: workouts, ftpSnapshots: ftpSnapshots, from: sevenDaysAgo,
+                                   through: referenceDate, plannedDailyLoads: plannedDailyLoads)
 
         // Daily average over 7 days
         return totalLoad / 7.0
+    }
+
+    /// Everything in `[start, end]`: stored workouts, plus the forecast's planned days (keyed by start of day).
+    private func windowLoad(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot], from start: Date, through end: Date,
+                            plannedDailyLoads: [Date: Double]) -> Double {
+        let ridden = workouts.filter { $0.startDate >= start && $0.startDate <= end }.reduce(0.0) { sum, workout in
+            sum + calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
+        }
+        let planned = plannedDailyLoads.filter { $0.key >= start && $0.key <= end }.values.reduce(0, +)
+        return ridden + planned
     }
 
     /// Zone weights: exponential scaling so Z5/Z6 cost reflects actual physiological demand.

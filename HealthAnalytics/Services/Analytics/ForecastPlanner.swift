@@ -170,7 +170,7 @@ struct ForecastProfile: Equatable {
 
     // MARK: - Statistics
 
-    private static func median(_ values: [Double]) -> Double? {
+    static func median(_ values: [Double]) -> Double? {
         values.isEmpty ? nil : percentile(values, 0.5)
     }
 
@@ -182,6 +182,12 @@ struct ForecastProfile: Equatable {
         let upper = min(lower + 1, sorted.count - 1)
         return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - Double(lower))
     }
+}
+
+/// A built plan, and the profile it was judged against.
+struct ForecastPlan {
+    let days: [ReadinessRepository.ReadinessForecastDay]
+    let profile: ForecastProfile
 }
 
 enum ForecastIllness: Equatable {

@@ -33,6 +33,17 @@ struct MasterCoachEngine {
             let daysSince = calendar.dateComponents([.day], from: lastSickDay, to: today).day ?? .max
             return daysSince <= recoveringDays ? .recovering : .none
         }
+
+        /// Days still recovering, counting today; 0 when not recovering. Same rule as `from`.
+        static func recoveringDaysLeft(_ spells: [(start: Date, end: Date?)], now: Date = Date(),
+                                       calendar: Calendar = .current) -> Int {
+            guard from(spells, now: now, calendar: calendar) == .recovering else { return 0 }
+            let today = calendar.startOfDay(for: now)
+            guard let lastSickDay = spells.compactMap(\.end).map({ calendar.startOfDay(for: $0) }).filter({ $0 <= today }).max(),
+                  let daysSince = calendar.dateComponents([.day], from: lastSickDay, to: today).day
+            else { return 0 }
+            return recoveringDays - daysSince + 1
+        }
     }
 
     struct StateVector {

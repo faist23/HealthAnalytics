@@ -88,6 +88,9 @@ class ReadinessRepository: ObservableObject {
     /// this the replay reused the cache and dropped the note; a note expiring (its TTL) changes
     /// the paragraph too.
     private var lastActiveMemoryIDs: Set<UUID>?
+    /// The plan's store inputs. A zone backfill or a recomputed row moves the plan without
+    /// moving any count or latest date the fingerprint can see.
+    private var lastForecastSignature: Int?
 
     /// Set when a refresh arrives while `performFullAnalysis` is mid-flight, so the
     /// run can re-check the store on the way out instead of the request being lost.
@@ -194,6 +197,7 @@ class ReadinessRepository: ObservableObject {
         lastActivePatternTypes = nil
         lastIllnessState = nil
         lastActiveMemoryIDs = nil
+        lastForecastSignature = nil
         analysisError = nil
         patternAnalysisError = nil
         isAppInForeground = Self.applicationIsInForeground
@@ -471,7 +475,10 @@ class ReadinessRepository: ObservableObject {
                illnessState: fetchIllnessState(context: modelContext),
                lastIllnessState: lastIllnessState,
                activeMemoryIDs: fetchActiveMemoryIDs(context: modelContext),
-               lastActiveMemoryIDs: lastActiveMemoryIDs
+               lastActiveMemoryIDs: lastActiveMemoryIDs,
+               forecastSignature: forecastInputSignature(context: modelContext),
+               lastForecastSignature: lastForecastSignature,
+               maxAge: Self.forecastLiveRefreshInterval
            ) {
             #if DEBUG
             print("✅ ReadinessRepository: Using cached unified analysis")
@@ -758,17 +765,45 @@ class ReadinessRepository: ObservableObject {
             )
 
             // 9. Generate Master Coach Message
-            let computedForecast = compute7DayForecast(modelContext: modelContext, acwr: readinessAssessmentResult.acwr)
-            let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? Date()
-            let nextDayCoaching = computedForecast?.first(where: { calendar.isDate($0.date, inSameDayAs: nextDay) })?.coaching
             let activePatternTypes = fetchActivePatternTypes(context: modelContext)
             let illnessState = fetchIllnessState(context: modelContext)
-            
+
             let allMemories = (try? modelContext.fetch(FetchDescriptor<CoachMemoryNote>())) ?? []
             // Taken once, before synthesis: a note expiring mid-run must not leave the cache
             // key without a note the paragraph still mentions.
             let activeMemoryIDs = Set(allMemories.filter(\.isCurrentlyActive).map(\.id))
-            
+
+            // Tomorrow starts from a score that ignores today's rides, because `baseReadiness.score`
+            // reads them through the ACR bracket and the plan already counts them by their load.
+            let forecastStartScore = readinessAnalyzer.analyzeReadiness(
+                restingHR: rhrData,
+                hrv: hrvData,
+                sleep: sleepData,
+                workouts: workouts.filter { $0.startDate < today },
+                stravaActivities: [],
+                nutrition: []
+            )?.score ?? baseReadiness.score
+            let forecastIllness = forecastIllness(state: illnessState, context: modelContext, now: now)
+            let forecastSignature = forecastInputSignature(context: modelContext, now: now)
+            func buildForecast() -> Result<ForecastPlan?, Error> {
+                Result {
+                    try computeForecastPlan(
+                        modelContext: modelContext,
+                        startScore: forecastStartScore,
+                        currentScore: intraDay.currentScore,
+                        illness: forecastIllness,
+                        activePatterns: activePatternTypes,
+                        memories: allMemories,
+                        injuryRisk: riskAssessment.riskLevel,
+                        sleep: sleepData,
+                        now: now
+                    )
+                }
+            }
+            let computedForecast = Self.forecastAfterRead(buildForecast().map { $0?.days }, last: self.forecast, now: now)
+            let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? Date()
+            let nextDayCoaching = computedForecast?.first(where: { calendar.isDate($0.date, inSameDayAs: nextDay) })?.coaching
+
             let coachState = MasterCoachEngine.StateVector(
                 morningScore: baseReadiness.score,
                 currentScore: intraDay.currentScore,
@@ -851,6 +886,7 @@ class ReadinessRepository: ObservableObject {
             self.lastActivePatternTypes = activePatternTypes
             self.lastIllnessState = illnessState
             self.lastActiveMemoryIDs = activeMemoryIDs
+            self.lastForecastSignature = forecastSignature
 
             // Persist today's readiness score for 90-day back-to-back crash pattern detection.
             let todayWorkoutsForLoad = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: today) }
@@ -867,13 +903,13 @@ class ReadinessRepository: ObservableObject {
                 modelContext: modelContext
             )
 
-            // 7-day readiness forecast (requires 14 days of stored scores).
+            // 7-day plan (requires 14 days of stored scores).
             // If nil, force a HealthKit backfill to fill any gaps and retry once.
             if let f = computedForecast {
                 self.forecast = f
             } else {
                 await backfillHistoricalScores(modelContext: modelContext, force: true)
-                self.forecast = compute7DayForecast(modelContext: modelContext, acwr: readinessAssessmentResult.acwr)
+                self.forecast = Self.forecastAfterRead(buildForecast().map { $0?.days }, last: self.forecast, now: now)
             }
 
             #if DEBUG
@@ -1160,108 +1196,159 @@ class ReadinessRepository: ObservableObject {
         UserDefaults.standard.set(true, forKey: udKey)
     }
 
-    // MARK: - 7-Day Readiness Forecast
+    // MARK: - 7-Day Forecast Plan
 
-    /// Computes a 7-day readiness forecast from the last 14 StoredDailyScore entries.
-    /// Returns nil when fewer than 14 stored scores exist (insufficient trend window).
-    /// Published as `self.forecast` at the end of performFullAnalysis().
-    /// `acwr` is the assessment's ACWR and only bends the regression (>1.3 decays, <0.8 lifts;
-    /// nil or in between drifts toward 75). The per-day load ceiling is computed separately.
-    /// Passed in, never read from `currentReadiness`, so a test can't inherit the app's state.
-    func compute7DayForecast(modelContext: ModelContext, acwr: Double?) -> [ReadinessForecastDay]? {
+    /// How long a published analysis can be reused. Today's word follows the in-day score,
+    /// which moves with the clock and steps, and neither is in the fingerprint. Nothing is
+    /// scheduled: this only decides what the next open, return to the app or sync does.
+    nonisolated static let forecastLiveRefreshInterval: TimeInterval = 15 * 60
+
+    /// Everything the plan reads from the store, as of one moment.
+    struct ForecastStoreSnapshot {
+        /// Complete days in the last 90, ascending.
+        let days: [ForecastHistoryDay]
+        /// Stored workouts over the same span and today, for the ACWR engine.
+        let workouts: [WorkoutData]
+        let ftpSnapshots: [StoredFTPSnapshot]
+        let rodeLoadToday: Double
+        /// Hash of the rows and every workout's load. Today's row is left out: analysis rewrites it.
+        let signature: Int
+    }
+
+    /// Complete days merge duplicates by `dateString` (a stored `date` can drift across midnight)
+    /// at the highest load and that row's score. A day's load is the larger of its row and its
+    /// stored rides, since a row can go stale either way. A day with no row has a nil score.
+    /// Throws on a failed fetch: an empty read must never look like a rider with no history.
+    func loadForecastHistory(context: ModelContext, now: Date) throws -> ForecastStoreSnapshot {
         let calendar = Calendar.current
-        let cutoff = calendar.date(byAdding: .day, value: -14, to: Date()) ?? Date()
-        let predicate = #Predicate<StoredDailyScore> { $0.date >= cutoff }
-        var descriptor = FetchDescriptor(predicate: predicate)
-        descriptor.sortBy = [SortDescriptor(\.date)]
-        let recent = (try? modelContext.fetch(descriptor)) ?? []
-        // Deduplicate by calendar day — duplicate-day rows from a race condition or
-        // schema migration would corrupt the OLS input (two identical X-coords).
-        let deduped = Dictionary(
-            recent.map { (Self.dailyScoreDateFormatter.string(from: $0.date), $0) },
-            uniquingKeysWith: { $1 }
-        ).values.sorted { $0.date < $1.date }
-        guard deduped.count >= 14 else { return nil }
-        let last14 = Array(deduped.suffix(14))
+        let today = calendar.startOfDay(for: now)
+        guard let start = calendar.date(byAdding: .day, value: -ForecastProfile.trainingWindowDays, to: today),
+              let rowFetchStart = calendar.date(byAdding: .day, value: -1, to: start)
+        else { return ForecastStoreSnapshot(days: [], workouts: [], ftpSnapshots: [], rodeLoadToday: 0, signature: 0) }
 
-        // Linear regression on last 14 readiness scores
-        let xVals = (0..<14).map { Double($0) }
-        let yVals = last14.map { Double($0.readinessScore) }
-        guard let reg = StatisticalValidator.linearRegression(x: xVals, y: yVals) else { return nil }
+        let rows = try context.fetch(FetchDescriptor<StoredDailyScore>(predicate: #Predicate { $0.date >= rowFetchStart }))
+        let stored = try context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.startDate >= start }))
+        let ftpSnapshots = try context.fetch(FetchDescriptor<StoredFTPSnapshot>())
 
-        // ACWR modifier from the assessment's ACWR (passed in)
-
-        // Workouts for the per-day load ceiling below. The chronic window for the
-        // last forecast day reaches back to today-21, so 30 days covers every day.
-        let loadWindowStart = calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-        let forecastWorkouts = ((try? modelContext.fetch(FetchDescriptor<StoredWorkout>(
-            predicate: #Predicate { $0.startDate >= loadWindowStart }
-        ))) ?? []).map { WorkoutData(from: $0) }
-        let forecastFTP = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
-
-        // Pure regression + ACWR modifier. No intra-forecast workout simulation:
-        // a coaching-label feedback loop here (hard day → -25 next day) turns a
-        // flat history into a sawtooth forecast and breaks the documented
-        // contract (flat trend → near baseline; ACWR>1.3 → monotonic decay).
-        var days: [ReadinessForecastDay] = []
-        for d in 1...7 {
-            let xDay = Double(13 + d)  // extends the trend beyond the 14-day window
-            var predicted = reg.slope * xDay + reg.intercept
-
-            if let acwr {
-                if acwr > 1.3 {
-                    predicted -= predicted * 0.03 * Double(d)  // decay 3%/day under overload
-                } else if acwr < 0.8 {
-                    predicted += predicted * 0.02 * Double(d)  // improve 2%/day during underload
-                } else {
-                    // Homeostasis: in the sweet spot, naturally drift back towards optimal baseline (75)
-                    predicted += (75.0 - predicted) * 0.10 * Double(d)
-                }
-            } else {
-                predicted += (75.0 - predicted) * 0.10 * Double(d)
-            }
-
-            let clamped = max(20.0, min(100.0, predicted))
-            let score = Int(clamped.rounded())
-            let date = calendar.date(byAdding: .day, value: d, to: calendar.startOfDay(for: Date())) ?? Date()
-
-            // Recovery is only half the answer. A well-recovered body carrying a
-            // sharp load ramp must not be told "Hard effort OK" while the Load tab
-            // is saying to back off — same reconciliation `reconcileAdvice` does for
-            // the Coach tab, where injury risk overrides a green HRV reading.
-            //
-            // The ceiling is computed per forecast day rather than from today's
-            // ACWR: this forecast assumes no further workouts (see the note above),
-            // so the 7-day acute window empties as the horizon extends and the load
-            // constraint genuinely relaxes. Asking the one ACWR engine for a future
-            // reference date models exactly that — no future workouts exist in the
-            // array, so it returns the ratio you'd have on that day having rested.
-            // Same "a day's window closes at the end of that day" rule as
-            // PredictiveReadinessService.windowEnd — but the whole day is in the
-            // future here, so there's no `now` to clamp against.
-            let dayEnd = calendar.date(byAdding: .day, value: 1, to: date) ?? date
-            let projectedACWR = predictiveReadinessService.calculateReadiness(
-                stravaActivities: [],
-                healthKitWorkouts: forecastWorkouts,
-                ftpSnapshots: forecastFTP,
-                referenceDate: dayEnd
-            ).acwr
-
-            let byRecovery: ForecastEffort = score >= 80 ? .hard
-                                           : score >= 70 ? .moderate
-                                           : score >= 60 ? .easy
-                                           : .rest
-            let byLoad: ForecastEffort = projectedACWR > 1.5 ? .easy
-                                       : projectedACWR > 1.3 ? .moderate
-                                       : .hard
-
-            days.append(ReadinessForecastDay(
-                date: date,
-                effort: max(byRecovery, byLoad),
-                reason: nil
-            ))
+        var bestRow: [Date: StoredDailyScore] = [:]
+        for row in rows {
+            let parsed = Self.dailyScoreDateFormatter.date(from: row.dateString) ?? row.date
+            let day = calendar.startOfDay(for: parsed)
+            guard day >= start, day < today else { continue }
+            if let best = bestRow[day], best.dailyLoad >= row.dailyLoad { continue }
+            bestRow[day] = row
         }
-        return days
+
+        let workouts = stored.map { WorkoutData(from: $0) }
+        var hasher = Hasher()
+        var rideLoads: [Date: Double] = [:]
+        for workout in stored.sorted(by: { $0.id < $1.id }) {
+            let load = predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: workout), ftpSnapshots: ftpSnapshots)
+            rideLoads[calendar.startOfDay(for: workout.startDate), default: 0] += load
+            hasher.combine(workout.id)
+            hasher.combine((load * 100).rounded())
+        }
+
+        let days = Set(bestRow.keys).union(rideLoads.keys.filter { $0 < today }).sorted().map { day in
+            ForecastHistoryDay(date: day, score: bestRow[day]?.readinessScore,
+                               load: max(bestRow[day]?.dailyLoad ?? 0, rideLoads[day] ?? 0))
+        }
+        for day in days {
+            hasher.combine(day.date)
+            hasher.combine(day.score)
+            hasher.combine((day.load * 100).rounded())
+        }
+        return ForecastStoreSnapshot(days: days, workouts: workouts, ftpSnapshots: ftpSnapshots,
+                                     rodeLoadToday: rideLoads[today] ?? 0, signature: hasher.finalize())
+    }
+
+    /// Nil on a failed read, which says nothing about whether the store moved.
+    func forecastInputSignature(context: ModelContext, now: Date = Date()) -> Int? {
+        (try? loadForecastHistory(context: context, now: now))?.signature
+    }
+
+    /// Nil below 14 scored days. `startScore` ignores today's rides; `currentScore` is the in-day
+    /// score that decides today's word. Rebuilt from the store on every analysis.
+    func computeForecastPlan(modelContext: ModelContext, startScore: Int, currentScore: Int,
+                             illness: ForecastIllness, activePatterns: Set<PatternType>,
+                             memories: [CoachMemoryNote],
+                             injuryRisk: InjuryRiskCalculator.RiskLevel,
+                             sleep: [HealthDataPoint], now: Date = Date()) throws -> ForecastPlan? {
+        let calendar = Calendar.current
+        let store = try loadForecastHistory(context: modelContext, now: now)
+        guard let profile = ForecastProfile.learn(history: store.days, today: now, calendar: calendar) else { return nil }
+
+        let service = predictiveReadinessService
+        let input = ForecastPlanInput(
+            now: now,
+            startScore: startScore,
+            currentScore: currentScore,
+            rodeLoadToday: store.rodeLoadToday,
+            recentLoads: store.days,
+            profile: profile,
+            illness: illness,
+            hrvPrecursorActive: activePatterns.contains(.hrvPrecursor),
+            injuryRiskElevated: injuryRisk == .high || injuryRisk == .veryHigh,
+            noteCaps: Self.forecastNoteCaps(memories),
+            shortSleepNights: Self.shortSleepNights(sleep: sleep, now: now, calendar: calendar),
+            projectedACWR: { close, planned in
+                service.calculateReadiness(stravaActivities: [], healthKitWorkouts: store.workouts,
+                                           ftpSnapshots: store.ftpSnapshots, referenceDate: close,
+                                           plannedDailyLoads: planned).acwr
+            }
+        )
+        return ForecastPlan(days: ForecastPlanner.plan(input, calendar: calendar), profile: profile)
+    }
+
+    /// A failed read keeps the last plan while it still starts today. It never falls back to
+    /// "no history", and yesterday's plan would call yesterday Today.
+    static func forecastAfterRead(_ read: Result<[ReadinessForecastDay]?, Error>, last: [ReadinessForecastDay]?,
+                                  now: Date = Date()) -> [ReadinessForecastDay]? {
+        switch read {
+        case .success(let days):
+            return days
+        case .failure:
+            guard let first = last?.first, Calendar.current.isDate(first.date, inSameDayAs: now) else { return nil }
+            return last
+        }
+    }
+
+    /// Injury caps at Easy; Travel and Stress at Moderate. Other notes don't limit the plan.
+    private static func forecastNoteCaps(_ memories: [CoachMemoryNote]) -> [ForecastNoteCap] {
+        memories.filter(\.isCurrentlyActive).compactMap { note in
+            switch note.category {
+            case "Injury": return ForecastNoteCap(cap: .easy, reason: "Injury", until: note.expiresAt)
+            case "Travel": return ForecastNoteCap(cap: .moderate, reason: "Travel", until: note.expiresAt)
+            case "Stress": return ForecastNoteCap(cap: .moderate, reason: "Stress", until: note.expiresAt)
+            default: return nil
+            }
+        }
+    }
+
+    /// The latest consecutive nights, up to 2, under 85% of the rider's 28-day median sleep.
+    static func shortSleepNights(sleep: [HealthDataPoint], now: Date, calendar: Calendar) -> Int {
+        let today = calendar.startOfDay(for: now)
+        guard let windowStart = calendar.date(byAdding: .day, value: -ForecastProfile.normalWindowDays, to: today),
+              let staleBefore = calendar.date(byAdding: .day, value: -2, to: today) else { return 0 }
+        let recent = sleep.filter { $0.date >= windowStart && $0.date <= now }.sorted { $0.date > $1.date }
+        guard let usual = ForecastProfile.median(recent.map(\.value)), let newest = recent.first,
+              newest.date >= staleBefore else { return 0 }
+        return recent.prefix(2).prefix { $0.value < usual * 0.85 }.count
+    }
+
+    /// What the plan should know about the illness log. A failed log read keeps the state's
+    /// whole recovery window rather than ending it early.
+    private func forecastIllness(state: MasterCoachEngine.IllnessState, context: ModelContext, now: Date) -> ForecastIllness {
+        switch state {
+        case .none: return .none
+        case .sick: return .sick
+        case .recovering:
+            guard let events = try? context.fetch(FetchDescriptor<IllnessEvent>()) else {
+                return .recovering(daysLeft: MasterCoachEngine.IllnessState.recoveringDays)
+            }
+            let spells = events.map { (start: $0.startDate, end: $0.endDate) }
+            return .recovering(daysLeft: MasterCoachEngine.IllnessState.recoveringDaysLeft(spells, now: now))
+        }
     }
 
     // MARK: - Primary Activity Detection (moved from ReadinessViewModel)
@@ -1358,11 +1445,17 @@ class ReadinessRepository: ObservableObject {
         lastIllnessState: MasterCoachEngine.IllnessState? = MasterCoachEngine.IllnessState.none,
         activeMemoryIDs: Set<UUID> = [],
         lastActiveMemoryIDs: Set<UUID>? = [],
+        forecastSignature: Int? = nil,
+        lastForecastSignature: Int? = nil,
+        maxAge: TimeInterval? = nil,
         now: Date = Date()
     ) -> Bool {
         guard let lastAnalysisDate,
               Calendar.current.isDate(lastAnalysisDate, inSameDayAs: now)
         else { return false }
+        if let maxAge, now.timeIntervalSince(lastAnalysisDate) > maxAge { return false }
+        // A failed signature read says nothing about the store, so it can't force a re-run.
+        if let forecastSignature, forecastSignature != lastForecastSignature { return false }
         return fingerprint == lastFingerprint && activePatternTypes == lastActivePatternTypes
             && illnessState == lastIllnessState && activeMemoryIDs == lastActiveMemoryIDs
     }

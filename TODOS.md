@@ -38,6 +38,15 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~20min)
 
+### Forecast release 2: learned limit on hard days per week
+**Priority:** P2. Agreed with Craig when the forecast plan was designed (`docs/superpowers/specs/2026-11-03-forecast-plan-design.md`).
+
+**What:** "If the app sees trends where I get sick after three hard days in a 7 day stretch it should be aware when coming up with the forecast." Teach the pattern engine how many hard days in a week come before an illness or crash, and pass the result as `ForecastPlanInput.hardDaysPerWeekCap`.
+
+**Why:** until this exists the plan can alternate Hard and Easy, which schedules 3 or 4 Hard days in a week.
+
+**Blocked by:** logged illnesses only started in v0.1.21, so it starts on the step-count sick-day proxy. It needs its own design.
+
 ### Leftovers after the v0.1.23.0 dead-code removal
 **Priority:** P4 — surfaced by the v0.1.23.0 adversarial review; none affects behavior
 
