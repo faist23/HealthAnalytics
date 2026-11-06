@@ -800,19 +800,21 @@ class ReadinessRepository: ObservableObject {
                     )
                 }
             }
-            let computedForecast = Self.forecastAfterRead(buildForecast().map { $0?.days }, last: self.forecast, now: now)
-            let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? Date()
-            let nextDayCoaching = computedForecast?.first(where: { calendar.isDate($0.date, inSameDayAs: nextDay) })?.coaching
+            let forecastRead = buildForecast()
+            let computedForecast = Self.forecastAfterRead(forecastRead.map { $0?.days }, last: self.forecast, now: now)
 
-            let coachState = MasterCoachEngine.StateVector(
+            let coachState = Self.coachState(
+                plan: computedForecast,
+                profile: (try? forecastRead.get())??.profile,
+                startScore: forecastStartScore,
                 morningScore: baseReadiness.score,
                 currentScore: intraDay.currentScore,
-                nextDayForecast: nextDayCoaching,
                 acwr: readinessAssessmentResult.acwr,
                 injuryRisk: riskAssessment.riskLevel,
-                activePatterns: activePatternTypes.map(\.rawValue).sorted(),
+                activePatterns: activePatternTypes,
                 memories: allMemories,
-                illness: illnessState
+                illness: illnessState,
+                now: now
             )
             let masterCoachMessage = await MasterCoachEngine.generateMessage(state: coachState)
             
@@ -1311,6 +1313,31 @@ class ReadinessRepository: ObservableObject {
             guard let first = last?.first, Calendar.current.isDate(first.date, inSameDayAs: now) else { return nil }
             return last
         }
+    }
+
+    /// The Coach reads the plan's words, so the paragraph and the card can't disagree. Days are
+    /// found by date: a plan kept after a failed read may no longer line up by position.
+    static func coachState(plan: [ReadinessForecastDay]?, profile: ForecastProfile?, startScore: Int, morningScore: Int,
+                           currentScore: Int, acwr: Double, injuryRisk: InjuryRiskCalculator.RiskLevel,
+                           activePatterns: Set<PatternType>, memories: [CoachMemoryNote],
+                           illness: MasterCoachEngine.IllnessState, now: Date) -> MasterCoachEngine.StateVector {
+        let calendar = Calendar.current
+        func planned(_ offset: Int) -> ReadinessForecastDay? {
+            guard let date = calendar.date(byAdding: .day, value: offset, to: now) else { return nil }
+            return plan?.first { calendar.isDate($0.date, inSameDayAs: date) }
+        }
+        return MasterCoachEngine.StateVector(
+            morningScore: morningScore,
+            currentScore: currentScore,
+            nextDayForecast: planned(1)?.coaching,
+            acwr: acwr,
+            injuryRisk: injuryRisk,
+            activePatterns: activePatterns.map(\.rawValue).sorted(),
+            memories: memories,
+            illness: illness,
+            todayEffort: planned(0)?.effort,
+            startedLow: profile.map { $0.band(z: $0.z(Double(startScore))) >= .easy }
+        )
     }
 
     /// Injury caps at Easy; Travel and Stress at Moderate. Other notes don't limit the plan.

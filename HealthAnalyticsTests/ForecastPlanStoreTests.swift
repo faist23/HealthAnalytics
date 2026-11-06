@@ -216,6 +216,57 @@ final class ForecastPlanStoreTests: XCTestCase {
         XCTAssertEqual(R.forecastAfterRead(.success(oldPlan), last: nil, now: noon)?.first?.date, day(-1))
     }
 
+    // MARK: - Coach agreement
+
+    private func coachState(_ plan: ForecastPlan?, start: Int, current: Int) -> MasterCoachEngine.StateVector {
+        ReadinessRepository.coachState(
+            plan: plan?.days, profile: plan?.profile, startScore: start, morningScore: start, currentScore: current,
+            acwr: 1.0, injuryRisk: .low, activePatterns: [], memories: [], illness: .none, now: noon)
+    }
+
+    func testCoachAgreement_todayAndTomorrowMatchThePlan() throws {
+        insertRows(1...30)
+        try ctx.save()
+        let plan = try XCTUnwrap(repo.computeForecastPlan(
+            modelContext: ctx, startScore: 63, currentScore: 63, illness: .none, activePatterns: [],
+            memories: [], injuryRisk: .low, sleep: [], now: noon))
+        let state = coachState(plan, start: 63, current: 63)
+
+        XCTAssertEqual(state.todayEffort, plan.days[0].effort)
+        XCTAssertEqual(plan.days[0].effort, .rest, "Fixture must make the word differ from what 63% alone would say")
+        XCTAssertEqual(state.nextDayForecast, plan.days[1].coaching)
+        XCTAssertEqual(state.startedLow, true)
+        XCTAssertTrue(MasterCoachEngine.generateHeuristicMessage(state: state).contains("Prioritize rest"))
+    }
+
+    func testCoachAgreement_todaysRideMovesTheCoachWord() throws {
+        insertRows(1...30)
+        insertRide("big-morning", daysAgo: 0, hours: 4)
+        try ctx.save()
+        let plan = try XCTUnwrap(repo.computeForecastPlan(
+            modelContext: ctx, startScore: 81, currentScore: 60, illness: .none, activePatterns: [],
+            memories: [], injuryRisk: .low, sleep: [], now: noon))
+        let state = coachState(plan, start: 81, current: 60)
+        XCTAssertEqual(state.todayEffort, .rest)
+        XCTAssertEqual(state.startedLow, false, "They started fresh; the ride brought them down")
+        XCTAssertTrue(MasterCoachEngine.generateHeuristicMessage(state: state).contains("Rest for the remainder of the day."))
+    }
+
+    func testCoachState_withoutAPlanKeepsScoreBands() {
+        let state = coachState(nil, start: 80, current: 80)
+        XCTAssertNil(state.todayEffort)
+        XCTAssertNil(state.nextDayForecast)
+        XCTAssertNil(state.startedLow)
+    }
+
+    func testCoachState_aPlanFromAnotherDayIsNotToday() {
+        let stale = [ReadinessRepository.ReadinessForecastDay(date: day(-1), effort: .hard, reason: nil)]
+        let state = ReadinessRepository.coachState(
+            plan: stale, profile: nil, startScore: 80, morningScore: 80, currentScore: 80,
+            acwr: 1.0, injuryRisk: .low, activePatterns: [], memories: [], illness: .none, now: noon)
+        XCTAssertNil(state.todayEffort)
+    }
+
     // MARK: - The cache
 
     func testCache_workoutStoredAfterAnalysisChangesThePlan() throws {

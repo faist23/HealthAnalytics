@@ -55,6 +55,10 @@ struct MasterCoachEngine {
         let activePatterns: [String]
         let memories: [CoachMemoryNote]
         let illness: IllnessState
+        /// The plan's word for today. Nil when there is no plan yet; the score bands decide then.
+        let todayEffort: ReadinessRepository.ForecastEffort?
+        /// Whether the morning started below the rider's own usual. Nil falls back to under 70.
+        let startedLow: Bool?
 
         init(
             morningScore: Int,
@@ -64,7 +68,9 @@ struct MasterCoachEngine {
             injuryRisk: InjuryRiskCalculator.RiskLevel,
             activePatterns: [String] = [],
             memories: [CoachMemoryNote] = [],
-            illness: IllnessState = .none
+            illness: IllnessState = .none,
+            todayEffort: ReadinessRepository.ForecastEffort? = nil,
+            startedLow: Bool? = nil
         ) {
             self.morningScore = morningScore
             self.currentScore = currentScore
@@ -74,6 +80,8 @@ struct MasterCoachEngine {
             self.activePatterns = activePatterns
             self.memories = memories
             self.illness = illness
+            self.todayEffort = todayEffort
+            self.startedLow = startedLow
         }
     }
 
@@ -124,6 +132,7 @@ struct MasterCoachEngine {
         - Athlete Notes: \(memoriesContext.isEmpty ? "None" : memoriesContext)
         - Forecast: \(state.nextDayForecast ?? "Unknown")
         - Illness: \(state.illness)
+        - Today's effort: \(state.todayEffort?.label ?? "Unknown")
         """
         
         // Simulate network delay for LLM processing (1.5 seconds)
@@ -192,33 +201,56 @@ struct MasterCoachEngine {
 
         // 2. Intraday fatigue branch
         if isFatiguedIntraday {
-            if state.morningScore >= 70 && state.currentScore < 50 {
-                return "You woke up primed at \(state.morningScore)%, and you used it well. You're down to \(state.currentScore)% now, so take it easy the rest of the day.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
-            } else if state.morningScore >= 70 && state.currentScore >= 50 {
-                return "You woke up at \(state.morningScore)% and put in work. You're at \(state.currentScore)% now. Focus on active recovery.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
+            let startedLow = state.startedLow ?? (state.morningScore < 70)
+            let closing: String?
+            switch state.todayEffort {
+            case .hard: closing = "You still have room for hard work today."
+            case .moderate: closing = "You still have room for moderate work today."
+            case .easy: closing = "Keep the rest of today easy."
+            case .rest: closing = "Rest for the remainder of the day."
+            case nil: closing = nil
+            }
+            if !startedLow && state.currentScore < 50 {
+                return "You woke up primed at \(state.morningScore)%, and you used it well. You're down to \(state.currentScore)% now\(closing.map { ". \($0)" } ?? ", so take it easy the rest of the day.")\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
+            } else if !startedLow {
+                return "You woke up at \(state.morningScore)% and put in work. You're at \(state.currentScore)% now. \(closing ?? "Focus on active recovery.")\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
             } else {
-                return "You started the day fatigued at \(state.morningScore)%, and your recent effort dropped you to \(state.currentScore)%. Prioritize deep rest.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
+                return "You started the day fatigued at \(state.morningScore)%, and your recent effort dropped you to \(state.currentScore)%. \(closing ?? "Prioritize deep rest.")\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
             }
         }
 
         // 3. Injury risk
         if state.injuryRisk == .high || state.injuryRisk == .veryHigh {
-            return "You're \(state.currentScore)% recovered, but injury risk is elevated from load spikes. Swap hard sessions for easy aerobic work.\(sleepNote)\(forecastText)\(memoryNote)"
+            let instruction: String
+            switch state.todayEffort {
+            case .hard, .moderate: instruction = "Keep today moderate, with no hard sessions."
+            case .easy: instruction = "Keep today easy."
+            case .rest: instruction = "Take today off."
+            case nil: instruction = "Swap hard sessions for easy aerobic work."
+            }
+            return "You're \(state.currentScore)% recovered, but injury risk is elevated from load spikes. \(instruction)\(sleepNote)\(forecastText)\(memoryNote)"
         }
 
         // 4. Baseline readiness — performance windows upgrade the message
         let isPeaking = patterns.contains("performancePeak")
         let isTapering = patterns.contains("tapering")
 
-        if state.currentScore >= 80 {
+        // The plan's word decides when there is one: "good" is relative to this rider's normal.
+        let isStrong = state.todayEffort.map { $0 == .hard } ?? (state.currentScore >= 80)
+        let isSolid = state.todayEffort.map { $0 == .moderate } ?? (state.currentScore >= 60)
+
+        if isStrong {
             if isPeaking {
                 return "Your recovery is excellent (\(state.currentScore)%) and your pattern engine shows you're in a peak form window — ideal timing for a race or benchmark effort.\(forecastText)\(memoryNote)"
             }
             if isTapering {
                 return "Your recovery is excellent (\(state.currentScore)%) and your training volume is down with HRV trending up. If you're tapering for an event, that's exactly the shape you want.\(forecastText)\(memoryNote)"
             }
-            return "Your recovery is excellent (\(state.currentScore)%). You're ready for intensity today.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
-        } else if state.currentScore >= 60 {
+            let opening = state.todayEffort == nil
+                ? "Your recovery is excellent (\(state.currentScore)%)."
+                : "You're \(state.currentScore)% recovered, which is high for you."
+            return "\(opening) You're ready for intensity today.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
+        } else if isSolid {
             if isPeaking {
                 return "Your recovery is solid (\(state.currentScore)%) and your training data shows a peak form window forming — consider a quality session today.\(loadNote)\(forecastText)\(memoryNote)"
             }
@@ -226,8 +258,13 @@ struct MasterCoachEngine {
                 return "Your recovery is solid (\(state.currentScore)%) and your training volume is down with HRV recovering. If this is a planned taper, hold intensity and keep volume low — and if it wasn't, you're not losing the fitness you built.\(loadNote)\(forecastText)\(memoryNote)"
             }
             return "You're \(state.currentScore)% recovered — enough for moderate work, but listen to your body.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
+        } else if state.todayEffort == .easy {
+            return "You're \(state.currentScore)% recovered, a bit below your usual. Keep today easy.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         } else {
-            return "Your recovery is suppressed (\(state.currentScore)%). Prioritize rest to bounce back.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
+            let opening = state.todayEffort == .rest
+                ? "Your recovery is well below your usual (\(state.currentScore)%)."
+                : "Your recovery is suppressed (\(state.currentScore)%)."
+            return "\(opening) Prioritize rest to bounce back.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         }
     }
 }
