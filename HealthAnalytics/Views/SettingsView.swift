@@ -99,6 +99,12 @@ struct SettingsView: View {
                         }
 
                         NavigationLink {
+                            ForecastCheckView()
+                        } label: {
+                            Label("Forecast Check", systemImage: "checkmark.circle")
+                        }
+
+                        NavigationLink {
                             CoachMemoryView()
                         } label: {
                             Label("Coach Memory", systemImage: "brain.head.profile")

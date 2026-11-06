@@ -425,4 +425,61 @@ final class ForecastPlannerTests: XCTestCase {
         let plain = ReadinessRepository.ReadinessForecastDay(date: today, effort: .easy, reason: nil)
         XCTAssertEqual(ForecastPlanCard.accessibilityLabel(for: plain, now: noon, calendar: calendar), "Today, Easy")
     }
+
+    // MARK: - Forecast Check replay
+    //
+    // A flat 70 with no load: spread 4, so a Moderate day (z 0) lifts tomorrow to z 0.35 and
+    // the plan suggests Hard. A real next morning of 70 is Moderate (one off), 72 Hard (exact),
+    // 40 Rest (a miss).
+
+    private func replay(_ days: [(score: Int?, load: Double)], window: Int = 10) -> ForecastCheckResult {
+        ForecastPlanner.replay(history: history(days), days: window, today: today, calendar: calendar)
+    }
+
+    func testReplay_skipsDaysWithoutEnoughEarlierHistory() {
+        XCTAssertEqual(replay(flat(16), window: 60).daysChecked, 1, "Only the last pair has 14 days before it")
+        XCTAssertEqual(replay(flat(10), window: 60).daysChecked, 0)
+    }
+
+    func testReplay_skipsDaysMissingAScoreOnEitherSide() {
+        var days = flat(40)
+        days[35].score = nil
+        XCTAssertEqual(replay(days).daysChecked, 7, "Of 9 pairs in the window, day 35 breaks two")
+    }
+
+    func testReplay_neverSeesTheDayItPredicts() throws {
+        var low = flat(40), lower = flat(40)
+        low[39].score = 40
+        lower[39].score = 30
+        let a = try XCTUnwrap(replay(low).recentMisses.first)
+        let b = try XCTUnwrap(replay(lower).recentMisses.first)
+        XCTAssertEqual(a, b, "The suggestion for that day can't move with what happened on it")
+    }
+
+    func testReplay_countsExactAndWithinOne() {
+        var days = flat(40)
+        days[37].score = 72     // exact
+        days[39].score = 40     // a miss
+        let result = replay(days)
+        XCTAssertEqual(result.daysChecked, 9)
+        XCTAssertEqual(result.exact, 1, "The Hard suggested for the 72 morning; every other match is one off")
+        XCTAssertEqual(result.withinOne, 8)
+        XCTAssertEqual(result.recentMisses.map(\.date), [day(-1)])
+        XCTAssertEqual(result.recentMisses.first?.suggested, .hard)
+        XCTAssertEqual(result.recentMisses.first?.actual, .rest)
+    }
+
+    func testReplay_missesAreNewestFirstAndCapped() {
+        var days = flat(80)
+        for index in stride(from: 21, to: 80, by: 3) { days[index].score = 40 }
+        let misses = replay(days, window: 60).recentMisses
+        XCTAssertEqual(misses.count, 10)
+        XCTAssertEqual(misses.map(\.date), misses.map(\.date).sorted(by: >))
+    }
+
+    func testReplay_reportsTheCurrentLearnedRecovery() {
+        let result = replay(episodes(count: 6, mornings: [60, 62]), window: 60)
+        XCTAssertEqual(result.recoveryDays, 2)
+        XCTAssertEqual(result.episodeCount, 6)
+    }
 }

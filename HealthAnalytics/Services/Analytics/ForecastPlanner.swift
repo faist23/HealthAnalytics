@@ -340,3 +340,67 @@ enum ForecastPlanner {
         return nil
     }
 }
+
+/// How the plan would have done on the rider's own past, for Settings → Forecast Check.
+struct ForecastCheckResult: Equatable {
+    struct Miss: Equatable {
+        let date: Date
+        let suggested: ReadinessRepository.ForecastEffort
+        let actual: ReadinessRepository.ForecastEffort
+    }
+
+    let daysChecked: Int
+    let exact: Int
+    /// The same level or one step off, so it includes `exact`.
+    let withinOne: Int
+    /// Newest first, at most `ForecastPlanner.maximumListedMisses`.
+    let recentMisses: [Miss]
+    let recoveryDays: Int
+    let episodeCount: Int
+}
+
+extension ForecastPlanner {
+    static let maximumListedMisses = 10
+
+    /// For each of the last `days` days D with a score on D and D+1, learns only from the days
+    /// before D, plans from D's score and actual load, and compares day 1 with the band D+1's
+    /// real score fell in. Recovery bands and recovery time only: pattern and note history
+    /// isn't dated, and the load ceiling is held open so the two caps' effects stay separate.
+    static func replay(history: [ForecastHistoryDay], days: Int, today: Date, calendar: Calendar) -> ForecastCheckResult {
+        let start = calendar.startOfDay(for: today)
+        let byDay = Dictionary(history.map { (calendar.startOfDay(for: $0.date), $0) }, uniquingKeysWith: { $1 })
+        var checked = 0, exact = 0, withinOne = 0
+        var misses: [ForecastCheckResult.Miss] = []
+
+        for back in stride(from: days, through: 2, by: -1) {
+            guard let date = calendar.date(byAdding: .day, value: -back, to: start),
+                  let next = calendar.date(byAdding: .day, value: 1, to: date),
+                  let noon = calendar.date(byAdding: .hour, value: 12, to: date),
+                  let score = byDay[date]?.score, let nextScore = byDay[next]?.score
+            else { continue }
+            let before = history.filter { calendar.startOfDay(for: $0.date) < date }
+            guard let profile = ForecastProfile.learn(history: before, today: date, calendar: calendar) else { continue }
+
+            let input = ForecastPlanInput(now: noon, startScore: score, currentScore: score,
+                                          rodeLoadToday: byDay[date]?.load ?? 0, recentLoads: before,
+                                          profile: profile, projectedACWR: { _, _ in 1.0 })
+            let suggested = plan(input, calendar: calendar)[1].effort
+            let actual = profile.band(z: profile.z(Double(nextScore)))
+
+            checked += 1
+            let distance = abs(suggested.rawValue - actual.rawValue)
+            if distance == 0 { exact += 1 }
+            if distance <= 1 {
+                withinOne += 1
+            } else {
+                misses.append(.init(date: next, suggested: suggested, actual: actual))
+            }
+        }
+
+        let current = ForecastProfile.learn(history: history, today: start, calendar: calendar)
+        return ForecastCheckResult(daysChecked: checked, exact: exact, withinOne: withinOne,
+                                   recentMisses: Array(misses.reversed().prefix(maximumListedMisses)),
+                                   recoveryDays: current?.recoveryDays ?? ForecastProfile.defaultRecoveryDays,
+                                   episodeCount: current?.episodeCount ?? 0)
+    }
+}

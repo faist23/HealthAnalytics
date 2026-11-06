@@ -1302,6 +1302,14 @@ class ReadinessRepository: ObservableObject {
         return ForecastPlan(days: ForecastPlanner.plan(input, calendar: calendar), profile: profile)
     }
 
+    /// The plan replayed against the last 60 days. Nil on a failed read.
+    func forecastCheck(modelContext: ModelContext, now: Date = Date()) -> ForecastCheckResult? {
+        guard let store = try? loadForecastHistory(context: modelContext, now: now) else { return nil }
+        return ForecastPlanner.replay(history: store.days, days: Self.forecastCheckDays, today: now, calendar: .current)
+    }
+
+    nonisolated static let forecastCheckDays = 60
+
     /// A failed read keeps the last plan while it still starts today. It never falls back to
     /// "no history", and yesterday's plan would call yesterday Today.
     static func forecastAfterRead(_ read: Result<[ReadinessForecastDay]?, Error>, last: [ReadinessForecastDay]?,
