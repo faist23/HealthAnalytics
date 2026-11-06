@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import SwiftUI
 @testable import HealthAnalytics
 
 @MainActor
@@ -392,5 +393,36 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertGreaterThan(plan(i).filter { $0.effort == .hard }.count, 1)
         i.hardDaysPerWeekCap = 1
         XCTAssertEqual(plan(i).filter { $0.effort == .hard }.count, 1)
+    }
+
+    // MARK: - The card
+
+    func testRowTitle_todayAndWeekday() {
+        XCTAssertEqual(ForecastPlanCard.rowTitle(for: today, now: noon, calendar: calendar), "Today")
+        XCTAssertEqual(ForecastPlanCard.rowTitle(for: day(1), now: noon, calendar: calendar),
+                       day(1).formatted(.dateTime.weekday(.wide)))
+    }
+
+    func testRowTitle_staleFirstDayIsNotToday() {
+        XCTAssertEqual(ForecastPlanCard.rowTitle(for: day(-1), now: noon, calendar: calendar),
+                       day(-1).formatted(.dateTime.weekday(.wide)))
+    }
+
+    func testEffortWordAndLight_matchTheSpecTable() {
+        XCTAssertEqual(Effort.rest.word, "Rest")
+        XCTAssertEqual(Effort.easy.word, "Easy")
+        XCTAssertEqual(Effort.moderate.word, "Moderate")
+        XCTAssertEqual(Effort.hard.word, "Hard")
+        XCTAssertEqual(Effort.rest.light, Color.statusWarning)
+        XCTAssertEqual(Effort.easy.light, Color.statusMonitoring)
+        XCTAssertEqual(Effort.moderate.light, Color.statusOptimal)
+        XCTAssertEqual(Effort.hard.light, Color.statusOptimal)
+    }
+
+    func testAccessibilityLabel_readsTheWholeRow() {
+        let row = ReadinessRepository.ReadinessForecastDay(date: today, effort: .moderate, reason: "Rode today")
+        XCTAssertEqual(ForecastPlanCard.accessibilityLabel(for: row, now: noon, calendar: calendar), "Today, Moderate, Rode today")
+        let plain = ReadinessRepository.ReadinessForecastDay(date: today, effort: .easy, reason: nil)
+        XCTAssertEqual(ForecastPlanCard.accessibilityLabel(for: plain, now: noon, calendar: calendar), "Today, Easy")
     }
 }
