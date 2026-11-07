@@ -57,7 +57,7 @@
 **First step:** a read-only check of whether Craig's own rides carry `workoutEffortScore`, including rides from Strava or a bike computer. `estimatedWorkoutEffortScore` is Apple's estimate from the workout, not how it felt, so it can't stand in for the feeling. "Comparable" needs a definition, such as similar duration and power-zone load. This needs its own design.
 
 ### Backfilled score rows sit on a different scale, and the forecast's normal reads them
-**Priority:** P2. Found by the forecast plan's final review.
+**Priority:** P2. Found by the forecast plan's final review. A related scale gap from the ship review belongs in the same fix: live rows keep that day's ride in their score, while the plan's start score leaves today's ride out. On a riding morning the start score can sit several points above a comparable stored row, which at the 4-point spread floor is about one band. Check it against Forecast Check and real mornings before changing anything; a stored pre-ride score would close it.
 
 **What:** `backfillHistoricalScores` scores each day from a two-day biometric window, so HRV and resting HR have no baseline to compare against. Fitness and fatigue also window from `Date()`, not from that row's day. Backfilled rows can therefore land well below what a live score would be, and they can't show a dip after a hard day.
 

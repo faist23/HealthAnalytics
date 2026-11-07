@@ -236,33 +236,33 @@ struct MasterCoachEngine {
         let isTapering = patterns.contains("tapering")
 
         // The plan's word decides when there is one: "good" is relative to this rider's normal.
+        // The printed score is the in-day one, so a comparison with the rider's usual doesn't cite it.
+        let strongOpening = state.todayEffort == nil ? "Your recovery is excellent (\(state.currentScore)%)" : "Your recovery is high for you"
+        let solidOpening = state.todayEffort == nil ? "Your recovery is solid (\(state.currentScore)%)" : "You're \(state.currentScore)% recovered"
         let isStrong = state.todayEffort.map { $0 == .hard } ?? (state.currentScore >= 80)
         let isSolid = state.todayEffort.map { $0 == .moderate } ?? (state.currentScore >= 60)
 
         if isStrong {
             if isPeaking {
-                return "Your recovery is excellent (\(state.currentScore)%) and your pattern engine shows you're in a peak form window — ideal timing for a race or benchmark effort.\(forecastText)\(memoryNote)"
+                return "\(strongOpening) and your pattern engine shows you're in a peak form window — ideal timing for a race or benchmark effort.\(forecastText)\(memoryNote)"
             }
             if isTapering {
-                return "Your recovery is excellent (\(state.currentScore)%) and your training volume is down with HRV trending up. If you're tapering for an event, that's exactly the shape you want.\(forecastText)\(memoryNote)"
+                return "\(strongOpening) and your training volume is down with HRV trending up. If you're tapering for an event, that's exactly the shape you want.\(forecastText)\(memoryNote)"
             }
-            let opening = state.todayEffort == nil
-                ? "Your recovery is excellent (\(state.currentScore)%)."
-                : "You're \(state.currentScore)% recovered, which is high for you."
-            return "\(opening) You're ready for intensity today.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
+            return "\(strongOpening). You're ready for intensity today.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         } else if isSolid {
             if isPeaking {
-                return "Your recovery is solid (\(state.currentScore)%) and your training data shows a peak form window forming — consider a quality session today.\(loadNote)\(forecastText)\(memoryNote)"
+                return "\(solidOpening) and your training data shows a peak form window forming — consider a quality session today.\(loadNote)\(forecastText)\(memoryNote)"
             }
             if isTapering {
-                return "Your recovery is solid (\(state.currentScore)%) and your training volume is down with HRV recovering. If this is a planned taper, hold intensity and keep volume low — and if it wasn't, you're not losing the fitness you built.\(loadNote)\(forecastText)\(memoryNote)"
+                return "\(solidOpening) and your training volume is down with HRV recovering. If this is a planned taper, hold intensity and keep volume low — and if it wasn't, you're not losing the fitness you built.\(loadNote)\(forecastText)\(memoryNote)"
             }
             return "You're \(state.currentScore)% recovered — enough for moderate work, but listen to your body.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         } else if state.todayEffort == .easy {
             return "You're \(state.currentScore)% recovered. Keep today easy.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         } else {
             let opening = state.todayEffort == .rest
-                ? "Your recovery is well below your usual (\(state.currentScore)%)."
+                ? "Your recovery is well below your usual."
                 : "Your recovery is suppressed (\(state.currentScore)%)."
             return "\(opening) Prioritize rest to bounce back.\(loadNote)\(sleepNote)\(forecastText)\(memoryNote)"
         }

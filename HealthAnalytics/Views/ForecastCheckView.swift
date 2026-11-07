@@ -17,10 +17,14 @@ struct ForecastCheckView: View {
     var body: some View {
         List {
             if let result, result.daysChecked > 0 {
-                Section("Tomorrow's suggestion vs. the real morning") {
+                Section {
                     LabeledContent("Same or one step off", value: percent(result.withinOne, of: result.daysChecked))
                     LabeledContent("Same level", value: percent(result.exact, of: result.daysChecked))
                     LabeledContent("Days checked", value: "\(result.daysChecked)")
+                } header: {
+                    Text("Tomorrow's suggestion vs. the real morning")
+                } footer: {
+                    Text("An estimate from stored daily scores. It replays recovery only: load, pattern and note limits aren't included, and stored scores already count that day's ride.")
                 }
                 Section("What it has learned") {
                     LabeledContent("Recovery time", value: result.recoveryDays == 1 ? "1 day" : "\(result.recoveryDays) days")

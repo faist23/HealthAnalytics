@@ -227,6 +227,8 @@ struct ForecastPlanInput {
     var shortSleepNights = 0
     /// Release 2 fills this from the learned illness and crash history. Nil means no cap.
     var hardDaysPerWeekCap: Int? = nil
+    /// Day 0 already happened (Forecast Check): its actual load is all it did, not the plan's suggestion.
+    var firstDayIsFinished = false
     /// (window close, planned load by start of day) → ACWR, from the one ACWR engine.
     let projectedACWR: (Date, [Date: Double]) -> Double
 }
@@ -240,6 +242,9 @@ enum ForecastPlanner {
     static let nearTermDays = 2
     /// Under this a workout is a warmup, the same line the sick-day proxy uses.
     static let namedRideLoad = 0.5
+    /// Below 4 training days in 28 there is too little chronic load for a ratio to mean anything.
+    /// One warmup after a layoff reads as ACWR 4.0 otherwise.
+    static let minimumLoadCeilingShare = 4.0 / 28.0
 
     /// Each day builds on the one before: the day's effort moves the next morning.
     static func plan(_ input: ForecastPlanInput, calendar: Calendar) -> [Day] {
@@ -258,7 +263,9 @@ enum ForecastPlanner {
             else { break }
 
             let byRecovery = profile.band(z: offset == 0 ? profile.z(Double(input.currentScore)) : z)
-            let acwr = input.projectedACWR(offset == 0 ? input.now : dayEnd, planned)
+            let acwr = profile.trainingDayShare >= minimumLoadCeilingShare
+                ? input.projectedACWR(offset == 0 ? input.now : dayEnd, planned)
+                : 1.0
             let caps = caps(for: input, offset: offset, date: date, acwr: acwr, hardDates: hardDates, calendar: calendar)
             let binding = caps.max { $0.cap < $1.cap }
             let effort = max(byRecovery, binding?.cap ?? .hard)
@@ -268,12 +275,13 @@ enum ForecastPlanner {
                 binding: binding, previous: previous)))
 
             let rode = offset == 0 ? input.rodeLoadToday : 0
-            var impulse = profile.lift(effort)
+            let finished = offset == 0 && input.firstDayIsFinished
+            var impulse = finished ? profile.rideEffect(load: rode) : profile.lift(effort)
             if rode > 0 { impulse = min(impulse, profile.rideEffect(load: rode)) }
             z = profile.rho * z + impulse
 
             planned[date] = max(0, profile.typicalLoad(effort) * profile.trainingDayShare - rode)
-            if effort == .hard || profile.isHard(load: rode) { hardDates.append(date) }
+            if (effort == .hard && !finished) || profile.isHard(load: rode) { hardDates.append(date) }
             previous = effort
         }
         return days
@@ -331,11 +339,11 @@ enum ForecastPlanner {
         if let binding, binding.reason == illnessSick || binding.reason == illnessRecovering {
             return binding.reason
         }
+        if let binding, binding.cap > byRecovery { return binding.reason }
         if offset == 0 {
             if input.profile.isHard(load: input.rodeLoadToday) { return "Rode hard today" }
             if input.rodeLoadToday >= namedRideLoad { return "Rode today" }
         }
-        if let binding, binding.cap > byRecovery { return binding.reason }
         if offset == 0, effort > .moderate {
             switch input.shortSleepNights {
             case 0: return "Low recovery"
@@ -375,6 +383,8 @@ extension ForecastPlanner {
     /// before D, plans from D's score and actual load, and compares day 1 with the band D+1's
     /// real score fell in. Recovery bands and recovery time only: pattern and note history
     /// isn't dated, and the load ceiling is held open so the two caps' effects stay separate.
+    /// An estimate: stored rows already include that day's ride, and the live plan starts from
+    /// a score without it, so ride days read a little harsher here than they do live.
     static func replay(history: [ForecastHistoryDay], days: Int, today: Date, calendar: Calendar) -> ForecastCheckResult {
         let start = calendar.startOfDay(for: today)
         let byDay = Dictionary(history.map { (calendar.startOfDay(for: $0.date), $0) }, uniquingKeysWith: { $1 })
@@ -392,7 +402,7 @@ extension ForecastPlanner {
 
             let input = ForecastPlanInput(now: noon, startScore: score, currentScore: score,
                                           rodeLoadToday: byDay[date]?.load ?? 0, recentLoads: before,
-                                          profile: profile, projectedACWR: { _, _ in 1.0 })
+                                          profile: profile, firstDayIsFinished: true, projectedACWR: { _, _ in 1.0 })
             let suggested = plan(input, calendar: calendar)[1].effort
             let actual = profile.band(z: profile.z(Double(nextScore)))
 

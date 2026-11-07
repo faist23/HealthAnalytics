@@ -366,13 +366,13 @@ final class MasterCoachEngineTests: XCTestCase {
     /// Each score would have chosen a different sentence on its own.
     func testTodayEffort_eachWordUsesItsSentence() {
         XCTAssertEqual(planState(morning: 58, current: 58, today: .hard),
-                       "You're 58% recovered, which is high for you. You're ready for intensity today.")
+                       "Your recovery is high for you. You're ready for intensity today.")
         XCTAssertEqual(planState(morning: 90, current: 90, today: .moderate),
                        "You're 90% recovered — enough for moderate work, but listen to your body.")
         XCTAssertEqual(planState(morning: 85, current: 85, today: .easy),
                        "You're 85% recovered. Keep today easy.")
         XCTAssertEqual(planState(morning: 70, current: 70, today: .rest),
-                       "Your recovery is well below your usual (70%). Prioritize rest to bounce back.")
+                       "Your recovery is well below your usual. Prioritize rest to bounce back.")
     }
 
     func testTodayEffort_nilKeepsScoreBands() {
@@ -414,7 +414,7 @@ final class MasterCoachEngineTests: XCTestCase {
     func testTodayEffort_peakWindowNeverShownOnARestDay() {
         for pattern in ["performancePeak", "tapering"] {
             XCTAssertEqual(planState(morning: 85, current: 85, today: .rest, patterns: [pattern]),
-                           "Your recovery is well below your usual (85%). Prioritize rest to bounce back.")
+                           "Your recovery is well below your usual. Prioritize rest to bounce back.")
             XCTAssertFalse(planState(morning: 85, current: 85, today: .easy, patterns: [pattern]).contains("window"))
         }
         XCTAssertTrue(planState(morning: 60, current: 60, today: .hard, patterns: ["performancePeak"]).contains("peak form window"))
@@ -429,5 +429,18 @@ final class MasterCoachEngineTests: XCTestCase {
     /// A load ceiling or an Injury note can make the word Easy with recovery high.
     func testTodayEffort_easyFromACapDoesNotClaimLowRecovery() {
         XCTAssertFalse(planState(morning: 85, current: 85, today: .easy).contains("below your usual"))
+    }
+
+    /// The printed score is the in-day one, which can read above the rider's usual on a low day.
+    func testTodayEffort_comparisonsDoNotCiteTheInDayScore() {
+        let rest = planState(morning: 75, current: 75, today: .rest)
+        XCTAssertFalse(rest.contains("75%"), rest)
+        let hard = planState(morning: 58, current: 58, today: .hard)
+        XCTAssertFalse(hard.contains("58%"), hard)
+    }
+
+    func testTodayEffort_peakWindowUsesTheRidersOwnScale() {
+        let message = planState(morning: 62, current: 62, today: .hard, patterns: ["performancePeak"])
+        XCTAssertFalse(message.contains("excellent"), message)
     }
 }

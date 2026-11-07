@@ -56,7 +56,7 @@ class ReadinessViewModel: ObservableObject {
             .sink { [weak self] analyzing in
                 self?.isLoading = ReadinessRepository.blocksContent(
                     isAnalyzing: analyzing,
-                    hasSnapshot: ReadinessRepository.shared.currentReadiness != nil
+                    snapshotDate: ReadinessRepository.shared.currentReadiness?.date
                 )
             }
     }

@@ -91,6 +91,9 @@ class ReadinessRepository: ObservableObject {
     /// The plan's store inputs. A zone backfill or a recomputed row moves the plan without
     /// moving any count or latest date the fingerprint can see.
     private var lastForecastSignature: Int?
+    /// When the plan last forced a score backfill for lack of history (see `shouldForceScoreBackfill`).
+    private var lastForcedBackfillDate: Date?
+    private struct ForecastInputReadFailed: Error {}
 
     /// Set when a refresh arrives while `performFullAnalysis` is mid-flight, so the
     /// run can re-check the store on the way out instead of the request being lost.
@@ -198,6 +201,7 @@ class ReadinessRepository: ObservableObject {
         lastIllnessState = nil
         lastActiveMemoryIDs = nil
         lastForecastSignature = nil
+        lastForcedBackfillDate = nil
         analysisError = nil
         patternAnalysisError = nil
         isAppInForeground = Self.applicationIsInForeground
@@ -765,10 +769,14 @@ class ReadinessRepository: ObservableObject {
             )
 
             // 9. Generate Master Coach Message
-            let activePatternTypes = fetchActivePatternTypes(context: modelContext)
+            // Read here rather than through the helpers: a failed read must not build a plan with
+            // no Injury or HRV limits, so buildForecast below refuses and the last plan stays.
+            let patternsRead = try? modelContext.fetch(FetchDescriptor<TrainingPattern>())
+            let activePatternTypes = Set((patternsRead ?? []).filter(\.isActive).map(\.patternType))
             let illnessState = fetchIllnessState(context: modelContext)
 
-            let allMemories = (try? modelContext.fetch(FetchDescriptor<CoachMemoryNote>())) ?? []
+            let memoriesRead = try? modelContext.fetch(FetchDescriptor<CoachMemoryNote>())
+            let allMemories = memoriesRead ?? []
             // Taken once, before synthesis: a note expiring mid-run must not leave the cache
             // key without a note the paragraph still mentions.
             let activeMemoryIDs = Set(allMemories.filter(\.isCurrentlyActive).map(\.id))
@@ -787,7 +795,8 @@ class ReadinessRepository: ObservableObject {
             let forecastSignature = forecastInputSignature(context: modelContext, now: now)
             func buildForecast() -> Result<ForecastPlan?, Error> {
                 Result {
-                    try computeForecastPlan(
+                    guard patternsRead != nil, memoriesRead != nil else { throw ForecastInputReadFailed() }
+                    return try computeForecastPlan(
                         modelContext: modelContext,
                         startScore: forecastStartScore,
                         currentScore: Self.forecastTodayScore(
@@ -915,8 +924,15 @@ class ReadinessRepository: ObservableObject {
             if let f = computedForecast {
                 self.forecast = f
             } else {
-                await backfillHistoricalScores(modelContext: modelContext, force: true)
-                self.forecast = Self.forecastAfterRead(buildForecast().map { $0?.days }, last: self.forecast, now: now)
+                var readFailed = false
+                if case .failure = forecastRead { readFailed = true }
+                if Self.shouldForceScoreBackfill(lastAttempt: lastForcedBackfillDate, readFailed: readFailed, now: now) {
+                    lastForcedBackfillDate = now
+                    await backfillHistoricalScores(modelContext: modelContext, force: true)
+                    self.forecast = Self.forecastAfterRead(buildForecast().map { $0?.days }, last: self.forecast, now: now)
+                } else {
+                    self.forecast = nil
+                }
             }
 
             #if DEBUG
@@ -1320,10 +1336,20 @@ class ReadinessRepository: ObservableObject {
         ).currentScore
     }
 
-    /// Only a first load takes the screen. A refresh with something to show runs quietly, since
-    /// analysis now re-runs on most returns to the app.
-    nonisolated static func blocksContent(isAnalyzing: Bool, hasSnapshot: Bool) -> Bool {
-        isAnalyzing && !hasSnapshot
+    /// Only a first load of the day takes the screen. A refresh with today's snapshot to show runs
+    /// quietly, since analysis now re-runs on most returns to the app; yesterday's advice doesn't stay up.
+    nonisolated static func blocksContent(isAnalyzing: Bool, snapshotDate: Date?, now: Date = Date()) -> Bool {
+        guard isAnalyzing else { return false }
+        guard let snapshotDate else { return true }
+        return !Calendar.current.isDate(snapshotDate, inSameDayAs: now)
+    }
+
+    /// A rider who can't reach 14 scored days (no sleep data, say) would otherwise pay for a full
+    /// HealthKit backfill on every analysis, and a failed store read says nothing about missing rows.
+    nonisolated static func shouldForceScoreBackfill(lastAttempt: Date?, readFailed: Bool, now: Date = Date()) -> Bool {
+        guard !readFailed else { return false }
+        guard let lastAttempt else { return true }
+        return !Calendar.current.isDate(lastAttempt, inSameDayAs: now)
     }
 
     /// The plan replayed against the last 60 days. Nil on a failed read.
@@ -1392,7 +1418,12 @@ class ReadinessRepository: ObservableObject {
         let recent = sleep.filter { $0.date >= windowStart && $0.date <= now }.sorted { $0.date > $1.date }
         guard let usual = ForecastProfile.median(recent.map(\.value)), let newest = recent.first,
               newest.date >= staleBefore else { return 0 }
-        return recent.prefix(2).prefix { $0.value < usual * 0.85 }.count
+        guard newest.value < usual * 0.85 else { return 0 }
+        guard recent.count > 1, recent[1].value < usual * 0.85,
+              calendar.dateComponents([.day], from: calendar.startOfDay(for: recent[1].date),
+                                      to: calendar.startOfDay(for: newest.date)).day == 1
+        else { return 1 }
+        return 2
     }
 
     /// What the plan should know about the illness log. A failed log read keeps the state's
