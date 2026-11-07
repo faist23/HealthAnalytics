@@ -3,6 +3,21 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.24.0] - 2026-11-07
+
+### Changed
+
+- **The 7-day forecast is now a plan you can use.** After two short nights and a rest day it used to say Rest for all seven days. It now shows Today plus six days, each with a light, one word (Rest, Easy, Moderate or Hard) and a short reason when the day isn't obvious. Each day builds on the one before, assuming you follow the plan, so a rest day lifts tomorrow and a hard day costs it.
+- **The plan is judged against your own normal.** Hard means clearly above your usual recovery, not above a fixed number, so a rider with a lower normal still gets Hard days. It learns how far you dip after a hard day and how long you take to come back, and it never suggests two Hard days in a row.
+- **Today's word moves with today's workouts.** A ride lowers it, the reason says why, and it recovers through the day. The app refreshes when you open it or come back if the last update is over 15 minutes old.
+- **The plan listens to what the app already knows.** A logged illness, an Injury, Travel or Stress note, an HRV warning, elevated injury risk and a fast load ramp can all limit a day, and the reason names which one.
+- **Coach uses the plan's word for today and tomorrow,** so the paragraph and the card agree.
+- **Refreshing no longer takes the screen away.** Only the first load of the day shows the loading overlay. The Coach refresh button shows its own progress.
+
+### Added
+
+- **A Forecast Check screen in Settings.** See how tomorrow's suggestion would have compared with your real next morning over the last 60 days, along with your learned recovery time.
+
 ## [0.1.23.0] - 2026-11-02
 
 ### Changed
