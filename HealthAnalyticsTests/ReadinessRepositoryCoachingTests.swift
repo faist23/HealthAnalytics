@@ -153,6 +153,47 @@ final class ReadinessRepositoryCacheTests: XCTestCase {
         XCTAssertTrue(canReuse(active: [.tapering], lastActive: [.tapering]))
     }
 
+    private func canReuse(forecastSignature: Int?, lastForecastSignature: Int?,
+                          lastAnalysisDate: Date = Date(), maxAge: TimeInterval? = nil) -> Bool {
+        ReadinessRepository.canReuseCachedAnalysis(
+            lastAnalysisDate: lastAnalysisDate,
+            fingerprint: fingerprint,
+            lastFingerprint: fingerprint,
+            activePatternTypes: [],
+            lastActivePatternTypes: [],
+            forecastSignature: forecastSignature,
+            lastForecastSignature: lastForecastSignature,
+            maxAge: maxAge
+        )
+    }
+
+    func testCanReuse_falseWhenForecastSignatureMoved() {
+        XCTAssertFalse(canReuse(forecastSignature: 2, lastForecastSignature: 1))
+        XCTAssertTrue(canReuse(forecastSignature: 1, lastForecastSignature: 1))
+    }
+
+    /// A failed read says nothing about the store, so it can't be a reason to re-run.
+    func testCanReuse_nilSignatureDoesNotForceARerun() {
+        XCTAssertTrue(canReuse(forecastSignature: nil, lastForecastSignature: 1))
+    }
+
+    /// Today's word follows the in-day score, which moves with the clock and steps.
+    func testCanReuse_falseWhenOlderThanMaxAge() {
+        // Pinned to noon so both ages stay inside one calendar day whenever the test runs.
+        let noon = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date())!
+        func reuse(minutesOld: Double, maxAge: TimeInterval?) -> Bool {
+            ReadinessRepository.canReuseCachedAnalysis(
+                lastAnalysisDate: noon.addingTimeInterval(-minutesOld * 60),
+                fingerprint: fingerprint, lastFingerprint: fingerprint,
+                activePatternTypes: [], lastActivePatternTypes: [],
+                maxAge: maxAge, now: noon)
+        }
+        XCTAssertFalse(reuse(minutesOld: 16, maxAge: 900))
+        XCTAssertTrue(reuse(minutesOld: 14, maxAge: 900))
+        XCTAssertTrue(reuse(minutesOld: 240, maxAge: nil))
+        XCTAssertEqual(ReadinessRepository.forecastLiveRefreshInterval, 900)
+    }
+
     /// The P2 this guards: a pattern expires mid-day, the store doesn't move, and the
     /// Coach paragraph kept citing a card the Patterns tab had already dropped.
     func test_cacheInvalidated_whenPatternExpiresMidDay() {

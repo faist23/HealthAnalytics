@@ -112,8 +112,8 @@ struct RecoveryTabView: View {
                                         overnightRecoveryMultiplier: viewModel.overnightRecoveryMultiplier
                                     )
 
-                                    // 7-Day Readiness Forecast
-                                    ReadinessForecastChart()
+                                    // 7-day plan
+                                    ForecastPlanCard()
 
                                     // 14-Day Signature — back-to-back crash pattern
                                     TrainingSignatureCard()

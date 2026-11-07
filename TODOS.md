@@ -38,6 +38,47 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~20min)
 
+### Forecast release 2: learned limit on hard days per week
+**Priority:** P2. Agreed with Craig when the forecast plan was designed (`docs/superpowers/specs/2026-11-03-forecast-plan-design.md`).
+
+**What:** "If the app sees trends where I get sick after three hard days in a 7 day stretch it should be aware when coming up with the forecast." Teach the pattern engine how many hard days in a week come before an illness or crash, and pass the result as `ForecastPlanInput.hardDaysPerWeekCap`.
+
+**Why:** until this exists the plan can alternate Hard and Easy, which schedules 3 or 4 Hard days in a week.
+
+**Blocked by:** logged illnesses only started in v0.1.21, so it starts on the step-count sick-day proxy. It needs its own design.
+
+### Forecast: the same workout feeling harder is a stress signal
+**Priority:** P2. Craig's idea (2026-11-07).
+
+**What:** "If I do the same workout on two different days and one day it feels moderate and the other day it feels hard, I would conclude my body is having trouble with some kind of stress." When a comparable workout is rated harder than usual, lower the plan's coming days to get more recovery.
+
+**Why:** perceived effort against comparable work can catch stress that HRV, sleep and load miss.
+
+**First step:** a read-only check of whether Craig's own rides carry `workoutEffortScore`, including rides from Strava or a bike computer. `estimatedWorkoutEffortScore` is Apple's estimate from the workout, not how it felt, so it can't stand in for the feeling. "Comparable" needs a definition, such as similar duration and power-zone load. This needs its own design.
+
+### Forecast plan edge cases found by the v0.1.24.0 reviews
+**Priority:** P3. None loses data; all are rare or need real data to judge.
+
+**What:**
+- A failed read just after midnight shows "Forecast available after 14 days of syncing". CLAUDE.md says a failed read never reads as no history; give the card a neutral state.
+- A failed notes, pattern or illness read on a cold launch still leaves the Coach paragraph and the illness cap with nothing to go on.
+- The load ceiling's 4-in-28 training-day gate counts the acute week, so the fourth ride back after a layoff can flip to "Load ramping fast", and a rider training daily under load 1.0 never reaches the gate. Gate on days 8-28 and on chronic load instead, once real comebacks show what it should say.
+- The injury-risk cap also says "Load ramping fast", although risk can come from trends.
+- The Coach refresh spinner can end early when the tap joins a running analysis. The first-load overlay can outlast the snapshot it waited for.
+- The forced score backfill's once-a-day stamp is in memory and counts a failed attempt; the unforced backfill still repeats for a rider with no sleep data.
+- When the forced backfill produces the first plan, the Coach paragraph stays on the score bands until the next trigger.
+- "Rode today" also labels runs and strength sessions. "Bouncing back after rest" also follows a capped Easy day.
+- Forecast Check's oldest replay days learn from about 30 days, since the store read covers 90.
+
+### Backfilled score rows sit on a different scale, and the forecast's normal reads them
+**Priority:** P2. Found by the forecast plan's final review. A related scale gap from the ship review belongs in the same fix: live rows keep that day's ride in their score, while the plan's start score leaves today's ride out. On a riding morning the start score can sit several points above a comparable stored row, which at the 4-point spread floor is about one band. Check it against Forecast Check and real mornings before changing anything; a stored pre-ride score would close it.
+
+**What:** `backfillHistoricalScores` scores each day from a two-day biometric window, so HRV and resting HR have no baseline to compare against. Fitness and fatigue also window from `Date()`, not from that row's day. Backfilled rows can therefore land well below what a live score would be, and they can't show a dip after a hard day.
+
+**Why:** the forecast's normal and learned recovery come from these rows. For up to 28 days after an install or reset, Today can read high whatever the rider's sleep. Rows are never rewritten, and no flag separates backfilled rows from live ones.
+
+**Fix direction:** correct the backfill's windows, or mark backfilled rows and leave them out of `ForecastProfile.learn`.
+
 ### Leftovers after the v0.1.23.0 dead-code removal
 **Priority:** P4 — surfaced by the v0.1.23.0 adversarial review; none affects behavior
 

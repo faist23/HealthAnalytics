@@ -54,7 +54,10 @@ class ReadinessViewModel: ObservableObject {
         repositoryLoadingCancellable = ReadinessRepository.shared.$isAnalyzing
             .receive(on: DispatchQueue.main)
             .sink { [weak self] analyzing in
-                self?.isLoading = analyzing
+                self?.isLoading = ReadinessRepository.blocksContent(
+                    isAnalyzing: analyzing,
+                    snapshotDate: ReadinessRepository.shared.currentReadiness?.date
+                )
             }
     }
 

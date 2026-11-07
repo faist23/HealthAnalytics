@@ -12,6 +12,8 @@ struct CoachTabView: View {
     @Environment(\.modelContext) private var modelContext
     @ObservedObject var syncManager = SyncManager.shared
     @State private var isFirstLoad = true
+    /// A deliberate tap shows work; analysis itself refreshes quietly once there is a snapshot.
+    @State private var isRefreshing = false
     
     var body: some View {
         NavigationStack {
@@ -44,15 +46,22 @@ struct CoachTabView: View {
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
+                        isRefreshing = true
                         Task {
                             await SyncManager.shared.performSmartSync(force: true)
                             await ReadinessRepository.shared.forceRefresh(
                                 modelContext: HealthDataContainer.shared.mainContext
                             )
+                            isRefreshing = false
                         }
                     } label: {
-                        Image(systemName: "arrow.clockwise")
+                        if isRefreshing {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
                     }
+                    .disabled(isRefreshing)
                 }
             }
             .onAppear { isFirstLoad = false }
