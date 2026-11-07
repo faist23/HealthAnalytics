@@ -47,6 +47,15 @@
 
 **Blocked by:** logged illnesses only started in v0.1.21, so it starts on the step-count sick-day proxy. It needs its own design.
 
+### Forecast: the same workout feeling harder is a stress signal
+**Priority:** P2. Craig's idea (2026-11-07).
+
+**What:** "If I do the same workout on two different days and one day it feels moderate and the other day it feels hard, I would conclude my body is having trouble with some kind of stress." When a comparable workout is rated harder than usual, lower the plan's coming days to get more recovery.
+
+**Why:** perceived effort against comparable work can catch stress that HRV, sleep and load miss.
+
+**First step:** a read-only check of whether Craig's own rides carry `workoutEffortScore`, including rides from Strava or a bike computer. `estimatedWorkoutEffortScore` is Apple's estimate from the workout, not how it felt, so it can't stand in for the feeling. "Comparable" needs a definition, such as similar duration and power-zone load. This needs its own design.
+
 ### Backfilled score rows sit on a different scale, and the forecast's normal reads them
 **Priority:** P2. Found by the forecast plan's final review.
 
