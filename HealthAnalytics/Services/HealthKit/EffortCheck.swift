@@ -17,8 +17,11 @@ struct EffortCheckWorkout: Equatable {
     let source: String
     let isCycling: Bool
     let minutes: Int
-    /// The rating the rider gave, 1-10. Nil when none.
+    /// The newest `workoutEffortScore` related to the workout, 1-10. Nil when none. Any app can
+    /// write one, so it is the rider's own only when `ratedBy` is Fitness or the Watch.
     let rated: Double?
+    /// The app that wrote `rated`.
+    let ratedBy: String?
     /// Apple's estimate, 1-10. Nil when none.
     let estimated: Double?
 }
@@ -31,6 +34,12 @@ struct EffortCheckSummary: Equatable {
         let estimated: Int
     }
 
+    /// An app that wrote ratings, and how many.
+    struct Writer: Equatable {
+        let name: String
+        let ratings: Int
+    }
+
     enum Verdict: Equatable {
         case noRides
         case noRatedRides
@@ -40,9 +49,9 @@ struct EffortCheckSummary: Equatable {
         var text: String {
             switch self {
             case .noRides: return "No rides in this period."
-            case .noRatedRides: return "None of your rides carry an effort rating you gave."
-            case .someRidesRated(let rated, let rides): return "\(rated) of your \(rides) rides carry an effort rating you gave."
-            case .allRidesRated(let rides): return "All \(rides) of your rides carry an effort rating you gave."
+            case .noRatedRides: return "None of your rides carry an effort rating, or Effort access is off."
+            case .someRidesRated(let rated, let rides): return "\(rated) of your \(rides) rides carry an effort rating."
+            case .allRidesRated(let rides): return "All \(rides) of your rides carry an effort rating."
             }
         }
     }
@@ -54,6 +63,8 @@ struct EffortCheckSummary: Equatable {
     let ridesRated: Int
     /// Most workouts first, then by name.
     let sources: [Source]
+    /// Who wrote the ratings, most first. Only Fitness or the Watch means the rider rated it.
+    let ratingWriters: [Writer]
 
     var verdict: Verdict {
         if rides == 0 { return .noRides }
@@ -75,7 +86,10 @@ struct EffortCheckSummary: Equatable {
             estimated: workouts.filter { $0.estimated != nil }.count,
             rides: rides.count,
             ridesRated: rides.filter { $0.rated != nil }.count,
-            sources: sources
+            sources: sources,
+            ratingWriters: Dictionary(grouping: workouts.compactMap(\.ratedBy), by: { $0 })
+                .map { Writer(name: $0.key, ratings: $0.value.count) }
+                .sorted { ($0.ratings, $1.name) > ($1.ratings, $0.name) }
         )
     }
 }

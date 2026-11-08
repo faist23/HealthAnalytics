@@ -23,12 +23,19 @@ struct EffortCheckView: View {
                 Section {
                     Text(summary.verdict.text)
                     LabeledContent("Workouts", value: "\(summary.workouts)")
-                    LabeledContent("Rated by you", value: "\(summary.rated)")
+                    LabeledContent("Rated", value: "\(summary.rated)")
                     LabeledContent("Apple's estimate", value: "\(summary.estimated)")
                 } header: {
                     Text("Last 60 days")
                 } footer: {
-                    Text("A rating you gave is one set in the Fitness app or on Apple Watch. Apple's estimate comes from heart rate, so it isn't how the workout felt. If Effort access wasn't allowed, everything reads as not rated.")
+                    Text("A rating is yours when Fitness or Apple Watch wrote it; other apps can write their own. Apple's estimate comes from heart rate, so it isn't how the workout felt. If Effort access wasn't allowed, everything reads as not rated.")
+                }
+                if !summary.ratingWriters.isEmpty {
+                    Section("Ratings written by") {
+                        ForEach(summary.ratingWriters, id: \.name) { writer in
+                            LabeledContent(writer.name, value: "\(writer.ratings)")
+                        }
+                    }
                 }
                 if !summary.sources.isEmpty {
                     Section("By app") {
@@ -42,7 +49,7 @@ struct EffortCheckView: View {
                         ForEach(Array(workouts.enumerated()), id: \.offset) { _, workout in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(workout.date.formatted(date: .abbreviated, time: .omitted)) · \(workout.isCycling ? "Ride" : "Workout") · \(workout.minutes) min")
-                                Text("\(workout.source) · you: \(score(workout.rated)) · Apple: \(score(workout.estimated))")
+                                Text("\(workout.source) · rating: \(score(workout.rated))\(workout.ratedBy.map { " (\($0))" } ?? "") · Apple: \(score(workout.estimated))")
                                     .font(.labelCaption)
                                     .foregroundStyle(Color.textSecondary)
                             }
@@ -56,6 +63,7 @@ struct EffortCheckView: View {
         .foregroundStyle(Color.textPrimary)
         .navigationTitle("Effort Check")
         .task {
+            errorMessage = nil
             do {
                 workouts = try await HealthKitManager.shared.fetchEffortCheckWorkouts()
             } catch {
