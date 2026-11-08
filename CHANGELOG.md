@@ -3,6 +3,16 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.26.0] - 2026-11-07
+
+### Changed
+
+- **How your rides feel now shapes the plan.** Each ride you rate on Apple Watch is compared with your usual rating for rides of similar length and load. When recent rides feel harder than usual, the coming days of the 7-day forecast ease off; when they feel easier, the plan opens up. One odd rating moves it a little and a run of them more, older rides fade, and it never lifts a day past an illness, Coach note, HRV warning, load or recovery limit. On most days it changed the word, the reason line says "Rides feeling harder than usual" or "easier"; when a limit also applies, the limit's reason can show instead.
+
+### Added
+
+- **Effort Check shows how rides feel.** A new section lists each recent rated ride against your usual and the current trend the plan is using.
+
 ## [0.1.25.0] - 2026-11-07
 
 ### Added
