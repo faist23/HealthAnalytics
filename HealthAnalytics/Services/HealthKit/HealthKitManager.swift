@@ -32,6 +32,9 @@ class HealthKitManager: ObservableObject {
         HKObjectType.quantityType(forIdentifier: .cyclingPower)!,
         HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
         HKObjectType.workoutType(),
+        // Effort: a rating the rider gave, and Apple's estimate (Settings → Effort Check)
+        HKObjectType.quantityType(forIdentifier: .workoutEffortScore)!,
+        HKObjectType.quantityType(forIdentifier: .estimatedWorkoutEffortScore)!,
         
         // Nutrition types
         HKObjectType.quantityType(forIdentifier: .dietaryEnergyConsumed)!,
@@ -674,6 +677,43 @@ class HealthKitManager: ObservableObject {
     /// Fetches raw heart-rate samples for a time window.
     /// Used by CardiovascularStrainService to compute intra-day strain.
     /// Returns timestamped (date, bpm) pairs sorted by date ascending.
+    /// Recent workouts with the effort samples Apple Health relates to each one, newest first.
+    /// Asks for read access to the two effort types first, since installs authorized before they
+    /// were added never saw them. HealthKit hides denied reads, so a denial reads as "not rated".
+    func fetchEffortCheckWorkouts(days: Int = 60, now: Date = Date()) async throws -> [EffortCheckWorkout] {
+        let ratedType = HKQuantityType(.workoutEffortScore)
+        let estimatedType = HKQuantityType(.estimatedWorkoutEffortScore)
+        try await healthStore.requestAuthorization(toShare: [], read: [ratedType, estimatedType, HKObjectType.workoutType()])
+
+        let start = Calendar.current.date(byAdding: .day, value: -days, to: now) ?? now
+        let workouts = try await HKSampleQueryDescriptor(
+            predicates: [.workout(HKQuery.predicateForSamples(withStart: start, end: now))],
+            sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)]
+        ).result(for: healthStore)
+
+        func latestScore(_ type: HKQuantityType, for workout: HKWorkout) async throws -> Double? {
+            let related = HKQuery.predicateForWorkoutEffortSamplesRelated(workout: workout, activity: nil)
+            return try await HKSampleQueryDescriptor(
+                predicates: [.quantitySample(type: type, predicate: related)],
+                sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)],
+                limit: 1
+            ).result(for: healthStore).first?.quantity.doubleValue(for: .appleEffortScore())
+        }
+
+        var result: [EffortCheckWorkout] = []
+        for workout in workouts {
+            result.append(EffortCheckWorkout(
+                date: workout.startDate,
+                source: workout.sourceRevision.source.name,
+                isCycling: workout.workoutActivityType == .cycling,
+                minutes: Int((workout.duration / 60).rounded()),
+                rated: try await latestScore(ratedType, for: workout),
+                estimated: try await latestScore(estimatedType, for: workout)
+            ))
+        }
+        return result
+    }
+
     func fetchRawHeartRateSamples(startDate: Date, endDate: Date) async throws -> [(date: Date, bpm: Double)] {
         guard let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
             throw HealthKitError.dataTypeNotAvailable
