@@ -715,6 +715,35 @@ class HealthKitManager: ObservableObject {
         return result
     }
 
+    /// Cycling workouts from every source in the window, each with its newest effort rating
+    /// written by Apple (a `com.apple.` bundle identifier): the rating Craig gives on the Watch.
+    /// Rides without one are left out. Throws when the workout query itself fails.
+    func fetchRecentEffortRatings(days: Int = 14, now: Date = Date()) async throws -> [EffortRatingSample] {
+        let ratedType = HKQuantityType(.workoutEffortScore)
+        let start = Calendar.current.date(byAdding: .day, value: -days, to: Calendar.current.startOfDay(for: now)) ?? now
+        let rides = try await HKSampleQueryDescriptor(
+            predicates: [.workout(NSCompoundPredicate(andPredicateWithSubpredicates: [
+                HKQuery.predicateForSamples(withStart: start, end: now),
+                HKQuery.predicateForWorkouts(with: .cycling)
+            ]))],
+            sortDescriptors: [SortDescriptor(\.startDate)]
+        ).result(for: healthStore)
+
+        var result: [EffortRatingSample] = []
+        for ride in rides {
+            let related = HKQuery.predicateForWorkoutEffortSamplesRelated(workout: ride, activity: nil)
+            let samples = try await HKSampleQueryDescriptor(
+                predicates: [.quantitySample(type: ratedType, predicate: related)],
+                sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)]
+            ).result(for: healthStore)
+            guard let own = samples.first(where: { $0.sourceRevision.source.bundleIdentifier.hasPrefix("com.apple.") })
+            else { continue }
+            result.append(EffortRatingSample(workoutStart: ride.startDate, workoutEnd: ride.endDate,
+                                             rating: own.quantity.doubleValue(for: .appleEffortScore())))
+        }
+        return result
+    }
+
     /// Fetches raw heart-rate samples for a time window.
     /// Used by CardiovascularStrainService to compute intra-day strain.
     /// Returns timestamped (date, bpm) pairs sorted by date ascending.

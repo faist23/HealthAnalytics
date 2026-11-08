@@ -1234,6 +1234,8 @@ class ReadinessRepository: ObservableObject {
         let workouts: [WorkoutData]
         let ftpSnapshots: [StoredFTPSnapshot]
         let rodeLoadToday: Double
+        /// Rides with an Apple Watch effort rating, for the absorption trend.
+        let ratedRides: [RatedRide]
         /// Hash of the rows and every workout's load. Today's row is left out: analysis rewrites it.
         let signature: Int
     }
@@ -1247,7 +1249,7 @@ class ReadinessRepository: ObservableObject {
         let today = calendar.startOfDay(for: now)
         guard let start = calendar.date(byAdding: .day, value: -ForecastProfile.trainingWindowDays, to: today),
               let rowFetchStart = calendar.date(byAdding: .day, value: -1, to: start)
-        else { return ForecastStoreSnapshot(days: [], workouts: [], ftpSnapshots: [], rodeLoadToday: 0, signature: 0) }
+        else { return ForecastStoreSnapshot(days: [], workouts: [], ftpSnapshots: [], rodeLoadToday: 0, ratedRides: [], signature: 0) }
 
         let rows = try context.fetch(FetchDescriptor<StoredDailyScore>(predicate: #Predicate { $0.date >= rowFetchStart }))
         let stored = try context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.startDate >= start }))
@@ -1265,11 +1267,17 @@ class ReadinessRepository: ObservableObject {
         let workouts = stored.map { WorkoutData(from: $0) }
         var hasher = Hasher()
         var rideLoads: [Date: Double] = [:]
+        var ratedRides: [RatedRide] = []
         for workout in stored.sorted(by: { $0.id < $1.id }) {
             let load = predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: workout), ftpSnapshots: ftpSnapshots)
             rideLoads[calendar.startOfDay(for: workout.startDate), default: 0] += load
             hasher.combine(workout.id)
             hasher.combine((load * 100).rounded())
+            hasher.combine(workout.effortRating)
+            if let rating = workout.effortRating, workout.workoutType == .cycling, workout.duration > 0 {
+                ratedRides.append(RatedRide(date: workout.startDate, minutes: workout.duration / 60,
+                                            loadPerHour: load / (workout.duration / 3600), rating: rating))
+            }
         }
 
         let days = Set(bestRow.keys).union(rideLoads.keys.filter { $0 < today }).sorted().map { day in
@@ -1282,7 +1290,8 @@ class ReadinessRepository: ObservableObject {
             hasher.combine((day.load * 100).rounded())
         }
         return ForecastStoreSnapshot(days: days, workouts: workouts, ftpSnapshots: ftpSnapshots,
-                                     rodeLoadToday: rideLoads[today] ?? 0, signature: hasher.finalize())
+                                     rodeLoadToday: rideLoads[today] ?? 0, ratedRides: ratedRides,
+                                     signature: hasher.finalize())
     }
 
     /// Nil on a failed read, which says nothing about whether the store moved.
@@ -1314,6 +1323,7 @@ class ReadinessRepository: ObservableObject {
             injuryRiskElevated: injuryRisk == .high || injuryRisk == .veryHigh,
             noteCaps: Self.forecastNoteCaps(memories),
             shortSleepNights: Self.shortSleepNights(sleep: sleep, now: now, calendar: calendar),
+            absorptionTrend: EffortAbsorption.trend(store.ratedRides, now: now, calendar: calendar),
             projectedACWR: { close, planned in
                 service.calculateReadiness(stravaActivities: [], healthKitWorkouts: store.workouts,
                                            ftpSnapshots: store.ftpSnapshots, referenceDate: close,
@@ -1350,6 +1360,20 @@ class ReadinessRepository: ObservableObject {
         guard !readFailed else { return false }
         guard let lastAttempt else { return true }
         return !Calendar.current.isDate(lastAttempt, inSameDayAs: now)
+    }
+
+    /// Recent rated rides against their usual, and the trend the plan uses. Nil on a failed read.
+    func absorptionSummary(modelContext: ModelContext, now: Date = Date()) -> AbsorptionSummary? {
+        let calendar = Calendar.current
+        guard let store = try? loadForecastHistory(context: modelContext, now: now),
+              let cutoff = calendar.date(byAdding: .day, value: -AbsorptionSummary.shownDays, to: calendar.startOfDay(for: now))
+        else { return nil }
+        let rides = store.ratedRides.filter { $0.date >= cutoff }.sorted { $0.date > $1.date }.map { ride in
+            AbsorptionSummary.Ride(date: ride.date, rating: ride.rating,
+                                   expected: EffortAbsorption.expectedRating(ride, among: store.ratedRides),
+                                   difference: EffortAbsorption.feltDifference(ride, among: store.ratedRides))
+        }
+        return AbsorptionSummary(rides: rides, trend: EffortAbsorption.trend(store.ratedRides, now: now, calendar: calendar))
     }
 
     /// The plan replayed against the last 60 days. Nil on a failed read.

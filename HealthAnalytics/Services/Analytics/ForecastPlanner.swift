@@ -229,6 +229,9 @@ struct ForecastPlanInput {
     var hardDaysPerWeekCap: Int? = nil
     /// Day 0 already happened (Forecast Check): its actual load is all it did, not the plan's suggestion.
     var firstDayIsFinished = false
+    /// How rides have felt lately against comparable ones, in rating points (`EffortAbsorption.trend`).
+    /// Positive means harder than usual. Shifts where tomorrow onward starts; 0 changes nothing.
+    var absorptionTrend = 0.0
     /// (window close, planned load by start of day) → ACWR, from the one ACWR engine.
     let projectedACWR: (Date, [Date: Double]) -> Double
 }
@@ -253,7 +256,12 @@ enum ForecastPlanner {
         var hardDates = input.recentLoads.filter { profile.isHard(load: $0.load) }
             .map { calendar.startOfDay(for: $0.date) }
         var planned: [Date: Double] = [:]
+        // How rides feel shifts tomorrow's starting point, at full strength, and the stepping lets
+        // it fade (shifting today's start instead would be damped by rho before tomorrow). A twin
+        // without the shift tells the reason which days the feel actually moved.
+        let feelShift = EffortAbsorption.zShift(trend: input.absorptionTrend)
         var z = profile.z(Double(input.startScore))
+        var zUnshifted = z
         var previous: Effort?
         var days: [Day] = []
 
@@ -270,15 +278,23 @@ enum ForecastPlanner {
             let binding = caps.max { $0.cap < $1.cap }
             let effort = max(byRecovery, binding?.cap ?? .hard)
 
+            // The feel explains the day only when it changed the word shown: a cap that sets the
+            // same word either way keeps its own reason.
+            let unshiftedEffort = max(profile.band(z: zUnshifted), binding?.cap ?? .hard)
+            let feelMovedDay = offset > 0 && feelShift != 0 && effort != unshiftedEffort
+            // A cap explains the day when it is stricter than recovery would be without the feel.
+            let byRecoveryForReason = offset > 0 ? min(byRecovery, profile.band(z: zUnshifted)) : byRecovery
             days.append(Day(date: date, effort: effort, reason: reason(
-                input: input, offset: offset, effort: effort, byRecovery: byRecovery,
-                binding: binding, previous: previous)))
+                input: input, offset: offset, effort: effort, byRecovery: byRecoveryForReason,
+                binding: binding, previous: previous,
+                feel: feelMovedDay ? (feelShift < 0 ? "Rides feeling harder than usual" : "Rides feeling easier than usual") : nil)))
 
             let rode = offset == 0 ? input.rodeLoadToday : 0
             let finished = offset == 0 && input.firstDayIsFinished
             var impulse = finished ? profile.rideEffect(load: rode) : profile.lift(effort)
             if rode > 0 { impulse = min(impulse, profile.rideEffect(load: rode)) }
-            z = profile.rho * z + impulse
+            z = profile.rho * z + impulse + (offset == 0 ? feelShift : 0)
+            zUnshifted = profile.rho * zUnshifted + impulse
 
             planned[date] = max(0, profile.typicalLoad(effort) * profile.trainingDayShare - rode)
             if (effort == .hard && !finished) || profile.isHard(load: rode) { hardDates.append(date) }
@@ -335,7 +351,8 @@ enum ForecastPlanner {
 
     /// The one fact that best explains the day. Nil when the day is simply what recovery allows.
     private static func reason(input: ForecastPlanInput, offset: Int, effort: Effort, byRecovery: Effort,
-                               binding: (cap: Effort, reason: String)?, previous: Effort?) -> String? {
+                               binding: (cap: Effort, reason: String)?, previous: Effort?,
+                               feel: String? = nil) -> String? {
         if let binding, binding.reason == illnessSick || binding.reason == illnessRecovering {
             return binding.reason
         }
@@ -351,6 +368,7 @@ enum ForecastPlanner {
             default: return "Two short nights"
             }
         }
+        if let feel { return feel }
         // After a ride the word was low from riding, so the next day isn't a bounce back from rest.
         let rodeYesterday = offset == 1 && input.rodeLoadToday >= namedRideLoad
         if let previous, previous >= .easy, effort < previous, !rodeYesterday { return "Bouncing back after rest" }

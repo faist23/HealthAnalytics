@@ -30,6 +30,9 @@ final class StoredWorkout {
     /// connected athlete's activities); nil until a list has. Only rides tagged with the
     /// connected athlete can be removed as deleted on Strava.
     var stravaAthleteId: Int?
+    /// The ride's Apple Watch effort rating (1-10), copied from Apple Health on each recent sync;
+    /// nil when unrated. Only Apple-written ratings count (`fetchRecentEffortRatings`).
+    var effortRating: Double?
 
     init(id: String, title: String? = nil, type: HKWorkoutActivityType, startDate: Date, duration: TimeInterval, distance: Double?, power: Double?, normalizedPower: Double? = nil, energy: Double?, hr: Double?, source: String) {
         self.id = id

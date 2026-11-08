@@ -499,4 +499,67 @@ final class ForecastPlanStoreTests: XCTestCase {
         XCTAssertTrue(R.shouldForceScoreBackfill(lastAttempt: day(-1), readFailed: false, now: noon))
         XCTAssertFalse(R.shouldForceScoreBackfill(lastAttempt: nil, readFailed: true, now: noon))
     }
+
+    // MARK: - Absorption trend
+
+    /// Ten one-hour rides rated 5, 31-58 days ago (outside the load limit's 28 days, so it stays
+    /// open), then the last two rated `recent`.
+    private func insertRatedRides(recent: Double?) {
+        for (n, daysAgo) in stride(from: 31, through: 58, by: 3).enumerated() {
+            insertRide("base-\(n)", daysAgo: daysAgo, hours: 1).effortRating = 5
+        }
+        insertRide("recent-1", daysAgo: 1, hours: 1).effortRating = recent
+        insertRide("recent-2", daysAgo: 2, hours: 1).effortRating = recent
+    }
+
+    func testStorePlan_ratedRidesBuildTheTrend() throws {
+        insertRows(1...30)
+        insertRatedRides(recent: 5)
+        try ctx.save()
+        let usual = try XCTUnwrap(plan(start: 76, current: 75))
+
+        for ride in try ctx.fetch(FetchDescriptor<StoredWorkout>()) where ride.id.hasPrefix("recent") { ride.effortRating = 8 }
+        try ctx.save()
+        let harder = try XCTUnwrap(plan(start: 76, current: 75))
+
+        XCTAssertEqual(harder[0].effort, usual[0].effort, "Today's word doesn't move")
+        XCTAssertTrue(zip(usual, harder).dropFirst().contains { $1.effort > $0.effort },
+                      "usual \(usual.map(\.effort)) harder \(harder.map(\.effort))")
+    }
+
+    func testCache_newRatingChangesTheSignature() throws {
+        insertRows(1...30)
+        let ride = insertRide("rated-later", daysAgo: 1, hours: 1)
+        try ctx.save()
+        let before = repo.forecastInputSignature(context: ctx, now: noon)
+        ride.effortRating = 7
+        try ctx.save()
+        XCTAssertNotEqual(repo.forecastInputSignature(context: ctx, now: noon), before)
+    }
+
+    func testAbsorptionSummary_readsStoredRatings() throws {
+        insertRatedRides(recent: 8)
+        insertRide("unrated", daysAgo: 3, hours: 1)
+        try ctx.save()
+        let summary = try XCTUnwrap(repo.absorptionSummary(modelContext: ctx, now: noon))
+        XCTAssertEqual(summary.rides.first?.date, day(-1).addingTimeInterval(8 * 3600), "Newest first")
+        XCTAssertEqual(summary.rides.first?.rating, 8)
+        XCTAssertEqual(summary.rides.first?.expected, 5)
+        XCTAssertEqual(summary.rides.first?.difference, 3)
+        XCTAssertFalse(summary.rides.contains { $0.date == day(-3).addingTimeInterval(8 * 3600) }, "Unrated rides are left out")
+        let w1 = pow(0.5, 1 / EffortAbsorption.halfLifeDays), w2 = pow(0.5, 2 / EffortAbsorption.halfLifeDays)
+        XCTAssertEqual(summary.trend, 3 * (w1 + w2) / (w1 + w2 + EffortAbsorption.priorWeight), accuracy: 0.001)
+        XCTAssertEqual(summary.rides.count, 2, "Rated rides from the last 30 days: days 1 and 2")
+    }
+
+    func testAbsorptionSummary_leavesOutOtherSports() throws {
+        insertRatedRides(recent: 8)
+        let run = StoredWorkout(id: "run", type: .running, startDate: day(-3).addingTimeInterval(8 * 3600),
+                                duration: 3600, distance: nil, power: nil, energy: nil, hr: nil, source: "test")
+        run.effortRating = 9
+        ctx.insert(run)
+        try ctx.save()
+        let summary = try XCTUnwrap(repo.absorptionSummary(modelContext: ctx, now: noon))
+        XCTAssertFalse(summary.rides.contains { $0.rating == 9 })
+    }
 }

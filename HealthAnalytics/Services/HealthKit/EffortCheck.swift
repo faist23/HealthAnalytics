@@ -10,6 +10,13 @@
 
 import Foundation
 
+/// A ride's Apple-written effort rating with the ride's own times, for matching to stored rides.
+struct EffortRatingSample: Equatable, Sendable {
+    let workoutStart: Date
+    let workoutEnd: Date
+    let rating: Double
+}
+
 /// One workout from Apple Health with its related effort samples.
 struct EffortCheckWorkout: Equatable {
     let date: Date
