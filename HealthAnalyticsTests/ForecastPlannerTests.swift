@@ -625,4 +625,15 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(a.map(\.effort), b.map(\.effort))
         XCTAssertEqual(a.map(\.reason), b.map(\.reason))
     }
+
+    /// A hard ride today puts a Moderate recovery cap on tomorrow. With z 3, tomorrow's band is Hard
+    /// as usual and Moderate when rides feel 1 point harder: the same word, which the cap sets.
+    func testShift_reasonKeepsTheCapWhenTheCapAlreadySetTheWord() {
+        let usual = plan(ForecastPlanInput(now: noon, startScore: score(z: 3), currentScore: score(z: 3), rodeLoadToday: 3,
+                                           recentLoads: [], profile: profile(), absorptionTrend: 0, projectedACWR: { _, _ in 1 }))
+        let harder = plan(ForecastPlanInput(now: noon, startScore: score(z: 3), currentScore: score(z: 3), rodeLoadToday: 3,
+                                            recentLoads: [], profile: profile(), absorptionTrend: 1, projectedACWR: { _, _ in 1 }))
+        XCTAssertEqual(usual[1].effort, harder[1].effort)
+        XCTAssertEqual(harder[1].reason, usual[1].reason, "Same word, so the cap still explains it")
+    }
 }

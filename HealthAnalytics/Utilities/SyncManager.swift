@@ -1137,8 +1137,10 @@ actor DataPersistenceActor {
 
     /// Writes each rating to the stored cycling workout it overlaps by at least half of the
     /// shorter of the two, choosing the single best overlap, and clears ratings no longer in
-    /// Apple Health. Only rides starting at or after `windowStart` are touched.
+    /// Apple Health. Only rides starting at or after `windowStart` are touched. An empty list changes
+    /// nothing: Apple Health reports a denied read as no samples, which says nothing about deletions.
     static func applyEffortRatings(_ ratings: [EffortRatingSample], windowStart: Date, in context: ModelContext) {
+        guard !ratings.isEmpty else { return }
         let cyclingType = Int(HKWorkoutActivityType.cycling.rawValue)
         guard let rides = try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
             $0.startDate >= windowStart && $0.workoutTypeInt == cyclingType

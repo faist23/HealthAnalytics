@@ -1362,7 +1362,6 @@ class ReadinessRepository: ObservableObject {
         return !Calendar.current.isDate(lastAttempt, inSameDayAs: now)
     }
 
-    /// The plan replayed against the last 60 days. Nil on a failed read.
     /// Recent rated rides against their usual, and the trend the plan uses. Nil on a failed read.
     func absorptionSummary(modelContext: ModelContext, now: Date = Date()) -> AbsorptionSummary? {
         let calendar = Calendar.current
@@ -1377,6 +1376,7 @@ class ReadinessRepository: ObservableObject {
         return AbsorptionSummary(rides: rides, trend: EffortAbsorption.trend(store.ratedRides, now: now, calendar: calendar))
     }
 
+    /// The plan replayed against the last 60 days. Nil on a failed read.
     func forecastCheck(modelContext: ModelContext, now: Date = Date()) -> ForecastCheckResult? {
         guard let store = try? loadForecastHistory(context: modelContext, now: now) else { return nil }
         return ForecastPlanner.replay(history: store.days, days: Self.forecastCheckDays, today: now, calendar: .current)

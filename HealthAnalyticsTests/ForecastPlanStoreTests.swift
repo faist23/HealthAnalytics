@@ -502,9 +502,10 @@ final class ForecastPlanStoreTests: XCTestCase {
 
     // MARK: - Absorption trend
 
-    /// Ten one-hour rides rated 5, 15-40 days ago, then the last two rated `recent`.
+    /// Ten one-hour rides rated 5, 31-58 days ago (outside the load limit's 28 days, so it stays
+    /// open), then the last two rated `recent`.
     private func insertRatedRides(recent: Double?) {
-        for (n, daysAgo) in stride(from: 15, through: 40, by: 3).enumerated() {
+        for (n, daysAgo) in stride(from: 31, through: 58, by: 3).enumerated() {
             insertRide("base-\(n)", daysAgo: daysAgo, hours: 1).effortRating = 5
         }
         insertRide("recent-1", daysAgo: 1, hours: 1).effortRating = recent
@@ -546,7 +547,19 @@ final class ForecastPlanStoreTests: XCTestCase {
         XCTAssertEqual(summary.rides.first?.expected, 5)
         XCTAssertEqual(summary.rides.first?.difference, 3)
         XCTAssertFalse(summary.rides.contains { $0.date == day(-3).addingTimeInterval(8 * 3600) }, "Unrated rides are left out")
-        XCTAssertEqual(summary.trend, 3, accuracy: 0.001)
-        XCTAssertEqual(summary.rides.count, 8, "Rated rides from the last 30 days: days 1, 2, 15, 18, 21, 24, 27 and 30")
+        let w1 = pow(0.5, 1 / EffortAbsorption.halfLifeDays), w2 = pow(0.5, 2 / EffortAbsorption.halfLifeDays)
+        XCTAssertEqual(summary.trend, 3 * (w1 + w2) / (w1 + w2 + EffortAbsorption.priorWeight), accuracy: 0.001)
+        XCTAssertEqual(summary.rides.count, 2, "Rated rides from the last 30 days: days 1 and 2")
+    }
+
+    func testAbsorptionSummary_leavesOutOtherSports() throws {
+        insertRatedRides(recent: 8)
+        let run = StoredWorkout(id: "run", type: .running, startDate: day(-3).addingTimeInterval(8 * 3600),
+                                duration: 3600, distance: nil, power: nil, energy: nil, hr: nil, source: "test")
+        run.effortRating = 9
+        ctx.insert(run)
+        try ctx.save()
+        let summary = try XCTUnwrap(repo.absorptionSummary(modelContext: ctx, now: noon))
+        XCTAssertFalse(summary.rides.contains { $0.rating == 9 })
     }
 }

@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import SwiftUI
 @testable import HealthAnalytics
 
 final class EffortAbsorptionTests: XCTestCase {
@@ -70,8 +71,23 @@ final class EffortAbsorptionTests: XCTestCase {
     private var baseline: [RatedRide] { (20...40).map { ride(5, daysAgo: $0) } }
 
     func testTrend_weightsRecentRidesMore() {
-        let rides = baseline + [ride(7, daysAgo: 1), ride(5, daysAgo: 8)]
-        XCTAssertGreaterThan(EffortAbsorption.trend(rides, now: Date(), calendar: calendar), 1)
+        let recentHard = EffortAbsorption.trend(baseline + [ride(7, daysAgo: 1), ride(5, daysAgo: 8)], now: Date(), calendar: calendar)
+        let olderHard = EffortAbsorption.trend(baseline + [ride(5, daysAgo: 1), ride(7, daysAgo: 8)], now: Date(), calendar: calendar)
+        XCTAssertGreaterThan(recentHard, olderHard)
+        XCTAssertGreaterThan(olderHard, 0)
+    }
+
+    /// Design: one odd rating moves the plan a little, and a run of them moves it more.
+    func testTrend_oneOddRideMovesLessThanARun() {
+        let one = EffortAbsorption.trend(baseline + [ride(8, daysAgo: 1)], now: Date(), calendar: calendar)
+        let run = EffortAbsorption.trend(baseline + (1...4).map { ride(8, daysAgo: $0) }, now: Date(), calendar: calendar)
+        XCTAssertLessThan(abs(EffortAbsorption.zShift(trend: one)), abs(EffortAbsorption.zShift(trend: run)))
+        XCTAssertLessThan(abs(EffortAbsorption.zShift(trend: one)), EffortAbsorption.maximumShift)
+    }
+
+    func testTrend_anOldRideFades() {
+        let old = EffortAbsorption.trend(baseline + [ride(8, daysAgo: 13)], now: Date(), calendar: calendar)
+        XCTAssertLessThan(old, 0.5, "A 13-day-old ride alone barely moves the trend")
     }
 
     func testTrend_todaysRidesAndOlderThan14DaysDontCount() {
@@ -86,7 +102,9 @@ final class EffortAbsorptionTests: XCTestCase {
 
     func testTrend_easierRidesGoNegative() {
         let rides = baseline + [ride(3, daysAgo: 2)]
-        XCTAssertEqual(EffortAbsorption.trend(rides, now: Date(), calendar: calendar), -2, accuracy: 0.001)
+        let weight = pow(0.5, 2.0 / EffortAbsorption.halfLifeDays)
+        XCTAssertEqual(EffortAbsorption.trend(rides, now: Date(), calendar: calendar),
+                       -2 * weight / (weight + EffortAbsorption.priorWeight), accuracy: 0.001)
     }
 
     // MARK: - Shift
@@ -97,5 +115,21 @@ final class EffortAbsorptionTests: XCTestCase {
         XCTAssertEqual(EffortAbsorption.zShift(trend: 5), -1.0)
         XCTAssertEqual(EffortAbsorption.zShift(trend: -5), 1.0)
         XCTAssertEqual(EffortAbsorption.zShift(trend: 0), 0)
+    }
+
+    // MARK: - Effort Check wording
+
+    func testTrendText_matchesTheShiftItDescribes() {
+        XCTAssertEqual(EffortCheckView.trendText(0), "Rides are feeling about as usual.")
+        XCTAssertEqual(EffortCheckView.trendText(0.3), "Rides are feeling about 0.3 points harder than usual.",
+                       "A trend that shifts the plan is never described as usual")
+        XCTAssertEqual(EffortCheckView.trendText(-1.24), "Rides are feeling about 1.2 points easier than usual.")
+    }
+
+    func testDifferenceText() {
+        XCTAssertEqual(EffortCheckView.differenceText(nil), "not judged")
+        XCTAssertEqual(EffortCheckView.differenceText(0), "as usual")
+        XCTAssertEqual(EffortCheckView.differenceText(2.5), "+2.5")
+        XCTAssertEqual(EffortCheckView.differenceText(-2), "-2.0")
     }
 }

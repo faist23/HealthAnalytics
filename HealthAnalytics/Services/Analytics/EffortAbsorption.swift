@@ -49,6 +49,9 @@ enum EffortAbsorption {
     /// A difference this size or smaller is rating noise and counts as zero.
     static let deadBand = 1.0
     static let halfLifeDays = 4.0
+    /// Weight of an imagined "felt as usual" ride added to every trend, so one odd rating moves the
+    /// plan a little, a run of them more, and an old lone rating fades instead of standing at full size.
+    static let priorWeight = 1.0
     /// Plan shift in spreads per rating point of trend, and its limit either way.
     static let shiftPerPoint = 0.5
     static let maximumShift = 1.0
@@ -83,7 +86,7 @@ enum EffortAbsorption {
     }
 
     /// Weighted mean felt difference over the 14 complete days before `now`, each ride's weight
-    /// halving every four days. 0 when no ride in the window can be judged. Today's rides wait:
+    /// halving every four days, shrunk toward 0 by `priorWeight`. 0 when no ride can be judged. Today's rides wait:
     /// today's word already reflects them.
     static func trend(_ rides: [RatedRide], now: Date, calendar: Calendar) -> Double {
         let today = calendar.startOfDay(for: now)
@@ -97,7 +100,7 @@ enum EffortAbsorption {
             weighted += weight * difference
             total += weight
         }
-        return total > 0 ? weighted / total : 0
+        return total > 0 ? weighted / (total + priorWeight) : 0
     }
 
     /// Rides feeling harder lowers the plan's start; easier lifts it. Clamped so feel can't

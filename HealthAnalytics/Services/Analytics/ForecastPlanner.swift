@@ -278,9 +278,14 @@ enum ForecastPlanner {
             let binding = caps.max { $0.cap < $1.cap }
             let effort = max(byRecovery, binding?.cap ?? .hard)
 
-            let feelMovedDay = offset > 0 && feelShift != 0 && profile.band(z: z) != profile.band(z: zUnshifted)
+            // The feel explains the day only when it changed the word shown: a cap that sets the
+            // same word either way keeps its own reason.
+            let unshiftedEffort = max(profile.band(z: zUnshifted), binding?.cap ?? .hard)
+            let feelMovedDay = offset > 0 && feelShift != 0 && effort != unshiftedEffort
+            // A cap explains the day when it is stricter than recovery would be without the feel.
+            let byRecoveryForReason = offset > 0 ? min(byRecovery, profile.band(z: zUnshifted)) : byRecovery
             days.append(Day(date: date, effort: effort, reason: reason(
-                input: input, offset: offset, effort: effort, byRecovery: byRecovery,
+                input: input, offset: offset, effort: effort, byRecovery: byRecoveryForReason,
                 binding: binding, previous: previous,
                 feel: feelMovedDay ? (feelShift < 0 ? "Rides feeling harder than usual" : "Rides feeling easier than usual") : nil)))
 
@@ -363,8 +368,8 @@ enum ForecastPlanner {
             default: return "Two short nights"
             }
         }
-        // After a ride the word was low from riding, so the next day isn't a bounce back from rest.
         if let feel { return feel }
+        // After a ride the word was low from riding, so the next day isn't a bounce back from rest.
         let rodeYesterday = offset == 1 && input.rodeLoadToday >= namedRideLoad
         if let previous, previous >= .easy, effort < previous, !rodeYesterday { return "Bouncing back after rest" }
         return nil

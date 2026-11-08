@@ -91,7 +91,8 @@ struct EffortCheckView: View {
     }
 
     static func trendText(_ trend: Double) -> String {
-        if abs(trend) < 0.5 { return "Rides are feeling about as usual." }
+        // Any trend the plan acts on is named; only a rounding-level one reads as usual.
+        if abs(trend) < 0.05 { return "Rides are feeling about as usual." }
         let points = String(format: "%.1f", abs(trend))
         return trend > 0 ? "Rides are feeling about \(points) points harder than usual." : "Rides are feeling about \(points) points easier than usual."
     }

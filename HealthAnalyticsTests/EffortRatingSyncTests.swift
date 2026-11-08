@@ -74,7 +74,8 @@ final class EffortRatingSyncTests: XCTestCase {
         try apply([rating(6, start: at(1, 9))])
         try apply([rating(8, start: at(1, 9))])
         XCTAssertEqual(try stored("ride").effortRating, 8)
-        try apply([])
+        insert("other", start: at(2, 9))
+        try apply([rating(5, start: at(2, 9))])
         XCTAssertNil(try stored("ride").effortRating, "A rating removed in Apple Health clears here too")
     }
 
@@ -89,5 +90,19 @@ final class EffortRatingSyncTests: XCTestCase {
         insert("run", start: at(1, 9), type: .running)
         try apply([rating(6, start: at(1, 9))])
         XCTAssertNil(try stored("run").effortRating)
+    }
+
+    /// Apple Health hides a denied read as "no samples", so an empty list is unknown, not "all deleted".
+    func testApplyRatings_emptyListKeepsStoredRatings() throws {
+        insert("ride", start: at(1, 9))
+        try apply([rating(6, start: at(1, 9))])
+        try apply([])
+        XCTAssertEqual(try stored("ride").effortRating, 6)
+    }
+
+    func testApplyRatings_zeroLengthSampleAssignsNothing() throws {
+        insert("ride", start: at(1, 9))
+        try apply([rating(6, start: at(1, 9), minutes: 0)])
+        XCTAssertNil(try stored("ride").effortRating)
     }
 }
