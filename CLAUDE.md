@@ -52,6 +52,7 @@ See `GEMINI.md` for the full engineering mandate. Key rules:
 - **Strain sensitivity** — `CardiovascularStrainService.compute(sensitivityOffset:)`. Offset read from `UserDefaults["strainSensitivityOffset"]` (range −0.2 to +0.2, default 0.0). Normalization constant is 70.0.
 - **HeuristicIntentClassifier** — power-zone path takes priority over HR for cycling when `powerZoneSeconds` stream data is present. Only classifies workouts owned by the user (not third-party HealthKit sources).
 - **WorkoutAuditView** — debug view in Settings → Today's Workouts showing all stored workouts with source, FTP, and zone data.
+- **Effort Check** (`Views/EffortCheckView.swift`): read-only debug view in Settings → Effort Check, below Forecast Check. `HealthKitManager.fetchEffortCheckWorkouts` reads the last 60 days of Apple Health workouts with the newest related `workoutEffortScore` (a rating, plus the app that wrote it) and `estimatedWorkoutEffortScore` (Apple's estimate from heart rate, never counted as rated); `EffortCheckSummary.summarize` (`Services/HealthKit/EffortCheck.swift`) builds the counts, per-app rows, rating writers and verdict, pinned by `EffortCheckTests`. Both effort types are in `readTypes`, and the screen requests read access to them again for installs authorized before they were added; HealthKit hides a denied read, so it shows as not rated. Nothing feeds the score or forecast yet (TODOS).
 
 ## Known Compiler Patterns
 
