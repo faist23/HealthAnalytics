@@ -535,4 +535,18 @@ final class ForecastPlanStoreTests: XCTestCase {
         try ctx.save()
         XCTAssertNotEqual(repo.forecastInputSignature(context: ctx, now: noon), before)
     }
+
+    func testAbsorptionSummary_readsStoredRatings() throws {
+        insertRatedRides(recent: 8)
+        insertRide("unrated", daysAgo: 3, hours: 1)
+        try ctx.save()
+        let summary = try XCTUnwrap(repo.absorptionSummary(modelContext: ctx, now: noon))
+        XCTAssertEqual(summary.rides.first?.date, day(-1).addingTimeInterval(8 * 3600), "Newest first")
+        XCTAssertEqual(summary.rides.first?.rating, 8)
+        XCTAssertEqual(summary.rides.first?.expected, 5)
+        XCTAssertEqual(summary.rides.first?.difference, 3)
+        XCTAssertFalse(summary.rides.contains { $0.date == day(-3).addingTimeInterval(8 * 3600) }, "Unrated rides are left out")
+        XCTAssertEqual(summary.trend, 3, accuracy: 0.001)
+        XCTAssertEqual(summary.rides.count, 8, "Rated rides from the last 30 days: days 1, 2, 15, 18, 21, 24, 27 and 30")
+    }
 }

@@ -1363,6 +1363,20 @@ class ReadinessRepository: ObservableObject {
     }
 
     /// The plan replayed against the last 60 days. Nil on a failed read.
+    /// Recent rated rides against their usual, and the trend the plan uses. Nil on a failed read.
+    func absorptionSummary(modelContext: ModelContext, now: Date = Date()) -> AbsorptionSummary? {
+        let calendar = Calendar.current
+        guard let store = try? loadForecastHistory(context: modelContext, now: now),
+              let cutoff = calendar.date(byAdding: .day, value: -AbsorptionSummary.shownDays, to: calendar.startOfDay(for: now))
+        else { return nil }
+        let rides = store.ratedRides.filter { $0.date >= cutoff }.sorted { $0.date > $1.date }.map { ride in
+            AbsorptionSummary.Ride(date: ride.date, rating: ride.rating,
+                                   expected: EffortAbsorption.expectedRating(ride, among: store.ratedRides),
+                                   difference: EffortAbsorption.feltDifference(ride, among: store.ratedRides))
+        }
+        return AbsorptionSummary(rides: rides, trend: EffortAbsorption.trend(store.ratedRides, now: now, calendar: calendar))
+    }
+
     func forecastCheck(modelContext: ModelContext, now: Date = Date()) -> ForecastCheckResult? {
         guard let store = try? loadForecastHistory(context: modelContext, now: now) else { return nil }
         return ForecastPlanner.replay(history: store.days, days: Self.forecastCheckDays, today: now, calendar: .current)

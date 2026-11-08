@@ -7,8 +7,11 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct EffortCheckView: View {
+    @Environment(\.modelContext) private var modelContext
+    @State private var absorption: AbsorptionSummary?
     @State private var workouts: [EffortCheckWorkout] = []
     @State private var errorMessage: String?
     @State private var hasLoaded = false
@@ -19,6 +22,19 @@ struct EffortCheckView: View {
                 Text("Couldn't read Apple Health: \(errorMessage)")
                     .foregroundStyle(Color.textSecondary)
             } else if hasLoaded {
+                if let absorption {
+                    Section {
+                        Text(Self.trendText(absorption.trend))
+                        ForEach(Array(absorption.rides.enumerated()), id: \.offset) { _, ride in
+                            LabeledContent(ride.date.formatted(date: .abbreviated, time: .omitted),
+                                           value: "rated \(Int(ride.rating.rounded())) · usual \(ride.expected.map { String(format: "%.1f", $0) } ?? "–") · \(Self.differenceText(ride.difference))")
+                        }
+                    } header: {
+                        Text("How rides feel")
+                    } footer: {
+                        Text("Usual is your median rating for rides of similar length and load. The plan uses the 14-day trend, with recent rides counting most.")
+                    }
+                }
                 let summary = EffortCheckSummary.summarize(workouts)
                 Section {
                     Text(summary.verdict.text)
@@ -64,6 +80,7 @@ struct EffortCheckView: View {
         .navigationTitle("Effort Check")
         .task {
             errorMessage = nil
+            absorption = ReadinessRepository.shared.absorptionSummary(modelContext: modelContext)
             do {
                 workouts = try await HealthKitManager.shared.fetchEffortCheckWorkouts()
             } catch {
@@ -71,6 +88,18 @@ struct EffortCheckView: View {
             }
             hasLoaded = true
         }
+    }
+
+    static func trendText(_ trend: Double) -> String {
+        if abs(trend) < 0.5 { return "Rides are feeling about as usual." }
+        let points = String(format: "%.1f", abs(trend))
+        return trend > 0 ? "Rides are feeling about \(points) points harder than usual." : "Rides are feeling about \(points) points easier than usual."
+    }
+
+    static func differenceText(_ difference: Double?) -> String {
+        guard let difference else { return "not judged" }
+        if difference == 0 { return "as usual" }
+        return difference > 0 ? String(format: "+%.1f", difference) : String(format: "%.1f", difference)
     }
 
     private func score(_ value: Double?) -> String {

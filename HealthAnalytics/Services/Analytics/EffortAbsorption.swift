@@ -21,6 +21,24 @@ struct RatedRide: Equatable {
     let rating: Double
 }
 
+/// What Effort Check shows about how rides have felt: each recent rated ride against its usual,
+/// and the trend the plan uses.
+struct AbsorptionSummary: Equatable {
+    struct Ride: Equatable {
+        let date: Date
+        let rating: Double
+        /// Median rating of comparable rides; nil under three.
+        let expected: Double?
+        /// Felt difference after the dead band; nil when not judged.
+        let difference: Double?
+    }
+    /// Newest first, last 30 days.
+    let rides: [Ride]
+    let trend: Double
+
+    static let shownDays = 30
+}
+
 enum EffortAbsorption {
     static let historyDays = 90
     static let trendDays = 14
@@ -40,9 +58,9 @@ enum EffortAbsorption {
         ride.loadPerHour > 0 && ride.minutes >= 1
     }
 
-    /// Rating minus the median rating of comparable rides within 90 days either side; nil under
-    /// three comparable rides or for a ride with no usable work. Within the dead band reads 0.
-    static func feltDifference(_ ride: RatedRide, among rides: [RatedRide]) -> Double? {
+    /// Median rating of comparable rides within 90 days either side; nil under three or for a
+    /// ride with no usable work.
+    static func expectedRating(_ ride: RatedRide, among rides: [RatedRide]) -> Double? {
         guard isJudgeable(ride) else { return nil }
         let window = TimeInterval(historyDays) * 86_400
         let comparable = rides.filter { other in
@@ -53,7 +71,13 @@ enum EffortAbsorption {
         }.map(\.rating).sorted()
         guard comparable.count >= minimumComparable else { return nil }
         let mid = comparable.count / 2
-        let median = comparable.count % 2 == 0 ? (comparable[mid - 1] + comparable[mid]) / 2 : comparable[mid]
+        return comparable.count % 2 == 0 ? (comparable[mid - 1] + comparable[mid]) / 2 : comparable[mid]
+    }
+
+    /// Rating minus the median rating of comparable rides within 90 days either side; nil under
+    /// three comparable rides or for a ride with no usable work. Within the dead band reads 0.
+    static func feltDifference(_ ride: RatedRide, among rides: [RatedRide]) -> Double? {
+        guard let median = expectedRating(ride, among: rides) else { return nil }
         let difference = ride.rating - median
         return abs(difference) <= deadBand ? 0 : difference
     }
