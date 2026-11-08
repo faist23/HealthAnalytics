@@ -3,6 +3,12 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.25.0] - 2026-11-07
+
+### Added
+
+- **An Effort Check screen in Settings.** It shows which of your last 60 days of workouts carry an effort rating, which app wrote each rating, and which have only Apple's estimate from heart rate. It answers whether a ride that felt harder than usual can be read from your own data, the first step toward the forecast using it.
+
 ## [0.1.24.0] - 2026-11-07
 
 ### Changed
