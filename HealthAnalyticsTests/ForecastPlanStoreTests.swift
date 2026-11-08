@@ -499,4 +499,40 @@ final class ForecastPlanStoreTests: XCTestCase {
         XCTAssertTrue(R.shouldForceScoreBackfill(lastAttempt: day(-1), readFailed: false, now: noon))
         XCTAssertFalse(R.shouldForceScoreBackfill(lastAttempt: nil, readFailed: true, now: noon))
     }
+
+    // MARK: - Absorption trend
+
+    /// Ten one-hour rides rated 5, 15-40 days ago, then the last two rated `recent`.
+    private func insertRatedRides(recent: Double?) {
+        for (n, daysAgo) in stride(from: 15, through: 40, by: 3).enumerated() {
+            insertRide("base-\(n)", daysAgo: daysAgo, hours: 1).effortRating = 5
+        }
+        insertRide("recent-1", daysAgo: 1, hours: 1).effortRating = recent
+        insertRide("recent-2", daysAgo: 2, hours: 1).effortRating = recent
+    }
+
+    func testStorePlan_ratedRidesBuildTheTrend() throws {
+        insertRows(1...30)
+        insertRatedRides(recent: 5)
+        try ctx.save()
+        let usual = try XCTUnwrap(plan(start: 76, current: 75))
+
+        for ride in try ctx.fetch(FetchDescriptor<StoredWorkout>()) where ride.id.hasPrefix("recent") { ride.effortRating = 8 }
+        try ctx.save()
+        let harder = try XCTUnwrap(plan(start: 76, current: 75))
+
+        XCTAssertEqual(harder[0].effort, usual[0].effort, "Today's word doesn't move")
+        XCTAssertTrue(zip(usual, harder).dropFirst().contains { $1.effort > $0.effort },
+                      "usual \(usual.map(\.effort)) harder \(harder.map(\.effort))")
+    }
+
+    func testCache_newRatingChangesTheSignature() throws {
+        insertRows(1...30)
+        let ride = insertRide("rated-later", daysAgo: 1, hours: 1)
+        try ctx.save()
+        let before = repo.forecastInputSignature(context: ctx, now: noon)
+        ride.effortRating = 7
+        try ctx.save()
+        XCTAssertNotEqual(repo.forecastInputSignature(context: ctx, now: noon), before)
+    }
 }

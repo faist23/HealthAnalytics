@@ -51,7 +51,7 @@ Each rated ride gets a **felt difference**: its rating minus what Craig usually 
 ## What it does to the plan
 
 - **Absorption trend:** a weighted mean of the felt differences from the last 14 days, with each ride's weight halving every 4 days, so last week's rides count most.
-- **Effect:** the trend shifts the plan's starting point (`z` in `ForecastPlanner`) by −0.5 spread per point of trend, clamped to ±1 spread. Harder lowers it, easier lifts it, and the plan's own stepping carries the effect forward and lets it fade toward normal. A trend of +2 (rides feeling two points harder) is worth about one band.
+- **Effect:** the trend shifts tomorrow's starting point (`z` in `ForecastPlanner`, after today's step) by −0.5 spread per point of trend, clamped to ±1 spread. Harder lowers it, easier lifts it, and the plan's own stepping carries the effect forward and lets it fade toward normal. A trend of +2 (rides feeling two points harder) is worth about one band.
 - **Alongside HRV, not instead of it.** HRV, resting heart rate and sleep already set the recovery score the plan starts from; the absorption trend is added on top. When they agree, the effect is larger; when they disagree, the felt signal can catch stress HRV misses. No extra weighting rule: they simply add.
 - **Today's ride** feeds the trend from tomorrow on. Today's word already reflects the ride.
 - **Reasons:** "Rides feeling harder than usual" or "Rides feeling easier than usual", shown when the trend moved that day by a band, under the existing one-reason rule. A cap's reason still wins.

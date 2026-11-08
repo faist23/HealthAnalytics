@@ -566,4 +566,63 @@ final class ForecastPlannerTests: XCTestCase {
         let result = replay(days)
         XCTAssertTrue(result.recentMisses.isEmpty, "A hard ride predicts the low morning: \(result.recentMisses)")
     }
+
+    // MARK: - Absorption trend (how rides feel)
+
+    private func shifted(_ trend: Double, z: Double, currentZ: Double? = nil) -> ForecastPlanInput {
+        var i = input(z: z, currentZ: currentZ)
+        i.absorptionTrend = trend
+        return i
+    }
+
+    func testShift_harderTrendLowersTheComingDays() {
+        let usual = plan(shifted(0, z: 1))
+        let harder = plan(shifted(2, z: 1))
+        XCTAssertTrue(zip(usual, harder).dropFirst().allSatisfy { $1.effort >= $0.effort }, "\(harder.map(\.effort))")
+        XCTAssertTrue(zip(usual, harder).dropFirst().contains { $1.effort > $0.effort }, "\(harder.map(\.effort))")
+    }
+
+    func testShift_easierTrendLiftsThem() {
+        let usual = plan(shifted(0, z: -1))
+        let easier = plan(shifted(-2, z: -1))
+        XCTAssertTrue(zip(usual, easier).dropFirst().contains { $1.effort < $0.effort }, "\(easier.map(\.effort))")
+    }
+
+    func testShift_neverChangesTodaysWord() {
+        XCTAssertEqual(plan(shifted(4, z: 1))[0].effort, plan(shifted(0, z: 1))[0].effort)
+        XCTAssertEqual(plan(shifted(-4, z: -2))[0].effort, plan(shifted(0, z: -2))[0].effort)
+    }
+
+    func testShift_easierNeverLiftsPastACap() {
+        var hrv = shifted(-4, z: 1)
+        hrv.hrvPrecursorActive = true
+        XCTAssertGreaterThanOrEqual(plan(hrv)[1].effort, .easy)
+        var note = shifted(-4, z: 1)
+        note.noteCaps = [ForecastNoteCap(cap: .easy, reason: "Injury", until: nil)]
+        XCTAssertTrue(plan(note).allSatisfy { $0.effort >= .easy })
+        let days = plan(shifted(-4, z: 2))
+        for (a, b) in zip(days, days.dropFirst()) {
+            XCTAssertFalse(a.effort == .hard && b.effort == .hard, "Recovery time still holds: \(days.map(\.effort))")
+        }
+    }
+
+    /// Start z 0.3 with today at Moderate: tomorrow is Hard as usual, and a full shift (rides 2 points
+    /// harder) moves it to Easy.
+    func testShift_reasonNamesTheTrendOnlyWhenItMovedTheDay() {
+        let usual = plan(shifted(0, z: 0.3, currentZ: 0))
+        let harder = plan(shifted(2, z: 0.3, currentZ: 0))
+        XCTAssertEqual(usual[1].effort, .hard)
+        XCTAssertEqual(harder[1].effort, .easy)
+        XCTAssertEqual(harder[1].reason, "Rides feeling harder than usual")
+        XCTAssertFalse(usual.contains { $0.reason?.hasPrefix("Rides feeling") == true })
+        let easier = plan(shifted(-2, z: -0.9, currentZ: -0.9))
+        XCTAssertTrue(easier.contains { $0.reason == "Rides feeling easier than usual" }, "\(easier.map(\.reason))")
+    }
+
+    func testShift_zeroTrendChangesNothing() {
+        let a = plan(input(z: 0.5))
+        let b = plan(shifted(0, z: 0.5))
+        XCTAssertEqual(a.map(\.effort), b.map(\.effort))
+        XCTAssertEqual(a.map(\.reason), b.map(\.reason))
+    }
 }
