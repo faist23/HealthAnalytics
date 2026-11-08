@@ -489,6 +489,9 @@ class SyncManager: ObservableObject {
         return min(dayBeforeLast, weekBack)
     }
 
+    /// Days of rides whose effort ratings each recent sync re-reads.
+    static let effortRatingDays = 14
+
     /// Returns whether the HealthKit fetch and upsert succeeded; `lastSyncDate` advances only then.
     @discardableResult
     private func syncRecentData(dataHandler: DataPersistenceActor) async -> Bool {
@@ -643,6 +646,14 @@ class SyncManager: ObservableObject {
                 nutrition: data.nutrition,
                 vo2max: data.vo2max
             )
+
+            // Effort ratings can arrive after the ride was stored, so the last 14 days are re-read
+            // every sync. A failed read changes nothing: stored ratings stay as they were.
+            if let ratings = try? await healthKitManager.fetchRecentEffortRatings(days: Self.effortRatingDays) {
+                let windowStart = Calendar.current.date(byAdding: .day, value: -Self.effortRatingDays,
+                                                        to: Calendar.current.startOfDay(for: Date())) ?? Date()
+                await dataHandler.applyEffortRatings(ratings, windowStart: windowStart)
+            }
 
             #if DEBUG
             print("   ✅ Recent data synced")
@@ -1122,6 +1133,42 @@ actor DataPersistenceActor {
         guard !rides.isEmpty else { return }
         rides.forEach { $0.stravaAthleteId = athlete }
         try? context.save()
+    }
+
+    /// Writes each rating to the stored cycling workout it overlaps by at least half of the
+    /// shorter of the two, choosing the single best overlap, and clears ratings no longer in
+    /// Apple Health. Only rides starting at or after `windowStart` are touched.
+    static func applyEffortRatings(_ ratings: [EffortRatingSample], windowStart: Date, in context: ModelContext) {
+        let cyclingType = Int(HKWorkoutActivityType.cycling.rawValue)
+        guard let rides = try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
+            $0.startDate >= windowStart && $0.workoutTypeInt == cyclingType
+        })) else { return }
+
+        func overlap(_ ride: StoredWorkout, _ rating: EffortRatingSample) -> TimeInterval {
+            let rideEnd = ride.startDate.addingTimeInterval(ride.duration)
+            let shared = min(rideEnd, rating.workoutEnd).timeIntervalSince(max(ride.startDate, rating.workoutStart))
+            let shorter = min(ride.duration, rating.workoutEnd.timeIntervalSince(rating.workoutStart))
+            return shorter > 0 && shared >= shorter / 2 ? shared : 0
+        }
+
+        var assigned: [ObjectIdentifier: Double] = [:]
+        for rating in ratings {
+            let best = rides.map { ($0, overlap($0, rating)) }.filter { $0.1 > 0 }.max { $0.1 < $1.1 }?.0
+            if let best { assigned[ObjectIdentifier(best)] = rating.rating }
+        }
+        var changed = false
+        for ride in rides {
+            let value = assigned[ObjectIdentifier(ride)]
+            if ride.effortRating != value {
+                ride.effortRating = value
+                changed = true
+            }
+        }
+        if changed { try? context.save() }
+    }
+
+    func applyEffortRatings(_ ratings: [EffortRatingSample], windowStart: Date) {
+        Self.applyEffortRatings(ratings, windowStart: windowStart, in: modelContext)
     }
 
     func tagStravaRides(ids: Set<String>, athlete: Int) {
