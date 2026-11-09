@@ -1050,7 +1050,8 @@ class SyncManager: ObservableObject {
             power: activity.averageWatts,
             normalizedPower: activity.weightedAverageWatts,
             energy: energy,
-            averageHeartRate: activity.averageHeartrate
+            averageHeartRate: activity.averageHeartrate,
+            isIndoor: activity.isIndoor
         )
     }
     
@@ -1375,7 +1376,8 @@ actor DataPersistenceActor {
                     normalizedPower: match.normalizedPower,
                     energy: match.energy,
                     hr: match.averageHeartRate,
-                    source: "Strava"
+                    source: "Strava",
+                    isIndoor: match.isIndoor
                 )
                 matchedStravaIds.insert(match.id)
             } else if WorkoutMatcher.findMatch(for: hkWorkout, in: storedStrava) != nil {
@@ -1417,7 +1419,8 @@ actor DataPersistenceActor {
                 normalizedPower: activity.normalizedPower,
                 energy: activity.energy,
                 hr: activity.averageHeartRate,
-                source: "Strava"
+                source: "Strava",
+                isIndoor: activity.isIndoor
             )
         }
         
@@ -1496,7 +1499,8 @@ actor DataPersistenceActor {
             power: stored.averagePower,
             normalizedPower: stored.normalizedPower,
             energy: stored.totalEnergyBurned,
-            averageHeartRate: stored.averageHeartRate
+            averageHeartRate: stored.averageHeartRate,
+            isIndoor: stored.isIndoor
         )
     }
 
@@ -1661,7 +1665,8 @@ actor DataPersistenceActor {
         normalizedPower: Double? = nil,
         energy: Double?,
         hr: Double?,
-        source: String
+        source: String,
+        isIndoor: Bool? = nil
     ) {
         let descriptor = FetchDescriptor<StoredWorkout>(
             predicate: #Predicate { $0.id == id }
@@ -1675,8 +1680,10 @@ actor DataPersistenceActor {
             if let np = normalizedPower { existing.normalizedPower = np }
             existing.totalEnergyBurned = energy
             existing.averageHeartRate = hr
+            // A caller that doesn't know the setting (a HealthKit-only pass) keeps the stored one.
+            if let isIndoor { existing.isIndoor = isIndoor }
         } else {
-            modelContext.insert(StoredWorkout(
+            let workout = StoredWorkout(
                 id: id,
                 title: title,
                 type: type,
@@ -1688,7 +1695,9 @@ actor DataPersistenceActor {
                 energy: energy,
                 hr: hr,
                 source: source
-            ))
+            )
+            workout.isIndoor = isIndoor
+            modelContext.insert(workout)
         }
     }
     

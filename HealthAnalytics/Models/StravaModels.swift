@@ -44,6 +44,14 @@ struct StravaAthlete: Codable {
 
 // MARK: - Activity Models
 
+struct StravaMap: Codable, Equatable {
+    let summaryPolyline: String?
+
+    enum CodingKeys: String, CodingKey {
+        case summaryPolyline = "summary_polyline"
+    }
+}
+
 struct StravaActivity: Codable, Identifiable {
     let id: Int
     let name: String
@@ -63,9 +71,15 @@ struct StravaActivity: Codable, Identifiable {
     let weightedAverageWatts: Double?  // Strava's Normalized Power (NP) — use for TSS
     let maxWatts: Int?
     let sufferScore: Int?
+    /// Strava's "on a trainer" flag; nil when the list didn't say.
+    var trainer: Bool? = nil
+    var sportType: String? = nil
+    /// The ride's route; an indoor ride has none (Zwift's virtual route is the exception).
+    var map: StravaMap? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, name, type, distance
+        case id, name, type, distance, trainer, map
+        case sportType = "sport_type"
         case startDate = "start_date"
         case movingTime = "moving_time"
         case elapsedTime = "elapsed_time"
@@ -82,6 +96,13 @@ struct StravaActivity: Codable, Identifiable {
         case sufferScore = "suffer_score"
     }
     
+    /// Indoor when Strava calls it a virtual ride (Zwift's route is virtual) or a trainer ride,
+    /// or when it has no GPS route (Craig: "if there is a gps route, it's an outdoor ride").
+    var isIndoor: Bool {
+        if type == "VirtualRide" || sportType == "VirtualRide" || trainer == true { return true }
+        return (map?.summaryPolyline ?? "").isEmpty
+    }
+
     var distanceInMiles: Double {
         distance / 1609.34
     }
