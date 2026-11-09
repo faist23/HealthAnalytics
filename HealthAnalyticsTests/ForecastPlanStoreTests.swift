@@ -527,6 +527,19 @@ final class ForecastPlanStoreTests: XCTestCase {
                       "usual \(usual.map(\.effort)) harder \(harder.map(\.effort))")
     }
 
+    func testForecastCheck_replaysStoredRatings() throws {
+        insertRows(2...40, score: 70)
+        insertRatedRides(recent: nil)
+        try ctx.save()
+        let plain = try XCTUnwrap(repo.forecastCheck(modelContext: ctx, now: noon))
+        XCTAssertEqual(plain.feel.changedDays, 0)
+
+        for daysAgo in 3...12 { insertRide("harder-\(daysAgo)", daysAgo: daysAgo, hours: 1).effortRating = 9 }
+        try ctx.save()
+        let harder = try XCTUnwrap(repo.forecastCheck(modelContext: ctx, now: noon))
+        XCTAssertGreaterThan(harder.feel.changedDays, 0, "Stored ratings reach the replay")
+    }
+
     func testCache_newRatingChangesTheSignature() throws {
         insertRows(1...30)
         let ride = insertRide("rated-later", daysAgo: 1, hours: 1)

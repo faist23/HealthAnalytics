@@ -1379,7 +1379,7 @@ class ReadinessRepository: ObservableObject {
     /// The plan replayed against the last 60 days. Nil on a failed read.
     func forecastCheck(modelContext: ModelContext, now: Date = Date()) -> ForecastCheckResult? {
         guard let store = try? loadForecastHistory(context: modelContext, now: now) else { return nil }
-        return ForecastPlanner.replay(history: store.days, days: Self.forecastCheckDays, today: now, calendar: .current)
+        return ForecastPlanner.replay(history: store.days, ratedRides: store.ratedRides, days: Self.forecastCheckDays, today: now, calendar: .current)
     }
 
     nonisolated static let forecastCheckDays = 60

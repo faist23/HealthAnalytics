@@ -24,7 +24,19 @@ struct ForecastCheckView: View {
                 } header: {
                     Text("Tomorrow's suggestion vs. the real morning")
                 } footer: {
-                    Text("An estimate from stored daily scores. It replays recovery only: load, pattern and note limits aren't included, and stored scores already count that day's ride.")
+                    Text("An estimate from stored daily scores. It replays recovery and how rides felt only: load, pattern and note limits aren't included, and stored scores already count that day's ride.")
+                }
+                Section {
+                    Text(Self.feelSummary(result.feel))
+                    if result.feel.changedDays > 0 {
+                        LabeledContent("Same or one step off without it",
+                                       value: percent(result.feel.withinOneWithout, of: result.daysChecked))
+                        LabeledContent("Same level without it", value: percent(result.feel.exactWithout, of: result.daysChecked))
+                    }
+                } header: {
+                    Text("How rides feel")
+                } footer: {
+                    Text("Each day uses only ratings given before it.")
                 }
                 Section("What it has learned") {
                     LabeledContent("Recovery time", value: result.recoveryDays == 1 ? "1 day" : "\(result.recoveryDays) days")
@@ -49,6 +61,13 @@ struct ForecastCheckView: View {
             result = ReadinessRepository.shared.forecastCheck(modelContext: modelContext)
             hasLoaded = true
         }
+    }
+
+    /// Whether how rides feel moved tomorrow's suggestion toward the real morning.
+    static func feelSummary(_ feel: ForecastCheckResult.FeelEffect) -> String {
+        guard feel.changedDays > 0 else { return "How rides feel hasn't changed a suggestion yet." }
+        let days = feel.changedDays == 1 ? "1 day" : "\(feel.changedDays) days"
+        return "Changed tomorrow's suggestion on \(days): closer to the real morning on \(feel.closer), further on \(feel.further), no different on \(feel.same)."
     }
 
     private func percent(_ part: Int, of whole: Int) -> String {
