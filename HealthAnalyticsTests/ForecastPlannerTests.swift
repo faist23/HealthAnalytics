@@ -439,121 +439,6 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(ForecastPlanCard.accessibilityLabel(for: plain, now: noon, calendar: calendar), "Today, Easy")
     }
 
-    // MARK: - Forecast Check replay
-    //
-    // A flat 70 with no load: spread 4, so a Moderate day (z 0) lifts tomorrow to z 0.35 and
-    // the plan suggests Hard. A real next morning of 70 is Moderate (one off), 72 Hard (exact),
-    // 40 Rest (a miss).
-
-    private func replay(_ days: [(score: Int?, load: Double)], window: Int = 10) -> ForecastCheckResult {
-        ForecastPlanner.replay(history: history(days), days: window, today: today, calendar: calendar)
-    }
-
-    func testReplay_skipsDaysWithoutEnoughEarlierHistory() {
-        XCTAssertEqual(replay(flat(16), window: 60).daysChecked, 1, "Only the last pair has 14 days before it")
-        XCTAssertEqual(replay(flat(10), window: 60).daysChecked, 0)
-    }
-
-    func testReplay_skipsDaysMissingAScoreOnEitherSide() {
-        var days = flat(40)
-        days[35].score = nil
-        XCTAssertEqual(replay(days).daysChecked, 7, "Of 9 pairs in the window, day 35 breaks two")
-    }
-
-    func testReplay_neverSeesTheDayItPredicts() throws {
-        var low = flat(40), lower = flat(40)
-        low[39].score = 40
-        lower[39].score = 30
-        let a = try XCTUnwrap(replay(low).recentMisses.first)
-        let b = try XCTUnwrap(replay(lower).recentMisses.first)
-        XCTAssertEqual(a, b, "The suggestion for that day can't move with what happened on it")
-    }
-
-    func testReplay_countsExactAndWithinOne() {
-        var days = flat(40)
-        days[37].score = 72     // exact
-        days[39].score = 40     // a miss
-        let result = replay(days)
-        XCTAssertEqual(result.daysChecked, 9)
-        XCTAssertEqual(result.exact, 1, "The Hard suggested for the 72 morning; every other match is one off")
-        XCTAssertEqual(result.withinOne, 8)
-        XCTAssertEqual(result.recentMisses.map(\.date), [day(-1)])
-        XCTAssertEqual(result.recentMisses.first?.suggested, .hard)
-        XCTAssertEqual(result.recentMisses.first?.actual, .rest)
-    }
-
-    func testReplay_missesAreNewestFirstAndCapped() {
-        var days = flat(80)
-        for index in stride(from: 21, to: 80, by: 3) { days[index].score = 40 }
-        let misses = replay(days, window: 60).recentMisses
-        XCTAssertEqual(misses.count, 10)
-        XCTAssertEqual(misses.map(\.date), misses.map(\.date).sorted(by: >))
-    }
-
-    func testReplay_reportsTheCurrentLearnedRecovery() {
-        let result = replay(episodes(count: 6, mornings: [60, 62]), window: 60)
-        XCTAssertEqual(result.recoveryDays, 2)
-        XCTAssertEqual(result.episodeCount, 6)
-    }
-
-    // MARK: - Replay with how rides feel
-
-    /// A one-hour ride rated `rating`, at 9am `daysAgo` days before today.
-    private func rated(_ rating: Double, daysAgo: Int) -> RatedRide {
-        RatedRide(date: day(-daysAgo).addingTimeInterval(9 * 3600), minutes: 60, loadPerHour: 2, rating: rating)
-    }
-
-    /// Rides rated 5 from 30 to 50 days ago, so later rides have a usual of 5.
-    private var usualRides: [RatedRide] { (30...50).map { rated(5, daysAgo: $0) } }
-
-    private func replay(_ days: [(score: Int?, load: Double)], rides: [RatedRide], window: Int = 10) -> ForecastCheckResult {
-        ForecastPlanner.replay(history: history(days), ratedRides: rides, days: window, today: today, calendar: calendar)
-    }
-
-    func testReplayFeel_noRatingsChangesNothing() {
-        var days = flat(40)
-        days[37].score = 72
-        days[39].score = 40
-        let plain = replay(days), withRides = replay(days, rides: [])
-        XCTAssertEqual(plain, withRides)
-        XCTAssertEqual(plain.feel.changedDays, 0)
-        XCTAssertEqual(plain.feel.exactWithout, plain.exact)
-        XCTAssertEqual(plain.feel.withinOneWithout, plain.withinOne)
-    }
-
-    /// Flat mornings at 70 read Moderate; the plan suggests Hard. Rides feeling 4 points harder
-    /// pull tomorrow's suggestion down toward the real morning.
-    func testReplayFeel_harderRidesMoveSuggestionsTowardTheRealMorning() {
-        let rides = usualRides + (2...12).map { rated(9, daysAgo: $0) }
-        let result = replay(flat(40), rides: rides)
-        XCTAssertGreaterThan(result.feel.changedDays, 0)
-        XCTAssertGreaterThan(result.feel.closer, 0)
-        XCTAssertEqual(result.feel.further, 0)
-        XCTAssertEqual(result.feel.closer + result.feel.further + result.feel.same, result.feel.changedDays)
-        XCTAssertGreaterThan(result.exact, result.feel.exactWithout, "Headline numbers include the feel")
-    }
-
-    /// The replay of day D sees ratings up to D, like the live plan, never later ones. Later 9s
-    /// would move the usual for the ride 4 days ago from 5 to 9 and erase its difference.
-    func testReplayFeel_laterRatingsDontChangeEarlierComparisons() {
-        let base = (20...22).map { rated(5, daysAgo: $0) } + [rated(9, daysAgo: 4)]
-        let leaky = base + (0...1).flatMap { [rated(9, daysAgo: $0), rated(9, daysAgo: $0)] }
-        let clean = replay(flat(40), rides: base, window: 3)
-        XCTAssertGreaterThan(clean.feel.changedDays, 0, "The ride 4 days ago reads 4 points harder")
-        XCTAssertEqual(clean, replay(flat(40), rides: leaky, window: 3))
-    }
-
-    func testFeelSummary() {
-        func effect(_ changed: Int, _ closer: Int, _ further: Int, _ same: Int) -> ForecastCheckResult.FeelEffect {
-            .init(changedDays: changed, closer: closer, further: further, same: same, exactWithout: 0, withinOneWithout: 0)
-        }
-        XCTAssertEqual(ForecastCheckView.feelSummary(effect(0, 0, 0, 0)), "How rides feel hasn't changed a suggestion yet.")
-        XCTAssertEqual(ForecastCheckView.feelSummary(effect(1, 1, 0, 0)),
-                       "Changed tomorrow's suggestion on 1 day: closer to the real morning on 1, further on 0, no different on 0.")
-        XCTAssertEqual(ForecastCheckView.feelSummary(effect(5, 3, 1, 1)),
-                       "Changed tomorrow's suggestion on 5 days: closer to the real morning on 3, further on 1, no different on 1.")
-    }
-
     // MARK: - Final review fixes
 
     func testRideDayFollowedByARise_isNotCalledBouncingBack() {
@@ -609,27 +494,11 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(plan(input(z: 1, profile: p, acwr: { _, _ in 1.6 }))[0].reason, "Load ramping fast")
     }
 
-    /// A rest day on a high-score morning stayed rest. The replay must not invent a Hard day.
-    func testReplay_restDayOnAHighMorningLeavesTheNextDayFree() {
-        var days = flat(40)
-        days[37].score = 72
-        days[38].score = 72
-        XCTAssertEqual(replay(days).exact, 2, "Both Hard suggestions match; the rest day caps nothing")
-    }
-
-    func testReplay_aHardDayLowersTheNextSuggestion() {
-        var days = flat(40)
-        days[38].load = 9
-        days[39].score = 40
-        let result = replay(days)
-        XCTAssertTrue(result.recentMisses.isEmpty, "A hard ride predicts the low morning: \(result.recentMisses)")
-    }
-
-    // MARK: - Absorption trend (how rides feel)
+    // MARK: - Ride cost trend
 
     private func shifted(_ trend: Double, z: Double, currentZ: Double? = nil) -> ForecastPlanInput {
         var i = input(z: z, currentZ: currentZ)
-        i.absorptionTrend = trend
+        i.rideCostTrend = trend
         return i
     }
 
@@ -671,10 +540,10 @@ final class ForecastPlannerTests: XCTestCase {
         let harder = plan(shifted(2, z: 0.3, currentZ: 0))
         XCTAssertEqual(usual[1].effort, .hard)
         XCTAssertEqual(harder[1].effort, .easy)
-        XCTAssertEqual(harder[1].reason, "Rides feeling harder than usual")
-        XCTAssertFalse(usual.contains { $0.reason?.hasPrefix("Rides feeling") == true })
+        XCTAssertEqual(harder[1].reason, "Rides costing more than usual")
+        XCTAssertFalse(usual.contains { $0.reason?.hasPrefix("Rides costing") == true })
         let easier = plan(shifted(-2, z: -0.9, currentZ: -0.9))
-        XCTAssertTrue(easier.contains { $0.reason == "Rides feeling easier than usual" }, "\(easier.map(\.reason))")
+        XCTAssertTrue(easier.contains { $0.reason == "Rides costing less than usual" }, "\(easier.map(\.reason))")
     }
 
     func testShift_zeroTrendChangesNothing() {
@@ -688,9 +557,9 @@ final class ForecastPlannerTests: XCTestCase {
     /// as usual and Moderate when rides feel 1 point harder: the same word, which the cap sets.
     func testShift_reasonKeepsTheCapWhenTheCapAlreadySetTheWord() {
         let usual = plan(ForecastPlanInput(now: noon, startScore: score(z: 3), currentScore: score(z: 3), rodeLoadToday: 3,
-                                           recentLoads: [], profile: profile(), absorptionTrend: 0, projectedACWR: { _, _ in 1 }))
+                                           recentLoads: [], profile: profile(), rideCostTrend: 0, projectedACWR: { _, _ in 1 }))
         let harder = plan(ForecastPlanInput(now: noon, startScore: score(z: 3), currentScore: score(z: 3), rodeLoadToday: 3,
-                                            recentLoads: [], profile: profile(), absorptionTrend: 1, projectedACWR: { _, _ in 1 }))
+                                            recentLoads: [], profile: profile(), rideCostTrend: 1, projectedACWR: { _, _ in 1 }))
         XCTAssertEqual(usual[1].effort, harder[1].effort)
         XCTAssertEqual(harder[1].reason, usual[1].reason, "Same word, so the cap still explains it")
     }
@@ -701,14 +570,14 @@ final class ForecastPlannerTests: XCTestCase {
     func testShift_feelPastACapGivesTheFeelReason() {
         func day1(_ trend: Double, z: Double) -> ReadinessRepository.ReadinessForecastDay {
             plan(ForecastPlanInput(now: noon, startScore: score(z: z), currentScore: score(z: z), rodeLoadToday: 3,
-                                   recentLoads: [], profile: profile(), absorptionTrend: trend, projectedACWR: { _, _ in 1 }))[1]
+                                   recentLoads: [], profile: profile(), rideCostTrend: trend, projectedACWR: { _, _ in 1 }))[1]
         }
         let cases = stride(from: -1.0, through: 4.0, by: 1.0 / 6).filter { z in
             day1(0, z: z).effort == .moderate && day1(2, z: z).effort == .easy
         }
         XCTAssertFalse(cases.isEmpty, "Some start puts tomorrow under the Moderate cap as usual and at Easy when harder")
         for z in cases {
-            XCTAssertEqual(day1(2, z: z).reason, "Rides feeling harder than usual", "start z \(z)")
+            XCTAssertEqual(day1(2, z: z).reason, "Rides costing more than usual", "start z \(z)")
         }
     }
 }

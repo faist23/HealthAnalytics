@@ -92,6 +92,21 @@ struct RideCostFlag: Equatable {
     }
 }
 
+/// What Effort Check shows: each priced ride from the last 30 days against its normal, the rides
+/// that couldn't be priced and why, and the trend the plan uses.
+struct RideCostSummary: Equatable {
+    struct Row: Equatable {
+        let ride: PricedRide
+        let price: RidePrice
+    }
+    /// Newest first.
+    let rows: [Row]
+    let unpriced: [UnpricedReason: Int]
+    let trend: Double
+
+    static let shownDays = 30
+}
+
 enum RideCost {
     static let historyDays = 90
     static let trendDays = 14
@@ -111,6 +126,9 @@ enum RideCost {
     static let priorWeight = 1.0
     static let shiftPerPoint = 0.5
     static let maximumShift = 1.0
+    /// The plan's reason on a day ride cost changed the word.
+    static let costlierReason = "Rides costing more than usual"
+    static let cheaperReason = "Rides costing less than usual"
 
     /// The FTP in effect on `date` from a real snapshot. Nil when none is dated on or before it:
     /// the 200 W stand-in would make the intensity meaningless.

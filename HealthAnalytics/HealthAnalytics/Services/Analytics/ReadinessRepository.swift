@@ -22,6 +22,9 @@ class ReadinessRepository: ObservableObject {
     @Published private(set) var currentReadiness: UnifiedReadiness?
     @Published private(set) var intraDayReadiness: RecoveryDecayService.IntraDayReadiness?
     @Published private(set) var forecast: [ReadinessForecastDay]?
+    /// The newest ride from the last 3 days that cost clearly more than its intensity should,
+    /// for the Coach card. Nil when none did or the read failed.
+    @Published private(set) var rideCostFlag: RideCostFlag?
     @Published private(set) var isAnalyzing = false
     /// Non-nil when analysis fails; nil on success. Views branch on this to show
     /// "add workouts" vs "something went wrong" vs normal content.
@@ -195,6 +198,7 @@ class ReadinessRepository: ObservableObject {
     func resetForTesting() {
         currentReadiness = nil
         forecast = nil
+        rideCostFlag = nil
         lastFingerprint = nil
         lastAnalysisDate = nil
         lastActivePatternTypes = nil
@@ -935,6 +939,12 @@ class ReadinessRepository: ObservableObject {
                 }
             }
 
+            // The Coach card: the newest costly ride from the last 3 days, read after the plan so
+            // it can say whether the coming days were eased.
+            self.rideCostFlag = (try? loadForecastHistory(context: modelContext, now: now)).flatMap {
+                Self.rideCostFlag(pricedRides: $0.pricedRides, forecast: self.forecast, now: now)
+            }
+
             #if DEBUG
             print("✅ ReadinessRepository: Unified Analysis Complete. Score: \(baseReadiness.score)")
             #endif
@@ -1234,9 +1244,12 @@ class ReadinessRepository: ObservableObject {
         let workouts: [WorkoutData]
         let ftpSnapshots: [StoredFTPSnapshot]
         let rodeLoadToday: Double
-        /// Rides with an Apple Watch effort rating, for the absorption trend.
-        let ratedRides: [RatedRide]
-        /// Hash of the rows and every workout's load. Today's row is left out: analysis rewrites it.
+        /// Rides from the last 120 days that could be priced, for ride cost.
+        let pricedRides: [PricedRide]
+        /// Rides from the last 120 days that couldn't be priced, and why.
+        let unpricedRides: [(date: Date, reason: UnpricedReason)]
+        /// Hash of the rows, every workout's load and rating, and each recent ride's heart rate,
+        /// power and setting. Today's row is left out: analysis rewrites it.
         let signature: Int
     }
 
@@ -1249,11 +1262,18 @@ class ReadinessRepository: ObservableObject {
         let today = calendar.startOfDay(for: now)
         guard let start = calendar.date(byAdding: .day, value: -ForecastProfile.trainingWindowDays, to: today),
               let rowFetchStart = calendar.date(byAdding: .day, value: -1, to: start)
-        else { return ForecastStoreSnapshot(days: [], workouts: [], ftpSnapshots: [], rodeLoadToday: 0, ratedRides: [], signature: 0) }
+        else { return ForecastStoreSnapshot(days: [], workouts: [], ftpSnapshots: [], rodeLoadToday: 0, pricedRides: [],
+                                            unpricedRides: [], signature: 0) }
 
         let rows = try context.fetch(FetchDescriptor<StoredDailyScore>(predicate: #Predicate { $0.date >= rowFetchStart }))
         let stored = try context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.startDate >= start }))
         let ftpSnapshots = try context.fetch(FetchDescriptor<StoredFTPSnapshot>())
+        // Ride cost compares a ride with the 90 days before it, and Effort Check shows 30 days.
+        let cyclingType = Int(HKWorkoutActivityType.cycling.rawValue)
+        let rideStart = calendar.date(byAdding: .day, value: -(RideCost.historyDays + RideCostSummary.shownDays), to: today) ?? start
+        let recentRides = try context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate {
+            $0.startDate >= rideStart && $0.workoutTypeInt == cyclingType
+        }))
 
         var bestRow: [Date: StoredDailyScore] = [:]
         for row in rows {
@@ -1267,14 +1287,31 @@ class ReadinessRepository: ObservableObject {
         let workouts = stored.map { WorkoutData(from: $0) }
         var hasher = Hasher()
         var rideLoads: [Date: Double] = [:]
-        var ratedRides: [RatedRide] = []
         for workout in stored.sorted(by: { $0.id < $1.id }) {
             let load = predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: workout), ftpSnapshots: ftpSnapshots)
             rideLoads[calendar.startOfDay(for: workout.startDate), default: 0] += load
             hasher.combine(workout.id)
             hasher.combine((load * 100).rounded())
             hasher.combine(workout.effortRating)
-            if let ride = Self.ratedRide(workout, load: load) { ratedRides.append(ride) }
+        }
+        var pricedRides: [PricedRide] = []
+        var unpricedRides: [(date: Date, reason: UnpricedReason)] = []
+        for workout in recentRides.sorted(by: { $0.id < $1.id }) {
+            hasher.combine(workout.id)
+            hasher.combine(workout.averageHeartRate)
+            hasher.combine(workout.normalizedPower)
+            hasher.combine(workout.averagePower)
+            hasher.combine(workout.isIndoor)
+            hasher.combine(workout.effortRating)
+            switch Self.pricing(workout, ftpSnapshots: ftpSnapshots) {
+            case .priced(let ride): pricedRides.append(ride)
+            case .unpriced(let reason): unpricedRides.append((workout.startDate, reason))
+            case nil: break
+            }
+        }
+        for snapshot in ftpSnapshots.sorted(by: { $0.date < $1.date }) {
+            hasher.combine(snapshot.date)
+            hasher.combine(snapshot.watts)
         }
 
         let days = Set(bestRow.keys).union(rideLoads.keys.filter { $0 < today }).sorted().map { day in
@@ -1287,28 +1324,26 @@ class ReadinessRepository: ObservableObject {
             hasher.combine((day.load * 100).rounded())
         }
         return ForecastStoreSnapshot(days: days, workouts: workouts, ftpSnapshots: ftpSnapshots,
-                                     rodeLoadToday: rideLoads[today] ?? 0, ratedRides: ratedRides,
-                                     signature: hasher.finalize())
+                                     rodeLoadToday: rideLoads[today] ?? 0, pricedRides: pricedRides,
+                                     unpricedRides: unpricedRides, signature: hasher.finalize())
     }
 
-    /// A rated cycling workout with time on it, for `EffortAbsorption`.
-    static func ratedRide(_ workout: StoredWorkout, load: Double) -> RatedRide? {
-        guard let rating = workout.effortRating, workout.workoutType == .cycling, workout.duration > 0 else { return nil }
-        return RatedRide(date: workout.startDate, minutes: workout.duration / 60,
-                         loadPerHour: load / (workout.duration / 3600), rating: rating)
+    /// A stored ride priced for ride cost; nil for anything that isn't a ride. FTP comes only
+    /// from a real snapshot on or before the ride, never the 200 W stand-in.
+    static func pricing(_ workout: StoredWorkout, ftpSnapshots: [StoredFTPSnapshot]) -> RidePricing? {
+        RideCost.pricing(id: workout.id, date: workout.startDate, title: workout.title, minutes: workout.duration / 60,
+                         isCycling: workout.workoutType == .cycling, normalizedPower: workout.normalizedPower,
+                         averagePower: workout.averagePower, heartRate: workout.averageHeartRate,
+                         rating: workout.effortRating, isIndoor: workout.isIndoor,
+                         ftp: RideCost.realFTP(for: workout.startDate, snapshots: ftpSnapshots))
     }
 
-    /// Rated rides starting `days` days before today, for a replay that needs comparisons
-    /// further back than the live plan's 90 days. Throws on a failed fetch.
-    func loadRatedRides(context: ModelContext, now: Date, days: Int) throws -> [RatedRide] {
-        let calendar = Calendar.current
-        guard let start = calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: now)) else { return [] }
-        let stored = try context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.startDate >= start }))
-        let ftpSnapshots = try context.fetch(FetchDescriptor<StoredFTPSnapshot>())
-        return stored.filter { $0.effortRating != nil }.compactMap { workout in
-            Self.ratedRide(workout, load: predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: workout),
-                                                                                         ftpSnapshots: ftpSnapshots))
-        }
+    /// The Coach card's ride, noting when ride cost eased the plan.
+    static func rideCostFlag(pricedRides: [PricedRide], forecast: [ReadinessForecastDay]?, now: Date,
+                             calendar: Calendar = .current) -> RideCostFlag? {
+        guard var flag = RideCost.flag(pricedRides, now: now, calendar: calendar) else { return nil }
+        flag.eased = forecast?.contains { $0.reason == RideCost.costlierReason } ?? false
+        return flag
     }
 
     /// Nil on a failed read, which says nothing about whether the store moved.
@@ -1340,7 +1375,7 @@ class ReadinessRepository: ObservableObject {
             injuryRiskElevated: injuryRisk == .high || injuryRisk == .veryHigh,
             noteCaps: Self.forecastNoteCaps(memories),
             shortSleepNights: Self.shortSleepNights(sleep: sleep, now: now, calendar: calendar),
-            absorptionTrend: EffortAbsorption.trend(store.ratedRides, now: now, calendar: calendar),
+            rideCostTrend: RideCost.trend(store.pricedRides, now: now, calendar: calendar),
             projectedACWR: { close, planned in
                 service.calculateReadiness(stravaActivities: [], healthKitWorkouts: store.workouts,
                                            ftpSnapshots: store.ftpSnapshots, referenceDate: close,
@@ -1379,32 +1414,21 @@ class ReadinessRepository: ObservableObject {
         return !Calendar.current.isDate(lastAttempt, inSameDayAs: now)
     }
 
-    /// Recent rated rides against their usual, and the trend the plan uses. Nil on a failed read.
-    func absorptionSummary(modelContext: ModelContext, now: Date = Date()) -> AbsorptionSummary? {
+    /// Recent priced rides against their normal, the rides that couldn't be priced, and the
+    /// trend the plan uses. Nil on a failed read.
+    func rideCostSummary(modelContext: ModelContext, now: Date = Date()) -> RideCostSummary? {
         let calendar = Calendar.current
         guard let store = try? loadForecastHistory(context: modelContext, now: now),
-              let cutoff = calendar.date(byAdding: .day, value: -AbsorptionSummary.shownDays, to: calendar.startOfDay(for: now))
+              let cutoff = calendar.date(byAdding: .day, value: -RideCostSummary.shownDays, to: calendar.startOfDay(for: now))
         else { return nil }
-        let rides = store.ratedRides.filter { $0.date >= cutoff }.sorted { $0.date > $1.date }.map { ride in
-            AbsorptionSummary.Ride(date: ride.date, rating: ride.rating,
-                                   expected: EffortAbsorption.expectedRating(ride, among: store.ratedRides),
-                                   difference: EffortAbsorption.feltDifference(ride, among: store.ratedRides))
+        let rows = store.pricedRides.filter { $0.date >= cutoff }.sorted { $0.date > $1.date }.map {
+            RideCostSummary.Row(ride: $0, price: RideCost.price($0, among: store.pricedRides))
         }
-        return AbsorptionSummary(rides: rides, trend: EffortAbsorption.trend(store.ratedRides, now: now, calendar: calendar))
+        var unpriced: [UnpricedReason: Int] = [:]
+        for ride in store.unpricedRides where ride.date >= cutoff { unpriced[ride.reason, default: 0] += 1 }
+        return RideCostSummary(rows: rows, unpriced: unpriced,
+                               trend: RideCost.trend(store.pricedRides, now: now, calendar: calendar))
     }
-
-    /// The plan replayed against the last 60 days. Nil on a failed read.
-    func forecastCheck(modelContext: ModelContext, now: Date = Date()) -> ForecastCheckResult? {
-        // Each replayed day compares rides up to 90 days before it, so ratings are read from
-        // before the live plan's window.
-        guard let store = try? loadForecastHistory(context: modelContext, now: now),
-              let ratedRides = try? loadRatedRides(context: modelContext, now: now,
-                                                   days: EffortAbsorption.historyDays + Self.forecastCheckDays)
-        else { return nil }
-        return ForecastPlanner.replay(history: store.days, ratedRides: ratedRides, days: Self.forecastCheckDays, today: now, calendar: .current)
-    }
-
-    nonisolated static let forecastCheckDays = 60
 
     /// A failed read keeps the last plan while it still starts today. It never falls back to
     /// "no history", and yesterday's plan would call yesterday Today.

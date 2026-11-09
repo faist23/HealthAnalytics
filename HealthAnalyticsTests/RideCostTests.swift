@@ -234,4 +234,21 @@ final class RideCostTests: XCTestCase {
         let allOut = RideCostFlag(date: now, title: nil, heartRateAbove: nil, rating: 9, normalRating: 3)
         XCTAssertEqual(allOut.lines, ["Felt all out (9) where rides like it feel easy (3)"])
     }
+
+    // MARK: - Effort Check text
+
+    func testEffortCheckRowText() {
+        let r = ride(daysAgo: 1, hr: 152, rating: 8)
+        let row = RideCostSummary.Row(ride: r, price: RideCost.price(r, among: usual() + [r]))
+        XCTAssertEqual(EffortCheckView.rowText(row), "indoor · IF 0.70 · HR 152 (usual 140, +12) · rated 8 (usual 5)")
+        let alone = ride(daysAgo: 1, hr: 138, indoor: false)
+        XCTAssertEqual(EffortCheckView.rowText(.init(ride: alone, price: RideCost.price(alone, among: [alone]))),
+                       "outdoor · IF 0.70 · HR 138 (not judged)")
+    }
+
+    func testEffortCheckTrendText() {
+        XCTAssertEqual(EffortCheckView.trendText(0.01), "Rides are costing about what they usually do.")
+        XCTAssertEqual(EffortCheckView.trendText(1.24), "Rides are costing about 1.2 points more than usual.")
+        XCTAssertEqual(EffortCheckView.trendText(-0.5), "Rides are costing about 0.5 points less than usual.")
+    }
 }
