@@ -58,6 +58,16 @@
 
 **Checked (v0.1.25.0, Settings → Effort Check):** Craig's rides carry both an effort rating (`workoutEffortScore`) and Apple's estimate (2026-11-07). Any app can write that rating, so before designing, check the screen's "Ratings written by" list: ratings Craig gave appear under an Apple device name (such as "Craig's Apple Watch" or "Craig's iPhone"), and any other name is another app's score. The list shows only the newest rating per workout, so an app writing after Craig can hide his. Read the bundle identifier (com.apple.*) and every related sample before the forecast relies on this. Next: a short design for what counts as "the same workout" before any code. Effort Check leftovers from its review: a lookup failure on every workout (a locked device, say) reads as "no ratings" rather than an error, and a reload after an error briefly shows empty counts instead of the spinner. A cancelled load also finishes as "no ratings" because the per-workout lookups swallow cancellation. Found at the end of the v0.1.26.0 review: an empty ratings read changes nothing, so deleting the only Apple rating left in the 14-day window is never synced and that rating keeps feeding the trend; telling "denied" from "none" needs an authorization check. `estimatedWorkoutEffortScore` is Apple's estimate from the workout, not how it felt, so it can't stand in for the feeling. "Comparable" needs a definition, such as similar duration and power-zone load. This needs its own design.
 
+### Ride cost: known limits from the v0.1.28.0 review
+**Priority:** P3. None loses data. Check against real rides in Effort Check's "Ride cost" section before changing anything.
+
+**What:**
+- **An outdoor ride recorded with GPS off reads as indoor.** It has no route, and the rule is "a GPS route means outdoor", so it is compared with trainer rides and can read as cheap. A manual entry is the same.
+- **Ride length includes stops.** `mapStravaActivity` stores Strava's elapsed time, so a café stop makes a ride look longer and matches it against longer rides. Moving time would need a new stored field.
+- **Rides before the first FTP on record are never priced.** No 200 W stand-in, by design. If the only snapshot is a recent Strava fetch, ride cost stays quiet until 3 comparable rides build up after it. Effort Check counts them under "No FTP on record for its date"; adding past FTPs in Settings → FTP History unlocks them.
+- **The one-time indoor fill can finish on a partial list.** It stops at 50 pages (10,000 activities in 120 days), and it finishes with nothing written if every ride in Strava's list came back with no map. Its done flag (`indoorFlagFillDone`) also isn't per Strava athlete, so a later account's older rides get the flag only from the regular sync window.
+- **Each analysis reads the store once more** to build the Coach card (`rideCostFlag`). Cheap at real ride counts; pass the plan's snapshot through if it ever shows up.
+
 ### Forecast plan edge cases found by the v0.1.24.0 reviews
 **Priority:** P3. None loses data; all are rare or need real data to judge.
 
