@@ -385,10 +385,23 @@ struct ForecastCheckResult: Equatable {
         let actual: ReadinessRepository.ForecastEffort
     }
 
+    /// What how rides feel did to the replay: the days it changed tomorrow's suggestion, whether
+    /// each came out closer to the real morning, and the headline counts without it.
+    struct FeelEffect: Equatable {
+        let changedDays: Int
+        let closer: Int
+        let further: Int
+        let same: Int
+        let exactWithout: Int
+        let withinOneWithout: Int
+    }
+
     let daysChecked: Int
+    /// With how rides feel, like the live plan.
     let exact: Int
-    /// The same level or one step off, so it includes `exact`.
+    /// The same level or one step off, so it includes `exact`. With how rides feel.
     let withinOne: Int
+    let feel: FeelEffect
     /// Newest first, at most `ForecastPlanner.maximumListedMisses`.
     let recentMisses: [Miss]
     let recoveryDays: Int
@@ -404,10 +417,15 @@ extension ForecastPlanner {
     /// isn't dated, and the load ceiling is held open so the two caps' effects stay separate.
     /// An estimate: stored rows already include that day's ride, and the live plan starts from
     /// a score without it, so ride days read a little harsher here than they do live.
-    static func replay(history: [ForecastHistoryDay], days: Int, today: Date, calendar: Calendar) -> ForecastCheckResult {
+    /// Each day is planned twice, with and without how rides feel. The feel trend for D sees
+    /// ratings up to the end of D, like the live plan (D's own rides only as comparisons, since
+    /// the trend skips the current day), and never a later one.
+    static func replay(history: [ForecastHistoryDay], ratedRides: [RatedRide] = [], days: Int, today: Date,
+                       calendar: Calendar) -> ForecastCheckResult {
         let start = calendar.startOfDay(for: today)
         let byDay = Dictionary(history.map { (calendar.startOfDay(for: $0.date), $0) }, uniquingKeysWith: { $1 })
-        var checked = 0, exact = 0, withinOne = 0
+        var checked = 0, exact = 0, withinOne = 0, exactWithout = 0, withinOneWithout = 0
+        var changed = 0, closer = 0, further = 0, same = 0
         var misses: [ForecastCheckResult.Miss] = []
 
         for back in stride(from: days, through: 2, by: -1) {
@@ -419,14 +437,24 @@ extension ForecastPlanner {
             let before = history.filter { calendar.startOfDay(for: $0.date) < date }
             guard let profile = ForecastProfile.learn(history: before, today: date, calendar: calendar) else { continue }
 
-            let input = ForecastPlanInput(now: noon, startScore: score, currentScore: score,
+            var input = ForecastPlanInput(now: noon, startScore: score, currentScore: score,
                                           rodeLoadToday: byDay[date]?.load ?? 0, recentLoads: before,
                                           profile: profile, firstDayIsFinished: true, projectedACWR: { _, _ in 1.0 })
-            let suggested = plan(input, calendar: calendar)[1].effort
+            let without = plan(input, calendar: calendar)[1].effort
+            let earlierRides = ratedRides.filter { $0.date < next }
+            input.absorptionTrend = EffortAbsorption.trend(earlierRides, now: noon, calendar: calendar)
+            let suggested = input.absorptionTrend == 0 ? without : plan(input, calendar: calendar)[1].effort
             let actual = profile.band(z: profile.z(Double(nextScore)))
 
             checked += 1
             let distance = abs(suggested.rawValue - actual.rawValue)
+            let distanceWithout = abs(without.rawValue - actual.rawValue)
+            if distanceWithout == 0 { exactWithout += 1 }
+            if distanceWithout <= 1 { withinOneWithout += 1 }
+            if suggested != without {
+                changed += 1
+                if distance < distanceWithout { closer += 1 } else if distance > distanceWithout { further += 1 } else { same += 1 }
+            }
             if distance == 0 { exact += 1 }
             if distance <= 1 {
                 withinOne += 1
@@ -437,6 +465,8 @@ extension ForecastPlanner {
 
         let current = ForecastProfile.learn(history: history, today: start, calendar: calendar)
         return ForecastCheckResult(daysChecked: checked, exact: exact, withinOne: withinOne,
+                                   feel: .init(changedDays: changed, closer: closer, further: further, same: same,
+                                               exactWithout: exactWithout, withinOneWithout: withinOneWithout),
                                    recentMisses: Array(misses.reversed().prefix(maximumListedMisses)),
                                    recoveryDays: current?.recoveryDays ?? ForecastProfile.defaultRecoveryDays,
                                    episodeCount: current?.episodeCount ?? 0)

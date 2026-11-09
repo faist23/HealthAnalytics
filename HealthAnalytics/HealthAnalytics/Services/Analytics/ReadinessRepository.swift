@@ -1274,10 +1274,7 @@ class ReadinessRepository: ObservableObject {
             hasher.combine(workout.id)
             hasher.combine((load * 100).rounded())
             hasher.combine(workout.effortRating)
-            if let rating = workout.effortRating, workout.workoutType == .cycling, workout.duration > 0 {
-                ratedRides.append(RatedRide(date: workout.startDate, minutes: workout.duration / 60,
-                                            loadPerHour: load / (workout.duration / 3600), rating: rating))
-            }
+            if let ride = Self.ratedRide(workout, load: load) { ratedRides.append(ride) }
         }
 
         let days = Set(bestRow.keys).union(rideLoads.keys.filter { $0 < today }).sorted().map { day in
@@ -1292,6 +1289,26 @@ class ReadinessRepository: ObservableObject {
         return ForecastStoreSnapshot(days: days, workouts: workouts, ftpSnapshots: ftpSnapshots,
                                      rodeLoadToday: rideLoads[today] ?? 0, ratedRides: ratedRides,
                                      signature: hasher.finalize())
+    }
+
+    /// A rated cycling workout with time on it, for `EffortAbsorption`.
+    static func ratedRide(_ workout: StoredWorkout, load: Double) -> RatedRide? {
+        guard let rating = workout.effortRating, workout.workoutType == .cycling, workout.duration > 0 else { return nil }
+        return RatedRide(date: workout.startDate, minutes: workout.duration / 60,
+                         loadPerHour: load / (workout.duration / 3600), rating: rating)
+    }
+
+    /// Rated rides starting `days` days before today, for a replay that needs comparisons
+    /// further back than the live plan's 90 days. Throws on a failed fetch.
+    func loadRatedRides(context: ModelContext, now: Date, days: Int) throws -> [RatedRide] {
+        let calendar = Calendar.current
+        guard let start = calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: now)) else { return [] }
+        let stored = try context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.startDate >= start }))
+        let ftpSnapshots = try context.fetch(FetchDescriptor<StoredFTPSnapshot>())
+        return stored.filter { $0.effortRating != nil }.compactMap { workout in
+            Self.ratedRide(workout, load: predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: workout),
+                                                                                         ftpSnapshots: ftpSnapshots))
+        }
     }
 
     /// Nil on a failed read, which says nothing about whether the store moved.
@@ -1378,8 +1395,13 @@ class ReadinessRepository: ObservableObject {
 
     /// The plan replayed against the last 60 days. Nil on a failed read.
     func forecastCheck(modelContext: ModelContext, now: Date = Date()) -> ForecastCheckResult? {
-        guard let store = try? loadForecastHistory(context: modelContext, now: now) else { return nil }
-        return ForecastPlanner.replay(history: store.days, days: Self.forecastCheckDays, today: now, calendar: .current)
+        // Each replayed day compares rides up to 90 days before it, so ratings are read from
+        // before the live plan's window.
+        guard let store = try? loadForecastHistory(context: modelContext, now: now),
+              let ratedRides = try? loadRatedRides(context: modelContext, now: now,
+                                                   days: EffortAbsorption.historyDays + Self.forecastCheckDays)
+        else { return nil }
+        return ForecastPlanner.replay(history: store.days, ratedRides: ratedRides, days: Self.forecastCheckDays, today: now, calendar: .current)
     }
 
     nonisolated static let forecastCheckDays = 60

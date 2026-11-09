@@ -3,6 +3,12 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.27.0] - 2026-11-09
+
+### Added
+
+- Forecast Check, in Settings, now shows whether how your rides feel helps the plan. It replays each of the last 60 days with and without how your rides felt, using only ratings given up to that day. The headline numbers include the feel, like the plan you get. A new "How rides feel" section counts the days it changed tomorrow's suggestion and whether each came out closer to your real next morning, next to the numbers without it.
+
 ## [0.1.26.1] - 2026-11-09
 
 ### Fixed

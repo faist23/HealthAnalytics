@@ -496,6 +496,64 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(result.episodeCount, 6)
     }
 
+    // MARK: - Replay with how rides feel
+
+    /// A one-hour ride rated `rating`, at 9am `daysAgo` days before today.
+    private func rated(_ rating: Double, daysAgo: Int) -> RatedRide {
+        RatedRide(date: day(-daysAgo).addingTimeInterval(9 * 3600), minutes: 60, loadPerHour: 2, rating: rating)
+    }
+
+    /// Rides rated 5 from 30 to 50 days ago, so later rides have a usual of 5.
+    private var usualRides: [RatedRide] { (30...50).map { rated(5, daysAgo: $0) } }
+
+    private func replay(_ days: [(score: Int?, load: Double)], rides: [RatedRide], window: Int = 10) -> ForecastCheckResult {
+        ForecastPlanner.replay(history: history(days), ratedRides: rides, days: window, today: today, calendar: calendar)
+    }
+
+    func testReplayFeel_noRatingsChangesNothing() {
+        var days = flat(40)
+        days[37].score = 72
+        days[39].score = 40
+        let plain = replay(days), withRides = replay(days, rides: [])
+        XCTAssertEqual(plain, withRides)
+        XCTAssertEqual(plain.feel.changedDays, 0)
+        XCTAssertEqual(plain.feel.exactWithout, plain.exact)
+        XCTAssertEqual(plain.feel.withinOneWithout, plain.withinOne)
+    }
+
+    /// Flat mornings at 70 read Moderate; the plan suggests Hard. Rides feeling 4 points harder
+    /// pull tomorrow's suggestion down toward the real morning.
+    func testReplayFeel_harderRidesMoveSuggestionsTowardTheRealMorning() {
+        let rides = usualRides + (2...12).map { rated(9, daysAgo: $0) }
+        let result = replay(flat(40), rides: rides)
+        XCTAssertGreaterThan(result.feel.changedDays, 0)
+        XCTAssertGreaterThan(result.feel.closer, 0)
+        XCTAssertEqual(result.feel.further, 0)
+        XCTAssertEqual(result.feel.closer + result.feel.further + result.feel.same, result.feel.changedDays)
+        XCTAssertGreaterThan(result.exact, result.feel.exactWithout, "Headline numbers include the feel")
+    }
+
+    /// The replay of day D sees ratings up to D, like the live plan, never later ones. Later 9s
+    /// would move the usual for the ride 4 days ago from 5 to 9 and erase its difference.
+    func testReplayFeel_laterRatingsDontChangeEarlierComparisons() {
+        let base = (20...22).map { rated(5, daysAgo: $0) } + [rated(9, daysAgo: 4)]
+        let leaky = base + (0...1).flatMap { [rated(9, daysAgo: $0), rated(9, daysAgo: $0)] }
+        let clean = replay(flat(40), rides: base, window: 3)
+        XCTAssertGreaterThan(clean.feel.changedDays, 0, "The ride 4 days ago reads 4 points harder")
+        XCTAssertEqual(clean, replay(flat(40), rides: leaky, window: 3))
+    }
+
+    func testFeelSummary() {
+        func effect(_ changed: Int, _ closer: Int, _ further: Int, _ same: Int) -> ForecastCheckResult.FeelEffect {
+            .init(changedDays: changed, closer: closer, further: further, same: same, exactWithout: 0, withinOneWithout: 0)
+        }
+        XCTAssertEqual(ForecastCheckView.feelSummary(effect(0, 0, 0, 0)), "How rides feel hasn't changed a suggestion yet.")
+        XCTAssertEqual(ForecastCheckView.feelSummary(effect(1, 1, 0, 0)),
+                       "Changed tomorrow's suggestion on 1 day: closer to the real morning on 1, further on 0, no different on 0.")
+        XCTAssertEqual(ForecastCheckView.feelSummary(effect(5, 3, 1, 1)),
+                       "Changed tomorrow's suggestion on 5 days: closer to the real morning on 3, further on 1, no different on 1.")
+    }
+
     // MARK: - Final review fixes
 
     func testRideDayFollowedByARise_isNotCalledBouncingBack() {

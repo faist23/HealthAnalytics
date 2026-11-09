@@ -527,6 +527,30 @@ final class ForecastPlanStoreTests: XCTestCase {
                       "usual \(usual.map(\.effort)) harder \(harder.map(\.effort))")
     }
 
+    func testForecastCheck_replaysStoredRatings() throws {
+        insertRows(2...40, score: 70)
+        insertRatedRides(recent: nil)
+        try ctx.save()
+        let plain = try XCTUnwrap(repo.forecastCheck(modelContext: ctx, now: noon))
+        XCTAssertEqual(plain.feel.changedDays, 0)
+
+        for daysAgo in 3...12 { insertRide("harder-\(daysAgo)", daysAgo: daysAgo, hours: 1).effortRating = 9 }
+        try ctx.save()
+        let harder = try XCTUnwrap(repo.forecastCheck(modelContext: ctx, now: noon))
+        XCTAssertGreaterThan(harder.feel.changedDays, 0, "Stored ratings reach the replay")
+    }
+
+    /// A day replayed 55 days back compares against rides up to 90 days before it, so the
+    /// check reads ratings from before the live plan's 90-day window.
+    func testForecastCheck_oldDaysGetAFullComparisonWindow() throws {
+        insertRows(2...80, score: 70)
+        for daysAgo in stride(from: 100, through: 120, by: 5) { insertRide("old-\(daysAgo)", daysAgo: daysAgo, hours: 1).effortRating = 5 }
+        for daysAgo in 50...56 { insertRide("harder-\(daysAgo)", daysAgo: daysAgo, hours: 1).effortRating = 9 }
+        try ctx.save()
+        let result = try XCTUnwrap(repo.forecastCheck(modelContext: ctx, now: noon))
+        XCTAssertGreaterThan(result.feel.changedDays, 0, "The 100-120-day-old usual rides are read")
+    }
+
     func testCache_newRatingChangesTheSignature() throws {
         insertRows(1...30)
         let ride = insertRide("rated-later", daysAgo: 1, hours: 1)
