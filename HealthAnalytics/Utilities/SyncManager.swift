@@ -886,24 +886,44 @@ class SyncManager: ObservableObject {
         return oldest >= cutoff
     }
 
+    enum IndoorFillOutcome: Equatable {
+        case skipped, fetchFailed, writeFailed
+        case done(changed: Int)
+    }
+
+    /// The one-time fill's steps, given the Strava page fetch and the store write
+    /// (`fillIndoorFlagsIfNeeded` passes the real ones). Only `done` finishes the fill; a failed
+    /// page writes nothing and a failed write leaves it for the next sync. A ride whose setting
+    /// isn't known is left out.
+    nonisolated static func runIndoorFill(alreadyDone: Bool, isAuthenticated: Bool, cutoff: Date,
+                                          fetchPage: (Int) async throws -> [StravaActivity],
+                                          apply: ([String: Bool]) async -> Int?) async -> IndoorFillOutcome {
+        guard isAuthenticated, !alreadyDone else { return .skipped }
+        var flags: [String: Bool] = [:]
+        for page in 1...indoorFillMaxPages {
+            guard let batch = try? await fetchPage(page) else { return .fetchFailed }
+            for activity in batch { if let indoor = activity.isIndoor { flags[String(activity.id)] = indoor } }
+            if !indoorFillNeedsAnotherPage(page: batch, cutoff: cutoff) { break }
+        }
+        guard let changed = await apply(flags) else { return .writeFailed }
+        return .done(changed: changed)
+    }
+
     /// Rides stored before `isIndoor` existed get it from Strava's list once: the regular sync
-    /// re-reads only about a week. A failed page leaves the fill for the next sync.
+    /// re-reads only about a week.
     private func fillIndoorFlagsIfNeeded(dataHandler: DataPersistenceActor) async {
-        guard stravaManager.isAuthenticated, !UserDefaults.standard.bool(forKey: Self.indoorFillDoneKey),
-              let cutoff = Calendar.current.date(byAdding: .day, value: -Self.indoorFillDays,
+        guard let cutoff = Calendar.current.date(byAdding: .day, value: -Self.indoorFillDays,
                                                  to: Calendar.current.startOfDay(for: Date()))
         else { return }
-        var flags: [String: Bool] = [:]
-        for page in 1...Self.indoorFillMaxPages {
-            guard let batch = try? await stravaManager.fetchActivities(page: page, perPage: Self.stravaActivitiesPageSize)
-            else { return }
-            for activity in batch { flags[String(activity.id)] = activity.isIndoor }
-            if !Self.indoorFillNeedsAnotherPage(page: batch, cutoff: cutoff) { break }
-        }
-        let changed = await dataHandler.applyIndoorFlags(flags)
-        UserDefaults.standard.set(true, forKey: Self.indoorFillDoneKey)
+        let manager = stravaManager
+        let outcome = await Self.runIndoorFill(
+            alreadyDone: UserDefaults.standard.bool(forKey: Self.indoorFillDoneKey),
+            isAuthenticated: manager.isAuthenticated, cutoff: cutoff,
+            fetchPage: { page in try await manager.fetchActivities(page: page, perPage: Self.stravaActivitiesPageSize) },
+            apply: { flags in await dataHandler.applyIndoorFlags(flags) })
+        if case .done = outcome { UserDefaults.standard.set(true, forKey: Self.indoorFillDoneKey) }
         #if DEBUG
-        print("🏠 Indoor flag fill: \(changed) rides updated from \(flags.count) Strava activities")
+        print("🏠 Indoor flag fill: \(outcome)")
         #endif
     }
 
@@ -1215,21 +1235,25 @@ actor DataPersistenceActor {
         Self.tagStravaRides(ids: ids, athlete: athlete, in: modelContext)
     }
 
-    /// Sets `isIndoor` on the stored Strava rides with these ids where it differs. Returns rows changed.
-    static func applyIndoorFlags(_ flags: [String: Bool], in context: ModelContext) -> Int {
+    /// Sets `isIndoor` on the stored Strava rides with these ids where it differs. Returns rows
+    /// changed, or nil when the read or the save failed, so the fill runs again.
+    static func applyIndoorFlags(_ flags: [String: Bool], in context: ModelContext) -> Int? {
         guard !flags.isEmpty else { return 0 }
-        let rides = ((try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.source == "Strava" }))) ?? [])
+        guard let rides = try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.source == "Strava" }))
+        else { return nil }
         var changed = 0
         for ride in rides {
             guard let flag = flags[ride.id], ride.isIndoor != flag else { continue }
             ride.isIndoor = flag
             changed += 1
         }
-        if changed > 0 { try? context.save() }
+        if changed > 0 {
+            do { try context.save() } catch { return nil }
+        }
         return changed
     }
 
-    func applyIndoorFlags(_ flags: [String: Bool]) -> Int {
+    func applyIndoorFlags(_ flags: [String: Bool]) -> Int? {
         Self.applyIndoorFlags(flags, in: modelContext)
     }
 

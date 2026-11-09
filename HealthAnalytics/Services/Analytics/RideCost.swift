@@ -18,7 +18,7 @@ struct PricedRide: Equatable {
     let date: Date
     let title: String?
     let minutes: Double
-    /// Normalized power (average power when NP is missing) ÷ FTP on the ride's date.
+    /// Normalized power ÷ FTP on the ride's date.
     let intensity: Double
     let heartRate: Double
     /// Apple Watch effort rating, 1-10; nil when unrated.
@@ -45,7 +45,7 @@ enum UnpricedReason: String, CaseIterable {
     var text: String {
         switch self {
         case .tooShort: return "Under 20 minutes"
-        case .noPower: return "No power"
+        case .noPower: return "No measured power"
         case .noHeartRate: return "No heart rate"
         case .noFTP: return "No FTP on record for its date"
         case .unknownSetting: return "Indoor or outdoor not known yet"
@@ -136,14 +136,15 @@ enum RideCost {
         snapshots.filter { $0.date <= date }.max { $0.date < $1.date }.map { Double($0.watts) }
     }
 
-    /// Nil for anything that isn't a ride.
+    /// Nil for anything that isn't a ride. Only normalized power counts: Strava gives it only from
+    /// measured power, while its average watts for a ride with no power meter is an estimate, and
+    /// mixing average-power rides with NP rides would compare unlike efforts (Craig, review D1).
     static func pricing(id: String, date: Date, title: String?, minutes: Double, isCycling: Bool,
-                        normalizedPower: Double?, averagePower: Double?, heartRate: Double?, rating: Double?,
+                        normalizedPower: Double?, heartRate: Double?, rating: Double?,
                         isIndoor: Bool?, ftp: Double?) -> RidePricing? {
         guard isCycling else { return nil }
         guard minutes >= minimumMinutes else { return .unpriced(.tooShort) }
-        guard let power = [normalizedPower, averagePower].compactMap({ $0 }).first(where: { $0 > 0 })
-        else { return .unpriced(.noPower) }
+        guard let power = normalizedPower, power > 0 else { return .unpriced(.noPower) }
         guard let heartRate, heartRate > 0 else { return .unpriced(.noHeartRate) }
         guard let ftp, ftp > 0 else { return .unpriced(.noFTP) }
         guard let isIndoor else { return .unpriced(.unknownSetting) }

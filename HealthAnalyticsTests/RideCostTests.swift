@@ -120,18 +120,17 @@ final class RideCostTests: XCTestCase {
 
     // MARK: - Pricing a stored ride
 
-    private func pricing(minutes: Double = 60, isCycling: Bool = true, np: Double? = 210, avg: Double? = 200,
+    private func pricing(minutes: Double = 60, isCycling: Bool = true, np: Double? = 210,
                          hr: Double? = 140, isIndoor: Bool? = true, ftp: Double? = 300) -> RidePricing? {
         RideCost.pricing(id: "r", date: now, title: "Ride", minutes: minutes, isCycling: isCycling,
-                         normalizedPower: np, averagePower: avg, heartRate: hr, rating: 5,
-                         isIndoor: isIndoor, ftp: ftp)
+                         normalizedPower: np, heartRate: hr, rating: 5, isIndoor: isIndoor, ftp: ftp)
     }
 
     func testPricing_reasons() {
         XCTAssertNil(pricing(isCycling: false))
         XCTAssertEqual(pricing(minutes: 19), .unpriced(.tooShort))
-        XCTAssertEqual(pricing(np: nil, avg: nil), .unpriced(.noPower))
-        XCTAssertEqual(pricing(np: 0, avg: 0), .unpriced(.noPower))
+        XCTAssertEqual(pricing(np: nil), .unpriced(.noPower))
+        XCTAssertEqual(pricing(np: 0), .unpriced(.noPower))
         XCTAssertEqual(pricing(hr: nil), .unpriced(.noHeartRate))
         XCTAssertEqual(pricing(ftp: nil), .unpriced(.noFTP))
         XCTAssertEqual(pricing(isIndoor: nil), .unpriced(.unknownSetting))
@@ -139,9 +138,12 @@ final class RideCostTests: XCTestCase {
         XCTAssertEqual(ride.intensity, 0.7, accuracy: 1e-9)
     }
 
-    func testPricing_averagePowerWhenNoNP() {
-        guard case .priced(let ride)? = pricing(np: nil, avg: 150) else { return XCTFail("Should price") }
-        XCTAssertEqual(ride.intensity, 0.5, accuracy: 1e-9)
+    /// Strava gives NP only from measured power; a ride with only its estimated average watts
+    /// (no power meter) is never priced (Craig, review D1).
+    func testPricing_estimatedPowerAloneIsNoPower() {
+        let estimated = RideCost.pricing(id: "r", date: now, title: nil, minutes: 60, isCycling: true,
+                                         normalizedPower: nil, heartRate: 140, rating: nil, isIndoor: true, ftp: 300)
+        XCTAssertEqual(estimated, .unpriced(.noPower))
     }
 
     func testPricing_higherFTPLowersIntensity() {

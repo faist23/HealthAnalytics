@@ -1333,7 +1333,7 @@ class ReadinessRepository: ObservableObject {
     static func pricing(_ workout: StoredWorkout, ftpSnapshots: [StoredFTPSnapshot]) -> RidePricing? {
         RideCost.pricing(id: workout.id, date: workout.startDate, title: workout.title, minutes: workout.duration / 60,
                          isCycling: workout.workoutType == .cycling, normalizedPower: workout.normalizedPower,
-                         averagePower: workout.averagePower, heartRate: workout.averageHeartRate,
+                         heartRate: workout.averageHeartRate,
                          rating: workout.effortRating, isIndoor: workout.isIndoor,
                          ftp: RideCost.realFTP(for: workout.startDate, snapshots: ftpSnapshots))
     }

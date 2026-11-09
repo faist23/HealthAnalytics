@@ -96,11 +96,13 @@ struct StravaActivity: Codable, Identifiable {
         case sufferScore = "suffer_score"
     }
     
-    /// Indoor when Strava calls it a virtual ride (Zwift's route is virtual) or a trainer ride,
-    /// or when it has no GPS route (Craig: "if there is a gps route, it's an outdoor ride").
-    var isIndoor: Bool {
+    /// Indoor when Strava calls it a virtual ride (Zwift's route is virtual) or a trainer ride;
+    /// otherwise outdoor with a GPS route and indoor without one (Craig: "if there is a gps route,
+    /// it's an outdoor ride"). Nil when the list sent no map at all, which says nothing about the route.
+    var isIndoor: Bool? {
         if type == "VirtualRide" || sportType == "VirtualRide" || trainer == true { return true }
-        return (map?.summaryPolyline ?? "").isEmpty
+        guard let map else { return nil }
+        return (map.summaryPolyline ?? "").isEmpty
     }
 
     var distanceInMiles: Double {
