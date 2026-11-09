@@ -533,11 +533,14 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertGreaterThan(result.exact, result.feel.exactWithout, "Headline numbers include the feel")
     }
 
-    /// The replay of day D uses only ratings from before D, so a rating can't predict its own day.
-    func testReplayFeel_neverSeesLaterRatings() {
-        let rides = usualRides + (0...1).map { rated(9, daysAgo: $0) }
-        let result = replay(flat(40), rides: rides)
-        XCTAssertEqual(result.feel.changedDays, 0, "Every replayed day is before those ratings")
+    /// The replay of day D sees ratings up to D, like the live plan, never later ones. Later 9s
+    /// would move the usual for the ride 4 days ago from 5 to 9 and erase its difference.
+    func testReplayFeel_laterRatingsDontChangeEarlierComparisons() {
+        let base = (20...22).map { rated(5, daysAgo: $0) } + [rated(9, daysAgo: 4)]
+        let leaky = base + (0...1).flatMap { [rated(9, daysAgo: $0), rated(9, daysAgo: $0)] }
+        let clean = replay(flat(40), rides: base, window: 3)
+        XCTAssertGreaterThan(clean.feel.changedDays, 0, "The ride 4 days ago reads 4 points harder")
+        XCTAssertEqual(clean, replay(flat(40), rides: leaky, window: 3))
     }
 
     func testFeelSummary() {

@@ -417,8 +417,9 @@ extension ForecastPlanner {
     /// isn't dated, and the load ceiling is held open so the two caps' effects stay separate.
     /// An estimate: stored rows already include that day's ride, and the live plan starts from
     /// a score without it, so ride days read a little harsher here than they do live.
-    /// Each day is planned twice, with and without how rides feel; the feel trend for D is built
-    /// only from ratings before D (comparisons included), so no rating sees its own future.
+    /// Each day is planned twice, with and without how rides feel. The feel trend for D sees
+    /// ratings up to the end of D, like the live plan (D's own rides only as comparisons, since
+    /// the trend skips the current day), and never a later one.
     static func replay(history: [ForecastHistoryDay], ratedRides: [RatedRide] = [], days: Int, today: Date,
                        calendar: Calendar) -> ForecastCheckResult {
         let start = calendar.startOfDay(for: today)
@@ -440,7 +441,7 @@ extension ForecastPlanner {
                                           rodeLoadToday: byDay[date]?.load ?? 0, recentLoads: before,
                                           profile: profile, firstDayIsFinished: true, projectedACWR: { _, _ in 1.0 })
             let without = plan(input, calendar: calendar)[1].effort
-            let earlierRides = ratedRides.filter { $0.date < date }
+            let earlierRides = ratedRides.filter { $0.date < next }
             input.absorptionTrend = EffortAbsorption.trend(earlierRides, now: noon, calendar: calendar)
             let suggested = input.absorptionTrend == 0 ? without : plan(input, calendar: calendar)[1].effort
             let actual = profile.band(z: profile.z(Double(nextScore)))

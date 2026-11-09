@@ -28,15 +28,13 @@ struct ForecastCheckView: View {
                 }
                 Section {
                     Text(Self.feelSummary(result.feel))
-                    if result.feel.changedDays > 0 {
-                        LabeledContent("Same or one step off without it",
-                                       value: percent(result.feel.withinOneWithout, of: result.daysChecked))
-                        LabeledContent("Same level without it", value: percent(result.feel.exactWithout, of: result.daysChecked))
-                    }
+                    LabeledContent("Same or one step off without it",
+                                   value: percent(result.feel.withinOneWithout, of: result.daysChecked))
+                    LabeledContent("Same level without it", value: percent(result.feel.exactWithout, of: result.daysChecked))
                 } header: {
                     Text("How rides feel")
                 } footer: {
-                    Text("Each day uses only ratings given before it.")
+                    Text("Each day uses only ratings given up to that day.")
                 }
                 Section("What it has learned") {
                     LabeledContent("Recovery time", value: result.recoveryDays == 1 ? "1 day" : "\(result.recoveryDays) days")
