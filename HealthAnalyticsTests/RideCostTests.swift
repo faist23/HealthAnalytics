@@ -233,6 +233,9 @@ final class RideCostTests: XCTestCase {
                                     "The coming days are eased."])
         let hrOnly = RideCostFlag(date: now, title: nil, heartRateAbove: 9, rating: nil, normalRating: nil)
         XCTAssertEqual(hrOnly.lines, ["Heart rate 9 bpm above your normal for this effort"])
+        let sameWord = RideCostFlag(date: now, title: nil, heartRateAbove: nil, rating: 6, normalRating: 4)
+        XCTAssertEqual(sameWord.lines, ["Rated 6 where rides like it are rated 4"],
+                       "Never 'felt moderate (6) where rides like it feel moderate (4)'")
         let allOut = RideCostFlag(date: now, title: nil, heartRateAbove: nil, rating: 9, normalRating: 3)
         XCTAssertEqual(allOut.lines, ["Felt all out (9) where rides like it feel easy (3)"])
     }

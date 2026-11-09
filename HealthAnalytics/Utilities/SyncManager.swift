@@ -877,7 +877,8 @@ class SyncManager: ObservableObject {
     nonisolated static let indoorFillDoneKey = "indoorFlagFillDone"
     /// Ride cost compares a ride with the 90 days before it, and Effort Check shows 30 days.
     nonisolated static let indoorFillDays = 120
-    nonisolated static let indoorFillMaxPages = 5
+    /// A safety stop only (10,000 activities); the fill otherwise reads until the window ends.
+    nonisolated static let indoorFillMaxPages = 50
 
     /// The fill reads on while a page is full and its oldest ride is still inside the window.
     nonisolated static func indoorFillNeedsAnotherPage(page: [StravaActivity], cutoff: Date) -> Bool {

@@ -53,6 +53,12 @@ final class IndoorRideTests: XCTestCase {
         XCTAssertEqual(try activity(type: "VirtualRide", includeMap: false).isIndoor, true)
     }
 
+    /// A map whose route is null rather than blank says nothing about the route either (review D3).
+    func testDecode_nullPolylineIsUnknown() throws {
+        let json = #"{"id":1,"name":"Ride","type":"Ride","start_date":"2026-11-01T12:00:00Z","distance":1.0,"moving_time":1,"elapsed_time":1,"total_elevation_gain":0.0,"map":{"summary_polyline":null}}"#
+        XCTAssertNil(try JSONDecoder().decode(StravaActivity.self, from: Data(json.utf8)).isIndoor)
+    }
+
     // MARK: - Stored
 
     private func container() throws -> ModelContainer {
@@ -181,5 +187,18 @@ final class IndoorRideTests: XCTestCase {
             XCTAssertEqual(outcome, .skipped)
         }
         XCTAssertFalse(fetched)
+    }
+
+    /// The fill reads all 120 days, not a fixed five pages (review D3).
+    func testIndoorFill_readsPastFivePagesUntilTheWindowEnds() async throws {
+        var lastPage = 0
+        let outcome = await SyncManager.runIndoorFill(alreadyDone: false, isAuthenticated: true, cutoff: cutoff,
+            fetchPage: { page in
+                lastPage = page
+                return page <= 6 ? try self.fullPage(id: page * 1000) : []
+            },
+            apply: { flags in flags.count })
+        XCTAssertEqual(lastPage, 7, "Six full in-window pages, then the empty seventh ends the list")
+        XCTAssertEqual(outcome, .done(changed: 6 * SyncManager.stravaActivitiesPageSize))
     }
 }

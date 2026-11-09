@@ -75,7 +75,10 @@ struct RideCostFlag: Equatable {
         var lines: [String] = []
         if let heartRateAbove { lines.append("Heart rate \(heartRateAbove) bpm above your normal for this effort") }
         if let rating, let normalRating {
-            lines.append("Felt \(Self.word(rating)) (\(rating)) where rides like it feel \(Self.word(normalRating)) (\(normalRating))")
+            // The flag fires 2 points up, inside one word's range, so matching words show only the numbers.
+            lines.append(Self.word(rating) == Self.word(normalRating)
+                ? "Rated \(rating) where rides like it are rated \(normalRating)"
+                : "Felt \(Self.word(rating)) (\(rating)) where rides like it feel \(Self.word(normalRating)) (\(normalRating))")
         }
         if eased { lines.append("The coming days are eased.") }
         return lines
