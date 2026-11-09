@@ -11,7 +11,7 @@ import SwiftData
 
 struct EffortCheckView: View {
     @Environment(\.modelContext) private var modelContext
-    @State private var absorption: AbsorptionSummary?
+    @State private var rideCost: RideCostSummary?
     @State private var workouts: [EffortCheckWorkout] = []
     @State private var errorMessage: String?
     @State private var hasLoaded = false
@@ -22,17 +22,24 @@ struct EffortCheckView: View {
                 Text("Couldn't read Apple Health: \(errorMessage)")
                     .foregroundStyle(Color.textSecondary)
             } else if hasLoaded {
-                if let absorption {
+                if let rideCost {
                     Section {
-                        Text(Self.trendText(absorption.trend))
-                        ForEach(Array(absorption.rides.enumerated()), id: \.offset) { _, ride in
-                            LabeledContent(ride.date.formatted(date: .abbreviated, time: .omitted),
-                                           value: "rated \(Int(ride.rating.rounded())) · usual \(ride.expected.map { String(format: "%.1f", $0) } ?? "–") · \(Self.differenceText(ride.difference))")
+                        Text(Self.trendText(rideCost.trend))
+                        ForEach(Array(rideCost.rows.enumerated()), id: \.offset) { _, row in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(row.ride.date.formatted(date: .abbreviated, time: .omitted)) · \(row.ride.title ?? "Ride")")
+                                Text(Self.rowText(row))
+                                    .font(.labelCaption)
+                                    .foregroundStyle(Color.textSecondary)
+                            }
+                        }
+                        ForEach(UnpricedReason.allCases.filter { rideCost.unpriced[$0] != nil }, id: \.self) { reason in
+                            LabeledContent("Not priced: \(reason.text)", value: "\(rideCost.unpriced[reason] ?? 0)")
                         }
                     } header: {
-                        Text("How rides feel")
+                        Text("Ride cost")
                     } footer: {
-                        Text("Usual is your median rating for rides of similar length and load. The plan uses the 14-day trend, with recent rides counting most.")
+                        Text("Usual is your median for rides in the same setting (indoor or outdoor) at the same intensity and a similar length, in the 90 days before. Intensity is normalized power ÷ your FTP that day. The plan uses the 14-day trend, with recent rides counting most.")
                     }
                 }
                 let summary = EffortCheckSummary.summarize(workouts)
@@ -80,7 +87,7 @@ struct EffortCheckView: View {
         .navigationTitle("Effort Check")
         .task {
             errorMessage = nil
-            absorption = ReadinessRepository.shared.absorptionSummary(modelContext: modelContext)
+            rideCost = ReadinessRepository.shared.rideCostSummary(modelContext: modelContext)
             do {
                 workouts = try await HealthKitManager.shared.fetchEffortCheckWorkouts()
             } catch {
@@ -92,15 +99,27 @@ struct EffortCheckView: View {
 
     static func trendText(_ trend: Double) -> String {
         // Any trend the plan acts on is named; only a rounding-level one reads as usual.
-        if abs(trend) < 0.05 { return "Rides are feeling about as usual." }
+        if abs(trend) < 0.05 { return "Rides are costing about what they usually do." }
         let points = String(format: "%.1f", abs(trend))
-        return trend > 0 ? "Rides are feeling about \(points) points harder than usual." : "Rides are feeling about \(points) points easier than usual."
+        return trend > 0 ? "Rides are costing about \(points) points more than usual." : "Rides are costing about \(points) points less than usual."
     }
 
-    static func differenceText(_ difference: Double?) -> String {
-        guard let difference else { return "not judged" }
-        if difference == 0 { return "as usual" }
-        return difference > 0 ? String(format: "+%.1f", difference) : String(format: "%.1f", difference)
+    /// "indoor · IF 0.70 · HR 152 (usual 140, +12) · rated 8 (usual 5)".
+    static func rowText(_ row: RideCostSummary.Row) -> String {
+        let ride = row.ride, price = row.price
+        var parts = [ride.isIndoor ? "indoor" : "outdoor", String(format: "IF %.2f", ride.intensity)]
+        let hr = Int(ride.heartRate.rounded())
+        if let normal = price.normalHeartRate {
+            let difference = hr - Int(normal.rounded())
+            parts.append("HR \(hr) (usual \(Int(normal.rounded())), \(difference >= 0 ? "+" : "")\(difference))")
+        } else {
+            parts.append("HR \(hr) (not judged)")
+        }
+        if let rating = ride.rating {
+            let rated = "rated \(Int(rating.rounded()))"
+            parts.append(price.normalRating.map { "\(rated) (usual \(String(format: "%g", $0)))" } ?? "\(rated) (not judged)")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func score(_ value: Double?) -> String {

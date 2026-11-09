@@ -3,6 +3,23 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.28.0] - 2026-11-09
+
+### Changed
+
+- **A ride is now judged by what it should have cost you.** Each ride gets a price from its intensity (normalized power against your FTP that day) and is compared with your own rides at the same intensity and a similar length from the 90 days before it. If your heart rate ran well above your normal for that effort, or the ride felt harder than rides like it usually do, the ride cost more than it should. Something may be weighing on you, and it can show up in a ride before HRV or sleep does.
+- **Indoor and outdoor rides are judged apart.** Heart rate runs higher on a trainer at the same watts, so a TrainerRoad or Zwift ride is only ever compared with other indoor rides. A ride with a GPS route counts as outdoor, a Zwift ride counts as indoor, and your older rides get their setting from Strava once after you update.
+- **Costly rides ease the coming days.** Rides costing more than usual lower the 7-day plan from tomorrow on, and rides costing less lift it, never past an illness, Coach note, HRV warning, load or recovery limit. One costly ride moves the plan a little and a run of them more. The reason line reads "Rides costing more than usual" or "less".
+- **Effort Check shows how each ride was priced.** For each ride from the last 30 days you see indoor or outdoor, its intensity, its heart rate and rating against your normal, and the trend the plan uses. Rides that couldn't be priced are counted with the reason, such as no measured power or no FTP on record for that date.
+
+### Added
+
+- **The Coach tab flags a ride that cost more than it should.** When a ride from the last three days had a heart rate 8 bpm or more above your normal for that effort, or felt 2 or more points harder, a card names the ride and says what was off. When the plan was eased, it says so. It describes the ride and never guesses why.
+
+### Removed
+
+- **Forecast Check is gone from Settings,** and so is the rating-only comparison it tested. Ride cost replaces both.
+
 ## [0.1.27.0] - 2026-11-09
 
 ### Added

@@ -94,6 +94,12 @@ struct CoachTabView: View {
             )
             .padding(.horizontal)
 
+            // A recent ride that cost more than its intensity should have.
+            if let flag = viewModel.rideCostFlag {
+                RideCostCard(flag: flag)
+                    .padding(.horizontal)
+            }
+
             // 2. Quick Context Input (Coach Check-in)
             CoachCheckInView()
                 .padding(.horizontal)

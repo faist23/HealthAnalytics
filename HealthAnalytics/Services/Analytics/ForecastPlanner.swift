@@ -227,11 +227,10 @@ struct ForecastPlanInput {
     var shortSleepNights = 0
     /// Release 2 fills this from the learned illness and crash history. Nil means no cap.
     var hardDaysPerWeekCap: Int? = nil
-    /// Day 0 already happened (Forecast Check): its actual load is all it did, not the plan's suggestion.
-    var firstDayIsFinished = false
-    /// How rides have felt lately against comparable ones, in rating points (`EffortAbsorption.trend`).
-    /// Positive means harder than usual. Shifts where tomorrow onward starts; 0 changes nothing.
-    var absorptionTrend = 0.0
+    /// What recent rides cost against what their intensity should cost, in rating points
+    /// (`RideCost.trend`). Positive means costlier than usual. Shifts where tomorrow onward starts;
+    /// 0 changes nothing.
+    var rideCostTrend = 0.0
     /// (window close, planned load by start of day) → ACWR, from the one ACWR engine.
     let projectedACWR: (Date, [Date: Double]) -> Double
 }
@@ -256,10 +255,10 @@ enum ForecastPlanner {
         var hardDates = input.recentLoads.filter { profile.isHard(load: $0.load) }
             .map { calendar.startOfDay(for: $0.date) }
         var planned: [Date: Double] = [:]
-        // How rides feel shifts tomorrow's starting point, at full strength, and the stepping lets
-        // it fade (shifting today's start instead would be damped by rho before tomorrow). A twin
-        // without the shift tells the reason which days the feel actually moved.
-        let feelShift = EffortAbsorption.zShift(trend: input.absorptionTrend)
+        // Ride cost shifts tomorrow's starting point, at full strength, and the stepping lets it
+        // fade (shifting today's start instead would be damped by rho before tomorrow). A twin
+        // without the shift tells the reason which days ride cost actually moved.
+        let feelShift = RideCost.zShift(trend: input.rideCostTrend)
         var z = profile.z(Double(input.startScore))
         var zUnshifted = z
         var previous: Effort?
@@ -288,17 +287,16 @@ enum ForecastPlanner {
             days.append(Day(date: date, effort: effort, reason: reason(
                 input: input, offset: offset, effort: effort, byRecovery: byRecoveryForReason,
                 binding: binding, previous: previous,
-                feel: feelMovedDay ? (feelShift < 0 ? "Rides feeling harder than usual" : "Rides feeling easier than usual") : nil)))
+                feel: feelMovedDay ? (feelShift < 0 ? RideCost.costlierReason : RideCost.cheaperReason) : nil)))
 
             let rode = offset == 0 ? input.rodeLoadToday : 0
-            let finished = offset == 0 && input.firstDayIsFinished
-            var impulse = finished ? profile.rideEffect(load: rode) : profile.lift(effort)
+            var impulse = profile.lift(effort)
             if rode > 0 { impulse = min(impulse, profile.rideEffect(load: rode)) }
             z = profile.rho * z + impulse + (offset == 0 ? feelShift : 0)
             zUnshifted = profile.rho * zUnshifted + impulse
 
             planned[date] = max(0, profile.typicalLoad(effort) * profile.trainingDayShare - rode)
-            if (effort == .hard && !finished) || profile.isHard(load: rode) { hardDates.append(date) }
+            if effort == .hard || profile.isHard(load: rode) { hardDates.append(date) }
             previous = effort
         }
         return days
@@ -374,101 +372,5 @@ enum ForecastPlanner {
         let rodeYesterday = offset == 1 && input.rodeLoadToday >= namedRideLoad
         if let previous, previous >= .easy, effort < previous, !rodeYesterday { return "Bouncing back after rest" }
         return nil
-    }
-}
-
-/// How the plan would have done on the rider's own past, for Settings → Forecast Check.
-struct ForecastCheckResult: Equatable {
-    struct Miss: Equatable {
-        let date: Date
-        let suggested: ReadinessRepository.ForecastEffort
-        let actual: ReadinessRepository.ForecastEffort
-    }
-
-    /// What how rides feel did to the replay: the days it changed tomorrow's suggestion, whether
-    /// each came out closer to the real morning, and the headline counts without it.
-    struct FeelEffect: Equatable {
-        let changedDays: Int
-        let closer: Int
-        let further: Int
-        let same: Int
-        let exactWithout: Int
-        let withinOneWithout: Int
-    }
-
-    let daysChecked: Int
-    /// With how rides feel, like the live plan.
-    let exact: Int
-    /// The same level or one step off, so it includes `exact`. With how rides feel.
-    let withinOne: Int
-    let feel: FeelEffect
-    /// Newest first, at most `ForecastPlanner.maximumListedMisses`.
-    let recentMisses: [Miss]
-    let recoveryDays: Int
-    let episodeCount: Int
-}
-
-extension ForecastPlanner {
-    static let maximumListedMisses = 10
-
-    /// For each of the last `days` days D with a score on D and D+1, learns only from the days
-    /// before D, plans from D's score and actual load, and compares day 1 with the band D+1's
-    /// real score fell in. Recovery bands and recovery time only: pattern and note history
-    /// isn't dated, and the load ceiling is held open so the two caps' effects stay separate.
-    /// An estimate: stored rows already include that day's ride, and the live plan starts from
-    /// a score without it, so ride days read a little harsher here than they do live.
-    /// Each day is planned twice, with and without how rides feel. The feel trend for D sees
-    /// ratings up to the end of D, like the live plan (D's own rides only as comparisons, since
-    /// the trend skips the current day), and never a later one.
-    static func replay(history: [ForecastHistoryDay], ratedRides: [RatedRide] = [], days: Int, today: Date,
-                       calendar: Calendar) -> ForecastCheckResult {
-        let start = calendar.startOfDay(for: today)
-        let byDay = Dictionary(history.map { (calendar.startOfDay(for: $0.date), $0) }, uniquingKeysWith: { $1 })
-        var checked = 0, exact = 0, withinOne = 0, exactWithout = 0, withinOneWithout = 0
-        var changed = 0, closer = 0, further = 0, same = 0
-        var misses: [ForecastCheckResult.Miss] = []
-
-        for back in stride(from: days, through: 2, by: -1) {
-            guard let date = calendar.date(byAdding: .day, value: -back, to: start),
-                  let next = calendar.date(byAdding: .day, value: 1, to: date),
-                  let noon = calendar.date(byAdding: .hour, value: 12, to: date),
-                  let score = byDay[date]?.score, let nextScore = byDay[next]?.score
-            else { continue }
-            let before = history.filter { calendar.startOfDay(for: $0.date) < date }
-            guard let profile = ForecastProfile.learn(history: before, today: date, calendar: calendar) else { continue }
-
-            var input = ForecastPlanInput(now: noon, startScore: score, currentScore: score,
-                                          rodeLoadToday: byDay[date]?.load ?? 0, recentLoads: before,
-                                          profile: profile, firstDayIsFinished: true, projectedACWR: { _, _ in 1.0 })
-            let without = plan(input, calendar: calendar)[1].effort
-            let earlierRides = ratedRides.filter { $0.date < next }
-            input.absorptionTrend = EffortAbsorption.trend(earlierRides, now: noon, calendar: calendar)
-            let suggested = input.absorptionTrend == 0 ? without : plan(input, calendar: calendar)[1].effort
-            let actual = profile.band(z: profile.z(Double(nextScore)))
-
-            checked += 1
-            let distance = abs(suggested.rawValue - actual.rawValue)
-            let distanceWithout = abs(without.rawValue - actual.rawValue)
-            if distanceWithout == 0 { exactWithout += 1 }
-            if distanceWithout <= 1 { withinOneWithout += 1 }
-            if suggested != without {
-                changed += 1
-                if distance < distanceWithout { closer += 1 } else if distance > distanceWithout { further += 1 } else { same += 1 }
-            }
-            if distance == 0 { exact += 1 }
-            if distance <= 1 {
-                withinOne += 1
-            } else {
-                misses.append(.init(date: next, suggested: suggested, actual: actual))
-            }
-        }
-
-        let current = ForecastProfile.learn(history: history, today: start, calendar: calendar)
-        return ForecastCheckResult(daysChecked: checked, exact: exact, withinOne: withinOne,
-                                   feel: .init(changedDays: changed, closer: closer, further: further, same: same,
-                                               exactWithout: exactWithout, withinOneWithout: withinOneWithout),
-                                   recentMisses: Array(misses.reversed().prefix(maximumListedMisses)),
-                                   recoveryDays: current?.recoveryDays ?? ForecastProfile.defaultRecoveryDays,
-                                   episodeCount: current?.episodeCount ?? 0)
     }
 }

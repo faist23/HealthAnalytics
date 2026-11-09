@@ -33,6 +33,9 @@ final class StoredWorkout {
     /// The ride's Apple Watch effort rating (1-10), copied from Apple Health on each recent sync;
     /// nil when unrated. Only Apple-written ratings count (`fetchRecentEffortRatings`).
     var effortRating: Double?
+    /// Ridden indoors (trainer, Zwift, TrainerRoad) or outdoors, from Strava; nil when not known.
+    /// Ride cost compares indoor rides only with indoor rides.
+    var isIndoor: Bool?
 
     init(id: String, title: String? = nil, type: HKWorkoutActivityType, startDate: Date, duration: TimeInterval, distance: Double?, power: Double?, normalizedPower: Double? = nil, energy: Double?, hr: Double?, source: String) {
         self.id = id

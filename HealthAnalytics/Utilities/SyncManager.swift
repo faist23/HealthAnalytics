@@ -326,6 +326,7 @@ class SyncManager: ObservableObject {
             
             // STEP 2: Sync recent data (always - this is fast)
             let recentSynced = await syncRecentData(dataHandler: dataHandler)
+            await fillIndoorFlagsIfNeeded(dataHandler: dataHandler)
             
             // STEP 3: Historical backfill (only if needed). A reset whose refetch failed is
             // retried first, until it succeeds.
@@ -870,6 +871,63 @@ class SyncManager: ObservableObject {
     /// Strava activities per list page; a page shorter than this is the whole history.
     nonisolated static let stravaActivitiesPageSize = 200
 
+    // MARK: - Indoor flag fill
+
+    /// Set once every page the one-time indoor fill needed came back.
+    nonisolated static let indoorFillDoneKey = "indoorFlagFillDone"
+    /// Ride cost compares a ride with the 90 days before it, and Effort Check shows 30 days.
+    nonisolated static let indoorFillDays = 120
+    /// A safety stop only (10,000 activities); the fill otherwise reads until the window ends.
+    nonisolated static let indoorFillMaxPages = 50
+
+    /// The fill reads on while a page is full and its oldest ride is still inside the window.
+    nonisolated static func indoorFillNeedsAnotherPage(page: [StravaActivity], cutoff: Date) -> Bool {
+        guard page.count == stravaActivitiesPageSize else { return false }
+        guard let oldest = page.compactMap(\.startDateFormatted).min() else { return false }
+        return oldest >= cutoff
+    }
+
+    enum IndoorFillOutcome: Equatable {
+        case skipped, fetchFailed, writeFailed
+        case done(changed: Int)
+    }
+
+    /// The one-time fill's steps, given the Strava page fetch and the store write
+    /// (`fillIndoorFlagsIfNeeded` passes the real ones). Only `done` finishes the fill; a failed
+    /// page writes nothing and a failed write leaves it for the next sync. A ride whose setting
+    /// isn't known is left out.
+    nonisolated static func runIndoorFill(alreadyDone: Bool, isAuthenticated: Bool, cutoff: Date,
+                                          fetchPage: (Int) async throws -> [StravaActivity],
+                                          apply: ([String: Bool]) async -> Int?) async -> IndoorFillOutcome {
+        guard isAuthenticated, !alreadyDone else { return .skipped }
+        var flags: [String: Bool] = [:]
+        for page in 1...indoorFillMaxPages {
+            guard let batch = try? await fetchPage(page) else { return .fetchFailed }
+            for activity in batch { if let indoor = activity.isIndoor { flags[String(activity.id)] = indoor } }
+            if !indoorFillNeedsAnotherPage(page: batch, cutoff: cutoff) { break }
+        }
+        guard let changed = await apply(flags) else { return .writeFailed }
+        return .done(changed: changed)
+    }
+
+    /// Rides stored before `isIndoor` existed get it from Strava's list once: the regular sync
+    /// re-reads only about a week.
+    private func fillIndoorFlagsIfNeeded(dataHandler: DataPersistenceActor) async {
+        guard let cutoff = Calendar.current.date(byAdding: .day, value: -Self.indoorFillDays,
+                                                 to: Calendar.current.startOfDay(for: Date()))
+        else { return }
+        let manager = stravaManager
+        let outcome = await Self.runIndoorFill(
+            alreadyDone: UserDefaults.standard.bool(forKey: Self.indoorFillDoneKey),
+            isAuthenticated: manager.isAuthenticated, cutoff: cutoff,
+            fetchPage: { page in try await manager.fetchActivities(page: page, perPage: Self.stravaActivitiesPageSize) },
+            apply: { flags in await dataHandler.applyIndoorFlags(flags) })
+        if case .done = outcome { UserDefaults.standard.set(true, forKey: Self.indoorFillDoneKey) }
+        #if DEBUG
+        print("🏠 Indoor flag fill: \(outcome)")
+        #endif
+    }
+
     /// Strava just connected (first time, re-granted, or another athlete): give every ride
     /// marked "no power data" another look on the next backfill.
     func stravaDidConnect() {
@@ -1050,7 +1108,8 @@ class SyncManager: ObservableObject {
             power: activity.averageWatts,
             normalizedPower: activity.weightedAverageWatts,
             energy: energy,
-            averageHeartRate: activity.averageHeartrate
+            averageHeartRate: activity.averageHeartrate,
+            isIndoor: activity.isIndoor
         )
     }
     
@@ -1175,6 +1234,28 @@ actor DataPersistenceActor {
 
     func tagStravaRides(ids: Set<String>, athlete: Int) {
         Self.tagStravaRides(ids: ids, athlete: athlete, in: modelContext)
+    }
+
+    /// Sets `isIndoor` on the stored Strava rides with these ids where it differs. Returns rows
+    /// changed, or nil when the read or the save failed, so the fill runs again.
+    static func applyIndoorFlags(_ flags: [String: Bool], in context: ModelContext) -> Int? {
+        guard !flags.isEmpty else { return 0 }
+        guard let rides = try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.source == "Strava" }))
+        else { return nil }
+        var changed = 0
+        for ride in rides {
+            guard let flag = flags[ride.id], ride.isIndoor != flag else { continue }
+            ride.isIndoor = flag
+            changed += 1
+        }
+        if changed > 0 {
+            do { try context.save() } catch { return nil }
+        }
+        return changed
+    }
+
+    func applyIndoorFlags(_ flags: [String: Bool]) -> Int? {
+        Self.applyIndoorFlags(flags, in: modelContext)
     }
 
     func removeStravaRides(ids: [String]) {
@@ -1375,7 +1456,8 @@ actor DataPersistenceActor {
                     normalizedPower: match.normalizedPower,
                     energy: match.energy,
                     hr: match.averageHeartRate,
-                    source: "Strava"
+                    source: "Strava",
+                    isIndoor: match.isIndoor
                 )
                 matchedStravaIds.insert(match.id)
             } else if WorkoutMatcher.findMatch(for: hkWorkout, in: storedStrava) != nil {
@@ -1417,7 +1499,8 @@ actor DataPersistenceActor {
                 normalizedPower: activity.normalizedPower,
                 energy: activity.energy,
                 hr: activity.averageHeartRate,
-                source: "Strava"
+                source: "Strava",
+                isIndoor: activity.isIndoor
             )
         }
         
@@ -1496,7 +1579,8 @@ actor DataPersistenceActor {
             power: stored.averagePower,
             normalizedPower: stored.normalizedPower,
             energy: stored.totalEnergyBurned,
-            averageHeartRate: stored.averageHeartRate
+            averageHeartRate: stored.averageHeartRate,
+            isIndoor: stored.isIndoor
         )
     }
 
@@ -1661,7 +1745,8 @@ actor DataPersistenceActor {
         normalizedPower: Double? = nil,
         energy: Double?,
         hr: Double?,
-        source: String
+        source: String,
+        isIndoor: Bool? = nil
     ) {
         let descriptor = FetchDescriptor<StoredWorkout>(
             predicate: #Predicate { $0.id == id }
@@ -1675,8 +1760,10 @@ actor DataPersistenceActor {
             if let np = normalizedPower { existing.normalizedPower = np }
             existing.totalEnergyBurned = energy
             existing.averageHeartRate = hr
+            // A caller that doesn't know the setting (a HealthKit-only pass) keeps the stored one.
+            if let isIndoor { existing.isIndoor = isIndoor }
         } else {
-            modelContext.insert(StoredWorkout(
+            let workout = StoredWorkout(
                 id: id,
                 title: title,
                 type: type,
@@ -1688,7 +1775,9 @@ actor DataPersistenceActor {
                 energy: energy,
                 hr: hr,
                 source: source
-            ))
+            )
+            workout.isIndoor = isIndoor
+            modelContext.insert(workout)
         }
     }
     

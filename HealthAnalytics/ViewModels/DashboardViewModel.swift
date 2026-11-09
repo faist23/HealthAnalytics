@@ -31,6 +31,8 @@ class DashboardViewModel: ObservableObject {
     @Published var readinessLevel: ReadinessLevel = .moderate
     @Published var readinessRecommendation: String = ""
     @Published var intraDayReadiness: RecoveryDecayService.IntraDayReadiness?
+    /// A recent ride that cost more than its intensity should have, for the Coach card.
+    @Published var rideCostFlag: RideCostFlag?
 
     // Holistic metrics (Phase 1.2 — now sourced from ReadinessRepository)
     @Published var holisticMetrics: HealthMetrics?
@@ -60,6 +62,11 @@ class DashboardViewModel: ObservableObject {
                 self.workouts = unified.workouts
                 self.weightData = unified.weightData
             }
+            .store(in: &cancellables)
+
+        ReadinessRepository.shared.$rideCostFlag
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] flag in self?.rideCostFlag = flag }
             .store(in: &cancellables)
 
         // Phase 3 fix: forward repo's isAnalyzing so the Coach tab's LoadingOverlay

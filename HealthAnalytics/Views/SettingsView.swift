@@ -99,12 +99,6 @@ struct SettingsView: View {
                         }
 
                         NavigationLink {
-                            ForecastCheckView()
-                        } label: {
-                            Label("Forecast Check", systemImage: "checkmark.circle")
-                        }
-
-                        NavigationLink {
                             EffortCheckView()
                         } label: {
                             Label("Effort Check", systemImage: "gauge.with.dots.needle.33percent")

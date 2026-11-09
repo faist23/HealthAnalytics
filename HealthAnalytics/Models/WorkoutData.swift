@@ -202,5 +202,7 @@ struct StravaImportData: Sendable {
     let normalizedPower: Double?     // weighted_average_watts / NP (load calc)
     let energy: Double?
     let averageHeartRate: Double?
+    /// From Strava's list (`StravaActivity.isIndoor`); nil when not known.
+    var isIndoor: Bool? = nil
 }
 
