@@ -15,9 +15,10 @@ final class IndoorRideTests: XCTestCase {
     private let start = Date(timeIntervalSince1970: 1_790_000_000)
 
     private func activity(type: String = "Ride", sportType: String? = nil, trainer: Bool? = nil,
-                          polyline: String? = nil, includeMap: Bool = true) throws -> StravaActivity {
+                          polyline: String? = nil, includeMap: Bool = true,
+                          startDate: String = "2026-11-01T12:00:00Z") throws -> StravaActivity {
         var body: [String: Any] = [
-            "id": 1, "name": "Ride", "type": type, "start_date": "2026-11-01T12:00:00Z",
+            "id": 1, "name": "Ride", "type": type, "start_date": startDate,
             "distance": 30000.0, "moving_time": 3600, "elapsed_time": 3700, "total_elevation_gain": 100.0,
         ]
         if let sportType { body["sport_type"] = sportType }
@@ -84,5 +85,41 @@ final class IndoorRideTests: XCTestCase {
         await upsert(persistence, [stravaRide(isIndoor: nil)])
         let stored = try ModelContext(container).fetch(FetchDescriptor<StoredWorkout>())
         XCTAssertEqual(stored.map(\.isIndoor), [true])
+    }
+
+    // MARK: - One-time fill
+
+    func testApplyIndoorFlags_setsOnlyChangedRows() async throws {
+        let container = try container()
+        let persistence = DataPersistenceActor(modelContainer: container)
+        await upsert(persistence, [stravaRide(id: "a", isIndoor: nil), stravaRide(id: "b", isIndoor: true),
+                                   stravaRide(id: "c", isIndoor: nil)])
+        let changed = await persistence.applyIndoorFlags(["a": true, "b": true, "missing": false])
+        XCTAssertEqual(changed, 1, "b already says indoor; missing isn't stored")
+        let byId = Dictionary(uniqueKeysWithValues: try ModelContext(container).fetch(FetchDescriptor<StoredWorkout>())
+            .map { ($0.id, $0.isIndoor) })
+        XCTAssertEqual(byId["a"], .some(true))
+        XCTAssertEqual(byId["b"], .some(true))
+        XCTAssertEqual(byId["c"], .some(nil), "A ride the list didn't return stays unknown")
+    }
+
+    private func page(count: Int, oldest: String) throws -> [StravaActivity] {
+        try (0..<count).map { i in try activity(startDate: i == count - 1 ? oldest : "2026-11-05T12:00:00Z") }
+    }
+
+    func testIndoorFill_stopsAtCutoff() throws {
+        let cutoff = ISO8601DateFormatter().date(from: "2026-07-12T00:00:00Z")!
+        let full = SyncManager.stravaActivitiesPageSize
+        XCTAssertTrue(SyncManager.indoorFillNeedsAnotherPage(page: try page(count: full, oldest: "2026-08-01T12:00:00Z"),
+                                                             cutoff: cutoff), "A full page still inside the window")
+        XCTAssertFalse(SyncManager.indoorFillNeedsAnotherPage(page: try page(count: full, oldest: "2026-07-01T12:00:00Z"),
+                                                              cutoff: cutoff), "The page reached past the cutoff")
+    }
+
+    func testIndoorFill_shortPageStops() throws {
+        let cutoff = ISO8601DateFormatter().date(from: "2026-07-12T00:00:00Z")!
+        XCTAssertFalse(SyncManager.indoorFillNeedsAnotherPage(page: try page(count: 5, oldest: "2026-10-01T12:00:00Z"),
+                                                              cutoff: cutoff), "A short page is the end of the list")
+        XCTAssertFalse(SyncManager.indoorFillNeedsAnotherPage(page: [], cutoff: cutoff))
     }
 }

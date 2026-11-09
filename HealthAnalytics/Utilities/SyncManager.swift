@@ -326,6 +326,7 @@ class SyncManager: ObservableObject {
             
             // STEP 2: Sync recent data (always - this is fast)
             let recentSynced = await syncRecentData(dataHandler: dataHandler)
+            await fillIndoorFlagsIfNeeded(dataHandler: dataHandler)
             
             // STEP 3: Historical backfill (only if needed). A reset whose refetch failed is
             // retried first, until it succeeds.
@@ -870,6 +871,42 @@ class SyncManager: ObservableObject {
     /// Strava activities per list page; a page shorter than this is the whole history.
     nonisolated static let stravaActivitiesPageSize = 200
 
+    // MARK: - Indoor flag fill
+
+    /// Set once every page the one-time indoor fill needed came back.
+    nonisolated static let indoorFillDoneKey = "indoorFlagFillDone"
+    /// Ride cost compares a ride with the 90 days before it, and Effort Check shows 30 days.
+    nonisolated static let indoorFillDays = 120
+    nonisolated static let indoorFillMaxPages = 5
+
+    /// The fill reads on while a page is full and its oldest ride is still inside the window.
+    nonisolated static func indoorFillNeedsAnotherPage(page: [StravaActivity], cutoff: Date) -> Bool {
+        guard page.count == stravaActivitiesPageSize else { return false }
+        guard let oldest = page.compactMap(\.startDateFormatted).min() else { return false }
+        return oldest >= cutoff
+    }
+
+    /// Rides stored before `isIndoor` existed get it from Strava's list once: the regular sync
+    /// re-reads only about a week. A failed page leaves the fill for the next sync.
+    private func fillIndoorFlagsIfNeeded(dataHandler: DataPersistenceActor) async {
+        guard stravaManager.isAuthenticated, !UserDefaults.standard.bool(forKey: Self.indoorFillDoneKey),
+              let cutoff = Calendar.current.date(byAdding: .day, value: -Self.indoorFillDays,
+                                                 to: Calendar.current.startOfDay(for: Date()))
+        else { return }
+        var flags: [String: Bool] = [:]
+        for page in 1...Self.indoorFillMaxPages {
+            guard let batch = try? await stravaManager.fetchActivities(page: page, perPage: Self.stravaActivitiesPageSize)
+            else { return }
+            for activity in batch { flags[String(activity.id)] = activity.isIndoor }
+            if !Self.indoorFillNeedsAnotherPage(page: batch, cutoff: cutoff) { break }
+        }
+        let changed = await dataHandler.applyIndoorFlags(flags)
+        UserDefaults.standard.set(true, forKey: Self.indoorFillDoneKey)
+        #if DEBUG
+        print("🏠 Indoor flag fill: \(changed) rides updated from \(flags.count) Strava activities")
+        #endif
+    }
+
     /// Strava just connected (first time, re-granted, or another athlete): give every ride
     /// marked "no power data" another look on the next backfill.
     func stravaDidConnect() {
@@ -1176,6 +1213,24 @@ actor DataPersistenceActor {
 
     func tagStravaRides(ids: Set<String>, athlete: Int) {
         Self.tagStravaRides(ids: ids, athlete: athlete, in: modelContext)
+    }
+
+    /// Sets `isIndoor` on the stored Strava rides with these ids where it differs. Returns rows changed.
+    static func applyIndoorFlags(_ flags: [String: Bool], in context: ModelContext) -> Int {
+        guard !flags.isEmpty else { return 0 }
+        let rides = ((try? context.fetch(FetchDescriptor<StoredWorkout>(predicate: #Predicate { $0.source == "Strava" }))) ?? [])
+        var changed = 0
+        for ride in rides {
+            guard let flag = flags[ride.id], ride.isIndoor != flag else { continue }
+            ride.isIndoor = flag
+            changed += 1
+        }
+        if changed > 0 { try? context.save() }
+        return changed
+    }
+
+    func applyIndoorFlags(_ flags: [String: Bool]) -> Int {
+        Self.applyIndoorFlags(flags, in: modelContext)
     }
 
     func removeStravaRides(ids: [String]) {
