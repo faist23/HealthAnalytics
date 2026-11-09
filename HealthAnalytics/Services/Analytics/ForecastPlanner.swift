@@ -283,7 +283,8 @@ enum ForecastPlanner {
             let unshiftedEffort = max(profile.band(z: zUnshifted), binding?.cap ?? .hard)
             let feelMovedDay = offset > 0 && feelShift != 0 && effort != unshiftedEffort
             // A cap explains the day when it is stricter than recovery would be without the feel.
-            let byRecoveryForReason = offset > 0 ? min(byRecovery, profile.band(z: zUnshifted)) : byRecovery
+            // When the feel set the word, judge the cap against the shifted band so the feel's reason wins.
+            let byRecoveryForReason = offset > 0 && !feelMovedDay ? min(byRecovery, profile.band(z: zUnshifted)) : byRecovery
             days.append(Day(date: date, effort: effort, reason: reason(
                 input: input, offset: offset, effort: effort, byRecovery: byRecoveryForReason,
                 binding: binding, previous: previous,

@@ -636,4 +636,21 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(usual[1].effort, harder[1].effort)
         XCTAssertEqual(harder[1].reason, usual[1].reason, "Same word, so the cap still explains it")
     }
+
+    /// A hard ride today caps tomorrow at Moderate. When rides feel 2 points harder, the shift
+    /// (1 spread) can take tomorrow from Hard past that cap to Easy: the feel set the word, so
+    /// it gives the reason, not the looser cap.
+    func testShift_feelPastACapGivesTheFeelReason() {
+        func day1(_ trend: Double, z: Double) -> ReadinessRepository.ReadinessForecastDay {
+            plan(ForecastPlanInput(now: noon, startScore: score(z: z), currentScore: score(z: z), rodeLoadToday: 3,
+                                   recentLoads: [], profile: profile(), absorptionTrend: trend, projectedACWR: { _, _ in 1 }))[1]
+        }
+        let cases = stride(from: -1.0, through: 4.0, by: 1.0 / 6).filter { z in
+            day1(0, z: z).effort == .moderate && day1(2, z: z).effort == .easy
+        }
+        XCTAssertFalse(cases.isEmpty, "Some start puts tomorrow under the Moderate cap as usual and at Easy when harder")
+        for z in cases {
+            XCTAssertEqual(day1(2, z: z).reason, "Rides feeling harder than usual", "start z \(z)")
+        }
+    }
 }

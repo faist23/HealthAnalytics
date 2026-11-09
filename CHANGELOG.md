@@ -3,6 +3,12 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.26.1] - 2026-11-09
+
+### Fixed
+
+- **The reason line names the feel when it set the word.** When harder-feeling rides took a day past a limit (for example from Hard to Easy under a Moderate "Still recovering" limit), the card named the limit. It now says "Rides feeling harder than usual".
+
 ## [0.1.26.0] - 2026-11-07
 
 ### Changed
