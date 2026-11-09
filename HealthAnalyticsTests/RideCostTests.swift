@@ -251,4 +251,18 @@ final class RideCostTests: XCTestCase {
         XCTAssertEqual(EffortCheckView.trendText(1.24), "Rides are costing about 1.2 points more than usual.")
         XCTAssertEqual(EffortCheckView.trendText(-0.5), "Rides are costing about 0.5 points less than usual.")
     }
+
+    // MARK: - Coach card
+
+    func testCardSubtitle_namesTheDayAndRide() {
+        let today = RideCostFlag(date: now, title: "Lunch Ride", heartRateAbove: 9, rating: nil, normalRating: nil)
+        XCTAssertEqual(RideCostCard.subtitle(today, now: now, calendar: calendar), "Today · Lunch Ride")
+        let yesterday = RideCostFlag(date: now.addingTimeInterval(-86_400), title: nil, heartRateAbove: 9,
+                                     rating: nil, normalRating: nil)
+        XCTAssertEqual(RideCostCard.subtitle(yesterday, now: now, calendar: calendar), "Yesterday · Ride")
+        let earlier = RideCostFlag(date: now.addingTimeInterval(-2 * 86_400), title: "Zwift - Watopia", heartRateAbove: 9,
+                                   rating: nil, normalRating: nil)
+        let weekday = calendar.weekdaySymbols[calendar.component(.weekday, from: earlier.date) - 1]
+        XCTAssertEqual(RideCostCard.subtitle(earlier, now: now, calendar: calendar), "\(weekday) · Zwift - Watopia")
+    }
 }
