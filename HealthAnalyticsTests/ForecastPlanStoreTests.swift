@@ -55,10 +55,45 @@ final class ForecastPlanStoreTests: XCTestCase {
 
     private func plan(start: Int, current: Int? = nil, patterns: Set<PatternType> = [],
                       memories: [CoachMemoryNote] = [], risk: InjuryRiskCalculator.RiskLevel = .low,
-                      illness: ForecastIllness = .none) throws -> [ReadinessRepository.ReadinessForecastDay]? {
+                      illness: ForecastIllness = .none, age: Int? = nil) throws -> [ReadinessRepository.ReadinessForecastDay]? {
         try repo.computeForecastPlan(modelContext: ctx, startScore: start, currentScore: current ?? start,
                                      illness: illness, activePatterns: patterns, memories: memories,
-                                     injuryRisk: risk, sleep: [], now: noon)?.days
+                                     injuryRisk: risk, sleep: [], age: age, now: noon)?.days
+    }
+
+    // MARK: - Hard-day rules by age
+
+    private func hardDays(_ days: [ReadinessRepository.ReadinessForecastDay]) -> [Int] {
+        days.indices.filter { days[$0].effort == .hard }
+    }
+
+    func testAge65_planHoldsToTwoHardDays() throws {
+        insertRows(1...30)
+        try ctx.save()
+        let days = try XCTUnwrap(plan(start: 95, age: 65))
+        XCTAssertEqual(hardDays(days), [0, 3], "\(days.map(\.effort))")
+    }
+
+    func testAge45_planAllowsThree() throws {
+        insertRows(1...30)
+        try ctx.save()
+        let days = try XCTUnwrap(plan(start: 95, age: 45))
+        let hard = hardDays(days)
+        XCTAssertLessThanOrEqual(hard.count, 3)
+        // Two Hard days two apart: allowed under 60, forbidden from 60. This is what proves the age reached the planner.
+        XCTAssertTrue(zip(hard, hard.dropFirst()).contains { $1 - $0 == 2 }, "\(days.map(\.effort))")
+    }
+
+    func testFailedAgeRead_keepsTheRememberedRules() throws {
+        let suiteName = "ForecastPlanStoreTests-age-\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        _ = HardDayRules.resolvedAge(read: 65, defaults: suite)
+        let remembered = HardDayRules.resolvedAge(read: nil, defaults: suite)
+        insertRows(1...30)
+        try ctx.save()
+        let days = try XCTUnwrap(plan(start: 95, age: remembered))
+        XCTAssertEqual(hardDays(days), [0, 3], "\(days.map(\.effort))")
     }
 
     // MARK: - The ACWR engine with planned loads
@@ -248,7 +283,7 @@ final class ForecastPlanStoreTests: XCTestCase {
         try ctx.save()
         let plan = try XCTUnwrap(repo.computeForecastPlan(
             modelContext: ctx, startScore: 63, currentScore: 63, illness: .none, activePatterns: [],
-            memories: [], injuryRisk: .low, sleep: [], now: noon))
+            memories: [], injuryRisk: .low, sleep: [], age: nil, now: noon))
         let state = coachState(plan, start: 63, current: 63)
 
         XCTAssertEqual(state.todayEffort, plan.days[0].effort)
@@ -264,7 +299,7 @@ final class ForecastPlanStoreTests: XCTestCase {
         try ctx.save()
         let plan = try XCTUnwrap(repo.computeForecastPlan(
             modelContext: ctx, startScore: 81, currentScore: 60, illness: .none, activePatterns: [],
-            memories: [], injuryRisk: .low, sleep: [], now: noon))
+            memories: [], injuryRisk: .low, sleep: [], age: nil, now: noon))
         let state = coachState(plan, start: 81, current: 60)
         XCTAssertEqual(state.todayEffort, .rest)
         XCTAssertEqual(state.startedLow, false, "They started fresh; the ride brought them down")
