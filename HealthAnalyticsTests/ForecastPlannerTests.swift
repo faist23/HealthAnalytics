@@ -637,6 +637,22 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(harder[1].reason, usual[1].reason, "Same word, so the cap still explains it")
     }
 
+    /// At 65 the second day after a hard ride is capped at Moderate. From z -1 tomorrow's band is
+    /// Hard as usual (the cap sets Moderate), and rides 2 points costlier take it under the cap to
+    /// Easy: ride cost set the word, so it gives the reason, not the looser cap.
+    func testShift_feelUnderABindingModerateCapGivesTheFeelReason() {
+        func day1(_ trend: Double, rules: HardDayRules) -> ReadinessRepository.ReadinessForecastDay {
+            var i = input(z: -1, rules: rules, hardDaysAgo: [1])
+            i.rideCostTrend = trend
+            return plan(i)[1]
+        }
+        XCTAssertEqual(day1(0, rules: .under60).effort, .hard, "Fixture: recovery alone allows Hard tomorrow")
+        XCTAssertEqual(day1(0, rules: .from60).effort, .moderate, "Fixture: the cap is what sets Moderate")
+        XCTAssertEqual(day1(0, rules: .from60).reason, "Still recovering from \(day(-1).formatted(.dateTime.weekday(.wide)))")
+        XCTAssertEqual(day1(2, rules: .from60).effort, .easy)
+        XCTAssertEqual(day1(2, rules: .from60).reason, "Rides costing more than usual")
+    }
+
     /// A hard ride today caps tomorrow at Easy. When rides feel 2 points harder, the shift
     /// (1 spread) can take tomorrow past that cap to Rest: the feel set the word, so
     /// it gives the reason, not the looser cap.
