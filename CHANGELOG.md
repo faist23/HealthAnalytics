@@ -3,6 +3,14 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.0.0] - 2026-11-10
+
+### Changed
+
+- **The 7-day plan now spaces your hard days by your age.** An older body takes longer to come back from a hard session, so from 60 the plan offers at most 2 Hard days in any 7 days and leaves at least two days below Hard after each one: a fresh week reads Hard, Easy, Moderate, Hard. Under 60 it allows up to 3 Hard days in any 7 days, with at least one day between them. Hard rides you have already done this week count toward the limit, and a day held back shows "Enough hard days this week".
+- **The day after a hard day is always Easy or Rest.** It used to allow Moderate. This holds at every age, whether the hard day was planned or ridden, including a hard ride earlier today. If the app has learned that you need more time after hard days, it still adds those days.
+- **Your age comes from Apple Health.** If Health can't give it (a locked phone, say), the plan uses the last age it read and counts the years since, so a missed read never loosens your limits. With no age on record, it plans on the under-60 rules.
+
 ## [0.1.28.0] - 2026-11-09
 
 ### Changed

@@ -41,7 +41,7 @@
 ### Forecast: learn each rider's response to hard days
 **Priority:** P2. Part 2 of `docs/superpowers/specs/2026-11-10-hard-days-cap-design.md`, agreed with Craig 2026-11-10: "let's use this data as a beginning but the app should learn over time how an athlete is responding to training stimuli."
 
-**What:** the age rules (v0.1.29.0, `HardDayRules`) are where every rider starts. From the rider's own history (recovery after hard days, ride cost, illness), move the weekly Hard limit and the spacing one step at a time, in either direction, with more evidence needed to loosen than to tighten. Never more than 3 Hard days a week, never two in a row.
+**What:** the age rules (v0.2.0.0, `HardDayRules`) are where every rider starts. From the rider's own history (recovery after hard days, ride cost, illness), move the weekly Hard limit and the spacing one step at a time, in either direction, with more evidence needed to loosen than to tighten. Never more than 3 Hard days a week, never two in a row.
 
 **Order:** 2a is a read-only Settings screen showing each week's hard days and what followed, for Craig to check against his own memory. 2b lets the learned numbers move the plan. Each needs its own short design; what counts as "responded badly" must be checked on real weeks first.
 
@@ -162,7 +162,7 @@
 
 ## Completed
 
-- **P2 — Forecast release 2, Part 1: hard days limited and spaced by age** — **Completed:** v0.1.29.0 (2026-11-10). `HardDayRules`: under 60, 3 Hard days in any 7 and 1 day between; from 60, 2 and 2; the day after a hard day is at most Easy at every age; the last age read is remembered. Part 2 (learning the rider's response) is open above.
+- **P2 — Forecast release 2, Part 1: hard days limited and spaced by age** — **Completed:** v0.2.0.0 (2026-11-10). `HardDayRules`: under 60, 3 Hard days in any 7 and 1 day between; from 60, 2 and 2; the day after a hard day is at most Easy at every age; the last age read is remembered. Part 2 (learning the rider's response) is open above.
 - **P2 — Forecast: the same workout feeling harder is a stress signal** — **Completed:** v0.1.26.0 (2026-11-07), replaced by ride cost in v0.1.28.0 (2026-11-09): rides are priced by what their intensity should cost (`RideCost`), flagged on Coach and fed to the plan; Forecast Check removed. Leftovers are open above.
 - **P3 — Re-key a manual intent label instead of deleting it with its HealthKit copy** — **Closed:** v0.1.23.0 (2026-11-02). Moot: nothing in the app writes a `.manual` intent label (`LabelSource.manual` has no writer), so every label is automatic and is re-derived for the Strava ride.
 - **P3 — Forecast testability: inject ACWR instead of reading the shared singleton** — **Completed:** v0.1.23.0 (2026-11-02). `compute7DayForecast(modelContext:acwr:)` takes it as an argument.
