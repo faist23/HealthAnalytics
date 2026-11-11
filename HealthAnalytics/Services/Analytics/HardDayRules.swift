@@ -25,6 +25,8 @@ nonisolated struct HardDayRules: Equatable {
     static let under60 = HardDayRules(hardDaysPerWeek: 3, minimumRecoveryDays: 1)
     static let from60 = HardDayRules(hardDaysPerWeek: 2, minimumRecoveryDays: 2)
     static let lastKnownAgeKey = "forecastLastKnownAge"
+    /// When the remembered age was read (seconds since 1970), so a fallback can count the years since.
+    static let lastKnownAgeDateKey = "forecastLastKnownAgeDate"
 
     /// An unknown age gets the under-60 rules.
     static func forAge(_ age: Int?) -> HardDayRules {
@@ -32,14 +34,30 @@ nonisolated struct HardDayRules: Equatable {
         return from60
     }
 
-    /// The age to plan with. A plausible read is remembered, so a later failed read (a locked
-    /// device, Health unavailable) can't loosen the rules already in use. Nil only when no
-    /// plausible age has ever been read.
-    static func resolvedAge(read: Int?, defaults: UserDefaults) -> Int? {
+    /// The age to plan with. A plausible read is remembered with its date, so a later failed read
+    /// (a locked device, Health unavailable) can't loosen the rules: the fallback is the remembered
+    /// age plus the whole years since that read, which never over-states the age and lags it by
+    /// under a year. A read the remembered age already predicts is not rewritten, so the earlier
+    /// date stands. Nil only when no plausible age has ever been read.
+    static func resolvedAge(read: Int?, defaults: UserDefaults, now: Date = Date(),
+                            calendar: Calendar = .current) -> Int? {
+        let predicted = rememberedAge(defaults: defaults, now: now, calendar: calendar)
         if let read, plausibleAges.contains(read) {
-            defaults.set(read, forKey: lastKnownAgeKey)
+            if read != predicted {
+                defaults.set(read, forKey: lastKnownAgeKey)
+                defaults.set(now.timeIntervalSince1970, forKey: lastKnownAgeDateKey)
+            }
             return read
         }
-        return defaults.object(forKey: lastKnownAgeKey) as? Int
+        return predicted
+    }
+
+    /// The remembered age, aged by the whole years since it was read. An age stored without a
+    /// date (before the date was kept) is used as is.
+    private static func rememberedAge(defaults: UserDefaults, now: Date, calendar: Calendar) -> Int? {
+        guard let age = defaults.object(forKey: lastKnownAgeKey) as? Int else { return nil }
+        guard let stamp = defaults.object(forKey: lastKnownAgeDateKey) as? Double else { return age }
+        let years = calendar.dateComponents([.year], from: Date(timeIntervalSince1970: stamp), to: now).year ?? 0
+        return age + max(years, 0)
     }
 }

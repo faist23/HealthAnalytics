@@ -53,4 +53,35 @@ final class HardDayRulesTests: XCTestCase {
     func testResolvedAge_implausibleFirstReadIsNil() {
         XCTAssertNil(HardDayRules.resolvedAge(read: 0, defaults: defaults))
     }
+
+    private let calendar = Calendar(identifier: .gregorian)
+    private func date(_ y: Int, _ m: Int, _ d: Int) -> Date {
+        calendar.date(from: DateComponents(year: y, month: m, day: d, hour: 12))!
+    }
+
+    /// A rider remembered at 59 whose reads then stop must reach the 60+ rules a year on.
+    func testResolvedAge_fallbackAddsWholeYearsSinceTheRead() {
+        XCTAssertEqual(HardDayRules.resolvedAge(read: 59, defaults: defaults, now: date(2026, 3, 1), calendar: calendar), 59)
+        XCTAssertEqual(HardDayRules.resolvedAge(read: nil, defaults: defaults, now: date(2026, 11, 1), calendar: calendar), 59)
+        XCTAssertEqual(HardDayRules.resolvedAge(read: nil, defaults: defaults, now: date(2027, 3, 1), calendar: calendar), 60)
+        XCTAssertEqual(HardDayRules.forAge(HardDayRules.resolvedAge(read: nil, defaults: defaults,
+                                                                     now: date(2027, 3, 2), calendar: calendar)), .from60)
+    }
+
+    /// A read the stored age already predicts keeps the earlier read date, which only ever
+    /// under-counts the years since, so a later fallback never over-states the age.
+    func testResolvedAge_matchingReadIsNotRewritten() {
+        _ = HardDayRules.resolvedAge(read: 65, defaults: defaults, now: date(2026, 1, 10), calendar: calendar)
+        let stamp = defaults.object(forKey: HardDayRules.lastKnownAgeDateKey) as? Double
+        XCTAssertNotNil(stamp)
+        XCTAssertEqual(HardDayRules.resolvedAge(read: 65, defaults: defaults, now: date(2026, 6, 10), calendar: calendar), 65)
+        XCTAssertEqual(defaults.object(forKey: HardDayRules.lastKnownAgeDateKey) as? Double, stamp)
+        XCTAssertEqual(HardDayRules.resolvedAge(read: nil, defaults: defaults, now: date(2027, 1, 11), calendar: calendar), 66)
+    }
+
+    /// An age remembered before the read date was stored has no date to count from: it is used as is.
+    func testResolvedAge_storedAgeWithoutADateIsUsedAsIs() {
+        defaults.set(64, forKey: HardDayRules.lastKnownAgeKey)
+        XCTAssertEqual(HardDayRules.resolvedAge(read: nil, defaults: defaults, now: date(2030, 1, 1), calendar: calendar), 64)
+    }
 }
