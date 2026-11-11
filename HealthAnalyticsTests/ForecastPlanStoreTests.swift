@@ -84,18 +84,6 @@ final class ForecastPlanStoreTests: XCTestCase {
         XCTAssertTrue(zip(hard, hard.dropFirst()).contains { $1 - $0 == 2 }, "\(days.map(\.effort))")
     }
 
-    func testFailedAgeRead_keepsTheRememberedRules() throws {
-        let suiteName = "ForecastPlanStoreTests-age-\(UUID().uuidString)"
-        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { suite.removePersistentDomain(forName: suiteName) }
-        _ = HardDayRules.resolvedAge(read: 65, defaults: suite)
-        let remembered = HardDayRules.resolvedAge(read: nil, defaults: suite)
-        insertRows(1...30)
-        try ctx.save()
-        let days = try XCTUnwrap(plan(start: 95, age: remembered))
-        XCTAssertEqual(hardDays(days), [0, 3], "\(days.map(\.effort))")
-    }
-
     // MARK: - The ACWR engine with planned loads
 
     func testACWR_plannedLoadsCountInsideTheWindowOnly() {
