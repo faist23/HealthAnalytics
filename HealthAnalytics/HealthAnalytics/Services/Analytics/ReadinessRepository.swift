@@ -797,6 +797,8 @@ class ReadinessRepository: ObservableObject {
             )?.score ?? baseReadiness.score
             let forecastIllness = forecastIllness(state: illnessState, context: modelContext, now: now)
             let forecastSignature = forecastInputSignature(context: modelContext, now: now)
+            // A failed age read falls back to the last age read, so it can't loosen the plan's hard-day rules.
+            let forecastAge = HardDayRules.resolvedAge(read: HealthKitManager.shared.getUserAge(), defaults: .standard)
             func buildForecast() -> Result<ForecastPlan?, Error> {
                 Result {
                     guard patternsRead != nil, memoriesRead != nil else { throw ForecastInputReadFailed() }
@@ -814,6 +816,7 @@ class ReadinessRepository: ObservableObject {
                         memories: allMemories,
                         injuryRisk: riskAssessment.riskLevel,
                         sleep: sleepData,
+                        age: forecastAge,
                         now: now
                     )
                 }
@@ -1353,11 +1356,12 @@ class ReadinessRepository: ObservableObject {
 
     /// Nil below 14 scored days. `startScore` ignores today's rides; `currentScore`
     /// (`forecastTodayScore`) decides today's word. Rebuilt from the store on every analysis.
+    /// `age` is the rider's resolved age (`HardDayRules.resolvedAge`); nil plans on the under-60 rules.
     func computeForecastPlan(modelContext: ModelContext, startScore: Int, currentScore: Int,
                              illness: ForecastIllness, activePatterns: Set<PatternType>,
                              memories: [CoachMemoryNote],
                              injuryRisk: InjuryRiskCalculator.RiskLevel,
-                             sleep: [HealthDataPoint], now: Date = Date()) throws -> ForecastPlan? {
+                             sleep: [HealthDataPoint], age: Int?, now: Date = Date()) throws -> ForecastPlan? {
         let calendar = Calendar.current
         let store = try loadForecastHistory(context: modelContext, now: now)
         guard let profile = ForecastProfile.learn(history: store.days, today: now, calendar: calendar) else { return nil }
@@ -1375,6 +1379,7 @@ class ReadinessRepository: ObservableObject {
             injuryRiskElevated: injuryRisk == .high || injuryRisk == .veryHigh,
             noteCaps: Self.forecastNoteCaps(memories),
             shortSleepNights: Self.shortSleepNights(sleep: sleep, now: now, calendar: calendar),
+            hardDayRules: .forAge(age),
             rideCostTrend: RideCost.trend(store.pricedRides, now: now, calendar: calendar),
             projectedACWR: { close, planned in
                 service.calculateReadiness(stravaActivities: [], healthKitWorkouts: store.workouts,

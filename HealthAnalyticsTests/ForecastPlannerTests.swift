@@ -179,11 +179,18 @@ final class ForecastPlannerTests: XCTestCase {
     private func score(z: Double, normal: Double = 75) -> Int { Int((normal + 6 * z).rounded()) }
 
     private func input(z: Double, currentZ: Double? = nil, rode: Double = 0, profile p: ForecastProfile? = nil,
+                       rules: HardDayRules = .under60, hardDaysAgo: [Int] = [],
                        acwr: @escaping (Date, [Date: Double]) -> Double = { _, _ in 1.0 }) -> ForecastPlanInput {
         let p = p ?? profile()
-        return ForecastPlanInput(now: noon, startScore: score(z: z, normal: p.normal),
-                                 currentScore: score(z: currentZ ?? z, normal: p.normal),
-                                 rodeLoadToday: rode, recentLoads: [], profile: p, projectedACWR: acwr)
+        var input = ForecastPlanInput(now: noon, startScore: score(z: z, normal: p.normal),
+                                      currentScore: score(z: currentZ ?? z, normal: p.normal),
+                                      rodeLoadToday: rode,
+                                      recentLoads: hardDaysAgo.sorted(by: >).map {
+                                          ForecastHistoryDay(date: day(-$0), score: 70, load: 5)
+                                      },
+                                      profile: p, projectedACWR: acwr)
+        input.hardDayRules = rules
+        return input
     }
 
     private func plan(_ input: ForecastPlanInput) -> [ReadinessRepository.ReadinessForecastDay] {
@@ -272,7 +279,7 @@ final class ForecastPlannerTests: XCTestCase {
                                           rodeLoadToday: 0,
                                           recentLoads: [ForecastHistoryDay(date: yesterday, score: 70, load: 5)],
                                           profile: base.profile, projectedACWR: base.projectedACWR))
-        XCTAssertEqual(days[0].effort, .moderate)
+        XCTAssertEqual(days[0].effort, .easy)
         XCTAssertEqual(days[0].reason, "Still recovering from \(yesterday.formatted(.dateTime.weekday(.wide)))")
     }
 
@@ -401,11 +408,73 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertTrue(days[...4].contains { $0.effort != .rest }, "\(days.map(\.effort))")
     }
 
-    func testHardDaysPerWeekCap_nilMeansNoCap_oneCapsTheWeek() {
-        var i = input(z: 1)
-        XCTAssertGreaterThan(plan(i).filter { $0.effort == .hard }.count, 1)
-        i.hardDaysPerWeekCap = 1
-        XCTAssertEqual(plan(i).filter { $0.effort == .hard }.count, 1)
+    // MARK: - Hard-day rules by age
+
+    private func efforts(_ days: [ReadinessRepository.ReadinessForecastDay]) -> String {
+        days.map(\.effort.label).joined(separator: " ")
+    }
+
+    func testDayAfterHard_isAtMostEasy_atEveryAge() {
+        for rules in [HardDayRules.under60, .from60] {
+            let days = plan(input(z: 2, rules: rules))
+            XCTAssertEqual(days[0].effort, .hard)
+            XCTAssertGreaterThanOrEqual(days[1].effort, .easy, efforts(days))
+        }
+    }
+
+    func testFrom60_twoDaysBetweenHards_andTwoAWeek() {
+        let days = plan(input(z: 2, profile: profile(recoveryDays: 1, dip: 0.5), rules: .from60))
+        let hard = days.indices.filter { days[$0].effort == .hard }
+        XCTAssertEqual(hard.count, 2, efforts(days))
+        guard hard.count == 2 else { return }
+        XCTAssertGreaterThanOrEqual(hard[1] - hard[0], 3, efforts(days))
+        XCTAssertGreaterThanOrEqual(days[hard[0] + 2].effort, .moderate, efforts(days))
+    }
+
+    func testUnder60_threeAWeek() {
+        // A fast recoverer (dip 0.5), so recovery alone would allow Hard every other day: 0, 2, 4, 6.
+        let days = plan(input(z: 2, profile: profile(recoveryDays: 1, dip: 0.5), rules: .under60))
+        XCTAssertEqual(days.filter { $0.effort == .hard }.count, 3, efforts(days))
+    }
+
+    func testLearnedRecoveryLongerThanTheAgeFloorWins() {
+        let days = plan(input(z: 2, profile: profile(recoveryDays: 3, dip: 0.5), rules: .from60))
+        let hard = days.indices.filter { days[$0].effort == .hard }
+        XCTAssertGreaterThanOrEqual(hard.count, 2, efforts(days))
+        for (a, b) in zip(hard, hard.dropFirst()) { XCTAssertGreaterThanOrEqual(b - a, 4, efforts(days)) }
+    }
+
+    func testFrom60_twoHardRidesThisWeek_holdHardWithTheReason() {
+        // Hard rides 5 and 3 days ago: day 0 and day 1 still see both in their trailing 6 days.
+        let days = plan(input(z: 2, rules: .from60, hardDaysAgo: [5, 3]))
+        XCTAssertEqual(days[0].effort, .moderate)
+        XCTAssertEqual(days[0].reason, "Enough hard days this week")
+        XCTAssertNotEqual(days[1].effort, .hard)
+        XCTAssertEqual(days[2].effort, .hard, efforts(days))   // the ride 5 days ago is now 7 back
+    }
+
+    func testRodeHardYesterdayAndTheDayBefore_at65() {
+        let days = plan(input(z: 2, rules: .from60, hardDaysAgo: [2, 1]))
+        XCTAssertGreaterThanOrEqual(days[0].effort, .easy, efforts(days))
+        XCTAssertEqual(days[0].reason, "Still recovering from \(day(-1).formatted(.dateTime.weekday(.wide)))")
+        XCTAssertGreaterThanOrEqual(days[1].effort, .moderate, efforts(days))
+    }
+
+    func testMoreHardDaysRiddenThanTheLimit_at60() {
+        let days = plan(input(z: 2, rules: .from60, hardDaysAgo: [5, 3, 1]))
+        // Trailing 6 days hold fewer than 2 only from day 4 (the rides 5 and 3 days ago have left).
+        XCTAssertFalse(days[0...3].contains { $0.effort == .hard }, efforts(days))
+    }
+
+    func testHardRideTodayCountsTowardTheWeek_at65() {
+        let days = plan(input(z: 2, rode: 5, rules: .from60, hardDaysAgo: [3]))
+        XCTAssertFalse(days[1...3].contains { $0.effort == .hard }, efforts(days))
+    }
+
+    func testStricterCapStillWins() {
+        var i = input(z: 2, rules: .from60)
+        i.illness = .sick
+        XCTAssertTrue(plan(i).allSatisfy { $0.effort == .rest })
     }
 
     // MARK: - The card
@@ -509,9 +578,11 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertTrue(zip(usual, harder).dropFirst().contains { $1.effort > $0.effort }, "\(harder.map(\.effort))")
     }
 
+    /// From z -3 tomorrow is Moderate as usual and Hard with the lift. (From z -1 tomorrow is Hard
+    /// either way, and the day after a Hard day is Easy whatever the trend.)
     func testShift_easierTrendLiftsThem() {
-        let usual = plan(shifted(0, z: -1))
-        let easier = plan(shifted(-2, z: -1))
+        let usual = plan(shifted(0, z: -3))
+        let easier = plan(shifted(-2, z: -3))
         XCTAssertTrue(zip(usual, easier).dropFirst().contains { $1.effort < $0.effort }, "\(easier.map(\.effort))")
     }
 
@@ -542,8 +613,10 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(harder[1].effort, .easy)
         XCTAssertEqual(harder[1].reason, "Rides costing more than usual")
         XCTAssertFalse(usual.contains { $0.reason?.hasPrefix("Rides costing") == true })
-        let easier = plan(shifted(-2, z: -0.9, currentZ: -0.9))
-        XCTAssertTrue(easier.contains { $0.reason == "Rides costing less than usual" }, "\(easier.map(\.reason))")
+        // From z -1.4 (today Easy) tomorrow is Moderate as usual and Hard with the lift.
+        let easier = plan(shifted(-2, z: -1.4, currentZ: -1.4))
+        XCTAssertEqual(easier[1].effort, .hard)
+        XCTAssertEqual(easier[1].reason, "Rides costing less than usual", "\(easier.map(\.reason))")
     }
 
     func testShift_zeroTrendChangesNothing() {
@@ -553,7 +626,7 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(a.map(\.reason), b.map(\.reason))
     }
 
-    /// A hard ride today puts a Moderate recovery cap on tomorrow. With z 3, tomorrow's band is Hard
+    /// A hard ride today puts an Easy recovery cap on tomorrow. With z 3, tomorrow's band is Hard
     /// as usual and Moderate when rides feel 1 point harder: the same word, which the cap sets.
     func testShift_reasonKeepsTheCapWhenTheCapAlreadySetTheWord() {
         let usual = plan(ForecastPlanInput(now: noon, startScore: score(z: 3), currentScore: score(z: 3), rodeLoadToday: 3,
@@ -564,8 +637,24 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(harder[1].reason, usual[1].reason, "Same word, so the cap still explains it")
     }
 
-    /// A hard ride today caps tomorrow at Moderate. When rides feel 2 points harder, the shift
-    /// (1 spread) can take tomorrow from Hard past that cap to Easy: the feel set the word, so
+    /// At 65 the second day after a hard ride is capped at Moderate. From z -1 tomorrow's band is
+    /// Hard as usual (the cap sets Moderate), and rides 2 points costlier take it under the cap to
+    /// Easy: ride cost set the word, so it gives the reason, not the looser cap.
+    func testShift_feelUnderABindingModerateCapGivesTheFeelReason() {
+        func day1(_ trend: Double, rules: HardDayRules) -> ReadinessRepository.ReadinessForecastDay {
+            var i = input(z: -1, rules: rules, hardDaysAgo: [1])
+            i.rideCostTrend = trend
+            return plan(i)[1]
+        }
+        XCTAssertEqual(day1(0, rules: .under60).effort, .hard, "Fixture: recovery alone allows Hard tomorrow")
+        XCTAssertEqual(day1(0, rules: .from60).effort, .moderate, "Fixture: the cap is what sets Moderate")
+        XCTAssertEqual(day1(0, rules: .from60).reason, "Still recovering from \(day(-1).formatted(.dateTime.weekday(.wide)))")
+        XCTAssertEqual(day1(2, rules: .from60).effort, .easy)
+        XCTAssertEqual(day1(2, rules: .from60).reason, "Rides costing more than usual")
+    }
+
+    /// A hard ride today caps tomorrow at Easy. When rides feel 2 points harder, the shift
+    /// (1 spread) can take tomorrow past that cap to Rest: the feel set the word, so
     /// it gives the reason, not the looser cap.
     func testShift_feelPastACapGivesTheFeelReason() {
         func day1(_ trend: Double, z: Double) -> ReadinessRepository.ReadinessForecastDay {
@@ -573,9 +662,9 @@ final class ForecastPlannerTests: XCTestCase {
                                    recentLoads: [], profile: profile(), rideCostTrend: trend, projectedACWR: { _, _ in 1 }))[1]
         }
         let cases = stride(from: -1.0, through: 4.0, by: 1.0 / 6).filter { z in
-            day1(0, z: z).effort == .moderate && day1(2, z: z).effort == .easy
+            day1(0, z: z).effort == .easy && day1(2, z: z).effort == .rest
         }
-        XCTAssertFalse(cases.isEmpty, "Some start puts tomorrow under the Moderate cap as usual and at Easy when harder")
+        XCTAssertFalse(cases.isEmpty, "Some start puts tomorrow under the Easy cap as usual and at Rest when harder")
         for z in cases {
             XCTAssertEqual(day1(2, z: z).reason, "Rides costing more than usual", "start z \(z)")
         }
