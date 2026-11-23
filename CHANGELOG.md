@@ -3,6 +3,22 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.1.0] - 2026-11-23
+
+### Fixed
+
+- **A new ride no longer makes you read as detraining.** A ride used to count for about a quarter of its stress until its Strava power data finished downloading. That could pull your load ratio under 0.8 on the day you rode harder. Every ride is now scored the same way from the moment it syncs.
+- **The Coach card describes your load correctly.** A load spike no longer reads as "low", real detraining no longer reads as the sweet spot, and the ratio it shows is the same one the Load tab uses.
+
+### Changed
+
+- **Training load is measured in TSS everywhere** (100 = an hour at your FTP). Easy rides still count, just less per hour than hard ones. An hour in zone 2 is about 42, an hour at threshold about 96. Sessions without power count at about 50 per hour, adjusted for the sport. Your stored history is rewritten in TSS once, after your next successful sync, and pattern detection waits for that rewrite so it never mixes old and new numbers.
+- **Steps no longer add training load.** They still count toward recovery against your own normal.
+
+### Added
+
+- The Load tab's Training Stress card now shows hours beside TSS. The header has this week's total, tapping a week shows its hours, and a table lists hours and TSS for the last four weeks.
+
 ## [0.2.0.0] - 2026-11-10
 
 ### Changed
