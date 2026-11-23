@@ -36,7 +36,7 @@ Underneath both: the `ReadinessRepository` was built as the single source of tru
 - **Risk**: context lifecycle through `Settings → resetAllData()` (`SettingsView.swift:270`). Re-bootstrap after reset.
 
 ### 1.2 Move per-tab computations into `UnifiedReadiness` (~half day) — ✅ `eb6bd74`
-Scope adaptation when implemented: `dailyTSSData` stayed in `ReadinessViewModel` because it depends on user-changeable `selectedPeriod`. The repo provides raw `workouts` + `stepCountData`; the VM derives the period-aware slice on every publish.
+Scope adaptation when implemented: `dailyTSSData` stayed in `ReadinessViewModel` because it depends on user-changeable `selectedPeriod`. The repo provides raw `workouts` + `stepCountData`; the VM derives the period-aware slice on every publish. *(Superseded in v0.2.1.0: the repo now provides per-day TSS and hours as `UnifiedReadiness.dailyTraining`, from the one load engine with no step load, and the VM only adds the fitness/fatigue EWMAs.)*
 
 Add to `UnifiedReadiness`, compute inside `performFullAnalysis`:
 - `cardiovascularStrain: CardiovascularStrainService.Result?` (from `ReadinessViewModel.computeCardiovascularStrain`, line 297)
