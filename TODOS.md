@@ -38,25 +38,22 @@
 
 **Effort:** S (human: ~2h / CC+gstack: ~20min)
 
-### Forecast release 2: learned limit on hard days per week
-**Priority:** P2. Agreed with Craig when the forecast plan was designed (`docs/superpowers/specs/2026-11-03-forecast-plan-design.md`).
+### Forecast: learn each rider's response to hard days
+**Priority:** P2. Part 2 of `docs/superpowers/specs/2026-11-10-hard-days-cap-design.md`, agreed with Craig 2026-11-10: "let's use this data as a beginning but the app should learn over time how an athlete is responding to training stimuli."
 
-**What:** "If the app sees trends where I get sick after three hard days in a 7 day stretch it should be aware when coming up with the forecast." Teach the pattern engine how many hard days in a week come before an illness or crash, and pass the result as `ForecastPlanInput.hardDaysPerWeekCap`.
+**What:** the age rules (v0.2.0.0, `HardDayRules`) are where every rider starts. From the rider's own history (recovery after hard days, ride cost, illness), move the weekly Hard limit and the spacing one step at a time, in either direction, with more evidence needed to loosen than to tighten. Never more than 3 Hard days a week, never two in a row.
 
-**Why:** until this exists the plan can alternate Hard and Easy, which schedules 3 or 4 Hard days in a week.
+**Order:** 2a is a read-only Settings screen showing each week's hard days and what followed, for Craig to check against his own memory. 2b lets the learned numbers move the plan. Each needs its own short design; what counts as "responded badly" must be checked on real weeks first.
 
-**Blocked by:** logged illnesses only started in v0.1.21, so it starts on the step-count sick-day proxy. It needs its own design.
+**Why:** Craig asked for the illness case when the forecast was designed ("if the app sees trends where I get sick after three hard days in a 7 day stretch it should be aware"). Logged illnesses only started in v0.1.21, so it starts on the step-count sick-day proxy.
 
-### Forecast: the same workout feeling harder is a stress signal
-**Built (v0.1.26.0), replaced (v0.1.28.0):** rides are now priced by what their intensity should cost (heart rate and feel against Craig's own same-setting rides at the same intensity), flagged on Coach and fed to the plan (`RideCost`; spec `docs/superpowers/specs/2026-11-09-ride-cost-design.md`). Forecast Check is gone. What follows is the history and the open leftovers.
+### Effort ratings: leftovers from the Effort Check and v0.1.26.0 reviews
+**Priority:** P3. The feature itself is done (see Completed: ride cost replaced the rating-only comparison).
 
-**Priority:** P2. Craig's idea (2026-11-07).
-
-**What:** "If I do the same workout on two different days and one day it feels moderate and the other day it feels hard, I would conclude my body is having trouble with some kind of stress." When a comparable workout is rated harder than usual, lower the plan's coming days to get more recovery.
-
-**Why:** perceived effort against comparable work can catch stress that HRV, sleep and load miss.
-
-**Checked (v0.1.25.0, Settings → Effort Check):** Craig's rides carry both an effort rating (`workoutEffortScore`) and Apple's estimate (2026-11-07). Any app can write that rating, so before designing, check the screen's "Ratings written by" list: ratings Craig gave appear under an Apple device name (such as "Craig's Apple Watch" or "Craig's iPhone"), and any other name is another app's score. The list shows only the newest rating per workout, so an app writing after Craig can hide his. Read the bundle identifier (com.apple.*) and every related sample before the forecast relies on this. Next: a short design for what counts as "the same workout" before any code. Effort Check leftovers from its review: a lookup failure on every workout (a locked device, say) reads as "no ratings" rather than an error, and a reload after an error briefly shows empty counts instead of the spinner. A cancelled load also finishes as "no ratings" because the per-workout lookups swallow cancellation. Found at the end of the v0.1.26.0 review: an empty ratings read changes nothing, so deleting the only Apple rating left in the 14-day window is never synced and that rating keeps feeding the trend; telling "denied" from "none" needs an authorization check. `estimatedWorkoutEffortScore` is Apple's estimate from the workout, not how it felt, so it can't stand in for the feeling. "Comparable" needs a definition, such as similar duration and power-zone load. This needs its own design.
+**What:**
+- Effort Check: a lookup failure on every workout (a locked device, say) reads as "no ratings" rather than an error; a reload after an error briefly shows empty counts instead of the spinner; a cancelled load finishes as "no ratings" because the per-workout lookups swallow cancellation.
+- An empty ratings read changes nothing, so deleting the only Apple rating left in the window is never synced and that rating keeps feeding ride cost. Telling "denied" from "none" needs an authorization check.
+- Ratings are trusted by display name (an Apple device name); the bundle identifier (com.apple.*) is not read, and only the newest rating per workout is seen, so another app writing after Craig can hide his.
 
 ### Ride cost: known limits from the v0.1.28.0 review
 **Priority:** P3. None loses data. Check against real rides in Effort Check's "Ride cost" section before changing anything.
@@ -95,7 +92,7 @@
 
 **What:**
 - `ReadinessRepository` still reads `vo2maxData` from the stored metrics every analysis; its only consumer (`FitnessTrendAnalyzer`) was deleted.
-- `PerformancePredictor` and `CoachingService` have no production callers left; only `PredictionCache` (whose `store(models:)` is never called) and `ReadinessRepositoryCoachingTests` keep them alive.
+- `PerformancePredictor` and `CoachingService` have no production callers left; `PredictionCache.store(models:)` (never called) and `ReadinessRepositoryCoachingTests` are what keep them alive. `PredictionCache.DataFingerprint` is live (the analysis cache uses it): remove the predictor types and `store(models:)`, not the fingerprint.
 - `TrainingDNAAnalyzer`'s taper corroboration reads FTP snapshots with `try? … ?? []`, so a failed read scores rides at the 200 W default (pre-existing; the daily-load recompute skips instead).
 - The intent-label doc comment and CLAUDE.md say nothing writes `.manual` labels; a one-day February dev build (`ActivityIntentLabelerView`, deleted in 4be4b01) could, so say "no current writer".
 
@@ -165,6 +162,8 @@
 
 ## Completed
 
+- **P2 — Forecast release 2, Part 1: hard days limited and spaced by age** — **Completed:** v0.2.0.0 (2026-11-10). `HardDayRules`: under 60, 3 Hard days in any 7 and 1 day between; from 60, 2 and 2; the day after a hard day is at most Easy at every age; the last age read is remembered. Part 2 (learning the rider's response) is open above.
+- **P2 — Forecast: the same workout feeling harder is a stress signal** — **Completed:** v0.1.26.0 (2026-11-07), replaced by ride cost in v0.1.28.0 (2026-11-09): rides are priced by what their intensity should cost (`RideCost`), flagged on Coach and fed to the plan; Forecast Check removed. Leftovers are open above.
 - **P3 — Re-key a manual intent label instead of deleting it with its HealthKit copy** — **Closed:** v0.1.23.0 (2026-11-02). Moot: nothing in the app writes a `.manual` intent label (`LabelSource.manual` has no writer), so every label is automatic and is re-derived for the Strava ride.
 - **P3 — Forecast testability: inject ACWR instead of reading the shared singleton** — **Completed:** v0.1.23.0 (2026-11-02). `compute7DayForecast(modelContext:acwr:)` takes it as an argument.
 - **P3 — Mark the load engine's pure functions `nonisolated`** — **Completed:** v0.1.23.0 (2026-11-02). `PredictiveReadinessService`, `StatisticalValidator`, `HeuristicIntentClassifier`, `WorkoutData` and the intensity/FTP helpers are nonisolated; zero actor-isolation warnings (about 20 before).

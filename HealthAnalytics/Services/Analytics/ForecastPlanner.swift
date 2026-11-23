@@ -225,8 +225,9 @@ struct ForecastPlanInput {
     var injuryRiskElevated = false
     var noteCaps: [ForecastNoteCap] = []
     var shortSleepNights = 0
-    /// Release 2 fills this from the learned illness and crash history. Nil means no cap.
-    var hardDaysPerWeekCap: Int? = nil
+    /// How many Hard days a week, and how many days between them, from the rider's age
+    /// (docs/superpowers/specs/2026-11-10-hard-days-cap-design.md). Unknown age: under 60.
+    var hardDayRules: HardDayRules = .under60
     /// What recent rides cost against what their intensity should cost, in rating points
     /// (`RideCost.trend`). Positive means costlier than usual. Shifts where tomorrow onward starts;
     /// 0 changes nothing.
@@ -329,16 +330,19 @@ enum ForecastPlanner {
         }
         if offset < nearTermDays, input.injuryRiskElevated { caps.append((.moderate, loadRamping)) }
 
+        // The day after a hard day is Easy or Rest at every age. The rider's learned recovery
+        // time can add days below Hard, never take them under the age floor.
+        let recoveryDays = max(input.profile.recoveryDays, input.hardDayRules.minimumRecoveryDays)
         let lastHard = hardDates.filter { date > $0 }.max()
         if let lastHard,
            let gap = calendar.dateComponents([.day], from: lastHard, to: date).day,
-           gap <= input.profile.recoveryDays {
-            caps.append((.moderate, "Still recovering from \(lastHard.formatted(.dateTime.weekday(.wide)))"))
+           gap <= recoveryDays {
+            caps.append((gap <= 1 ? .easy : .moderate,
+                         "Still recovering from \(lastHard.formatted(.dateTime.weekday(.wide)))"))
         }
 
-        if let weeklyCap = input.hardDaysPerWeekCap,
-           let weekStart = calendar.date(byAdding: .day, value: -6, to: date),
-           hardDates.filter({ $0 >= weekStart && $0 < date }).count >= weeklyCap {
+        if let weekStart = calendar.date(byAdding: .day, value: -6, to: date),
+           hardDates.filter({ $0 >= weekStart && $0 < date }).count >= input.hardDayRules.hardDaysPerWeek {
             caps.append((.moderate, "Enough hard days this week"))
         }
         return caps
