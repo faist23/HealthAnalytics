@@ -326,6 +326,7 @@ final class ReadinessRepositoryPatternThrottleWiringTests: XCTestCase {
 
     private let key = "lastPatternAnalysisDate"
     private var saved: Any?
+    private var savedMigration: Any?
 
     override func setUp() async throws {
         // Unit tests run inside the app. An onboarded host runs its own launch analysis
@@ -333,12 +334,16 @@ final class ReadinessRepositoryPatternThrottleWiringTests: XCTestCase {
         // Captured before the skip: XCTest still runs tearDown after XCTSkip, and
         // restoring an uncaptured value would erase the host app's real stamp.
         saved = UserDefaults.standard.object(forKey: key)
+        savedMigration = UserDefaults.standard.object(forKey: PredictiveReadinessService.tssMigrationKey)
+        // Past the TSS-migration gate, so only the throttle can stop the run.
+        UserDefaults.standard.set(true, forKey: PredictiveReadinessService.tssMigrationKey)
         try XCTSkipIf(UserDefaults.standard.bool(forKey: "isOnboardingComplete"),
                       "App host is onboarded: launch tasks share ReadinessRepository.shared")
     }
 
     override func tearDown() async throws {
         UserDefaults.standard.set(saved, forKey: key)
+        UserDefaults.standard.set(savedMigration, forKey: PredictiveReadinessService.tssMigrationKey)
     }
 
     func test_forcedRun_justAfterACompletedRun_isSkipped() async throws {

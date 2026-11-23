@@ -296,7 +296,8 @@ class ReadinessRepository: ObservableObject {
         guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return true }
         // The detectors compare stored daily loads with TSS thresholds; rows still in the old
         // unit (until the first good sync migrates them) would read every day as rest. Wait,
-        // unstamped: the post-sync refresh runs the next analysis.
+        // unstamped: the next trigger after the migration (a Recovery or Insights visit, or a
+        // background wake) runs it.
         guard PredictiveReadinessService.storedLoadsAreTSS else { return true }
         patternAnalysisError = nil
         let backfillGenerationAtStart = scoreBackfillGeneration
@@ -1230,8 +1231,14 @@ class ReadinessRepository: ObservableObject {
         else { return }
         Self.migrateDailyScoresToTSS(scores: allScores, workouts: storedWorkouts.map { WorkoutData(from: $0) },
                                      ftpSnapshots: ftpSnapshots, service: predictiveReadinessService)
-        try? modelContext.save()
-        UserDefaults.standard.set(true, forKey: udKey)
+        // Done only once the TSS rows are on disk: pattern detection trusts this flag and reads
+        // through its own context. A failed save rolls back and the next good sync retries.
+        do {
+            try modelContext.save()
+            UserDefaults.standard.set(true, forKey: udKey)
+        } catch {
+            modelContext.rollback()
+        }
     }
 
     /// Sets each row's load to its day's workout TSS and its strain to the ACWR at the close of
