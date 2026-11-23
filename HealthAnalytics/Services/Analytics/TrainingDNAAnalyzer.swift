@@ -226,6 +226,8 @@ enum PatternAnalysisError: Error {
     case persistenceFailed(Error)
     /// The caller's commit gate refused after detection; nothing was written.
     case commitDeclined
+    /// Stored daily loads aren't TSS yet (the one-time migration waits for a good sync).
+    case loadMigrationPending
 }
 
 // MARK: - TrainingDNAAnalyzer
@@ -438,8 +440,8 @@ actor TrainingDNAAnalyzer {
         fmt.dateFormat = "yyyy-MM-dd"
 
         // Load-gated rest days: a day is a sick-day candidate only when its score row exists and
-        // shows no real training session (load < 0.5 TSS). Daily warmup spins (~0.17 TSS) still
-        // count as rest so they don't block the proxy on users who work out every day. A missing
+        // shows no real training session (load under `restDayLoadThreshold`). Daily warmup spins
+        // and short core sessions still count as rest so they don't block the proxy on users who work out every day. A missing
         // row is unknown, not rest: the background pass never writes rows, and a ride whose row
         // isn't written yet would read as a sick day (a cyclist logs few steps).
         // A day's load is its highest row: a 0.0 twin written before the ride synced must not

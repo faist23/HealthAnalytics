@@ -183,6 +183,10 @@ class ReadinessRepository: ObservableObject {
                 // recomputes, even with its zone backfill already running; a reset's post, a zone
                 // backfill posting mid-reset, or a sync whose HealthKit fetch failed does not.
                 if SyncManager.shared.mayRecomputeDailyLoads {
+                    // The TSS migration rewrites every stored row, so it waits for the same good
+                    // sync as the recent-day recompute: never mid-sync, mid-reset or before the
+                    // first sync has filled the workout store.
+                    self.backfillDailyLoad(modelContext: HealthDataContainer.shared.mainContext)
                     self.recomputeRecentDailyLoads(modelContext: HealthDataContainer.shared.mainContext)
                 }
                 await self.refreshIfNecessary(
@@ -267,6 +271,8 @@ class ReadinessRepository: ObservableObject {
         container: ModelContainer,
         commitGate: @escaping @Sendable () async -> Bool
     ) async throws {
+        // Unstamped, so the next trigger retries once the stored loads are TSS.
+        guard PredictiveReadinessService.storedLoadsAreTSS else { throw PatternAnalysisError.loadMigrationPending }
         if trainingDNAAnalyzer == nil {
             trainingDNAAnalyzer = TrainingDNAAnalyzer(modelContainer: container)
         }
@@ -288,6 +294,10 @@ class ReadinessRepository: ObservableObject {
     private func performPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async -> Bool {
         let lastRun = UserDefaults.standard.object(forKey: Self.lastPatternAnalysisKey) as? Date
         guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return true }
+        // The detectors compare stored daily loads with TSS thresholds; rows still in the old
+        // unit (until the first good sync migrates them) would read every day as rest. Wait,
+        // unstamped: the post-sync refresh runs the next analysis.
+        guard PredictiveReadinessService.storedLoadsAreTSS else { return true }
         patternAnalysisError = nil
         let backfillGenerationAtStart = scoreBackfillGeneration
         patternRunGeneration += 1
@@ -469,8 +479,6 @@ class ReadinessRepository: ObservableObject {
     func refreshIfNecessary(modelContext: ModelContext) async {
         // Backfill StoredDailyScore from HealthKit history on first launch.
         await backfillHistoricalScores(modelContext: modelContext)
-        // One-time migration: populate dailyLoad on existing rows (default was 0.0 from schema add).
-        backfillDailyLoad(modelContext: modelContext)
 
         // 1. Calculate current data fingerprint
         guard let fingerprint = try? calculateFingerprint(context: modelContext) else { return }
@@ -1213,7 +1221,7 @@ class ReadinessRepository: ObservableObject {
     /// the pattern detectors, the same mistake as the old per-path scales. Also fills rows that
     /// still had dailyLoad 0.0 from the schema add (what the v1 backfill did).
     private func backfillDailyLoad(modelContext: ModelContext) {
-        let udKey = "dailyLoadTSSMigrationV2Done"
+        let udKey = PredictiveReadinessService.tssMigrationKey
         guard !UserDefaults.standard.bool(forKey: udKey) else { return }
         // A failed read must not save zero loads; try again next launch.
         guard let ftpSnapshots = try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>()),

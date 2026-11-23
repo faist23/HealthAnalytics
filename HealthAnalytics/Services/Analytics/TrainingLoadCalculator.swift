@@ -95,8 +95,9 @@ struct TrainingLoadCalculator {
         // Calculate daily loads
         var dailyLoads: [Date: Double] = [:]
         
-        // Workout TSS from the one load engine, so every TSS figure here (yesterday, 7-day,
-        // 6-week, ATL/CTL) matches the Load tab's chart and the ACWR. It used heart-rate
+        // Workout TSS from the one load engine, so with no Strava activities passed (every live
+        // caller) each TSS figure here (yesterday, 7-day, 6-week, ATL/CTL) matches the Load tab's
+        // chart and the ACWR. It used heart-rate
         // TRIMP before, which disagreed with both.
         let loadService = PredictiveReadinessService()
         for workout in healthKitWorkouts {
@@ -104,7 +105,8 @@ struct TrainingLoadCalculator {
             dailyLoads[day, default: 0] += loadService.calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
         }
         
-        // Process Strava activities
+        // Strava activities keep their own scoring (suffer score / TRIMP), not TSS. Only the
+        // preview-only TrainingView and RecoveryViewModel screens pass any; the app passes [].
         for activity in stravaActivities {
             guard let startDate = activity.startDateFormatted else { continue }
             let day = calendar.startOfDay(for: startDate)

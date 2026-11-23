@@ -220,6 +220,11 @@ nonisolated class PredictiveReadinessService {
         return durationHours * Self.unknownIntensityTSSPerHour * sportMultiplier(for: workout.workoutType)
     }
 
+    /// Set once stored daily loads and strain have been rewritten in TSS (v0.2.1), after the
+    /// first good sync. Pattern detection waits for it.
+    static let tssMigrationKey = "dailyLoadTSSMigrationV2Done"
+    static var storedLoadsAreTSS: Bool { UserDefaults.standard.bool(forKey: tssMigrationKey) }
+
     static func tss(intensityFactor: Double, hours: Double) -> Double {
         intensityFactor * intensityFactor * hours * 100.0
     }
