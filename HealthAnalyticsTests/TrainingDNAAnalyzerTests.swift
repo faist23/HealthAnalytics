@@ -18,6 +18,10 @@ import SwiftData
 import HealthKit
 @testable import HealthAnalytics
 
+/// Fixture loads are written in hours of zone-2 riding (the pre-TSS unit) and converted to TSS
+/// here (~42 per hour), so every case keeps its side of the detectors' thresholds.
+private let zone2HourTSS = 40.0
+
 // MARK: - MockPatternDataProvider
 
 /// Synchronous, in-memory test double for PatternDataProvider.
@@ -288,7 +292,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         let rest = makeRestDayRows(sickOffsets: offsets).filter { $0.date != day(workoutRowOffset) }
         try await analyzer.insertDailyScores(rest + [
             StoredDailyScore(date: day(workoutRowOffset), readinessScore: 70, dailyStrain: 1.0,
-                             workoutCount: 1, dailyLoad: 1.5)
+                             workoutCount: 1, dailyLoad: 1.5 * zone2HourTSS)
         ])
 
         _ = try await analyzer.analyze()
@@ -326,7 +330,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         let fired = try await hrvPrecursorFiresWithThirdWindow { offsets in
             offsets.flatMap { [
                 StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0),
-                StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 1, dailyLoad: 3.0)
+                StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 1, dailyLoad: 3.0 * zone2HourTSS)
             ] }
         }
         XCTAssertFalse(fired, "A 0.0 twin must not turn a ride day into a rest day")
@@ -340,7 +344,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
     func testHRVPrecursor_zeroTwinBesideARideRowIsNotRest_reverseInsertionOrder() async throws {
         let fired = try await hrvPrecursorFiresWithThirdWindow { offsets in
             offsets.flatMap { [
-                StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 1, dailyLoad: 3.0),
+                StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 1, dailyLoad: 3.0 * zone2HourTSS),
                 StoredDailyScore(date: day($0), readinessScore: 70, dailyStrain: 1.0, workoutCount: 0, dailyLoad: 0)
             ] }
         }
@@ -899,9 +903,9 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
         var scores = makeBackToBackScores(confirmedCount: 3, totalSequences: 3)
             .filter { $0.date != yesterday && $0.date != twoDaysAgo }
         scores.append(StoredDailyScore(date: twoDaysAgo, readinessScore: 70, dailyStrain: 1.0,
-                                       workoutCount: 1, dailyLoad: 1.5))
+                                       workoutCount: 1, dailyLoad: 1.5 * zone2HourTSS))
         scores.append(StoredDailyScore(date: yesterday, readinessScore: 65, dailyStrain: 1.0,
-                                       workoutCount: 1, dailyLoad: 1.5))
+                                       workoutCount: 1, dailyLoad: 1.5 * zone2HourTSS))
         scores.append(StoredDailyScore(date: day(0), readinessScore: 45, dailyStrain: 1.0,
                                        workoutCount: 0, dailyLoad: 0.0))
         try await analyzer.insertDailyScores(scores)
@@ -959,7 +963,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
                 readinessScore: score,
                 dailyStrain: 1.0,
                 workoutCount: load > 0 ? 1 : 0,
-                dailyLoad: load
+                dailyLoad: load * zone2HourTSS
             )
         }
     }
@@ -977,7 +981,7 @@ final class TrainingDNAAnalyzerTests: XCTestCase {
                 readinessScore: score,
                 dailyStrain: 1.0,
                 workoutCount: 1,   // warmup logged every day
-                dailyLoad: 0.3    // well below 1.0 threshold
+                dailyLoad: 0.3 * zone2HourTSS    // well below 1.0 threshold
             )
         }
 

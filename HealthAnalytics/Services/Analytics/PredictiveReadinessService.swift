@@ -173,46 +173,55 @@ nonisolated class PredictiveReadinessService {
         return ridden + planned
     }
 
-    /// Zone weights: exponential scaling so Z5/Z6 cost reflects actual physiological demand.
-    /// A 2hr ride with 30% Z5/Z6 + 60% Z1 scores ~3x higher than NP alone would suggest.
-    static let zoneWeights: [Double] = [0.5, 1.0, 2.0, 3.5, 5.5, 8.0, 10.0]
+    /// Representative intensity factor (fraction of FTP) at the middle of each power zone Z1–Z7.
+    /// Shared with `TrainingLoadVisualizationService.estimateIntensity`.
+    static let zoneIntensityFactors: [Double] = [0.40, 0.65, 0.83, 0.98, 1.13, 1.35, 1.60]
 
-    /// Calculate training load for a single workout.
-    /// Priority: zone-weighted (power stream) > NP-based TSS > duration × sport multiplier.
+    /// TSS for an hour whose intensity is unknown (no power): scored as endurance riding
+    /// (an hour in Z2 is ~42, tempo ~69). `sportMultiplier` scales it per sport.
+    static let unknownIntensityTSSPerHour = 50.0
+
+    /// Training load for one workout, in TSS: the app's one load unit (100 = an hour at FTP).
+    ///
+    /// Every path returns TSS, so rides scored different ways add up on one scale. They
+    /// didn't before: zone time was weighted 0.5–10 per hour while NP gave IF² per hour, and a
+    /// ride waiting for its Strava stream scored about a quarter of what it scored once the
+    /// stream landed (median 3.9× across 1,290 real rides). That made a new ride's day read as
+    /// detraining.
+    ///
+    /// Priority: NP (the standard TSS, and it arrives with the Strava activity, so the score
+    /// doesn't move when the stream is backfilled) → zone time (IF² at each zone's midpoint)
+    /// → average power (reads low on variable rides) → duration × sport rate.
     func calculateWorkoutLoad(_ workout: WorkoutData, ftpSnapshots: [StoredFTPSnapshot]) -> Double {
         let durationHours = workout.duration / 3600.0
 
-        // PATH 1: Zone distribution available (most accurate — uses actual time at each intensity)
-        if let zoneSecs = workout.powerZoneSeconds, workout.workoutType == .cycling {
-            let load = zip(zoneSecs, PredictiveReadinessService.zoneWeights).reduce(0.0) { sum, pair in
-                sum + (pair.0 / 3600.0) * pair.1
-            }
-            #if DEBUG
-            let total = zoneSecs.reduce(0, +)
-            let pcts = zoneSecs.map { String(format: "%.0f%%", total > 0 ? $0/total*100 : 0) }
-            print("⚡️ Zone load: \(workout.title ?? "Ride") Z1=\(pcts[0]) Z2=\(pcts[1]) Z3=\(pcts[2]) Z4=\(pcts[3]) Z5=\(pcts[4]) Z6=\(pcts[5]) Z7=\(pcts[6]) → load=\(String(format: "%.2f", load))")
-            #endif
-            return load
-        }
-
-        // PATH 2: NP or avg watts available (better than duration but misses interval structure)
-        if let np = workout.normalizedPower ?? workout.averagePower, np > 0,
-           workout.workoutType == .cycling {
-            let effectiveFTP = ftpSnapshots.isEmpty
+        if workout.workoutType == .cycling {
+            let ftp = ftpSnapshots.isEmpty
                 ? PredictiveReadinessService.resolvedFTP()
                 : StoredFTPSnapshot.resolved(for: workout.startDate, snapshots: ftpSnapshots)
-            let intensityFactor = np / effectiveFTP
-            let tss = intensityFactor * intensityFactor * durationHours
-            let powerLabel = workout.normalizedPower != nil ? "NP" : "avg"
-            #if DEBUG
-            print("⚡️ Power load: \(workout.title ?? "Ride") \(powerLabel)=\(Int(np))W FTP=\(Int(effectiveFTP))W IF=\(String(format: "%.2f", intensityFactor)) TSS=\(String(format: "%.2f", tss)) [no stream yet]")
-            #endif
-            return tss
+
+            // PATH 1: normalized power (standard TSS = IF² × hours × 100).
+            if let np = workout.normalizedPower, np > 0, ftp > 0 {
+                return Self.tss(intensityFactor: np / ftp, hours: durationHours)
+            }
+            // PATH 2: time in each power zone (stream backfilled, no NP).
+            if let zoneSecs = workout.powerZoneSeconds {
+                return zip(zoneSecs, Self.zoneIntensityFactors).reduce(0.0) { sum, pair in
+                    sum + Self.tss(intensityFactor: pair.1, hours: pair.0 / 3600.0)
+                }
+            }
+            // PATH 3: average power (a HealthKit-only ride).
+            if let avg = workout.averagePower, avg > 0, ftp > 0 {
+                return Self.tss(intensityFactor: avg / ftp, hours: durationHours)
+            }
         }
 
-        // PATH 3: No power data — duration × sport multiplier
-        let multiplier = sportMultiplier(for: workout.workoutType)
-        return durationHours * multiplier
+        // PATH 4: no power — an hour of unknown effort, scaled per sport.
+        return durationHours * Self.unknownIntensityTSSPerHour * sportMultiplier(for: workout.workoutType)
+    }
+
+    static func tss(intensityFactor: Double, hours: Double) -> Double {
+        intensityFactor * intensityFactor * hours * 100.0
     }
 
     /// Current FTP from UserDefaults. Used when no snapshot history is available.
