@@ -16,6 +16,10 @@ import SwiftData
 import HealthKit
 @testable import HealthAnalytics
 
+/// Fixture loads are written in hours of zone-2 riding (the pre-TSS unit) and converted to TSS
+/// here (~42 per hour), so every case keeps its side of the detectors' thresholds.
+private let zone2HourTSS = 40.0
+
 @MainActor
 final class PredictiveIntelligenceTests: XCTestCase {
 
@@ -456,7 +460,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
                 readinessScore: 70,
                 dailyStrain: strain,
                 workoutCount: 1,
-                dailyLoad: 1.0   // FLAT — training volume never changed
+                dailyLoad: 1.0 * zone2HourTSS   // FLAT — training volume never changed
             )
         }
     }
@@ -604,7 +608,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         var scores = makeTaperScores(last7Load: 0.6, prev21Load: 1.0)
             .filter { !Calendar.current.isDate($0.date, inSameDayAs: ref) }
         scores.append(StoredDailyScore(date: ref, readinessScore: 70, dailyStrain: 1.0,
-                                       workoutCount: 2, dailyLoad: 3.0))
+                                       workoutCount: 2, dailyLoad: 3.0 * zone2HourTSS))
         try await analyzer.insertDailyScores(scores)
         try await seedIntensityHeldWorkouts(analyzer)
 
@@ -917,7 +921,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
         var scores = (0..<90).map { i -> StoredDailyScore in
             StoredDailyScore(
                 date: day(-(89 - i)), readinessScore: 70,
-                dailyStrain: 1.0, workoutCount: 1, dailyLoad: 2.0
+                dailyStrain: 1.0, workoutCount: 1, dailyLoad: 2.0 * zone2HourTSS
             )
         }
         // Three extra rows for recent days carrying 0.0 load, as a partial upsert or a
@@ -1151,7 +1155,7 @@ final class PredictiveIntelligenceTests: XCTestCase {
                 readinessScore: 70,
                 dailyStrain: 1.0,   // constant on purpose — see note above
                 workoutCount: 1,
-                dailyLoad: recentWeek.contains(daysAgo) ? last7Load : prev21Load
+                dailyLoad: (recentWeek.contains(daysAgo) ? last7Load : prev21Load) * zone2HourTSS
             )
         }
     }

@@ -95,14 +95,18 @@ struct TrainingLoadCalculator {
         // Calculate daily loads
         var dailyLoads: [Date: Double] = [:]
         
-        // Process HealthKit workouts
+        // Workout TSS from the one load engine, so with no Strava activities passed (every live
+        // caller) each TSS figure here (yesterday, 7-day, 6-week, ATL/CTL) matches the Load tab's
+        // chart and the ACWR. It used heart-rate
+        // TRIMP before, which disagreed with both.
+        let loadService = PredictiveReadinessService()
         for workout in healthKitWorkouts {
             let day = calendar.startOfDay(for: workout.startDate)
-            let load = calculateWorkoutLoad(workout, dailyReadiness: dailyReadiness)
-            dailyLoads[day, default: 0] += load
+            dailyLoads[day, default: 0] += loadService.calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
         }
         
-        // Process Strava activities
+        // Strava activities keep their own scoring (suffer score / TRIMP), not TSS. Only the
+        // preview-only TrainingView and RecoveryViewModel screens pass any; the app passes [].
         for activity in stravaActivities {
             guard let startDate = activity.startDateFormatted else { continue }
             let day = calendar.startOfDay(for: startDate)
@@ -110,15 +114,9 @@ struct TrainingLoadCalculator {
             dailyLoads[day, default: 0] += load
         }
         
-        // Add light load for high step days (10k+ steps = bonus load)
-        for step in stepData {
-            let day = calendar.startOfDay(for: step.date)
-            if step.value >= 10000, dailyLoads[day] == nil {
-                // Only add step load if no workout that day
-                dailyLoads[day] = (step.value - 10000) / 5000.0 // Each 5k steps over 10k = 1 load point
-            }
-        }
-        
+        // Steps are not training stress here (they feed recovery through NEAT, against the
+        // rider's own baseline). The old "10k+ steps = bonus load" broke that rule.
+
         // Calculate acute load (last 7 days average)
         var acuteLoadSum: Double = 0
         var acuteDays = 0
@@ -183,11 +181,12 @@ struct TrainingLoadCalculator {
         // genuinely different, smoother signal and callers may show it), but it
         // must not decide which band the user is told they're in — every other
         // Load surface bands on this number.
-        let primaryRatio = PredictiveReadinessService().calculateReadiness(
+        let assessment = PredictiveReadinessService().calculateReadiness(
             stravaActivities: stravaActivities,
             healthKitWorkouts: healthKitWorkouts,
             ftpSnapshots: ftpSnapshots
-        ).acwr
+        )
+        let primaryRatio = assessment.acwr
         
         // Check recovery status
         let isRecovered = checkRecoveryStatus(recoveryInsights: recoveryInsights)
@@ -229,9 +228,11 @@ struct TrainingLoadCalculator {
         #endif
         
         return TrainingLoadSummary(
-            acuteLoad: acuteLoad,
-            chronicLoad: chronicLoad,
-            acuteChronicRatio: acr,
+            // The canonical assessment's numbers: the summary shows the same ACWR as every
+            // other surface (its calendar-day `acr` sat beside it as a second ratio).
+            acuteLoad: assessment.acuteLoad,
+            chronicLoad: assessment.chronicLoad,
+            acuteChronicRatio: assessment.acwr,
             status: status,
             recommendation: recommendation,
             ewmaAcuteLoad: ewmaAcute,

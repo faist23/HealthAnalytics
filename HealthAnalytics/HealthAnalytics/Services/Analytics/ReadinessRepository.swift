@@ -183,6 +183,10 @@ class ReadinessRepository: ObservableObject {
                 // recomputes, even with its zone backfill already running; a reset's post, a zone
                 // backfill posting mid-reset, or a sync whose HealthKit fetch failed does not.
                 if SyncManager.shared.mayRecomputeDailyLoads {
+                    // The TSS migration rewrites every stored row, so it waits for the same good
+                    // sync as the recent-day recompute: never mid-sync, mid-reset or before the
+                    // first sync has filled the workout store.
+                    self.backfillDailyLoad(modelContext: HealthDataContainer.shared.mainContext)
                     self.recomputeRecentDailyLoads(modelContext: HealthDataContainer.shared.mainContext)
                 }
                 await self.refreshIfNecessary(
@@ -267,6 +271,8 @@ class ReadinessRepository: ObservableObject {
         container: ModelContainer,
         commitGate: @escaping @Sendable () async -> Bool
     ) async throws {
+        // Unstamped, so the next trigger retries once the stored loads are TSS.
+        guard PredictiveReadinessService.storedLoadsAreTSS else { throw PatternAnalysisError.loadMigrationPending }
         if trainingDNAAnalyzer == nil {
             trainingDNAAnalyzer = TrainingDNAAnalyzer(modelContainer: container)
         }
@@ -288,6 +294,11 @@ class ReadinessRepository: ObservableObject {
     private func performPatternAnalysis(container: ModelContainer, trigger: PatternAnalysisTrigger) async -> Bool {
         let lastRun = UserDefaults.standard.object(forKey: Self.lastPatternAnalysisKey) as? Date
         guard Self.shouldRunPatternAnalysis(lastRun: lastRun, trigger: trigger) else { return true }
+        // The detectors compare stored daily loads with TSS thresholds; rows still in the old
+        // unit (until the first good sync migrates them) would read every day as rest. Wait,
+        // unstamped: the next trigger after the migration (a Recovery or Insights visit, or a
+        // background wake) runs it.
+        guard PredictiveReadinessService.storedLoadsAreTSS else { return true }
         patternAnalysisError = nil
         let backfillGenerationAtStart = scoreBackfillGeneration
         patternRunGeneration += 1
@@ -428,6 +439,9 @@ class ReadinessRepository: ObservableObject {
         let readinessAssessment: PredictiveReadinessService.ReadinessAssessment?
         let acwrTrend: [ACWRDataPoint]
         let loadVisualization: TrainingLoadVisualizationService.LoadVisualizationData?
+        /// TSS and hours per calendar day over the 118-day load history, oldest first, every
+        /// day present (rest days are zero). Feeds the Load tab's Training Stress card.
+        let dailyTraining: [DailyTraining]
 
         // Phase 4: Smart Routing Activity Readiness
         let activityReadiness: [String: Int]?
@@ -466,8 +480,6 @@ class ReadinessRepository: ObservableObject {
     func refreshIfNecessary(modelContext: ModelContext) async {
         // Backfill StoredDailyScore from HealthKit history on first launch.
         await backfillHistoricalScores(modelContext: modelContext)
-        // One-time migration: populate dailyLoad on existing rows (default was 0.0 from schema add).
-        backfillDailyLoad(modelContext: modelContext)
 
         // 1. Calculate current data fingerprint
         guard let fingerprint = try? calculateFingerprint(context: modelContext) else { return }
@@ -855,7 +867,7 @@ class ReadinessRepository: ObservableObject {
                 stepData: stepData,
                 hrvData: hrvData,
                 sleepData: sleepData,
-                trainingLoad: trainingLoad,
+                loadAssessment: readinessAssessmentResult,
                 readinessScore: baseReadiness.score
             )
 
@@ -878,6 +890,8 @@ class ReadinessRepository: ObservableObject {
                 readinessAssessment: readinessAssessmentResult,
                 acwrTrend: acwrTrend,
                 loadVisualization: loadVisualization,
+                dailyTraining: Self.dailyTraining(workouts: loadHistoryWorkouts, ftpSnapshots: ftpSnapshots,
+                                                  service: predictiveReadinessService, now: now),
                 activityReadiness: activityReadinessScores,
                 metricTrends: trends,
                 sleepPerformanceInsight: sleepPerformanceInsight,
@@ -1201,35 +1215,53 @@ class ReadinessRepository: ObservableObject {
         #endif
     }
 
-    /// One-time migration: populates dailyLoad on all existing StoredDailyScore rows from StoredWorkout.
-    /// Existing rows got dailyLoad=0.0 from the lightweight SwiftData migration — this fixes them so
-    /// the back-to-back crash detector can distinguish warmups (< 1.0 TSS) from real training days.
+    /// One-time migration to the TSS load unit (v0.2.1). Rewrites every StoredDailyScore row's
+    /// `dailyLoad` (TSS) and `dailyStrain` (ACWR) from the stored workouts with today's
+    /// `calculateWorkoutLoad`. Rows written before were in the old zone-weight unit (an hour of
+    /// zone 2 was 1.0, now ~42); leaving them would mix two scales in the forecast's history and
+    /// the pattern detectors, the same mistake as the old per-path scales. Also fills rows that
+    /// still had dailyLoad 0.0 from the schema add (what the v1 backfill did).
     private func backfillDailyLoad(modelContext: ModelContext) {
-        let udKey = "dailyLoadBackfillV1Done"
+        let udKey = PredictiveReadinessService.tssMigrationKey
         guard !UserDefaults.standard.bool(forKey: udKey) else { return }
+        // A failed read must not save zero loads; try again next launch.
+        guard let ftpSnapshots = try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>()),
+              let storedWorkouts = try? modelContext.fetch(FetchDescriptor<StoredWorkout>()),
+              let allScores = try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())
+        else { return }
+        Self.migrateDailyScoresToTSS(scores: allScores, workouts: storedWorkouts.map { WorkoutData(from: $0) },
+                                     ftpSnapshots: ftpSnapshots, service: predictiveReadinessService)
+        // Done only once the TSS rows are on disk: pattern detection trusts this flag and reads
+        // through its own context. A failed save leaves the flag unset and the next good sync
+        // migrates again (it overwrites, so a repeat is safe). No rollback: this is the views'
+        // shared context, and a rollback would also drop anything the user hasn't saved yet.
+        do {
+            try modelContext.save()
+            UserDefaults.standard.set(true, forKey: udKey)
+        } catch {}
+    }
 
-        let allScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
-        let ftpSnapshots = (try? modelContext.fetch(FetchDescriptor<StoredFTPSnapshot>())) ?? []
-        let storedWorkouts = (try? modelContext.fetch(FetchDescriptor<StoredWorkout>())) ?? []
-
-        #if DEBUG
-        if allScores.isEmpty { print("⚠️ backfillDailyLoad: no StoredDailyScore records found — migration skipped") }
-        #endif
-
-        let calendar = Calendar.current
-        for score in allScores {
-            let dayStart = calendar.startOfDay(for: score.date)
-            guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { continue }
-            let load = storedWorkouts
-                .filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
-                .reduce(0.0) {
-                    $0 + predictiveReadinessService.calculateWorkoutLoad(WorkoutData(from: $1), ftpSnapshots: ftpSnapshots)
-                }
-            score.dailyLoad = load
+    /// Sets each row's load to its day's workout TSS and its strain to the ACWR at the close of
+    /// that day (the shared `windowEnd` rule), both from the one engine. Rows are matched by
+    /// `dateString`, like the recent-day recompute.
+    static func migrateDailyScoresToTSS(scores: [StoredDailyScore], workouts: [WorkoutData],
+                                        ftpSnapshots: [StoredFTPSnapshot], service: PredictiveReadinessService,
+                                        now: Date = Date(), calendar: Calendar = .current) {
+        let sorted = workouts.sorted { $0.startDate < $1.startDate }
+        for score in scores {
+            let parsed = dailyScoreDateFormatter.date(from: score.dateString) ?? score.date
+            let dayStart = calendar.startOfDay(for: parsed)
+            guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart),
+                  let windowStart = calendar.date(byAdding: .day, value: -29, to: dayStart) else { continue }
+            let window = sorted.filter { $0.startDate >= windowStart && $0.startDate < dayEnd }
+            score.dailyLoad = window
+                .filter { $0.startDate >= dayStart }
+                .reduce(0.0) { $0 + service.calculateWorkoutLoad($1, ftpSnapshots: ftpSnapshots) }
+            score.dailyStrain = service.calculateReadiness(
+                stravaActivities: [], healthKitWorkouts: window, ftpSnapshots: ftpSnapshots,
+                referenceDate: PredictiveReadinessService.windowEnd(for: dayStart, now: now)
+            ).acwr
         }
-
-        try? modelContext.save()
-        UserDefaults.standard.set(true, forKey: udKey)
     }
 
     // MARK: - 7-Day Forecast Plan
@@ -1742,12 +1774,54 @@ class ReadinessRepository: ObservableObject {
 
     // MARK: - Holistic Metrics (moved from DashboardViewModel — Phase 1.2)
 
+    /// One day's training: TSS from the one load engine, and hours of workouts (volume).
+    struct DailyTraining: Equatable {
+        let date: Date
+        let tss: Double
+        let hours: Double
+    }
+
+    /// Every calendar day from the first workout's day through today, with its TSS and hours.
+    /// Workout TSS only: steps are recovery context, not training stress.
+    static func dailyTraining(workouts: [WorkoutData], ftpSnapshots: [StoredFTPSnapshot],
+                              service: PredictiveReadinessService, now: Date,
+                              calendar: Calendar = .current) -> [DailyTraining] {
+        let today = calendar.startOfDay(for: now)
+        var tss: [Date: Double] = [:], hours: [Date: Double] = [:]
+        for workout in workouts {
+            let day = calendar.startOfDay(for: workout.startDate)
+            guard day <= today else { continue }
+            tss[day, default: 0] += service.calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
+            hours[day, default: 0] += workout.duration / 3600
+        }
+        guard var day = tss.keys.min() else { return [] }
+        var result: [DailyTraining] = []
+        while day <= today {
+            result.append(DailyTraining(date: day, tss: tss[day] ?? 0, hours: hours[day] ?? 0))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
+        return result
+    }
+
+    /// The Coach card's load status, from the one ACWR engine. `SupportingMetricsCard` words
+    /// `.moderate` as "low (ACWR < 0.8)" and `.needsAttention` as "spiked (ACWR > 1.3)". This
+    /// used to map the 1.3–1.5 band to `.moderate`, so a load spike read as detraining and real
+    /// detraining read as the sweet spot.
+    static func loadMetricStatus(for trend: PredictiveReadinessService.ReadinessAssessment.Trend) -> MetricStatus {
+        switch trend {
+        case .optimal: return .excellent
+        case .detraining: return .moderate
+        case .building, .overreaching: return .needsAttention
+        }
+    }
+
     private func buildHolisticMetrics(
         workouts: [WorkoutData],
         stepData: [HealthDataPoint],
         hrvData: [HealthDataPoint],
         sleepData: [HealthDataPoint],
-        trainingLoad: TrainingLoadCalculator.TrainingLoadSummary?,
+        loadAssessment: PredictiveReadinessService.ReadinessAssessment,
         readinessScore: Int
     ) -> HealthMetrics {
         let metSummary = metAnalyzer.analyzeMETActivity(
@@ -1796,15 +1870,7 @@ class ReadinessRepository: ObservableObject {
             return .needsAttention
         }()
 
-        let loadStatus: MetricStatus = {
-            guard let ld = trainingLoad else { return .good }
-            switch ld.status {
-            case .optimal: return .excellent
-            case .fresh: return .good
-            case .fatigued: return .moderate
-            case .overreaching: return .needsAttention
-            }
-        }()
+        let loadStatus = Self.loadMetricStatus(for: loadAssessment.trend)
 
         let sleepStatus: MetricStatus = {
             let recentSleepData = sleepData.suffix(7).map(\.value)
@@ -1836,7 +1902,7 @@ class ReadinessRepository: ObservableObject {
             currentHRV: hrvData.last?.value ?? 0,
             hrvStatus: hrvStatus,
             hrvBaselineMs: hrvBaselineMs,
-            acwr: trainingLoad?.acuteChronicRatio ?? 1.0,
+            acwr: loadAssessment.acwr,
             loadStatus: loadStatus,
             averageSleep: averageSleep,
             sleepStatus: sleepStatus,

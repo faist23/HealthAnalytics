@@ -226,6 +226,8 @@ enum PatternAnalysisError: Error {
     case persistenceFailed(Error)
     /// The caller's commit gate refused after detection; nothing was written.
     case commitDeclined
+    /// Stored daily loads aren't TSS yet (the one-time migration waits for a good sync).
+    case loadMigrationPending
 }
 
 // MARK: - TrainingDNAAnalyzer
@@ -438,8 +440,8 @@ actor TrainingDNAAnalyzer {
         fmt.dateFormat = "yyyy-MM-dd"
 
         // Load-gated rest days: a day is a sick-day candidate only when its score row exists and
-        // shows no real training session (load < 0.5 TSS). Daily warmup spins (~0.17 TSS) still
-        // count as rest so they don't block the proxy on users who work out every day. A missing
+        // shows no real training session (load under `restDayLoadThreshold`). Daily warmup spins
+        // and short core sessions still count as rest so they don't block the proxy on users who work out every day. A missing
         // row is unknown, not rest: the background pass never writes rows, and a ride whose row
         // isn't written yet would read as a sick day (a cyclist logs few steps).
         // A day's load is its highest row: a 0.0 twin written before the ride synced must not
@@ -627,9 +629,9 @@ actor TrainingDNAAnalyzer {
         // uniquingKeysWith: { $1 } — last writer wins when the DB contains duplicate-day rows
         // (possible if a prior bug or race wrote two StoredDailyScores for the same calendar day).
         // uniqueKeysWithValues: would trap on duplicates; the safe form silently deduplicates.
-        // TSS >= 1.0 separates real training sessions from warm-up rides.
-        // A 20-min zone-1 warmup scores ~0.17; a 60-min zone-2 base ride scores ~1.0.
-        let hardDayLoadThreshold = 1.0
+        // TSS >= 30 separates real training sessions from warm-up rides (ForecastPlanner.trainingDayLoad).
+        // A 20-min zone-1 warmup scores ~5; a 45-min endurance ride ~30; a 60-min zone-2 ride ~42.
+        let hardDayLoadThreshold = ForecastProfile.trainingDayLoad
 
         let scoreByDate: [String: Int] = Dictionary(
             scores.map { (formatDay($0.date), $0.readinessScore) },
@@ -821,22 +823,22 @@ actor TrainingDNAAnalyzer {
 
     // MARK: - Pattern 6: Taper Underway
 
-    /// Below this daily load (TSS-equivalent) a day is rest for the sick-day proxy, in both
-    /// the score-row check and the stored-workout veto. A warmup spin scores ~0.17.
-    static let restDayLoadThreshold = 0.5
+    /// Below this daily load (TSS) a day is rest for the sick-day proxy, in both
+    /// the score-row check and the stored-workout veto. A warmup spin scores ~5.
+    static let restDayLoadThreshold = 20.0
 
     /// Minimum mean daily load over the 21-day baseline for a taper to be meaningful.
-    /// On this project's TSS scale a 60-min zone-2 ride ≈ 1.0 and `hardDayLoadThreshold`
-    /// is 1.0, so 0.25 is roughly two moderate sessions a week — below that there is no
+    /// A 60-min zone-2 ride is ~42 TSS and `hardDayLoadThreshold` is 30, so 10 TSS/day
+    /// (70 a week) is roughly two moderate sessions a week — below that there is no
     /// training block to taper from. Also blocks the degenerate case where every
     /// `dailyLoad` is 0.0 (pre-migration rows), which would otherwise read as a 100% drop.
     ///
-    /// Deliberately low: the target user is a weekend warrior, and a floor of 1.0 (≈7h of
+    /// Deliberately low: the target user is a weekend warrior, and a floor of 42 (≈7h of
     /// zone-2 a week) would hide the pattern from almost all of them. A casual rider who
     /// simply takes a week off is not this guard's job — `taperMinimumRecentSessions`
     /// rejects that. Pinned by the pair `testTaperUnderway_casualRiderGenuineTaper_confirmed`
     /// (raising the floor turns it red) and `testTaperUnderway_casualRiderWeekOff_notConfirmed`.
-    static let taperBaselineLoadThreshold = 0.25
+    static let taperBaselineLoadThreshold = 10.0
 
     /// A taper cuts volume while keeping the hard efforts. You cannot taper by not
     /// training at all — seven straight days of nothing is a stoppage or detraining,

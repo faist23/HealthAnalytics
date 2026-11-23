@@ -31,15 +31,17 @@ struct ForecastProfile: Equatable {
     static let moderateEdge = -0.5
     static let easyEdge = -1.5
 
-    /// `dailyLoad >= 1.0` is the app's existing line for a training day.
-    static let trainingDayLoad = 1.0
+    /// A training day, in TSS: a 45-minute endurance ride (~30) counts, a warmup spin (~5) doesn't.
+    /// Same line as `TrainingDNAAnalyzer`'s hard-day threshold.
+    static let trainingDayLoad = 30.0
     static let minimumTrainingDays = 8
     /// A hard day must stand clear of the median, or a rider whose rides are all alike
     /// would count every ride as hard and never be offered a Hard day.
     static let hardMedianMultiple = 1.25
-    static let fallbackHardLoad = 3.0
-    static let fallbackModerateLoad = 1.5
-    static let fallbackEasyLoad = 0.75
+    /// TSS of a typical interval hour, a tempo hour and an easy ride, until 8 training days exist.
+    static let fallbackHardLoad = 85.0
+    static let fallbackModerateLoad = 55.0
+    static let fallbackEasyLoad = 30.0
 
     static let minimumEpisodes = 4
     static let returnWindowDays = 5
@@ -243,8 +245,8 @@ enum ForecastPlanner {
     static let horizonDays = 7
     /// Hard-day and HRV warnings describe now, so they hold for today and tomorrow only.
     static let nearTermDays = 2
-    /// Under this a workout is a warmup, the same line the sick-day proxy uses.
-    static let namedRideLoad = 0.5
+    /// Under this TSS a workout is a warmup, the same line the sick-day proxy uses.
+    static let namedRideLoad = 20.0
     /// Below 4 training days in 28 there is too little chronic load for a ratio to mean anything.
     /// One warmup after a layoff reads as ACWR 4.0 otherwise.
     static let minimumLoadCeilingShare = 4.0 / 28.0

@@ -35,6 +35,7 @@ struct TSSChartCard: View {
     private var weeklyData: [WeeklyTSSData] {
         let calendar = Calendar.current
         var weeklyDict: [Date: Double] = [:]
+        var weeklyHours: [Date: Double] = [:]
         var weeklyDayCounts: [Date: Int] = [:] // Track actual days with data
         
         for day in dailyTSS {
@@ -43,6 +44,7 @@ struct TSSChartCard: View {
             guard let weekDate = calendar.date(from: weekStart) else { continue }
             
             weeklyDict[weekDate, default: 0] += day.tss
+            weeklyHours[weekDate, default: 0] += day.hours
             weeklyDayCounts[weekDate, default: 0] += 1
         }
         
@@ -63,6 +65,7 @@ struct TSSChartCard: View {
             return WeeklyTSSData(
                 weekStart: weekDate,
                 weeklyTSS: weeklyTSS,
+                weeklyHours: weeklyHours[weekDate] ?? 0,
                 sixWeekAvg: sixWeekAvg,
                 daysInWeek: daysInWeek
             )
@@ -82,10 +85,10 @@ struct TSSChartCard: View {
                 
                 if let latest = weeklyData.last {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("Current Week")
+                        Text("This Week")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                        Text("\(Int(latest.weeklyTSS / Double(latest.daysInWeek))) TSS/day")
+                        Text("\(Int(latest.weeklyTSS.rounded())) TSS · \(Self.formatHours(latest.weeklyHours))")
                             .font(.callout)
                             .fontWeight(.semibold)
                     }
@@ -110,6 +113,15 @@ struct TSSChartCard: View {
                                 .foregroundStyle(Color.statusOptimal)
                         }
                         
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Hours")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(Self.formatHours(selected.weeklyHours))
+                                .font(.title3)
+                                .fontWeight(.bold)
+                        }
+
                         VStack(alignment: .leading, spacing: 2) {
                             Text("6-Wk Avg")
                                 .font(.caption2)
@@ -213,7 +225,9 @@ struct TSSChartCard: View {
                     }
                 }
                 .padding(.top, .spacingSm)
-                
+
+                recentWeeksTable
+
             } else {
                 Text("No training data available")
                     .font(.subheadline)
@@ -225,6 +239,36 @@ struct TSSChartCard: View {
         .padding()
     }
     
+    /// Volume and stress side by side for the last four weeks, newest first: easy hours add
+    /// volume and some TSS, hard hours add much more TSS per hour.
+    private var recentWeeksTable: some View {
+        VStack(alignment: .leading, spacing: .spacingXs) {
+            HStack {
+                Text("WEEK").frame(maxWidth: .infinity, alignment: .leading)
+                Text("HOURS").frame(width: 64, alignment: .trailing)
+                Text("TSS").frame(width: 56, alignment: .trailing)
+            }
+            .font(.labelCaption)
+            .foregroundStyle(.secondary)
+
+            ForEach(weeklyData.suffix(4).reversed()) { week in
+                HStack {
+                    Text(formatWeekLabel(week.weekStart)).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(Self.formatHours(week.weeklyHours)).frame(width: 64, alignment: .trailing)
+                    Text("\(Int(week.weeklyTSS.rounded()))").frame(width: 56, alignment: .trailing)
+                }
+                .font(.dataAxis)
+            }
+        }
+        .padding(.top, .spacingSm)
+    }
+
+    /// "4:42" for 4 h 42 min.
+    static func formatHours(_ hours: Double) -> String {
+        let minutes = Int((hours * 60).rounded())
+        return String(format: "%d:%02d", minutes / 60, minutes % 60)
+    }
+
     private func formatWeekLabel(_ date: Date) -> String {
         let formatter = DateFormatter()
         switch period {
@@ -255,6 +299,7 @@ struct DailyTSSData: Identifiable {
     let id = UUID()
     let date: Date
     let tss: Double
+    let hours: Double  // workout time that day (volume)
     let ctl: Double  // Chronic Training Load (42-day exponential average)
     let atl: Double  // Acute Training Load (7-day exponential average)
 }
@@ -263,6 +308,7 @@ struct WeeklyTSSData: Identifiable {
     let id = UUID()
     let weekStart: Date
     let weeklyTSS: Double
+    let weeklyHours: Double
     let sixWeekAvg: Double
     let daysInWeek: Int
 }
@@ -278,7 +324,7 @@ struct WeeklyTSSData: Identifiable {
         let tss = dayOffset % 7 == 0 ? 0 : Double.random(in: 30...120)
         let ctl = 50 + Double(dayOffset) * 0.3 // Gradually increasing fitness
         let atl = tss > 0 ? 60 + Double.random(in: -10...10) : 40
-        return DailyTSSData(date: date, tss: tss, ctl: ctl, atl: atl)
+        return DailyTSSData(date: date, tss: tss, hours: tss > 0 ? tss / 60 : 0, ctl: ctl, atl: atl)
     }.reversed() as [DailyTSSData]
     
     TSSChartCard(dailyTSS: sampleData, period: .quarter)

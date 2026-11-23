@@ -546,7 +546,7 @@ struct TrainingLoadVisualizationService {
             let total = zones.reduce(0, +)
             if total > 0 {
                 // Representative intensity factor (fraction of FTP) at the middle of each zone.
-                let zoneIF: [Double] = [0.40, 0.65, 0.83, 0.98, 1.13, 1.35, 1.60]
+                let zoneIF = PredictiveReadinessService.zoneIntensityFactors
                 let weightedIF = zip(zones, zoneIF).reduce(0.0) { $0 + ($1.0 / total) * $1.1 }
                 return intensityFromIntensityFactor(weightedIF)
             }

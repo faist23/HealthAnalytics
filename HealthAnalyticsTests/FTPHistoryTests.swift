@@ -172,113 +172,75 @@ final class PredictiveReadinessServiceLoadTests: XCTestCase {
 
     private let service = PredictiveReadinessService()
 
-    // PATH 1: Zone-weighted load.
-    // 1 hour entirely in Z5 (index 4, weight 5.5) → load = 5.5
-    func test_calculateLoad_zoneWeighted_pureZ5() {
-        let zoneSecs: [Double] = [0, 0, 0, 0, 3600, 0, 0]  // 1 hr Z5
-        let workout = WorkoutData(
-            workoutType: .cycling,
-            startDate: Date(),
-            endDate: Date().addingTimeInterval(3600),
-            duration: 3600,
-            totalEnergyBurned: nil,
-            totalDistance: nil,
-            averagePower: nil,
-            powerZoneSeconds: zoneSecs,
-            averageHeartRate: nil,
-            source: .strava
-        )
-        let load = service.calculateWorkoutLoad(workout, ftpSnapshots: [])
-        XCTAssertEqual(load, 5.5, accuracy: 0.01)
-    }
-
-    // Zone weights sum: 1 hr in each of Z1–Z7 = sum of all weights = 30.5
-    func test_calculateLoad_zoneWeighted_oneHourEachZone() {
-        let zoneSecs = [Double](repeating: 3600.0, count: 7)
-        let workout = WorkoutData(
-            workoutType: .cycling,
-            startDate: Date(),
-            endDate: Date().addingTimeInterval(7 * 3600),
-            duration: 7 * 3600,
-            totalEnergyBurned: nil,
-            totalDistance: nil,
-            averagePower: nil,
-            powerZoneSeconds: zoneSecs,
-            averageHeartRate: nil,
-            source: .strava
-        )
-        let expectedLoad = PredictiveReadinessService.zoneWeights.reduce(0, +)  // 30.5
-        XCTAssertEqual(
-            service.calculateWorkoutLoad(workout, ftpSnapshots: []),
-            expectedLoad,
-            accuracy: 0.01
+    private func ride(np: Double? = nil, avg: Double? = nil, zones: [Double]? = nil,
+                      hours: Double = 1, type: HKWorkoutActivityType = .cycling) -> WorkoutData {
+        WorkoutData(
+            workoutType: type, startDate: Date(), endDate: Date().addingTimeInterval(hours * 3600),
+            duration: hours * 3600, totalEnergyBurned: nil, totalDistance: nil,
+            averagePower: avg, normalizedPower: np, powerZoneSeconds: zones,
+            averageHeartRate: nil, source: .strava
         )
     }
+    private var ftp200: [StoredFTPSnapshot] {
+        [StoredFTPSnapshot(date: Calendar.current.startOfDay(for: Date()), watts: 200, source: "manual")]
+    }
 
-    // PATH 2: NP-based TSS. IF = NP/FTP, TSS = IF² × durationHours
-    // NP=200W, FTP=200W → IF=1.0 → TSS = 1.0 × 1.0 = 1.0 per hour
+    // Load is TSS: an hour at FTP is 100.
     func test_calculateLoad_npTSS_thresholdEffort_oneHour() {
-        let workout = WorkoutData(
-            workoutType: .cycling,
-            startDate: Date(),
-            endDate: Date().addingTimeInterval(3600),
-            duration: 3600,
-            totalEnergyBurned: nil,
-            totalDistance: nil,
-            averagePower: nil,
-            normalizedPower: 200,
-            powerZoneSeconds: nil,
-            averageHeartRate: nil,
-            source: .strava
-        )
-        // FTP snapshot for today = 200W
-        let snapshot = StoredFTPSnapshot(date: Calendar.current.startOfDay(for: Date()), watts: 200, source: "manual")
-        let load = service.calculateWorkoutLoad(workout, ftpSnapshots: [snapshot])
-        // IF=1.0, TSS = 1.0² × 1.0hr = 1.0
-        XCTAssertEqual(load, 1.0, accuracy: 0.001)
+        XCTAssertEqual(service.calculateWorkoutLoad(ride(np: 200), ftpSnapshots: ftp200), 100, accuracy: 0.001)
     }
 
-    // NP=240W, FTP=200W → IF=1.2 → TSS = 1.44 × 1.0hr = 1.44
+    // NP=240W, FTP=200W → IF=1.2 → 144 TSS
     func test_calculateLoad_npTSS_aboveThreshold_oneHour() {
-        let workout = WorkoutData(
-            workoutType: .cycling,
-            startDate: Date(),
-            endDate: Date().addingTimeInterval(3600),
-            duration: 3600,
-            totalEnergyBurned: nil,
-            totalDistance: nil,
-            averagePower: nil,
-            normalizedPower: 240,
-            powerZoneSeconds: nil,
-            averageHeartRate: nil,
-            source: .strava
-        )
-        let snapshot = StoredFTPSnapshot(date: Calendar.current.startOfDay(for: Date()), watts: 200, source: "manual")
-        let load = service.calculateWorkoutLoad(workout, ftpSnapshots: [snapshot])
-        XCTAssertEqual(load, 1.44, accuracy: 0.001)
+        XCTAssertEqual(service.calculateWorkoutLoad(ride(np: 240), ftpSnapshots: ftp200), 144, accuracy: 0.001)
     }
 
-    // PATH 1 takes priority over PATH 2 when both zone data and NP are present
-    func test_calculateLoad_zonePriorityOverNP() {
-        // 1 hr Z1 only (weight 0.5) — load should be 0.5
-        // NP=250W with 200W FTP would give TSS = (1.25)² × 1.0 = 1.5625 — different
-        let zoneSecs: [Double] = [3600, 0, 0, 0, 0, 0, 0]
-        let workout = WorkoutData(
-            workoutType: .cycling,
-            startDate: Date(),
-            endDate: Date().addingTimeInterval(3600),
-            duration: 3600,
-            totalEnergyBurned: nil,
-            totalDistance: nil,
-            averagePower: nil,
-            normalizedPower: 250,
-            powerZoneSeconds: zoneSecs,
-            averageHeartRate: nil,
-            source: .strava
-        )
-        let snapshot = StoredFTPSnapshot(date: Calendar.current.startOfDay(for: Date()), watts: 200, source: "manual")
-        let load = service.calculateWorkoutLoad(workout, ftpSnapshots: [snapshot])
-        XCTAssertEqual(load, 0.5, accuracy: 0.01, "Zone path should win over NP path")
+    // 1 hr in Z2 (IF 0.65) → 42.25 TSS
+    func test_calculateLoad_zoneTSS_oneHourZ2() {
+        let load = service.calculateWorkoutLoad(ride(zones: [0, 3600, 0, 0, 0, 0, 0]), ftpSnapshots: ftp200)
+        XCTAssertEqual(load, 42.25, accuracy: 0.01)
+    }
+
+    // Value: protects=a ride's score stays put when its Strava stream is backfilled;
+    //   fails_when=zones take priority over NP again (the score jumps when the stream lands,
+    //   which made each new ride's day read as detraining);
+    //   why_new=v0.2.1 made NP the first path; seam=none; no_claim=Strava's real NP
+    func test_calculateLoad_npWinsOverZones_soBackfillDoesNotMoveTheScore() {
+        let before = service.calculateWorkoutLoad(ride(np: 160), ftpSnapshots: ftp200)
+        let after = service.calculateWorkoutLoad(ride(np: 160, zones: [3600, 0, 0, 0, 0, 0, 0]), ftpSnapshots: ftp200)
+        XCTAssertEqual(before, after, accuracy: 0.001)
+        XCTAssertEqual(after, 64, accuracy: 0.001)
+    }
+
+    // Value: protects=every load path is on one scale; fails_when=a path drifts back to
+    //   its own unit (zone weights 0.5–10/h vs IF²/h scored the same ride ~4× apart);
+    //   why_new=the unit change; seam=none; no_claim=real stream shape
+    func test_calculateLoad_allPathsAgreeForAnEvenEnduranceHour() {
+        // An even hour at 65% FTP, described three ways.
+        let byNP = service.calculateWorkoutLoad(ride(np: 130), ftpSnapshots: ftp200)
+        let byZones = service.calculateWorkoutLoad(ride(zones: [0, 3600, 0, 0, 0, 0, 0]), ftpSnapshots: ftp200)
+        let byAvg = service.calculateWorkoutLoad(ride(avg: 130), ftpSnapshots: ftp200)
+        XCTAssertEqual(byNP, byZones, accuracy: 0.01)
+        XCTAssertEqual(byNP, byAvg, accuracy: 0.01)
+        // No power: an hour of unknown effort is scored as endurance, the same ballpark.
+        let noPower = service.calculateWorkoutLoad(ride(), ftpSnapshots: ftp200)
+        XCTAssertEqual(noPower, PredictiveReadinessService.unknownIntensityTSSPerHour, accuracy: 0.01)
+        XCTAssertLessThan(abs(noPower - byNP) / byNP, 0.25)
+    }
+
+    // Easy riding still accumulates stress, just less per hour than hard riding.
+    func test_calculateLoad_easyHoursCountButLessThanHardHours() {
+        let easy = service.calculateWorkoutLoad(ride(zones: [0, 3600, 0, 0, 0, 0, 0]), ftpSnapshots: ftp200)
+        let threshold = service.calculateWorkoutLoad(ride(zones: [0, 0, 0, 3600, 0, 0, 0]), ftpSnapshots: ftp200)
+        XCTAssertGreaterThan(easy, 0)
+        XCTAssertEqual(threshold / easy, (0.98 * 0.98) / (0.65 * 0.65), accuracy: 0.01)
+    }
+
+    func test_calculateLoad_noPowerScalesBySport() {
+        let run = service.calculateWorkoutLoad(ride(type: .running), ftpSnapshots: ftp200)
+        let walk = service.calculateWorkoutLoad(ride(type: .walking), ftpSnapshots: ftp200)
+        XCTAssertEqual(run, 60, accuracy: 0.01)
+        XCTAssertEqual(walk, 25, accuracy: 0.01)
     }
 
     // MARK: - No-power-stream marker
@@ -299,7 +261,7 @@ final class PredictiveReadinessServiceLoadTests: XCTestCase {
 
         XCTAssertNil(ride.powerZoneSeconds)
         let load = PredictiveReadinessService().calculateWorkoutLoad(WorkoutData(from: ride), ftpSnapshots: ftp)
-        XCTAssertGreaterThan(load, 0.5, "A marked one-hour ride still carries real load")
+        XCTAssertGreaterThan(load, 20, "A marked one-hour ride still carries real load")
     }
 
     // Value: protects=a ride whose Strava watts stream is all null (stored as seven zero zones)
@@ -318,7 +280,7 @@ final class PredictiveReadinessServiceLoadTests: XCTestCase {
 
         XCTAssertNil(ride.powerZoneSeconds, "Zero seconds in every zone is no zone data")
         let load = PredictiveReadinessService().calculateWorkoutLoad(WorkoutData(from: ride), ftpSnapshots: ftp)
-        XCTAssertGreaterThan(load, 0.5, "A one-hour ride with a power dropout still carries real load")
+        XCTAssertGreaterThan(load, 20, "A one-hour ride with a power dropout still carries real load")
     }
 }
 

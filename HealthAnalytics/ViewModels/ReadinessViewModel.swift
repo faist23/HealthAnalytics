@@ -88,7 +88,7 @@ class ReadinessViewModel: ObservableObject {
         self.todayWorkouts = unified.todayWorkouts
         self.todaySteps = unified.todaySteps
         self.cardiovascularStrain = unified.cardiovascularStrain
-        self.dailyTSSData = calculateDailyTSS(workouts: unified.workouts, stepData: unified.stepCountData)
+        self.dailyTSSData = Self.dailyTSSData(from: unified.dailyTraining)
     }
     
     // Training Load (moved from InsightsViewModel)
@@ -111,80 +111,16 @@ class ReadinessViewModel: ObservableObject {
     // calculateTrainingZones / calculateFitnessTrends / calculateTrainingLoad / calculateImprovedACWRTrend
     // removed — logic moved to ReadinessRepository per GEMINI.md mandate
 
-    private func calculateDailyTSS(workouts: [WorkoutData], stepData: [HealthDataPoint]) -> [DailyTSSData] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        
-        // Determine days back based on selected period
-        let daysBack: Int
-        switch selectedPeriod {
-        case .week: daysBack = 7
-        case .month: daysBack = 30
-        case .quarter: daysBack = 90
-        case .sixMonths: daysBack = 180
-        case .year: daysBack = 365
-        case .all: daysBack = 730 // 2 years max
-        }
-        
-        // Personal step baseline: 30-day rolling average (never hardcode 10k).
-        // Falls back to 7,500 if there's no history yet (conservative, research-supported floor).
-        let thirtyDaysAgo = calendar.date(byAdding: .day, value: -30, to: today)!
-        let recentStepData = stepData.filter { $0.date >= thirtyDaysAgo }
-        let stepBaseline: Double = recentStepData.isEmpty
-            ? 7500
-            : recentStepData.map(\.value).reduce(0, +) / Double(recentStepData.count)
-
-        var dailyData: [DailyTSSData] = []
-        var ctlRunning: Double = 0  // Chronic Training Load (42-day EWMA)
-        var atlRunning: Double = 0  // Acute Training Load (7-day EWMA)
-
+    /// The repository's per-day TSS and hours (one load engine), with fitness/fatigue EWMAs.
+    static func dailyTSSData(from days: [ReadinessRepository.DailyTraining]) -> [DailyTSSData] {
         let ctlAlpha = 2.0 / 43.0  // 42-day time constant
         let atlAlpha = 2.0 / 8.0   // 7-day time constant
-
-        let loadCalculator = TrainingLoadCalculator()
-
-        for dayOffset in (0..<daysBack).reversed() {
-            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else {
-                continue
-            }
-
-            // Get workouts for this day
-            let dayWorkouts = workouts.filter {
-                calendar.isDate($0.startDate, inSameDayAs: date)
-            }
-
-            // Calculate TSS for this day
-            var dailyTSS: Double = 0
-            for workout in dayWorkouts {
-                dailyTSS += loadCalculator.calculateWorkoutLoad(workout)
-            }
-
-            // Add NEAT load from steps above personal baseline.
-            // Cap: on workout days steps ≤ 20% of workout load; on rest days ≤ 5 points.
-            // This keeps steps as supporting load, never primary strain.
-            if let stepPoint = stepData.first(where: { calendar.isDate($0.date, inSameDayAs: date) }) {
-                let excessSteps = max(0, stepPoint.value - stepBaseline)
-                if excessSteps > 0 {
-                    // 3,000 excess steps ≈ 1 TSS point (mild linear ramp)
-                    let rawStepTSS = excessSteps / 3000.0
-                    let cap = dailyTSS > 0 ? dailyTSS * 0.20 : 5.0
-                    dailyTSS += min(rawStepTSS, cap)
-                }
-            }
-            
-            // Update EWMA values
-            ctlRunning = (dailyTSS * ctlAlpha) + (ctlRunning * (1.0 - ctlAlpha))
-            atlRunning = (dailyTSS * atlAlpha) + (atlRunning * (1.0 - atlAlpha))
-            
-            dailyData.append(DailyTSSData(
-                date: date,
-                tss: dailyTSS,
-                ctl: ctlRunning,
-                atl: atlRunning
-            ))
+        var ctl = 0.0, atl = 0.0
+        return days.map { day in
+            ctl = day.tss * ctlAlpha + ctl * (1 - ctlAlpha)
+            atl = day.tss * atlAlpha + atl * (1 - atlAlpha)
+            return DailyTSSData(date: day.date, tss: day.tss, hours: day.hours, ctl: ctl, atl: atl)
         }
-        
-        return dailyData
     }
     
 }

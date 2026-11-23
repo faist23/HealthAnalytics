@@ -326,6 +326,7 @@ final class ReadinessRepositoryPatternThrottleWiringTests: XCTestCase {
 
     private let key = "lastPatternAnalysisDate"
     private var saved: Any?
+    private var savedMigration: Any?
 
     override func setUp() async throws {
         // Unit tests run inside the app. An onboarded host runs its own launch analysis
@@ -333,12 +334,16 @@ final class ReadinessRepositoryPatternThrottleWiringTests: XCTestCase {
         // Captured before the skip: XCTest still runs tearDown after XCTSkip, and
         // restoring an uncaptured value would erase the host app's real stamp.
         saved = UserDefaults.standard.object(forKey: key)
+        savedMigration = UserDefaults.standard.object(forKey: PredictiveReadinessService.tssMigrationKey)
+        // Past the TSS-migration gate, so only the throttle can stop the run.
+        UserDefaults.standard.set(true, forKey: PredictiveReadinessService.tssMigrationKey)
         try XCTSkipIf(UserDefaults.standard.bool(forKey: "isOnboardingComplete"),
                       "App host is onboarded: launch tasks share ReadinessRepository.shared")
     }
 
     override func tearDown() async throws {
         UserDefaults.standard.set(saved, forKey: key)
+        UserDefaults.standard.set(savedMigration, forKey: PredictiveReadinessService.tssMigrationKey)
     }
 
     func test_forcedRun_justAfterACompletedRun_isSkipped() async throws {
@@ -380,12 +385,15 @@ final class ReadinessRepositoryBackgroundPatternErrorTests: XCTestCase {
     private let historyKey = "healthKitHistoryDays"   // written if HealthKit happens to succeed
     private var saved: Any?
     private var savedHistory: Any?
+    private var savedMigration: Any?
 
     override func setUp() async throws {
         // Same isolation as ReadinessRepositoryPatternThrottleWiringTests: an onboarded host
         // runs launch analysis on the shared repository. Captured before the skip.
         saved = UserDefaults.standard.object(forKey: key)
         savedHistory = UserDefaults.standard.object(forKey: historyKey)
+        savedMigration = UserDefaults.standard.object(forKey: PredictiveReadinessService.tssMigrationKey)
+        UserDefaults.standard.set(true, forKey: PredictiveReadinessService.tssMigrationKey)  // reach the analyzer
         try XCTSkipIf(UserDefaults.standard.bool(forKey: "isOnboardingComplete"),
                       "App host is onboarded: launch tasks share ReadinessRepository.shared")
     }
@@ -393,6 +401,7 @@ final class ReadinessRepositoryBackgroundPatternErrorTests: XCTestCase {
     override func tearDown() async throws {
         UserDefaults.standard.set(saved, forKey: key)
         UserDefaults.standard.set(savedHistory, forKey: historyKey)
+        UserDefaults.standard.set(savedMigration, forKey: PredictiveReadinessService.tssMigrationKey)
         ReadinessRepository.shared.resetForTesting()   // clears the error this test leaves and the app-state override
     }
 
@@ -455,11 +464,14 @@ final class ReadinessRepositoryPatternCancellationTests: XCTestCase {
     private let historyKey = "healthKitHistoryDays"
     private var saved: Any?
     private var savedHistory: Any?
+    private var savedMigration: Any?
 
     override func setUp() async throws {
         // Same isolation as ReadinessRepositoryPatternThrottleWiringTests. Captured before the skip.
         saved = UserDefaults.standard.object(forKey: key)
         savedHistory = UserDefaults.standard.object(forKey: historyKey)
+        savedMigration = UserDefaults.standard.object(forKey: PredictiveReadinessService.tssMigrationKey)
+        UserDefaults.standard.set(true, forKey: PredictiveReadinessService.tssMigrationKey)  // reach the analyzer
         try XCTSkipIf(UserDefaults.standard.bool(forKey: "isOnboardingComplete"),
                       "App host is onboarded: launch tasks share ReadinessRepository.shared")
     }
@@ -467,6 +479,7 @@ final class ReadinessRepositoryPatternCancellationTests: XCTestCase {
     override func tearDown() async throws {
         UserDefaults.standard.set(saved, forKey: key)
         UserDefaults.standard.set(savedHistory, forKey: historyKey)
+        UserDefaults.standard.set(savedMigration, forKey: PredictiveReadinessService.tssMigrationKey)
         ReadinessRepository.shared.resetForTesting()
     }
 

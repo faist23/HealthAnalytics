@@ -132,7 +132,8 @@ final class ForecastPlanStoreTests: XCTestCase {
         try ctx.save()
 
         let history = try repo.loadForecastHistory(context: ctx, now: noon).days
-        XCTAssertEqual(history.map(\.load), [1, 5, 2], "The larger of row and rides; a row can go stale either way")
+        let hour = PredictiveReadinessService.unknownIntensityTSSPerHour  // a no-power ride hour, in TSS
+        XCTAssertEqual(history.map(\.load), [1 * hour, 5, 2 * hour], "The larger of row and rides; a row can go stale either way")
         XCTAssertEqual(history.map(\.score), [nil, 75, 75], "A day with no row has an unknown score, not a low one")
     }
 

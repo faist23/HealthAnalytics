@@ -13,6 +13,9 @@ import SwiftUI
 final class ForecastPlannerTests: XCTestCase {
 
     private let calendar = Calendar.current
+    /// Fixture loads are written in hours of zone-2 riding (the pre-TSS unit) and converted
+    /// here: an hour in zone 2 is ~42 TSS, so 1.0 is a training day and 0.5 a named ride.
+    private let h = 40.0
     private var today: Date { calendar.startOfDay(for: Date()) }
 
     private func day(_ offset: Int) -> Date {
@@ -22,7 +25,7 @@ final class ForecastPlannerTests: XCTestCase {
     /// Ascending complete days ending yesterday, one per entry.
     private func history(_ days: [(score: Int?, load: Double)]) -> [ForecastHistoryDay] {
         days.enumerated().map { index, entry in
-            ForecastHistoryDay(date: day(index - days.count), score: entry.score, load: entry.load)
+            ForecastHistoryDay(date: day(index - days.count), score: entry.score, load: entry.load * h)
         }
     }
 
@@ -77,22 +80,22 @@ final class ForecastPlannerTests: XCTestCase {
     func testHardDay_isTheTopQuarterOfTrainingLoads() throws {
         let loads = (1...8).map { (score: Int?.some(70), load: Double($0)) }
         let profile = try XCTUnwrap(learn(flat(20) + loads))
-        XCTAssertEqual(profile.hardLoad, 6.25, accuracy: 0.001)
-        XCTAssertEqual(profile.moderateLoad, 4.5, accuracy: 0.001)
-        XCTAssertEqual(profile.easyLoad, 2.75, accuracy: 0.001)
+        XCTAssertEqual(profile.hardLoad, 6.25 * h, accuracy: 0.001)
+        XCTAssertEqual(profile.moderateLoad, 4.5 * h, accuracy: 0.001)
+        XCTAssertEqual(profile.easyLoad, 2.75 * h, accuracy: 0.001)
     }
 
     func testUniformRider_ridesAreNotAllHard() throws {
         let profile = try XCTUnwrap(learn(flat(30, load: 1.0)))
-        XCTAssertFalse(profile.isHard(load: 1.0))
-        XCTAssertTrue(profile.isHard(load: 1.25))
+        XCTAssertFalse(profile.isHard(load: 1.0 * h))
+        XCTAssertTrue(profile.isHard(load: 1.25 * h))
     }
 
     func testNoTrainingHistory_usesFallbacks() throws {
         let profile = try XCTUnwrap(learn(flat(30)))
-        XCTAssertEqual(profile.hardLoad, 3.0)
-        XCTAssertEqual(profile.moderateLoad, 1.5)
-        XCTAssertEqual(profile.easyLoad, 0.75)
+        XCTAssertEqual(profile.hardLoad, ForecastProfile.fallbackHardLoad)
+        XCTAssertEqual(profile.moderateLoad, ForecastProfile.fallbackModerateLoad)
+        XCTAssertEqual(profile.easyLoad, ForecastProfile.fallbackEasyLoad)
         XCTAssertEqual(profile.typicalLoad(.rest), 0)
         XCTAssertEqual(profile.recoveryDays, 1)
         XCTAssertEqual(profile.dip, 1.0)
@@ -172,7 +175,7 @@ final class ForecastPlannerTests: XCTestCase {
     private var noon: Date { calendar.date(byAdding: .hour, value: 12, to: today)! }
 
     private func profile(normal: Double = 75, recoveryDays: Int = 1, dip: Double = 1.0) -> ForecastProfile {
-        ForecastProfile(normal: normal, spread: 6, hardLoad: 3, moderateLoad: 1.5, easyLoad: 0.75,
+        ForecastProfile(normal: normal, spread: 6, hardLoad: 3 * h, moderateLoad: 1.5 * h, easyLoad: 0.75 * h,
                         dip: dip, recoveryDays: recoveryDays, episodeCount: 0)
     }
 
@@ -184,9 +187,9 @@ final class ForecastPlannerTests: XCTestCase {
         let p = p ?? profile()
         var input = ForecastPlanInput(now: noon, startScore: score(z: z, normal: p.normal),
                                       currentScore: score(z: currentZ ?? z, normal: p.normal),
-                                      rodeLoadToday: rode,
+                                      rodeLoadToday: rode * h,
                                       recentLoads: hardDaysAgo.sorted(by: >).map {
-                                          ForecastHistoryDay(date: day(-$0), score: 70, load: 5)
+                                          ForecastHistoryDay(date: day(-$0), score: 70, load: 5 * h)
                                       },
                                       profile: p, projectedACWR: acwr)
         input.hardDayRules = rules
@@ -277,7 +280,7 @@ final class ForecastPlannerTests: XCTestCase {
         let yesterday = day(-1)
         let days = plan(ForecastPlanInput(now: base.now, startScore: base.startScore, currentScore: base.currentScore,
                                           rodeLoadToday: 0,
-                                          recentLoads: [ForecastHistoryDay(date: yesterday, score: 70, load: 5)],
+                                          recentLoads: [ForecastHistoryDay(date: yesterday, score: 70, load: 5 * h)],
                                           profile: base.profile, projectedACWR: base.projectedACWR))
         XCTAssertEqual(days[0].effort, .easy)
         XCTAssertEqual(days[0].reason, "Still recovering from \(yesterday.formatted(.dateTime.weekday(.wide)))")
@@ -309,7 +312,7 @@ final class ForecastPlannerTests: XCTestCase {
         XCTAssertEqual(calls[0].close, noon)
         XCTAssertTrue(calls[0].planned.isEmpty)
         XCTAssertEqual(calls[1].close, day(2))
-        XCTAssertEqual(calls[1].planned[day(0)] ?? -1, max(0, 1.5 - 1.0), accuracy: 0.001,
+        XCTAssertEqual(calls[1].planned[day(0)] ?? -1, (1.5 - 1.0) * h, accuracy: 0.001,
                        "Today's ride is in the workouts already; only the rest of the suggested load is planned")
         XCTAssertEqual(calls[2].planned.count, 2)
         XCTAssertEqual(days[0].effort, .moderate)
@@ -537,7 +540,7 @@ final class ForecastPlannerTests: XCTestCase {
             planned = loads
             return 1.0
         }))
-        XCTAssertEqual(planned[day(0)] ?? -1, 1.5 * 0.5, accuracy: 0.001, "A Moderate day at half the rider's usual frequency")
+        XCTAssertEqual(planned[day(0)] ?? -1, 1.5 * 0.5 * h, accuracy: 0.001, "A Moderate day at half the rider's usual frequency")
     }
 
     // MARK: - Ship review fixes
@@ -629,9 +632,9 @@ final class ForecastPlannerTests: XCTestCase {
     /// A hard ride today puts an Easy recovery cap on tomorrow. With z 3, tomorrow's band is Hard
     /// as usual and Moderate when rides feel 1 point harder: the same word, which the cap sets.
     func testShift_reasonKeepsTheCapWhenTheCapAlreadySetTheWord() {
-        let usual = plan(ForecastPlanInput(now: noon, startScore: score(z: 3), currentScore: score(z: 3), rodeLoadToday: 3,
+        let usual = plan(ForecastPlanInput(now: noon, startScore: score(z: 3), currentScore: score(z: 3), rodeLoadToday: 3 * h,
                                            recentLoads: [], profile: profile(), rideCostTrend: 0, projectedACWR: { _, _ in 1 }))
-        let harder = plan(ForecastPlanInput(now: noon, startScore: score(z: 3), currentScore: score(z: 3), rodeLoadToday: 3,
+        let harder = plan(ForecastPlanInput(now: noon, startScore: score(z: 3), currentScore: score(z: 3), rodeLoadToday: 3 * h,
                                             recentLoads: [], profile: profile(), rideCostTrend: 1, projectedACWR: { _, _ in 1 }))
         XCTAssertEqual(usual[1].effort, harder[1].effort)
         XCTAssertEqual(harder[1].reason, usual[1].reason, "Same word, so the cap still explains it")
@@ -658,7 +661,7 @@ final class ForecastPlannerTests: XCTestCase {
     /// it gives the reason, not the looser cap.
     func testShift_feelPastACapGivesTheFeelReason() {
         func day1(_ trend: Double, z: Double) -> ReadinessRepository.ReadinessForecastDay {
-            plan(ForecastPlanInput(now: noon, startScore: score(z: z), currentScore: score(z: z), rodeLoadToday: 3,
+            plan(ForecastPlanInput(now: noon, startScore: score(z: z), currentScore: score(z: z), rodeLoadToday: 3 * h,
                                    recentLoads: [], profile: profile(), rideCostTrend: trend, projectedACWR: { _, _ in 1 }))[1]
         }
         let cases = stride(from: -1.0, through: 4.0, by: 1.0 / 6).filter { z in
