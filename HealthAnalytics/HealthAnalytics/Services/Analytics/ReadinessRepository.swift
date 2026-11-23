@@ -1232,13 +1232,13 @@ class ReadinessRepository: ObservableObject {
         Self.migrateDailyScoresToTSS(scores: allScores, workouts: storedWorkouts.map { WorkoutData(from: $0) },
                                      ftpSnapshots: ftpSnapshots, service: predictiveReadinessService)
         // Done only once the TSS rows are on disk: pattern detection trusts this flag and reads
-        // through its own context. A failed save rolls back and the next good sync retries.
+        // through its own context. A failed save leaves the flag unset and the next good sync
+        // migrates again (it overwrites, so a repeat is safe). No rollback: this is the views'
+        // shared context, and a rollback would also drop anything the user hasn't saved yet.
         do {
             try modelContext.save()
             UserDefaults.standard.set(true, forKey: udKey)
-        } catch {
-            modelContext.rollback()
-        }
+        } catch {}
     }
 
     /// Sets each row's load to its day's workout TSS and its strain to the ACWR at the close of
