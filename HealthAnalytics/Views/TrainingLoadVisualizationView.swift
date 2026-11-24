@@ -435,6 +435,7 @@ struct WeeklyPatternView: View {
             .chartYAxis {
                 AxisMarks(position: .leading)
             }
+            .environment(\.calendar, TrainingWeek.calendar(startDay: pattern.weekStartDay))
             
             HStack {
                 Text("Average weekly load:")

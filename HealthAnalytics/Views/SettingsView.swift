@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var isClassifyingWorkouts = false
     @AppStorage("historicalDataWindowYears") private var historicalDataWindowYears: Int = 0
     @AppStorage("preferredHRVSource") private var preferredHRVSource: String = "auto"
+    @AppStorage(TrainingWeek.startDayKey) private var weekStartDay = TrainingWeek.defaultStartDay
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.modelContext) private var modelContext
     
@@ -225,6 +226,23 @@ struct SettingsView: View {
                             }
                             
                             Text("Limits analysis to data from the selected time period. Useful for excluding old or inaccurate data (like virtual power estimates).")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        VStack(alignment: .leading, spacing: .spacingSm) {
+                            HStack {
+                                Label("Week Starts On", systemImage: "calendar.badge.clock")
+                                Spacer()
+                                Picker("Week Starts On", selection: $weekStartDay) {
+                                    Text("Monday").tag(TrainingWeek.monday)
+                                    Text("Sunday").tag(TrainingWeek.sunday)
+                                }
+                                .pickerStyle(.menu)
+                                .tint(Color.accent)
+                            }
+
+                            Text("The first day of your training week, for weekly totals on the Load tab.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

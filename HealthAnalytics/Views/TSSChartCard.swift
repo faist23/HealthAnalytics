@@ -13,10 +13,15 @@ struct TSSChartCard: View {
     let period: TimePeriod
     
     @State private var selectedDate: Date?
-    
+    @AppStorage(TrainingWeek.startDayKey) private var weekStartDay = TrainingWeek.defaultStartDay
+
+    /// Weeks start on the rider's training-week day (Settings), not the locale's.
+    private var calendar: Calendar { TrainingWeek.calendar(startDay: weekStartDay) }
+
     private var selectedWeek: WeeklyTSSData? {
         guard let date = selectedDate else { return nil }
-        return weeklyData.first { Calendar.current.isDate($0.weekStart, equalTo: date, toGranularity: .weekOfYear) }
+        let week = TrainingWeek.weekStart(of: date, calendar: calendar)
+        return weeklyData.first { $0.weekStart == week }
     }
     
     // X-axis stride for weeks based on period
@@ -31,17 +36,16 @@ struct TSSChartCard: View {
         }
     }
     
-    // Group daily data into weekly totals
-    private var weeklyData: [WeeklyTSSData] {
-        let calendar = Calendar.current
+    private var weeklyData: [WeeklyTSSData] { Self.weeklyTotals(dailyTSS, calendar: calendar) }
+
+    /// Daily data grouped into training weeks (by `calendar`'s first weekday), oldest first.
+    static func weeklyTotals(_ dailyTSS: [DailyTSSData], calendar: Calendar) -> [WeeklyTSSData] {
         var weeklyDict: [Date: Double] = [:]
         var weeklyHours: [Date: Double] = [:]
         var weeklyDayCounts: [Date: Int] = [:] // Track actual days with data
         
         for day in dailyTSS {
-            // Get the start of the week for this date
-            let weekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: day.date)
-            guard let weekDate = calendar.date(from: weekStart) else { continue }
+            let weekDate = TrainingWeek.weekStart(of: day.date, calendar: calendar)
             
             weeklyDict[weekDate, default: 0] += day.tss
             weeklyHours[weekDate, default: 0] += day.hours
@@ -178,6 +182,8 @@ struct TSSChartCard: View {
                     }
                 }
                 .chartXSelection(value: $selectedDate)
+                // Week bins and axis strides follow the training week, not the locale's.
+                .environment(\.calendar, calendar)
                 .chartYAxis {
                     AxisMarks(position: .leading) { value in
                         AxisGridLine()
