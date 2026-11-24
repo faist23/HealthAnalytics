@@ -168,7 +168,6 @@ struct ReadinessAnalyzer {
         let fitness = calculateFitnessScore(workouts: workouts, activities: stravaActivities)
         let fatigue = calculateFatigueScore(
             workouts: workouts,
-            activities: stravaActivities,
             recovery: recovery
         )
         
@@ -380,7 +379,6 @@ struct ReadinessAnalyzer {
     
     private func calculateFatigueScore(
         workouts: [WorkoutData],
-        activities: [StravaActivity],
         recovery: (score: Int, details: String)
     ) -> (score: Int, details: String) {
         

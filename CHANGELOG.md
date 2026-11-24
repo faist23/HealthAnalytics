@@ -3,6 +3,12 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.2.2] - 2026-11-23
+
+### Removed
+
+- **One more leftover from the old Strava scoring.** The readiness fatigue check took a list of Strava activities it never read. Nothing you see changes.
+
 ## [0.2.2.1] - 2026-11-23
 
 ### Removed
