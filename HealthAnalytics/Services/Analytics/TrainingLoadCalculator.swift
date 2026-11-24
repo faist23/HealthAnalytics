@@ -105,8 +105,8 @@ struct TrainingLoadCalculator {
             dailyLoads[day, default: 0] += loadService.calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
         }
         
-        // Strava activities keep their own scoring (suffer score / TRIMP), not TSS. Only the
-        // preview-only TrainingView and RecoveryViewModel screens pass any; the app passes [].
+        // Strava activities keep their own scoring (suffer score / TRIMP), not TSS. The app always
+        // passes an empty list here (ReadinessRepository gives ReadinessAnalyzer `[]`).
         for activity in stravaActivities {
             guard let startDate = activity.startDateFormatted else { continue }
             let day = calendar.startOfDay(for: startDate)

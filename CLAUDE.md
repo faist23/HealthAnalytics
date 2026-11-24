@@ -66,7 +66,7 @@ When a SwiftUI `body` triggers this error, decompose it into:
 - `@ToolbarContentBuilder private var toolbarItems: some ToolbarContent` — owns toolbar items
 - Keep `body` as a thin modifier chain only
 
-Applied to: `RecoveryDashboardView.swift`
+Applied to: `RecoveryDashboardView.swift` (since deleted as a preview-only screen).
 
 ### `.foregroundStyle(.tokenName)` type inference failures
 In batch-compile contexts Swift sometimes fails to resolve shorthand `.tokenName` for custom `Color` extensions. Always use explicit `Color.tokenName` form (e.g. `Color.accent`, `Color.statusOptimal`) — never the dot-shorthand.
