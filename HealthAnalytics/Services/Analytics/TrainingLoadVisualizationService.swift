@@ -305,10 +305,10 @@ struct TrainingLoadVisualizationService {
         ftpSnapshots: [StoredFTPSnapshot]
     ) -> LoadVisualizationData.WeeklyLoadPattern {
         
-        let calendar = Calendar.current
+        let calendar = TrainingWeek.calendar()
         var weeks: [LoadVisualizationData.WeeklyLoadPattern.WeekData] = []
         
-        var weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: startDate))!
+        var weekStart = TrainingWeek.weekStart(of: startDate, calendar: calendar)
         let endDate = Date()
         
         while weekStart < endDate {

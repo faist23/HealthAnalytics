@@ -405,6 +405,7 @@ struct IntentLoadRow: View {
 
 struct WeeklyPatternView: View {
     let pattern: TrainingLoadVisualizationService.LoadVisualizationData.WeeklyLoadPattern
+    @AppStorage(TrainingWeek.startDayKey) private var weekStartDay = TrainingWeek.defaultStartDay
     
     var body: some View {
         VStack(alignment: .leading, spacing: .spacingMd) {
@@ -435,6 +436,7 @@ struct WeeklyPatternView: View {
             .chartYAxis {
                 AxisMarks(position: .leading)
             }
+            .environment(\.calendar, TrainingWeek.calendar(startDay: weekStartDay))
             
             HStack {
                 Text("Average weekly load:")
