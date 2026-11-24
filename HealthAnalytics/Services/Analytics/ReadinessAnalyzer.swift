@@ -391,7 +391,6 @@ struct ReadinessAnalyzer {
         let calculator = TrainingLoadCalculator()
         if let loadSummary = calculator.calculateTrainingLoad(
             healthKitWorkouts: workouts,
-            stravaActivities: activities,
             stepData: []
         ) {
             let acr = loadSummary.acuteChronicRatio

@@ -617,7 +617,6 @@ class ReadinessRepository: ObservableObject {
             // B: Injury Risk
             let trainingLoad = loadCalculator.calculateTrainingLoad(
                 healthKitWorkouts: workouts,
-                stravaActivities: [],
                 stepData: [],
                 ftpSnapshots: ftpSnapshots
             )
@@ -721,18 +720,10 @@ class ReadinessRepository: ObservableObject {
                 hrvData: hrvData
             )
             
-            let storedDailyScores = (try? modelContext.fetch(FetchDescriptor<StoredDailyScore>())) ?? []
-            let dailyReadinessDict = storedDailyScores.reduce(into: [Date: Int]()) { result, score in
-                let day = calendar.startOfDay(for: score.date)
-                result[day] = score.readinessScore
-            }
-            
             let trainingLoadSummary = loadCalculator.calculateTrainingLoad(
                 healthKitWorkouts: workouts,
-                stravaActivities: [],
                 stepData: stepData,
                 recoveryInsights: recoveryInsights,
-                dailyReadiness: dailyReadinessDict,
                 ftpSnapshots: ftpSnapshots
             )
 
