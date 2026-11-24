@@ -3,6 +3,13 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.2.1] - 2026-11-23
+
+### Removed
+
+- **Old screens the app no longer showed are gone.** An earlier training screen and two recovery dashboards were left in the code but could not be opened. Nothing you see changes.
+- **The load summary no longer has a second way to score Strava rides.** It scored raw Strava activities by suffer score or heart rate, a different scale from TSS, but nothing used it. Your Strava rides still count, scored in TSS once they sync.
+
 ## [0.2.2.0] - 2026-11-23
 
 ### Added
