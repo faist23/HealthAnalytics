@@ -48,6 +48,26 @@ final class TrainingWeekTests: XCTestCase {
         XCTAssertEqual(sundayWeeks.map(\.weeklyTSS), [100, 80])
     }
 
+    // Value: protects=the Load tab's weekly pattern splits on the stored setting, and an unset
+    //   setting means Monday; fails_when=analyzeWeeklyPattern goes back to the locale calendar or
+    //   reads the wrong key; why_new=no test reached weeklyPattern; seam=none (public entry plus
+    //   UserDefaults save/restore); no_claim=load values, chart rendering
+    func test_weeklyPattern_followsTheStoredStartDay() {
+        let saved = UserDefaults.standard.object(forKey: TrainingWeek.startDayKey)
+        defer { UserDefaults.standard.set(saved, forKey: TrainingWeek.startDayKey) }
+        let cal = Calendar.current
+        for (stored, expected) in [(TrainingWeek.monday as Int?, 2), (TrainingWeek.sunday, 1), (nil, 2)] {
+            if let stored { UserDefaults.standard.set(stored, forKey: TrainingWeek.startDayKey) }
+            else { UserDefaults.standard.removeObject(forKey: TrainingWeek.startDayKey) }
+            let pattern = TrainingLoadVisualizationService()
+                .generateLoadVisualization(workouts: [], labels: [], daysBack: 21).weeklyPattern
+            XCTAssertFalse(pattern.weeks.isEmpty)
+            XCTAssertEqual(Set(pattern.weeks.map { cal.component(.weekday, from: $0.weekStart) }), [expected],
+                           "stored \(String(describing: stored))")
+            XCTAssertEqual(pattern.weekStartDay, expected)
+        }
+    }
+
     func test_unsetOrInvalidSettingReadsAsMonday() {
         XCTAssertEqual(TrainingWeek.validated(0), TrainingWeek.monday)
         XCTAssertEqual(TrainingWeek.validated(5), TrainingWeek.monday)

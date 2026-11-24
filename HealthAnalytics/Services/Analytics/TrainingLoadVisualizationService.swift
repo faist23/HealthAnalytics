@@ -70,6 +70,9 @@ struct TrainingLoadVisualizationService {
             let weeks: [WeekData]
             let averageWeeklyLoad: Double
             let trend: Trend
+            /// The training-week start day the weeks were split on (`Calendar.firstWeekday`), so the
+            /// chart bins them the same way even if the setting changes before the data rebuilds.
+            var weekStartDay: Int = TrainingWeek.defaultStartDay
             
             struct WeekData: Identifiable {
                 let id = UUID()
@@ -353,7 +356,8 @@ struct TrainingLoadVisualizationService {
         return LoadVisualizationData.WeeklyLoadPattern(
             weeks: weeks,
             averageWeeklyLoad: avgLoad,
-            trend: trend
+            trend: trend,
+            weekStartDay: calendar.firstWeekday
         )
     }
     
