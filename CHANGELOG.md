@@ -3,6 +3,16 @@
 All notable changes to HealthAnalytics are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.2.0] - 2026-11-23
+
+### Added
+
+- **Choose the day your training week starts.** Settings has a new Week Starts On choice, Monday or Sunday. Weekly totals on the Load tab follow it, including this week's TSS and hours, the four-week table and the weekly charts.
+
+### Changed
+
+- **Weeks now start on Monday by default.** They used to follow your phone's region, which starts weeks on Sunday in the US. Pick Sunday in Settings to keep the old grouping.
+
 ## [0.2.1.0] - 2026-11-23
 
 ### Fixed
