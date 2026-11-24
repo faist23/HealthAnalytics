@@ -229,7 +229,7 @@ final class TrainingLoadACWRConsistencyTests: XCTestCase {
                 stravaActivities: [], healthKitWorkouts: workouts, ftpSnapshots: []
             )
             guard let summary = calculator.calculateTrainingLoad(
-                healthKitWorkouts: workouts, stravaActivities: [], stepData: []
+                healthKitWorkouts: workouts, stepData: []
             ) else {
                 XCTFail("Expected a summary for ACWR \(assessment.acwr)")
                 continue

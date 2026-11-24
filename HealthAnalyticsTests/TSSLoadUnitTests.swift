@@ -96,7 +96,7 @@ final class TSSLoadUnitTests: XCTestCase {
                                     normalizedPower: 200, averageHeartRate: nil, source: .strava))
         let assessment = service.calculateReadiness(stravaActivities: [], healthKitWorkouts: workouts, ftpSnapshots: ftp200)
         let summary = try XCTUnwrap(TrainingLoadCalculator().calculateTrainingLoad(
-            healthKitWorkouts: workouts, stravaActivities: [], stepData: [], ftpSnapshots: ftp200))
+            healthKitWorkouts: workouts, stepData: [], ftpSnapshots: ftp200))
         XCTAssertEqual(summary.acuteChronicRatio, assessment.acwr, accuracy: 0.0001)
         XCTAssertEqual(summary.acuteLoad, assessment.acuteLoad, accuracy: 0.0001)
         XCTAssertEqual(summary.chronicLoad, assessment.chronicLoad, accuracy: 0.0001)
@@ -105,7 +105,7 @@ final class TSSLoadUnitTests: XCTestCase {
     func test_trainingLoadSummaryTSSIsWorkoutTSS() throws {
         let yesterday = ride(daysAgo: 1, np: 200)   // an hour at FTP
         let summary = try XCTUnwrap(TrainingLoadCalculator().calculateTrainingLoad(
-            healthKitWorkouts: [yesterday], stravaActivities: [], stepData: [], ftpSnapshots: ftp200))
+            healthKitWorkouts: [yesterday], stepData: [], ftpSnapshots: ftp200))
         XCTAssertEqual(summary.yesterdayTSS, 100, accuracy: 0.001)
     }
 
@@ -115,7 +115,7 @@ final class TSSLoadUnitTests: XCTestCase {
     func test_trainingLoadSummary_stepsAddNoLoad() throws {
         let yesterdayNoon = calendar.date(byAdding: .hour, value: -12, to: today)!
         let summary = try XCTUnwrap(TrainingLoadCalculator().calculateTrainingLoad(
-            healthKitWorkouts: [ride(daysAgo: 3, np: 200)], stravaActivities: [],
+            healthKitWorkouts: [ride(daysAgo: 3, np: 200)],
             stepData: [HealthDataPoint(date: yesterdayNoon, value: 25_000)], ftpSnapshots: ftp200))
         XCTAssertEqual(summary.yesterdayTSS, 0, accuracy: 0.001)
         XCTAssertEqual(summary.weeklyTSS, 100, accuracy: 0.001)

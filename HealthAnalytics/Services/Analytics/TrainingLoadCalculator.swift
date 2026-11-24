@@ -82,10 +82,8 @@ struct TrainingLoadCalculator {
     /// and recovery is good" (EWMA ratio, ≤1.3) about the same day.
     func calculateTrainingLoad(
         healthKitWorkouts: [WorkoutData],
-        stravaActivities: [StravaActivity],
         stepData: [HealthDataPoint],
         recoveryInsights: [CorrelationEngine.RecoveryInsight] = [],
-        dailyReadiness: [Date: Int] = [:],
         ftpSnapshots: [StoredFTPSnapshot] = []
     ) -> TrainingLoadSummary? {
         
@@ -103,15 +101,6 @@ struct TrainingLoadCalculator {
         for workout in healthKitWorkouts {
             let day = calendar.startOfDay(for: workout.startDate)
             dailyLoads[day, default: 0] += loadService.calculateWorkoutLoad(workout, ftpSnapshots: ftpSnapshots)
-        }
-        
-        // Strava activities keep their own scoring (suffer score / TRIMP), not TSS. Only the
-        // preview-only TrainingView and RecoveryViewModel screens pass any; the app passes [].
-        for activity in stravaActivities {
-            guard let startDate = activity.startDateFormatted else { continue }
-            let day = calendar.startOfDay(for: startDate)
-            let load = calculateStravaLoad(activity, dailyReadiness: dailyReadiness)
-            dailyLoads[day, default: 0] += load
         }
         
         // Steps are not training stress here (they feed recovery through NEAT, against the
@@ -182,7 +171,7 @@ struct TrainingLoadCalculator {
         // must not decide which band the user is told they're in — every other
         // Load surface bands on this number.
         let assessment = PredictiveReadinessService().calculateReadiness(
-            stravaActivities: stravaActivities,
+            stravaActivities: [],
             healthKitWorkouts: healthKitWorkouts,
             ftpSnapshots: ftpSnapshots
         )
@@ -322,41 +311,6 @@ struct TrainingLoadCalculator {
         return baseLoad * multiplier
     }
     
-    private func calculateStravaLoad(_ activity: StravaActivity, dailyReadiness: [Date: Int] = [:]) -> Double {
-        let date = activity.startDateFormatted ?? Date()
-        let multiplier = calculateFatigueMultiplier(for: date, dailyReadiness: dailyReadiness)
-        
-        let durationHours = Double(activity.movingTime) / 3600.0
-        
-        // Use suffer score if available (Strava's built-in load metric)
-        if let sufferScore = activity.sufferScore {
-            return Double(sufferScore) * multiplier
-        }
-        
-        // Attempt TRIMP / Cardio Load calculation if Heart Rate is available
-        if let trimpLoad = calculateCardioLoadTRIMP(durationSeconds: Double(activity.movingTime), averageHeartRate: activity.averageHeartrate) {
-            return trimpLoad * multiplier
-        }
-        
-        // Otherwise estimate based on type and duration
-        let baseLoad: Double
-        
-        switch activity.type {
-        case "Run":
-            baseLoad = durationHours * 65
-        case "Ride", "VirtualRide":
-            baseLoad = durationHours * 75
-        case "Swim":
-            baseLoad = durationHours * 70
-        case "Hike", "Walk":
-            baseLoad = durationHours * 30
-        default:
-            baseLoad = durationHours * 50
-        }
-        
-        return baseLoad * multiplier
-    }
-    
     func calculateEWMA(currentValue: Double, previousAverage: Double, timeConstant: Int) -> Double {
         let alpha = 2.0 / (Double(timeConstant) + 1.0)
         return (currentValue * alpha) + (previousAverage * (1.0 - alpha))
@@ -386,30 +340,6 @@ struct TrainingLoadCalculator {
         // 60 mins at max HR (intensity = 1.0) yields: 60 * 1.0 * exp(1.92) ≈ 409
         // Dividing by 4 normalizes it roughly to the 1-100 scale per hour for comparison.
         return trimp / 4.0
-    }
-    
-    func getActivityLoad(activity: StravaActivity) -> Double {
-        let durationMinutes = Double(activity.movingTime) / 60.0
-        
-        // 1. Prioritize Power
-        if let power = activity.averageWatts, power > 0 {
-            // Simple Normalized Power Proxy: intensity^2 * duration
-            // Assuming a baseline FTP or relative intensity
-            let intensityFactor = power / 200.0 // 200 is a placeholder baseline
-            return (intensityFactor * intensityFactor) * durationMinutes
-        }
-        
-        // 2. Fallback to TRIMP Heart Rate
-        if let trimpLoad = calculateCardioLoadTRIMP(durationSeconds: Double(activity.movingTime), averageHeartRate: activity.averageHeartrate) {
-            return trimpLoad
-        }
-        
-        // 3. Fallback for Core/Maintenance
-        if activity.type == "WeightTraining" || activity.type == "Yoga" {
-            return durationMinutes * 0.2 // Minimal toll
-        }
-        
-        return durationMinutes * 0.5 // Default
     }
     
     // MARK: - Enhanced Load Calculation Methods
