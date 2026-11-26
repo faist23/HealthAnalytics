@@ -98,6 +98,19 @@
 
 **Effort:** XS (human: ~1h / CC+gstack: ~10min)
 
+### Load and training-week leftovers from the v0.2.1–v0.2.2 reviews
+**Priority:** P4. Noted in PRs #31–#33; none loses data. Check against Craig's few days of real use (from 2026-11-24) first.
+
+**What:**
+- **Pattern detection waits for the TSS migration with no message.** The migration runs only after a good sync. If syncs kept failing for days, patterns (the HRV illness warning included) would stop refreshing silently. Craig chose to keep waiting (2026-11-23); revisit only if it happens.
+- **The one-time TSS migration runs on the main thread after a sync,** so a phone with years of history may stutter once.
+- **No test covers the background pattern pass's copy of the migration gate** (`analyzePatternsForBackgroundPass` throwing `.loadMigrationPending`).
+- **The weekly load pattern keeps its old weeks** until the load data next rebuilds after Week Starts On changes, while the Training Stress card regroups at once.
+- **`TSSChartCard.weeklyData` regroups the days several times per render.** Small data; compute once per body if it ever shows up.
+- **`TabCoordinator.intelligenceTab`** was to be removed after v0.2.0 (CLAUDE.md, Tab indices). Nothing in the repo uses it.
+
+**Effort:** S (human: ~half a day / CC+gstack: ~20min)
+
 ## Coach
 
 ## Science
